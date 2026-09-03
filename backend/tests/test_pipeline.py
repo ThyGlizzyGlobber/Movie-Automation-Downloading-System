@@ -1,5 +1,20 @@
+import re
+
+import pytest
+
 from app import config
 from app.pipeline import download
+
+_BTIH_RE = re.compile(r"btih:([a-zA-Z0-9]+)")
+
+
+@pytest.fixture(autouse=True)
+def _fast_hash_capture(monkeypatch):
+    """Real hash capture retries with real sleeps (see config.py) — not
+    something unit tests should wait through. One immediate attempt is
+    enough since these fakes never need a retry to see their own write."""
+    monkeypatch.setattr(config, "HASH_CAPTURE_ATTEMPTS", 1)
+    monkeypatch.setattr(config, "HASH_CAPTURE_INTERVAL_SECONDS", 0)
 
 MOVIE = {
     "title": "Dune: Part Two",
@@ -30,7 +45,11 @@ class FakeQBTClient:
         return self.results_by_variant.get(pattern, [])
 
     def existing_torrent_hashes(self):
-        return self._existing_hashes
+        # A snapshot copy, like the real client's fresh `{t.hash ...}` set
+        # comprehension each call — callers that stash an earlier snapshot
+        # (pipeline.py's hash-diff capture) must see it as unaffected by a
+        # later add_torrent() mutating our internal set.
+        return set(self._existing_hashes)
 
     def free_space_bytes(self):
         return self._free_space_bytes
@@ -40,6 +59,12 @@ class FakeQBTClient:
 
     def add_torrent(self, file_url, category):
         self.added.append((file_url, category))
+        # Mimics qBittorrent indexing the new torrent: a magnet's hash
+        # becomes visible in existing_torrent_hashes() right after adding.
+        # A non-magnet fileUrl doesn't carry a hash to surface this way.
+        match = _BTIH_RE.search(file_url)
+        if match:
+            self._existing_hashes.add(match.group(1).lower())
 
 
 def _result(**overrides):
@@ -180,3 +205,68 @@ def test_download_prefers_2160p_over_1080p_when_floor_lowered_and_both_present(m
 
     assert result.status == "added"
     assert result.winner["fileUrl"] == "magnet:?xt=urn:btih:UHD"
+
+
+# ---------------------------------------------------------------------------
+# Torrent hash capture — Stage 3's download watcher needs to know which
+# torrent a request added, to poll it through to "complete".
+# ---------------------------------------------------------------------------
+
+
+def test_download_captures_hash_of_newly_added_torrent():
+    qbt = FakeQBTClient(results_by_variant={"Dune: Part Two": [_result(fileUrl="magnet:?xt=urn:btih:EEEE")]})
+
+    result = download(693134, FakeTMDBClient(), qbt)
+
+    assert result.status == "added"
+    assert result.torrent_hash == "eeee"
+
+
+def test_download_leaves_hash_unset_when_capture_is_ambiguous():
+    """A non-magnet fileUrl doesn't surface a hash in existing_torrent_hashes()
+    the way this fake models it — the diff finds zero new hashes, and
+    capture fails safe to None rather than guessing."""
+    qbt = FakeQBTClient(
+        results_by_variant={"Dune: Part Two": [_result(fileUrl="https://example.com/dune.torrent")]}
+    )
+
+    result = download(693134, FakeTMDBClient(), qbt)
+
+    assert result.status == "added"
+    assert result.torrent_hash is None
+
+
+def test_download_retries_hash_capture_until_torrent_is_indexed(monkeypatch):
+    """Real qBittorrent doesn't index a direct-.torrent-URL result
+    instantly — confirmed live against the real NAS during Stage 3
+    validation (a torlock winner's hash was missing on the first check,
+    present about a minute later). The capture loop must keep checking
+    instead of giving up after a single look."""
+    monkeypatch.setattr(config, "HASH_CAPTURE_ATTEMPTS", 3)
+
+    class DelayedIndexQBTClient(FakeQBTClient):
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+            self._pending_hash = None
+            self._checks_since_add = 0
+
+        def add_torrent(self, file_url, category):
+            self.added.append((file_url, category))
+            self._pending_hash = "ffff"  # not visible in existing_torrent_hashes() yet
+
+        def existing_torrent_hashes(self):
+            if self._pending_hash:
+                self._checks_since_add += 1
+                if self._checks_since_add >= 2:  # becomes visible on the second check
+                    self._existing_hashes.add(self._pending_hash)
+                    self._pending_hash = None
+            return set(self._existing_hashes)
+
+    qbt = DelayedIndexQBTClient(
+        results_by_variant={"Dune: Part Two": [_result(fileUrl="https://example.com/dune.torrent")]}
+    )
+
+    result = download(693134, FakeTMDBClient(), qbt)
+
+    assert result.status == "added"
+    assert result.torrent_hash == "ffff"

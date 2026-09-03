@@ -12,6 +12,22 @@ QBIT_PORT = int(os.environ.get("QBIT_PORT", "30024"))
 QBIT_USERNAME = os.environ.get("QBIT_USERNAME", "")
 QBIT_PASSWORD = os.environ.get("QBIT_PASSWORD", "")
 
+# -- Stage 3: API/persistence layer. --
+
+DB_PATH = Path(os.environ.get("DB_PATH", Path(__file__).resolve().parent.parent / "data" / "app.db"))
+
+# How often the download watcher polls qBittorrent for requests already
+# added and sitting in "downloading", to flip them to "complete". Doesn't
+# hold up the pipeline lock — see worker.py.
+DOWNLOAD_POLL_INTERVAL_SECONDS = int(os.environ.get("DOWNLOAD_POLL_INTERVAL_SECONDS", "10"))
+
+# After add_torrent(), how many times (and how far apart) pipeline.py
+# retries diffing existing_torrent_hashes() to find the new torrent's hash.
+# A direct-.torrent-URL result isn't indexed by qBittorrent instantly —
+# confirmed live during Stage 3 validation (torlock winner, Big Buck Bunny).
+HASH_CAPTURE_ATTEMPTS = 5
+HASH_CAPTURE_INTERVAL_SECONDS = 1.0
+
 # -- Stage 2 pipeline defaults. Plain module constants for now; Stage 7
 #    moves these into the settings table, editable from the Settings panel. --
 

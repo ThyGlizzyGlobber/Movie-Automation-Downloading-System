@@ -46,3 +46,9 @@ class QBTClient:
 
     def add_torrent(self, file_url: str, category: str) -> None:
         self._client.torrents_add(urls=file_url, category=category)
+
+    def torrent_info(self, torrent_hash: str) -> dict | None:
+        """A single torrent's current state, for Stage 3's download-progress
+        watcher. `None` if it's gone (e.g. removed manually)."""
+        results = self._client.torrents_info(torrent_hashes=torrent_hash)
+        return dict(results[0]) if results else None
