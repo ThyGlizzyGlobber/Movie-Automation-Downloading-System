@@ -10,7 +10,7 @@ Full staged proposal with design rationale: https://claude.ai/code/artifact/bcbb
 
 ## Status
 
-- **Current stage:** none started — plan approved, ready to begin Stage 0.
+- **Current stage:** Stage 1 complete — ready to begin Stage 2.
 - **Deployed:** nothing yet.
 - **Last updated:** 2026-09-04.
 
@@ -91,11 +91,11 @@ Sequencing note: the original spine (engine → API → frontend → containeriz
 **Settled:**
 - TMDB over OMDB.
 - Family disambiguates *which* movie (by browsing/tapping a poster); backend only ever disambiguates *which release* of that already-specific movie.
-
-**Open decisions:**
-- [ ] In-memory TTL cache (default) vs. persisted cache table for TMDB browse calls.
+- In-memory TTL cache, not a persisted cache table — kept as the plan's default; nothing in Stage 0/1 surfaced a reason to persist it.
 
 **Validation:** Unit tests on the normalization utility. Manual CLI/HTTP runs against real TMDB data — search, a provider's popular list, resolution for a franchise title.
+
+**Stage 1 complete.** Implementation lives in `backend/app/`: `normalize.py` (shared token utility), `cache.py` (generic `ttl_cache` decorator), `tmdb.py` (client wrapper — search, get_movie, alternative_titles uncached; popular/trending/watch_providers/discover_by_provider TTL-cached at 300s), `resolve.py` (`MediaIdentity` + `generate_variants`), `cli.py` (`resolve <tmdb-id>`). 14 unit tests passing (`backend/tests/`). Manually verified live against TMDB: `resolve 693134` (Dune: Part Two) → 3 variants; search, alternative_titles (35 entries), popular, watch_providers, and discover_by_provider all returned data matching the Stage 0 spike's numbers exactly. TMDB key lives in gitignored `backend/.env`, loaded via `python-dotenv`, never referenced by the frontend.
 
 ---
 
@@ -263,4 +263,6 @@ Sequencing note: the original spine (engine → API → frontend → containeriz
 *Append one entry per stage session, newest last. This is how context survives across separate chats.*
 
 - **2026-09-04** — Plan approved. Compartmentalization approach adopted: this file is the shared plan, each stage gets its own chat.
+- **2026-09-04** — Stage 0 spike run against the real NAS-hosted qBittorrent (v5.2.3, 21 plugins enabled) and a live TMDB key. Full findings: [spikes/stage0-feasibility.md](spikes/stage0-feasibility.md). Headline results: plan's core assumptions survive, with two adjustments carried into Stage 2 — (1) plugins can return error/config rows disguised as results with a populated but bogus `fileUrl` (seen from a misconfigured `jackett` plugin pointing at its own local API) and must be excluded, not just field-validated; (2) `nbSeeders` is `-1` (unknown) on ~50% of real rows, almost entirely from one high-volume plugin (torlock), confirming seeders must stay a tiebreaker/gate, never the primary key. `fileSize` was reliable (98%+ valid). TMDB search/alternative_titles/discover-by-provider/popular all matched the assumed contract; alternate-titles data for a franchise title (Dune: Part Two) was rich (35 entries) but mostly non-Latin-script noise, confirming the plan's small-curated-variant-list approach over using every AKA.
+- **2026-09-04** — Stage 1 built and verified. New `backend/` Python package (venv + `requirements.txt`: `requests`, `python-dotenv`, `pytest`) holding the pipeline-as-a-library code: `app/normalize.py` (whole-token normalizer, shared with Stage 2), `app/cache.py` (generic TTL-cache decorator), `app/tmdb.py` (TMDB client — search/get_movie/alternative_titles uncached, popular/trending/watch_providers/discover_by_provider TTL-cached at 300s), `app/resolve.py` (`MediaIdentity` dataclass + `generate_variants`, capped at 4: title, original_title if different, subtitle-free title, title+year), `app/cli.py` (`resolve <tmdb-id>`). TMDB key stored in gitignored `backend/.env`, loaded server-side only via `python-dotenv` — confirmed via repo-root `.gitignore`. 14 unit tests pass (normalization edge cases — diacritics, whole-token vs. substring like `265` inside `x265`/`1265`; variant generation for franchise/subtitle/no-subtitle/no-year cases). Manually exercised against live TMDB: `resolve 693134` (Dune: Part Two) returned 3 variants; direct client calls for search, alternative_titles (35 entries), popular, watch_providers (Netflix id 8), and discover_by_provider (4,748 total results) all matched Stage 0's numbers, and the TTL cache was confirmed not to grow on a repeat call. No deviations from the plan; the one open decision (in-memory vs. persisted cache) was closed in favor of the plan's stated default. Ready for Stage 2.
 
