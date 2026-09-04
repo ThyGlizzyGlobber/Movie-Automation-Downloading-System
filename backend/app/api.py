@@ -11,6 +11,7 @@ from pydantic import BaseModel, Field
 
 from app import config
 from app.db import RequestRow, RequestStore
+from app.deploy import DeployError, run_git_pull
 from app.plex import PlexError, PlexLinker
 from app.qbt import QBTClient
 from app.resolve import resolve
@@ -312,9 +313,14 @@ def unlink_plex(linker: PlexLinker = Depends(get_plex_linker)) -> dict:
     return linker.status()
 
 
-@app.post("/api/admin/deploy", status_code=501)
+@app.post("/api/admin/deploy")
 def deploy() -> dict:
-    """Stub — real `git pull` logic lands in Stage 6, gated by the Stage 7
-    settings panel's hidden long-press control. Exists now so Stages 4/6/7
-    have a stable route to wire against."""
-    return {"detail": "not implemented until Stage 6"}
+    """Runs exactly `git pull --ff-only` against the deployed-copy clone —
+    see app/deploy.py. No parameters ever accepted. Gated only by the
+    Settings panel's hidden long-press control on the frontend; this route
+    itself has no auth, an accepted risk per the Stage 6 plan (blast radius
+    is bounded since it only ever runs this one fixed command)."""
+    try:
+        return run_git_pull()
+    except DeployError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc

@@ -467,8 +467,25 @@ def test_get_movie_detail_404s_on_unknown_tmdb_id(client_and_deps):
     assert response.status_code == 404
 
 
-def test_deploy_stub_returns_501(client_and_deps):
+def test_deploy_runs_git_pull_and_returns_its_result(client_and_deps, monkeypatch):
     client, _, _, _, _, _ = client_and_deps
+    monkeypatch.setattr(api, "run_git_pull", lambda: {"detail": "Already up to date.", "commit": "abc1234"})
+
     response = client.post("/api/admin/deploy")
 
-    assert response.status_code == 501
+    assert response.status_code == 200
+    assert response.json() == {"detail": "Already up to date.", "commit": "abc1234"}
+
+
+def test_deploy_maps_deploy_error_to_502(client_and_deps, monkeypatch):
+    client, _, _, _, _, _ = client_and_deps
+
+    def raise_deploy_error():
+        raise api.DeployError("not a git clone")
+
+    monkeypatch.setattr(api, "run_git_pull", raise_deploy_error)
+
+    response = client.post("/api/admin/deploy")
+
+    assert response.status_code == 502
+    assert response.json()["detail"] == "not a git clone"

@@ -369,6 +369,9 @@
     display: block; margin-top: 14px; background: none; border: none; color: var(--text-dim);
     font-size: 13px; text-decoration: underline; padding: 0;
   }
+  .about-footer {
+    text-align: center; color: var(--text-dim); font-size: 12px; margin: 28px 0 12px;
+  }
 
   /* Bottom nav */
   #tabbar {
@@ -532,6 +535,7 @@
   const setAppearance = (accentColor) => api(`/api/settings/appearance`, {
     method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ accent_color: accentColor }),
   });
+  const postDeploy = () => api(`/api/admin/deploy`, { method: "POST" });
 
   // -- Rendering helpers --
 
@@ -1083,8 +1087,35 @@
     app.innerHTML = `
       <section class="row" id="appearanceSection">${loadingHtml()}</section>
       <section class="row" id="plexSection">${loadingHtml()}</section>
+      <section class="row" id="updateSection">
+        <h2>Update</h2>
+        <button class="settings-btn" id="deployBtn">Check for updates</button>
+      </section>
+      <div class="about-footer">The Family Downloader</div>
     `;
     await Promise.all([renderAppearanceSection(), refreshPlexSettings()]);
+    document.getElementById("deployBtn").addEventListener("click", triggerDeploy);
+  }
+
+  // -- Stage 6: self-update. A plain visible button — not real auth (anyone
+  //    with the frontend open on the LAN can trigger it), an accepted risk
+  //    per the confirmed architecture: the endpoint only ever runs one
+  //    fixed `git pull`, never an arbitrary command. --
+
+  async function triggerDeploy() {
+    const btn = document.getElementById("deployBtn");
+    if (!confirm("Pull the latest deployed code from git now?")) return;
+    btn.disabled = true;
+    btn.textContent = "Deploying…";
+    try {
+      const result = await postDeploy();
+      alert(`Deployed: ${result.detail}\nNow at ${result.commit}`);
+    } catch (err) {
+      alert(`Deploy failed: ${err.message}`);
+    } finally {
+      btn.disabled = false;
+      btn.textContent = "Check for updates";
+    }
   }
 
   async function renderAppearanceSection() {

@@ -130,3 +130,21 @@ MAX_SIZE_GB = 150
 # Plugins known (from Stage 0's live spike) to return error/config rows
 # disguised as results rather than real torrents — excluded outright.
 PLUGIN_DISTRUST = frozenset({"jackett"})
+
+# -- Stage 6: git-based deploy & update. --
+
+# Root of the deployed-copy git clone (contains .git) as seen from inside
+# the backend container — distinct from DB_PATH's persistent-data volume
+# and from the `backend/app` bind mount uvicorn --reload watches. Only
+# the real NAS deployment mounts this (see truenas/custom-app-compose.yaml);
+# local Compose has no such clone, so /api/admin/deploy fails loudly there
+# instead of silently doing nothing.
+DEPLOY_REPO_PATH = Path(os.environ.get("DEPLOY_REPO_PATH", "/repo"))
+
+# Path to the read-only GitHub deploy key, mounted as a secret file outside
+# the git-tracked tree — never committed, never visible via `docker
+# inspect` (only the mount target path is). When unset, `git pull` runs
+# with whatever SSH/credential setup the container already has.
+GIT_SSH_KEY_PATH = os.environ.get("GIT_SSH_KEY_PATH")
+
+DEPLOY_TIMEOUT_SECONDS = int(os.environ.get("DEPLOY_TIMEOUT_SECONDS", "60"))

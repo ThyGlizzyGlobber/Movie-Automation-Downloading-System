@@ -19,6 +19,15 @@
 # once applied). The placeholder below is what's committed to this
 # gitignored-.env-respecting repo; the live NAS deployment has the real
 # value from backend/.env substituted in at apply time, not committed here.
+#
+# GIT_SSH_KEY_PATH (Stage 6): the read-only GitHub deploy key, generated
+# for this NAS specifically and never committed — lives at
+# /mnt/SSD/AppData/movie-downloader/secrets/deploy_key (0600, root-only,
+# outside the git-tracked repo entirely so `git pull` itself can never
+# touch it), bind-mounted read-only into the backend container. Same
+# "never in the git-tracked tree, never visible via `docker inspect`"
+# handling as the confirmed architecture requires — `docker inspect` shows
+# only the mount *path*, never the key's contents.
 
 services:
   frontend:
@@ -46,11 +55,24 @@ services:
       TMDB_API_KEY: "REPLACE_WITH_VALUE_FROM_backend/.env"
       QBIT_HOST: "192.168.0.133"
       QBIT_PORT: "30024"
+      # Stage 6: where the self-update endpoint runs `git pull --ff-only`
+      # and the deploy key it authenticates with — see app/deploy.py.
+      DEPLOY_REPO_PATH: "/repo"
+      GIT_SSH_KEY_PATH: "/run/secrets/deploy_key"
     volumes:
       # Deployed-copy source, live-reloaded by uvicorn --reload — confirmed
       # live during Stage 5 by editing this file directly on the NAS and
       # watching WatchFiles pick it up with no container restart.
       - /mnt/SSD/AppData/movie-downloader/repo/backend/app:/app/app
+      # Stage 6: the whole deployed-copy clone, .git included — same host
+      # directory backend/app above is a subdirectory of, so a `git pull`
+      # run against this mount updates the files both this bind mount and
+      # frontend's directory-level mount already serve, with no separate
+      # sync step. Read-write: `git pull` has to write into `.git`.
+      - /mnt/SSD/AppData/movie-downloader/repo:/repo
+      # Read-only GitHub deploy key — see the note above. 0600 on the host,
+      # readable only as this container's (root) user.
+      - /mnt/SSD/AppData/movie-downloader/secrets/deploy_key:/run/secrets/deploy_key:ro
       # Persistent SQLite job store — distinct from the git-tracked source
       # above, survives container recreation and `git pull` alike.
       - /mnt/SSD/AppData/movie-downloader/data:/app/data

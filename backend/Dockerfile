@@ -2,6 +2,19 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
+# git + openssh-client: Stage 6's self-update endpoint shells out to the
+# real `git` CLI (via SSH, using the mounted deploy key) against the
+# deployed-copy clone — not a Python git library, so the binary has to
+# actually be here.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends git openssh-client \
+    && rm -rf /var/lib/apt/lists/*
+
+# The deployed-copy clone at /repo is bind-mounted from the NAS host, so its
+# directory ownership won't match this container's (root) user — git's
+# dubious-ownership check would otherwise refuse every `git pull`.
+RUN git config --global --add safe.directory /repo
+
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
