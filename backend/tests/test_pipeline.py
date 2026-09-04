@@ -4,6 +4,7 @@ import pytest
 
 from app import config
 from app.pipeline import download
+from app.qbt import QBTError
 
 _BTIH_RE = re.compile(r"btih:([a-zA-Z0-9]+)")
 
@@ -222,18 +223,92 @@ def test_download_captures_hash_of_newly_added_torrent():
     assert result.torrent_hash == "eeee"
 
 
-def test_download_leaves_hash_unset_when_capture_is_ambiguous():
-    """A non-magnet fileUrl doesn't surface a hash in existing_torrent_hashes()
-    the way this fake models it — the diff finds zero new hashes, and
-    capture fails safe to None rather than guessing."""
+def test_download_returns_add_failed_when_it_never_actually_lands():
+    """The real bug this closes (found live: a limetorrents link that
+    qBittorrent accepted but never actually fetched, leaving a request
+    stuck showing "downloading" with nothing in qBittorrent at all). This
+    fake's fileUrl never surfaces a hash in existing_torrent_hashes() no
+    matter how many retries — zero new hashes after exhausting the retry
+    budget is the real "never landed" signal, distinct from the ambiguous
+    (more than one new hash) case below. With only one candidate on the
+    table, there's nothing to fall back to, so this is the terminal
+    "add failed" status rather than a fallback to a next-best candidate."""
     qbt = FakeQBTClient(
         results_by_variant={"Dune: Part Two": [_result(fileUrl="https://example.com/dune.torrent")]}
     )
 
     result = download(693134, FakeTMDBClient(), qbt)
 
+    assert result.status == "add failed"
+    assert "never actually added" in result.error
+    assert result.winner["fileUrl"] == "https://example.com/dune.torrent"
+
+
+def test_download_leaves_hash_unset_when_capture_is_ambiguous():
+    """More than one new hash (e.g. a concurrent manual add elsewhere)
+    means something was clearly added — just not identifiably ours — so
+    this must return "added" with an untracked hash, not raise."""
+
+    class ConcurrentAddQBTClient(FakeQBTClient):
+        def add_torrent(self, file_url, category):
+            super().add_torrent(file_url, category)
+            self._existing_hashes.add("someone-elses-hash")
+
+    qbt = ConcurrentAddQBTClient(results_by_variant={"Dune: Part Two": [_result(fileUrl="magnet:?xt=urn:btih:EEEE")]})
+
+    result = download(693134, FakeTMDBClient(), qbt)
+
     assert result.status == "added"
     assert result.torrent_hash is None
+
+
+def test_download_returns_add_failed_rather_than_reporting_added():
+    """A dead/unreachable candidate link makes qBittorrent's own
+    torrents_add() fail (QBTClient.add_torrent raises QBTError for that —
+    see qbt.py). download() must not swallow it and claim "added" with
+    nothing actually added — the caller (worker.py) marks the request
+    "failed" instead of leaving it stuck at "downloading" forever. Only one
+    candidate here, so there's nothing to fall back to (see the next test
+    for the case where there is)."""
+
+    class RejectingQBTClient(FakeQBTClient):
+        def add_torrent(self, file_url, category):
+            raise QBTError(f"qBittorrent rejected the add ('Fails.'): {file_url}")
+
+    qbt = RejectingQBTClient(results_by_variant={"Dune: Part Two": [_result()]})
+
+    result = download(693134, FakeTMDBClient(), qbt)
+
+    assert result.status == "add failed"
+    assert "rejected the add" in result.error
+
+
+def test_download_falls_back_to_next_candidate_when_add_fails():
+    """The real case that motivated this: the #1-ranked candidate's link
+    is dead (e.g. a scraper listing something qBittorrent can never
+    fetch). With other candidates still on the table, the pipeline must
+    try the next-best one rather than failing the whole request."""
+    bad = _result(fileUrl="magnet:?xt=urn:btih:AAAA", fileName="Dune.Part.Two.2024.2160p.REMUX-BADGROUP.mkv", nbSeeders=100)
+    good = _result(
+        fileUrl="magnet:?xt=urn:btih:BBBB",
+        fileName="Dune.Part.Two.2024.2160p.REMUX-GOODGROUP.mkv",
+        fileSize=39_000_000_000,
+        nbSeeders=50,
+    )
+
+    class PartlyRejectingQBTClient(FakeQBTClient):
+        def add_torrent(self, file_url, category):
+            if file_url == "magnet:?xt=urn:btih:AAAA":
+                raise QBTError("qBittorrent rejected the add ('Fails.')")
+            super().add_torrent(file_url, category)
+
+    qbt = PartlyRejectingQBTClient(results_by_variant={"Dune: Part Two": [bad, good]})
+
+    result = download(693134, FakeTMDBClient(), qbt)
+
+    assert result.status == "added"
+    assert result.torrent_hash == "bbbb"
+    assert qbt.added == [("magnet:?xt=urn:btih:BBBB", "movies")]
 
 
 def test_download_retries_hash_capture_until_torrent_is_indexed(monkeypatch):

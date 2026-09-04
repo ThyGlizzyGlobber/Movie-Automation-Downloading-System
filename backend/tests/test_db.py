@@ -1,8 +1,16 @@
+from datetime import datetime, timedelta, timezone
+
 from app.db import RequestStore
 
 
 def _store() -> RequestStore:
     return RequestStore(":memory:")
+
+
+def _backdate(store: RequestStore, request_id: int, days_ago: int) -> None:
+    created_at = (datetime.now(timezone.utc) - timedelta(days=days_ago)).isoformat()
+    store._conn.execute("UPDATE requests SET created_at = ? WHERE id = ?", (created_at, request_id))
+    store._conn.commit()
 
 
 def test_create_request_starts_queued():
@@ -98,3 +106,59 @@ def test_settings_table_seeded_with_single_row():
     row = store._conn.execute("SELECT * FROM settings").fetchone()
     assert row["id"] == 1
     assert row["data_json"] == "{}"
+
+
+def test_get_settings_starts_empty():
+    store = _store()
+    assert store.get_settings() == {}
+
+
+def test_update_settings_merges_without_clobbering_other_keys():
+    store = _store()
+    store.update_settings({"plex_token": "abc"})
+
+    merged = store.update_settings({"request_retention_days": 90})
+
+    assert merged == {"plex_token": "abc", "request_retention_days": 90}
+    assert store.get_settings() == {"plex_token": "abc", "request_retention_days": 90}
+
+
+def test_update_settings_stores_none_rather_than_removing_key():
+    store = _store()
+    store.update_settings({"plex_token": "abc"})
+
+    store.update_settings({"plex_token": None})
+
+    assert store.get_settings() == {"plex_token": None}
+
+
+def test_purge_requests_older_than_deletes_only_old_terminal_rows():
+    store = _store()
+    old_complete = store.create_request(tmdb_id=1, title="Old Complete", release_year=2020, query=None)
+    store.update_status(old_complete.id, "complete")
+    _backdate(store, old_complete.id, days_ago=100)
+
+    old_downloading = store.create_request(tmdb_id=2, title="Old Downloading", release_year=2020, query=None)
+    store.update_status(old_downloading.id, "downloading", result={"torrent_hash": "abcd"})
+    _backdate(store, old_downloading.id, days_ago=100)
+
+    recent_complete = store.create_request(tmdb_id=3, title="Recent Complete", release_year=2020, query=None)
+    store.update_status(recent_complete.id, "complete")
+
+    removed = store.purge_requests_older_than(days=90)
+
+    assert removed == 1
+    remaining_ids = {r.id for r in store.list_requests()}
+    assert remaining_ids == {old_downloading.id, recent_complete.id}
+
+
+def test_purge_requests_older_than_zero_clears_all_terminal_regardless_of_age():
+    store = _store()
+    recent_failed = store.create_request(tmdb_id=1, title="Recent Failed", release_year=2020, query=None)
+    store.update_status(recent_failed.id, "failed", error_message="boom")
+    active = store.create_request(tmdb_id=2, title="Active", release_year=2020, query=None)
+
+    removed = store.purge_requests_older_than(days=0)
+
+    assert removed == 1
+    assert {r.id for r in store.list_requests()} == {active.id}

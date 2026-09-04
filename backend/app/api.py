@@ -11,6 +11,7 @@ from pydantic import BaseModel, Field
 
 from app import config
 from app.db import RequestRow, RequestStore
+from app.plex import PlexError, PlexLinker
 from app.qbt import QBTClient
 from app.resolve import resolve
 from app.tmdb import TMDBClient, TMDBError
@@ -23,6 +24,7 @@ async def lifespan(app: FastAPI):
     app.state.tmdb = TMDBClient(config.TMDB_API_KEY)
     app.state.qbt = QBTClient(config.QBIT_HOST, config.QBIT_PORT, config.QBIT_USERNAME, config.QBIT_PASSWORD)
     app.state.worker = Worker(app.state.store, app.state.tmdb, app.state.qbt)
+    app.state.plex_linker = PlexLinker(app.state.store)
     await app.state.worker.start()
     try:
         yield
@@ -46,6 +48,14 @@ def get_worker(request: Request) -> Worker:
     return request.app.state.worker
 
 
+def get_qbt(request: Request) -> QBTClient:
+    return request.app.state.qbt
+
+
+def get_plex_linker(request: Request) -> PlexLinker:
+    return request.app.state.plex_linker
+
+
 # ---------------------------------------------------------------------------
 # Schemas
 # ---------------------------------------------------------------------------
@@ -54,11 +64,16 @@ def get_worker(request: Request) -> Worker:
 class SearchRequest(BaseModel):
     query: str = Field(min_length=1)
     year: int | None = None
+    provider_id: int | None = None
 
 
 class CreateRequest(BaseModel):
     tmdb_id: int
     query: str | None = None
+
+
+class RetentionSettings(BaseModel):
+    days: int | None = None  # None/0 = keep forever
 
 
 class RequestOut(BaseModel):
@@ -86,7 +101,10 @@ class RequestOut(BaseModel):
 @app.post("/api/search")
 def search(body: SearchRequest, tmdb: TMDBClient = Depends(get_tmdb)) -> list[dict]:
     try:
-        data = tmdb.search_movie(body.query, year=body.year)
+        if body.provider_id is not None:
+            data = tmdb.search_within_provider(body.query, body.provider_id)
+        else:
+            data = tmdb.search_movie(body.query, year=body.year)
     except TMDBError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
     return data.get("results", [])
@@ -99,8 +117,10 @@ def search(body: SearchRequest, tmdb: TMDBClient = Depends(get_tmdb)) -> list[di
 
 @app.get("/api/discover/popular")
 def discover_popular(page: int = 1, tmdb: TMDBClient = Depends(get_tmdb)) -> dict:
+    # Digital-availability filtered: Coming Soon is the dedicated tab for
+    # theatrical-only titles, so Discover shouldn't also surface them.
     try:
-        return tmdb.get_popular(page=page)
+        return tmdb.get_available_popular(page=page)
     except TMDBError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
 
@@ -108,7 +128,7 @@ def discover_popular(page: int = 1, tmdb: TMDBClient = Depends(get_tmdb)) -> dic
 @app.get("/api/discover/trending")
 def discover_trending(time_window: str = "week", tmdb: TMDBClient = Depends(get_tmdb)) -> dict:
     try:
-        return tmdb.get_trending(time_window=time_window)
+        return tmdb.get_available_trending(time_window=time_window)
     except TMDBError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
 
@@ -128,6 +148,14 @@ def discover_by_provider(
 ) -> dict:
     try:
         return tmdb.discover_by_provider(provider_id, region=region, page=page)
+    except TMDBError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+@app.get("/api/discover/coming-soon")
+def discover_coming_soon(region: str = "US", page: int = 1, tmdb: TMDBClient = Depends(get_tmdb)) -> dict:
+    try:
+        return tmdb.get_coming_soon(region=region, page=page)
     except TMDBError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
 
@@ -176,6 +204,94 @@ def get_request(request_id: int, store: RequestStore = Depends(get_store)) -> Re
     if row is None:
         raise HTTPException(status_code=404, detail="request not found")
     return RequestOut.from_row(row)
+
+
+@app.post("/api/requests/clear")
+def clear_requests(store: RequestStore = Depends(get_store)) -> dict:
+    """"Clear My Requests": wipes settled history (reuses the same
+    active-job-safe query the automatic retention cleanup runs, with
+    days=0 so age never excludes anything terminal)."""
+    return {"removed": store.purge_requests_older_than(days=0)}
+
+
+# A request can only be cancelled once it actually has a torrent in
+# qBittorrent to delete — "queued"/"searching" haven't added anything yet,
+# and every other status is already terminal.
+_CANCELLABLE_STATUSES = {"downloading", "complete"}
+
+
+@app.post("/api/requests/{request_id}/cancel")
+def cancel_request(
+    request_id: int, store: RequestStore = Depends(get_store), qbt: QBTClient = Depends(get_qbt)
+) -> RequestOut:
+    """Cancel from the app's own UI: deletes the torrent *and its
+    downloaded files* from qBittorrent (fail safe, not best guess — never
+    silently leave orphaned media on disk), then marks the request
+    "cancelled". The row itself stays — this is "download history", not a
+    queue, per the "hidden, never unrecoverable" principle.
+
+    If qBittorrent no longer has the torrent at all — most commonly
+    because "remove torrent after completion" already auto-removed it —
+    there is nothing left to delete, and this app has no other path to the
+    file (it never mounts the download folder or the Docker socket, per
+    the confirmed architecture). Rather than mark the request "cancelled"
+    and imply files were removed when nothing was touched, this fails
+    loudly and leaves the request exactly as it was."""
+    row = store.get_request(request_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail="request not found")
+    if row.status not in _CANCELLABLE_STATUSES:
+        raise HTTPException(status_code=409, detail=f"cannot cancel a request in status {row.status!r}")
+    torrent_hash = (row.result or {}).get("torrent_hash")
+    if not torrent_hash:
+        raise HTTPException(status_code=409, detail="no torrent on record for this request")
+    if qbt.torrent_info(torrent_hash) is None:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "qBittorrent no longer has this torrent — it most likely finished and was "
+                "auto-removed. Nothing was deleted; if the file is still on disk, it needs to "
+                "be removed manually."
+            ),
+        )
+    qbt.delete_torrent(torrent_hash, delete_files=True)
+    store.update_status(request_id, "cancelled")
+    return RequestOut.from_row(store.get_request(request_id))
+
+
+@app.get("/api/settings/retention")
+def get_retention(store: RequestStore = Depends(get_store)) -> dict:
+    return {"days": store.get_settings().get("request_retention_days")}
+
+
+@app.put("/api/settings/retention")
+def set_retention(body: RetentionSettings, store: RequestStore = Depends(get_store)) -> dict:
+    store.update_settings({"request_retention_days": body.days})
+    return {"days": body.days}
+
+
+# -- Plex account linking (PIN sign-in). The resulting token is stored
+#    server-side only — these routes never return it. See plex.py. --
+
+
+@app.post("/api/plex/link")
+async def start_plex_link(linker: PlexLinker = Depends(get_plex_linker)) -> dict:
+    try:
+        auth_url = await linker.start()
+    except PlexError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    return {"auth_url": auth_url}
+
+
+@app.get("/api/plex/status")
+def plex_status(linker: PlexLinker = Depends(get_plex_linker)) -> dict:
+    return linker.status()
+
+
+@app.post("/api/plex/unlink")
+def unlink_plex(linker: PlexLinker = Depends(get_plex_linker)) -> dict:
+    linker.unlink()
+    return linker.status()
 
 
 @app.post("/api/admin/deploy", status_code=501)

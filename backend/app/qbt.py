@@ -11,6 +11,10 @@ SEARCH_POLL_INTERVAL_SECONDS = 2
 SEARCH_CEILING_SECONDS = 55
 
 
+class QBTError(RuntimeError):
+    pass
+
+
 class QBTClient:
     def __init__(self, host: str, port: int, username: str = "", password: str = ""):
         self._client = qbittorrentapi.Client(host=host, port=port, username=username, password=password)
@@ -45,10 +49,38 @@ class QBTClient:
             self._client.torrents_create_category(name=category)
 
     def add_torrent(self, file_url: str, category: str) -> None:
-        self._client.torrents_add(urls=file_url, category=category)
+        """`torrents_add` reports its outcome two different ways depending
+        on server version: a plain "Ok."/"Fails." string (older), or
+        richer per-torrent metadata for WebAPI 2.14+ — {added_torrent_ids,
+        success_count, pending_count, failure_count} — confirmed live
+        against this household's real instance (qBittorrent v5.2.3, WebAPI
+        2.15.1), which always takes this second form.
+
+        Only a *confirmed* synchronous failure is trustworthy here: a
+        direct .torrent URL (the majority of real winners) is still
+        "pending" — not yet "success" — the instant this call returns,
+        since qBittorrent hasn't finished fetching it yet. Confirmed live:
+        a torlock winner came back `{'failure_count': 0, 'pending_count':
+        1, 'success_count': 0}` and was genuinely present in qBittorrent
+        moments later. Treating "pending" as a failure here would reject
+        real successes — whether a pending add actually lands is verified
+        for real by pipeline.py's `_capture_new_hash` retry loop, not
+        synchronously here."""
+        result = self._client.torrents_add(urls=file_url, category=category)
+        if isinstance(result, str):
+            if result.strip() != "Ok.":
+                raise QBTError(f"qBittorrent rejected the add ({result!r}): {file_url}")
+        elif getattr(result, "failure_count", 0):
+            raise QBTError(f"qBittorrent rejected the add ({dict(result)!r}): {file_url}")
 
     def torrent_info(self, torrent_hash: str) -> dict | None:
         """A single torrent's current state, for Stage 3's download-progress
         watcher. `None` if it's gone (e.g. removed manually)."""
         results = self._client.torrents_info(torrent_hashes=torrent_hash)
         return dict(results[0]) if results else None
+
+    def delete_torrent(self, torrent_hash: str, delete_files: bool = True) -> None:
+        """Cancel a request from this app's own UI: removes the torrent
+        from qBittorrent and, by default, its downloaded files/folder too —
+        not just a queue entry, the actual media on disk."""
+        self._client.torrents_delete(delete_files=delete_files, torrent_hashes=torrent_hash)

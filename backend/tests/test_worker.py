@@ -5,6 +5,7 @@ import pytest
 
 from app import config
 from app.db import RequestStore
+from app.qbt import QBTError
 from app.worker import Worker
 
 
@@ -118,6 +119,30 @@ def test_run_one_marks_insufficient_free_space():
     assert store.get_request(row.id).status == "insufficient free space"
 
 
+def test_run_one_marks_failed_with_audit_trail_when_every_candidate_fails_to_add():
+    """The real bug this closes (a limetorrents link qBittorrent accepted
+    but never actually fetched): request status is "failed" like any other
+    failure, but — unlike a bare exception — `result` still carries which
+    candidate was tried, so the request stays auditable."""
+    store = RequestStore(":memory:")
+    row = store.create_request(tmdb_id=693134, title="Dune: Part Two", release_year=2024, query=None)
+
+    class RejectingQBTClient(FakeQBTClient):
+        def add_torrent(self, file_url, category):
+            raise QBTError("qBittorrent rejected the add ('Fails.')")
+
+    qbt = RejectingQBTClient(results_by_variant={"Dune: Part Two": [_result()]})
+    worker = Worker(store, FakeTMDBClient(), qbt)
+
+    asyncio.run(worker._run_one(row.id))
+
+    reloaded = store.get_request(row.id)
+    assert reloaded.status == "failed"
+    assert "qBittorrent couldn't add any candidate release" in reloaded.error_message
+    assert reloaded.result["winner"]["fileName"] == "Dune.Part.Two.2024.2160p.REMUX.mkv"
+    assert "rejected the add" in reloaded.result["add_error"]
+
+
 def test_run_one_marks_failed_on_exception_and_keeps_message():
     store = RequestStore(":memory:")
     row = store.create_request(tmdb_id=693134, title="Dune: Part Two", release_year=2024, query=None)
@@ -179,6 +204,54 @@ def test_check_downloading_leaves_in_progress_torrent_alone():
     assert store.get_request(row.id).status == "downloading"
 
 
+def test_check_downloading_marks_cancelled_when_torrent_is_gone():
+    """A torrent deleted directly in qBittorrent (not through this app)
+    must not leave the request stuck at "downloading" forever."""
+    store = RequestStore(":memory:")
+    row = store.create_request(tmdb_id=693134, title="Dune: Part Two", release_year=2024, query=None)
+    store.update_status(row.id, "downloading", result={"torrent_hash": "aaaa"})
+    qbt = FakeQBTClient(torrent_states={})  # "aaaa" absent -> torrent_info returns None
+    worker = Worker(store, FakeTMDBClient(), qbt)
+
+    asyncio.run(worker._check_downloading())
+
+    reloaded = store.get_request(row.id)
+    assert reloaded.status == "cancelled"
+    assert reloaded.error_message == "Removed from qBittorrent outside this app"
+
+
+def test_check_downloading_marks_complete_when_gone_but_plex_has_it(monkeypatch):
+    """qBittorrent's own "remove torrent after completion" setting makes a
+    *finished* download disappear the same way a deleted one would — Plex
+    is the tie-breaker before assuming the worse case."""
+    store = RequestStore(":memory:")
+    row = store.create_request(tmdb_id=693134, title="Dune: Part Two", release_year=2024, query=None)
+    store.update_status(row.id, "downloading", result={"torrent_hash": "aaaa"})
+    qbt = FakeQBTClient(torrent_states={})
+    monkeypatch.setattr("app.worker.plex.has_in_library", lambda store, title, year: True)
+    worker = Worker(store, FakeTMDBClient(), qbt)
+
+    asyncio.run(worker._check_downloading())
+
+    reloaded = store.get_request(row.id)
+    assert reloaded.status == "complete"
+
+
+def test_check_downloading_marks_cancelled_with_plex_checked_message_when_not_found(monkeypatch):
+    store = RequestStore(":memory:")
+    row = store.create_request(tmdb_id=693134, title="Dune: Part Two", release_year=2024, query=None)
+    store.update_status(row.id, "downloading", result={"torrent_hash": "aaaa"})
+    qbt = FakeQBTClient(torrent_states={})
+    monkeypatch.setattr("app.worker.plex.has_in_library", lambda store, title, year: False)
+    worker = Worker(store, FakeTMDBClient(), qbt)
+
+    asyncio.run(worker._check_downloading())
+
+    reloaded = store.get_request(row.id)
+    assert reloaded.status == "cancelled"
+    assert reloaded.error_message == "Removed from qBittorrent outside this app, and not found in Plex"
+
+
 def test_check_downloading_skips_rows_without_a_captured_hash():
     store = RequestStore(":memory:")
     row = store.create_request(tmdb_id=693134, title="Dune: Part Two", release_year=2024, query=None)
@@ -188,6 +261,44 @@ def test_check_downloading_skips_rows_without_a_captured_hash():
     asyncio.run(worker._check_downloading())
 
     assert store.get_request(row.id).status == "downloading"
+
+
+# ---------------------------------------------------------------------------
+# _cleanup_old_requests — automatic retention purge
+# ---------------------------------------------------------------------------
+
+
+def test_cleanup_old_requests_noop_when_no_retention_policy_set():
+    store = RequestStore(":memory:")
+    old = store.create_request(tmdb_id=1, title="Old", release_year=2020, query=None)
+    store.update_status(old.id, "complete")
+    store._conn.execute(
+        "UPDATE requests SET created_at = ? WHERE id = ?",
+        ("2000-01-01T00:00:00+00:00", old.id),
+    )
+    store._conn.commit()
+    worker = Worker(store, FakeTMDBClient(), FakeQBTClient())
+
+    asyncio.run(worker._cleanup_old_requests())
+
+    assert store.get_request(old.id) is not None
+
+
+def test_cleanup_old_requests_purges_per_configured_retention():
+    store = RequestStore(":memory:")
+    store.update_settings({"request_retention_days": 90})
+    old = store.create_request(tmdb_id=1, title="Old", release_year=2020, query=None)
+    store.update_status(old.id, "complete")
+    store._conn.execute(
+        "UPDATE requests SET created_at = ? WHERE id = ?",
+        ("2000-01-01T00:00:00+00:00", old.id),
+    )
+    store._conn.commit()
+    worker = Worker(store, FakeTMDBClient(), FakeQBTClient())
+
+    asyncio.run(worker._cleanup_old_requests())
+
+    assert store.get_request(old.id) is None
 
 
 # ---------------------------------------------------------------------------

@@ -49,26 +49,47 @@
     backdrop-filter: blur(10px);
     border-bottom: 1px solid var(--border);
   }
-  #topbar h1 {
-    font-size: 19px; margin: 0; flex: 1;
-    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-  }
-  #searchToggle, #backBtn {
-    background: none; border: none; color: var(--text);
+  #backBtn, #settingsToggle {
+    flex: 0 0 auto; background: none; border: none; color: var(--text);
     font-size: 20px; padding: 6px 8px; border-radius: 8px; line-height: 1;
   }
-  #searchToggle:active, #backBtn:active { background: var(--bg-card); }
-  #searchBar {
-    display: none; padding: 0 14px 12px; gap: 8px;
-  }
-  #searchBar.open { display: flex; }
+  #backBtn:active, #settingsToggle:active { background: var(--bg-card); }
+  /* Same slot the old page-title text sat in — right after the (contextual)
+     back button — just a static mark now rather than dynamic per-page text. */
+  #topbarLogo { flex: 0 0 auto; width: 30px; height: 30px; border-radius: 8px; display: block; }
+  /* Always in the top bar (not a toggleable row) — flex:1 + min-width:0
+     so it scales with whatever space backBtn/settingsToggle leave behind,
+     rather than forcing the bar to overflow. */
+  .search-input-wrap { position: relative; flex: 1; min-width: 0; }
   #searchInput {
-    flex: 1; background: var(--bg-card); border: 1px solid var(--border);
-    color: var(--text); padding: 10px 12px; border-radius: 10px; font-size: 16px;
+    width: 100%; background: var(--bg-card); border: 1px solid var(--border);
+    color: var(--text); padding: 9px 36px 9px 12px; border-radius: 10px; font-size: 15.5px;
+    -webkit-appearance: none; appearance: none;
   }
   #searchInput:focus { outline: 2px solid var(--accent); }
+  #searchInput::-webkit-search-cancel-button { display: none; }
+  .search-clear-btn {
+    position: absolute; right: 4px; top: 50%; transform: translateY(-50%);
+    width: 26px; height: 26px; border-radius: 50%; background: none; border: none;
+    color: var(--text-dim); font-size: 15px; line-height: 1;
+    display: flex; align-items: center; justify-content: center;
+  }
+  /* Same-specificity tie with the UA's [hidden]{display:none} — without
+     this, source order lets the rule above win and the button shows even
+     while hidden. */
+  .search-clear-btn[hidden] { display: none; }
+  .search-clear-btn:active { background: var(--bg-elevated); }
 
-  main { padding: 14px 14px calc(90px + var(--safe-bottom)); min-height: 60vh; }
+  .inline-search {
+    display: block; width: 100%; background: var(--bg-card); border: 1px solid var(--border);
+    color: var(--text); padding: 10px 12px; border-radius: 10px; font-size: 16px;
+    margin-bottom: 18px;
+  }
+  .inline-search:focus { outline: 2px solid var(--accent); }
+
+  /* 130px (not just the tab bar's ~90px) so scrolled content on the
+     Requests view clears the floating .requests-fab above the tab bar. */
+  main { padding: 14px 14px calc(130px + var(--safe-bottom)); min-height: 60vh; }
 
   section.row { margin-bottom: 26px; }
   section.row h2 {
@@ -84,10 +105,10 @@
   .hscroll::-webkit-scrollbar { display: none; }
 
   .poster-card {
-    display: block; flex: 0 0 auto; width: 112px; scroll-snap-align: start;
+    display: block; flex: 0 0 auto; width: var(--poster-min, 112px); scroll-snap-align: start;
   }
   .poster-card img {
-    width: 112px; height: 168px; object-fit: cover; border-radius: 10px;
+    width: 100%; height: auto; aspect-ratio: 2 / 3; object-fit: cover; border-radius: 10px;
     background: var(--bg-card); display: block;
   }
   .poster-card .cap {
@@ -97,20 +118,53 @@
   }
 
   .grid {
-    display: grid; grid-template-columns: repeat(auto-fill, minmax(104px, 1fr));
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(var(--poster-min, 104px), 1fr));
     gap: 14px 10px;
   }
   .grid .poster-card { width: auto; }
   .grid .poster-card img { width: 100%; height: auto; aspect-ratio: 2 / 3; }
 
-  .provider-row { display: flex; gap: 14px; overflow-x: auto; padding-bottom: 4px; }
-  .provider-row::-webkit-scrollbar { display: none; }
+  /* Full-bleed: breaks out of main's 14px side padding so the row of
+     service icons spans the entire display edge to edge. */
+  .provider-row {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(84px, 1fr));
+    gap: 16px 12px;
+    width: calc(100% + 28px); margin: 0 -14px; padding: 0 14px;
+  }
   .provider-chip {
-    flex: 0 0 auto; width: 60px; height: 60px; border-radius: 16px;
+    /* ~22% is the standard CSS approximation of Apple's App Store icon
+       "squircle" ratio (percentage, not a fixed px, so it holds at any
+       chip size the responsive grid lands on). */
+    width: 100%; aspect-ratio: 1; border-radius: 22%;
     overflow: hidden; background: var(--bg-card); border: 1px solid var(--border);
   }
   .provider-chip img { width: 100%; height: 100%; object-fit: cover; }
-  .provider-label { text-align: center; font-size: 11px; color: var(--text-dim); margin-top: 4px; width: 60px; }
+  .provider-label {
+    text-align: center; font-size: 12.5px; color: var(--text-dim); margin-top: 6px;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+
+  .subnav {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 12px; margin-bottom: 22px;
+  }
+  .subnav-tabs { display: flex; gap: 8px; }
+  .subtab {
+    padding: 8px 18px; border-radius: 999px; font-size: 14px; font-weight: 600;
+    background: var(--bg-card); color: var(--text-dim); border: 1px solid var(--border);
+  }
+  .subtab.active { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
+
+  /* Plex-style grid density slider, shown top-right on the same row as the
+     Discover/Coming Soon tabs. Controls --poster-min, so it affects every
+     .grid on the page (not just the current view). */
+  .grid-size { display: flex; align-items: center; gap: 6px; flex: 0 0 auto; }
+  .grid-size-icon { color: var(--text-dim); flex: 0 0 auto; line-height: 1; }
+  .grid-size-icon.small { font-size: 9px; }
+  .grid-size-icon.large { font-size: 16px; }
+  .grid-size input[type="range"] {
+    width: 78px; accent-color: var(--accent);
+  }
 
   .loadmore {
     display: block; width: 100%; margin-top: 12px; padding: 12px;
@@ -148,13 +202,46 @@
   }
   .detail-info { flex: 1; padding-top: 54px; min-width: 0; }
   .detail-info h1 { font-size: 20px; margin: 0 0 4px; line-height: 1.2; }
-  .detail-meta { color: var(--text-dim); font-size: 13px; }
-  .detail-overview { margin-top: 18px; font-size: 15px; line-height: 1.5; color: #d7d9dd; }
+  .detail-meta { color: var(--text-dim); font-size: 13px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .cert-badge {
+    font-size: 11px; font-weight: 700; padding: 1px 6px; border: 1px solid var(--text-dim);
+    border-radius: 4px; color: var(--text-dim); line-height: 1.4;
+  }
+  .detail-overview { margin-top: 8px; font-size: 15px; line-height: 1.5; color: #d7d9dd; }
   .genre-pills { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
   .genre-pill {
     font-size: 12px; padding: 4px 10px; background: var(--bg-card);
     border-radius: 999px; color: var(--text-dim);
   }
+
+  .score-row { display: flex; align-items: center; gap: 10px; margin-top: 18px; }
+  .score-ring {
+    width: 44px; height: 44px; border-radius: 50%; position: relative; flex: 0 0 auto;
+    background: conic-gradient(var(--score-color, var(--status-complete)) calc(var(--score-pct, 0) * 1%), var(--bg-card) 0);
+    display: flex; align-items: center; justify-content: center;
+  }
+  .score-ring::before { content: ""; position: absolute; inset: 4px; border-radius: 50%; background: var(--bg); }
+  .score-ring span { position: relative; font-size: 12px; font-weight: 700; }
+  .score-label { font-size: 12.5px; color: var(--text-dim); font-weight: 600; }
+
+  .tagline { font-style: italic; color: var(--text-dim); margin-top: 18px; font-size: 14px; }
+  .section-heading { font-size: 15px; font-weight: 700; margin: 20px 0 10px; }
+
+  .crew-row { display: flex; gap: 22px; margin-top: 18px; flex-wrap: wrap; }
+  .crew-name { font-weight: 600; font-size: 14px; }
+  .crew-job { font-size: 12.5px; color: var(--text-dim); }
+
+  .cast-section { margin-top: 8px; }
+  .cast-card { flex: 0 0 auto; width: 88px; }
+  .cast-card img {
+    width: 88px; height: 88px; border-radius: 50%; object-fit: cover;
+    background: var(--bg-card); display: block;
+  }
+  .cast-card .cast-name {
+    font-size: 12.5px; font-weight: 600; margin-top: 6px; text-align: center;
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+  }
+  .cast-card .cast-character { font-size: 11.5px; color: var(--text-dim); text-align: center; margin-top: 1px; }
 
   .add-btn {
     width: 100%; margin-top: 22px; padding: 15px; font-size: 16.5px; font-weight: 600;
@@ -196,8 +283,70 @@
     padding: 14px 4px; border-bottom: 1px solid var(--border);
   }
   .req-main { min-width: 0; }
-  .req-title { font-size: 15.5px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .req-title {
+    display: block; font-size: 15.5px; font-weight: 600;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .req-title:active { opacity: 0.7; }
   .req-sub { font-size: 12.5px; color: var(--text-dim); margin-top: 3px; }
+  .req-actions { display: flex; align-items: center; gap: 10px; flex: 0 0 auto; }
+  .cancel-btn {
+    font-size: 12.5px; font-weight: 600; padding: 5px 12px; border-radius: 999px;
+    background: transparent; color: var(--status-nospace); border: 1px solid var(--status-nospace);
+  }
+  .cancel-btn:active { background: color-mix(in srgb, var(--status-nospace) 18%, transparent); }
+  .cancel-btn[disabled] { opacity: 0.5; }
+
+  /* Floating above the tab bar, bottom-right — not part of the scrolling
+     list, so it stays reachable regardless of scroll position. */
+  .requests-fab {
+    position: fixed; right: 14px; bottom: calc(76px + var(--safe-bottom)); z-index: 9;
+  }
+  .split-btn {
+    display: flex; align-items: stretch; background: var(--bg-card);
+    border: 1px solid var(--status-nospace); border-radius: 999px; overflow: hidden;
+    box-shadow: 0 4px 14px rgba(0,0,0,0.35);
+  }
+  .split-btn-main {
+    background: none; border: none; color: var(--status-nospace);
+    font-size: 13.5px; font-weight: 600; padding: 10px 16px; white-space: nowrap;
+  }
+  .split-btn-divider { width: 1px; background: var(--status-nospace); opacity: 0.35; margin: 8px 0; }
+  .split-btn-arrow {
+    background: none; border: none; color: var(--status-nospace);
+    font-size: 12px; padding: 10px 14px; display: flex; align-items: center;
+  }
+  .split-btn-main:active, .split-btn-arrow:active {
+    background: color-mix(in srgb, var(--status-nospace) 18%, transparent);
+  }
+
+  .retention-menu {
+    position: absolute; right: 0; bottom: calc(100% + 8px); min-width: 200px;
+    background: var(--bg-elevated); border: 1px solid var(--border); border-radius: 12px;
+    overflow: hidden; box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+  }
+  .retention-option {
+    display: flex; align-items: center; justify-content: space-between; gap: 14px;
+    width: 100%; text-align: left; background: none; border: none; color: var(--text);
+    font-size: 14px; padding: 11px 14px; border-bottom: 1px solid var(--border);
+  }
+  .retention-option:last-child { border-bottom: none; }
+  .retention-option:active { background: var(--bg-card); }
+  .retention-option .check { color: var(--accent); font-weight: 700; }
+
+  /* Settings */
+  .settings-btn {
+    padding: 12px 20px; font-size: 15px; font-weight: 600; border-radius: 10px;
+    background: var(--accent); color: var(--accent-text); border: none;
+  }
+  .settings-btn:active { opacity: 0.85; }
+  .settings-btn[disabled] { background: var(--bg-card); color: var(--text-dim); }
+  .settings-btn.danger {
+    background: transparent; color: var(--status-nospace); border: 1px solid var(--status-nospace);
+  }
+  .plex-connected { font-size: 15px; margin-bottom: 14px; }
+  .plex-hint { color: var(--text-dim); font-size: 14px; margin-bottom: 14px; line-height: 1.4; }
+  .plex-error { color: var(--status-nospace); font-size: 13px; margin-top: 10px; }
 
   /* Bottom nav */
   #tabbar {
@@ -218,11 +367,12 @@
 
 <div id="topbar">
   <button id="backBtn" style="display:none" aria-label="Back">&larr;</button>
-  <h1 id="pageTitle">The Family Downloader</h1>
-  <button id="searchToggle" aria-label="Search">&#128269;</button>
-</div>
-<div id="searchBar">
-  <input id="searchInput" type="search" placeholder="Search movies&hellip;" enterkeyhint="search">
+  <img id="topbarLogo" src="/icon-192.png" alt="The Family Downloader">
+  <div class="search-input-wrap">
+    <input id="searchInput" type="search" enterkeyhint="search" aria-label="Search movies">
+    <button id="searchClearBtn" class="search-clear-btn" aria-label="Clear search" hidden>&#10005;</button>
+  </div>
+  <button id="settingsToggle" aria-label="Settings">&#9881;&#65039;</button>
 </div>
 
 <main id="app"><div class="loading"><div class="spinner"></div></div></main>
@@ -247,17 +397,23 @@
     );
 
   // Curated set of major providers for the home-row chips — TMDB's full
-  // provider list runs to 100+ entries; names/logos still come live from
-  // the API, this just picks which ones get a tap target.
+  // provider list runs to 100+ entries; this just picks which ones get a
+  // tap target. Logos are shipped locally (frontend/icons/, real App
+  // Store icons) rather than hotlinked from TMDB — the user's own choice,
+  // to stay in control of freshness/quality rather than whatever TMDB has
+  // on file for a given service.
   const CURATED_PROVIDERS = [
-    { id: 8, name: "Netflix" },
-    { id: 9, name: "Prime Video" },
-    { id: 337, name: "Disney+" },
-    { id: 1899, name: "Max" },
-    { id: 15, name: "Hulu" },
-    { id: 2, name: "Apple TV" },
-    { id: 531, name: "Paramount+" },
-    { id: 386, name: "Peacock" },
+    { id: 8, name: "Netflix", icon: "netflix.png" },
+    { id: 9, name: "Prime Video", icon: "prime-video.png" },
+    { id: 337, name: "Disney+", icon: "disney-plus.png" },
+    { id: 1899, name: "Max", icon: "max.png" },
+    { id: 15, name: "Hulu", icon: "hulu.png" },
+    { id: 2, name: "Apple TV", icon: "apple-tv.png" },
+    // 531 ("Paramount+") is a dead TMDB provider id — Paramount+ was split
+    // into tiered entries (Premium/Essential); 2303 is the current Premium
+    // one — kept for the provider-browse id even though the logo is now local.
+    { id: 2303, name: "Paramount+", icon: "paramount-plus.png" },
+    { id: 386, name: "Peacock", icon: "peacock.png" },
   ];
 
   const STATUS_META = {
@@ -268,8 +424,10 @@
     "no qualifying results": { label: "No matches found", cls: "status-nomatch" },
     "insufficient free space": { label: "Not enough space", cls: "status-nospace" },
     "failed": { label: "Failed", cls: "status-failed" },
+    "cancelled": { label: "Cancelled", cls: "status-queued" },
   };
   const NON_TERMINAL = new Set(["queued", "searching", "downloading"]);
+  const CANCELLABLE = new Set(["downloading", "complete"]);
 
   function statusMeta(status) {
     return STATUS_META[status] || { label: status, cls: "status-queued" };
@@ -310,11 +468,12 @@
   }
   const getDiscoverPopular = (page) => api(`/api/discover/popular?page=${page || 1}`);
   const getDiscoverTrending = () => api(`/api/discover/trending`);
-  const getDiscoverProviders = () => api(`/api/discover/providers`);
   const getDiscoverByProvider = (id, page) => api(`/api/discover/providers/${id}?page=${page || 1}`);
+  const getComingSoon = (page) => api(`/api/discover/coming-soon?page=${page || 1}`);
   const getMovie = (id) => api(`/api/movies/${id}`);
-  const postSearch = (query) => api(`/api/search`, {
-    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ query }),
+  const postSearch = (query, providerId) => api(`/api/search`, {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ query, provider_id: providerId || null }),
   });
   const listRequests = () => api(`/api/requests`);
   const createRequest = (tmdb_id, query) => api(`/api/requests`, {
@@ -322,6 +481,15 @@
     body: JSON.stringify({ tmdb_id, query: query || null }),
   });
   const getRequest = (id) => api(`/api/requests/${id}`);
+  const cancelRequest = (id) => api(`/api/requests/${id}/cancel`, { method: "POST" });
+  const clearRequests = () => api(`/api/requests/clear`, { method: "POST" });
+  const getRetention = () => api(`/api/settings/retention`);
+  const setRetention = (days) => api(`/api/settings/retention`, {
+    method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ days }),
+  });
+  const startPlexLink = () => api(`/api/plex/link`, { method: "POST" });
+  const getPlexStatus = () => api(`/api/plex/status`);
+  const unlinkPlex = () => api(`/api/plex/unlink`, { method: "POST" });
 
   // -- Rendering helpers --
 
@@ -340,19 +508,67 @@
   }
   function emptyHtml(msg) { return `<div class="empty">${escapeHtml(msg)}</div>`; }
 
+  // Plex-style grid density slider. Persisted per-device (localStorage),
+  // applied as a CSS var so it affects every .grid on the page, not just
+  // whichever view happens to render the slider control itself.
+  const GRID_SIZE_KEY = "gridPosterMinPx";
+  const GRID_SIZE_MIN = 80;
+  const GRID_SIZE_MAX = 170;
+  const GRID_SIZE_DEFAULT = 104;
+
+  function getGridSize() {
+    let stored = null;
+    try { stored = Number(localStorage.getItem(GRID_SIZE_KEY)); } catch (e) {}
+    return stored && stored >= GRID_SIZE_MIN && stored <= GRID_SIZE_MAX ? stored : GRID_SIZE_DEFAULT;
+  }
+  function setGridSize(px) {
+    document.documentElement.style.setProperty("--poster-min", px + "px");
+    try { localStorage.setItem(GRID_SIZE_KEY, String(px)); } catch (e) {}
+  }
+  function gridSizeHtml() {
+    return `<div class="grid-size" title="Grid size">
+      <span class="grid-size-icon small">▪</span>
+      <input type="range" id="gridSizeSlider" min="${GRID_SIZE_MIN}" max="${GRID_SIZE_MAX}" step="1" value="${getGridSize()}">
+      <span class="grid-size-icon large">▪</span>
+    </div>`;
+  }
+  function wireGridSizeSlider() {
+    const el = document.getElementById("gridSizeSlider");
+    if (el) el.addEventListener("input", () => setGridSize(Number(el.value)));
+  }
+  setGridSize(getGridSize());
+
+  // Top-of-Home sub menu: Discover (the trending/popular/provider surface)
+  // vs. Coming Soon (still-in-cinemas, no digital release yet). Carries the
+  // grid-size slider top-right, on the same row.
+  function subnavHtml(active) {
+    return `<div class="subnav">
+      <div class="subnav-tabs">
+        <a class="subtab ${active === "discover" ? "active" : ""}" href="#/home">Discover</a>
+        <a class="subtab ${active === "coming-soon" ? "active" : ""}" href="#/coming-soon">Coming Soon</a>
+      </div>
+      ${gridSizeHtml()}
+    </div>`;
+  }
+
   // -- Router --
 
   const app = document.getElementById("app");
-  const pageTitle = document.getElementById("pageTitle");
   const backBtn = document.getElementById("backBtn");
   let activePollTimer = null;
 
   function stopPolling() {
-    if (activePollTimer) { clearInterval(activePollTimer); activePollTimer = null; }
+    // setInterval (Requests list) and setTimeout (Settings' Plex-link
+    // poll) share the same handle namespace in every major browser, so
+    // clearing both is a safe no-op for whichever one wasn't actually used.
+    if (activePollTimer) { clearInterval(activePollTimer); clearTimeout(activePollTimer); activePollTimer = null; }
   }
 
+  // The search bar lives permanently in the top bar now (not a toggled
+  // row), so there's no on-screen title left to set — `title` still
+  // updates the browser tab/PWA title instead.
   function setChrome({ title, showBack, activeTab }) {
-    pageTitle.textContent = title;
+    document.title = title ? `${title} — The Family Downloader` : "The Family Downloader";
     backBtn.style.display = showBack ? "" : "none";
     document.querySelectorAll(".tab").forEach((t) => {
       t.classList.toggle("active", t.dataset.tab === activeTab);
@@ -366,12 +582,56 @@
     t.addEventListener("click", () => navigate(t.dataset.tab === "home" ? "#/home" : "#/requests"));
   });
 
+  // Delegated once here (rather than re-attached on every requests-list
+  // poll) since #app itself is never replaced, only its innerHTML — these
+  // elements only ever exist on the Requests view, so this is a no-op
+  // everywhere else.
+  app.addEventListener("click", async (e) => {
+    const cancelBtn = e.target.closest(".cancel-btn");
+    if (cancelBtn) {
+      if (!confirm("Delete this download and its files from qBittorrent? This can't be undone.")) return;
+      cancelBtn.disabled = true;
+      cancelBtn.textContent = "Cancelling…";
+      try {
+        await cancelRequest(cancelBtn.dataset.requestId);
+        await loadRequests();
+      } catch (err) {
+        alert(`Couldn't cancel: ${err.message}`);
+        cancelBtn.disabled = false;
+        cancelBtn.textContent = "Cancel";
+      }
+      return;
+    }
+
+    const menu = document.getElementById("retentionMenu");
+    if (!menu) return;
+    if (e.target.closest("#retentionMenuBtn")) {
+      menu.hidden = !menu.hidden;
+      return;
+    }
+    const option = e.target.closest(".retention-option");
+    if (option) {
+      const days = option.dataset.days ? Number(option.dataset.days) : null;
+      menu.hidden = true;
+      try {
+        await setRetention(days);
+        menu.innerHTML = retentionOptionsHtml(days);
+      } catch (err) {
+        alert(`Couldn't update auto-clear: ${err.message}`);
+      }
+      return;
+    }
+    if (!menu.hidden && !e.target.closest("#retentionMenu")) menu.hidden = true;
+  });
+
   const routes = [
     { re: /^#\/home$/, handler: renderHome },
+    { re: /^#\/coming-soon$/, handler: renderComingSoon },
     { re: /^#\/requests$/, handler: renderRequests },
     { re: /^#\/movie\/(\d+)$/, handler: (m) => renderMovie(m[1]) },
     { re: /^#\/provider\/(\d+)\/(.*)$/, handler: (m) => renderProvider(m[1], decodeURIComponent(m[2])) },
     { re: /^#\/search\/(.*)$/, handler: (m) => renderSearch(decodeURIComponent(m[1])) },
+    { re: /^#\/settings$/, handler: renderSettings },
   ];
 
   function route() {
@@ -388,23 +648,17 @@
   // -- Views --
 
   async function renderHome() {
-    setChrome({ title: "The Family Downloader", showBack: false, activeTab: "home" });
+    setChrome({ title: "", showBack: false, activeTab: "home" });
     app.innerHTML = loadingHtml();
     try {
-      const [trending, popular, providers] = await Promise.all([
-        getDiscoverTrending(), getDiscoverPopular(1), getDiscoverProviders(),
-      ]);
-      const providerById = new Map((providers || []).map((p) => [p.provider_id, p]));
-      const chips = CURATED_PROVIDERS.map((cp) => {
-        const p = providerById.get(cp.id);
-        const logo = p && p.logo_path ? IMG_BASE + "w92" + p.logo_path : "";
-        return `<a href="#/provider/${cp.id}/${encodeURIComponent(cp.name)}" style="text-align:center">
-          <div class="provider-chip">${logo ? `<img src="${logo}" alt="">` : ""}</div>
+      const [trending, popular] = await Promise.all([getDiscoverTrending(), getDiscoverPopular(1)]);
+      const chips = CURATED_PROVIDERS.map((cp) => `<a href="#/provider/${cp.id}/${encodeURIComponent(cp.name)}">
+          <div class="provider-chip"><img src="/icons/${cp.icon}" alt=""></div>
           <div class="provider-label">${escapeHtml(cp.name)}</div>
-        </a>`;
-      }).join("");
+        </a>`).join("");
 
       app.innerHTML = `
+        ${subnavHtml("discover")}
         <section class="row">
           <h2>Trending this week</h2>
           <div class="hscroll">${(trending.results || []).map(posterCard).join("") || emptyHtml("Nothing trending right now.")}</div>
@@ -419,6 +673,7 @@
           ${popular.page < (popular.total_pages || 1) ? `<button class="loadmore" id="popularMore">Load more</button>` : ""}
         </section>
       `;
+      wireGridSizeSlider();
       let page = popular.page || 1;
       const moreBtn = document.getElementById("popularMore");
       if (moreBtn) {
@@ -439,34 +694,100 @@
 
   async function renderProvider(id, name) {
     setChrome({ title: name || "Browse", showBack: true, activeTab: "home" });
-    app.innerHTML = loadingHtml();
+    app.innerHTML = `
+      <input type="search" class="inline-search" id="providerSearchInput"
+             placeholder="Search within ${escapeHtml(name || "this service")}…">
+      <div id="providerResults">${loadingHtml()}</div>
+    `;
+    const input = document.getElementById("providerSearchInput");
+    const resultsEl = document.getElementById("providerResults");
+
+    async function showBrowse() {
+      resultsEl.innerHTML = loadingHtml();
+      try {
+        const data = await getDiscoverByProvider(id, 1);
+        let page = data.page || 1;
+        resultsEl.innerHTML = `
+          <div class="grid" id="providerGrid">${(data.results || []).map(posterCard).join("")}</div>
+          ${!data.results || !data.results.length ? emptyHtml("No titles found for this service.") : ""}
+          ${data.page < (data.total_pages || 1) ? `<button class="loadmore" id="providerMore">Load more</button>` : ""}
+        `;
+        const moreBtn = document.getElementById("providerMore");
+        if (moreBtn) {
+          moreBtn.addEventListener("click", async () => {
+            moreBtn.textContent = "Loading…";
+            moreBtn.disabled = true;
+            const next = await getDiscoverByProvider(id, page + 1);
+            page = next.page;
+            document.getElementById("providerGrid").insertAdjacentHTML("beforeend", (next.results || []).map(posterCard).join(""));
+            if (page >= (next.total_pages || 1)) moreBtn.remove();
+            else { moreBtn.textContent = "Load more"; moreBtn.disabled = false; }
+          });
+        }
+      } catch (err) {
+        resultsEl.innerHTML = errorHtml(err.message);
+      }
+    }
+
+    async function showProviderSearch(query) {
+      resultsEl.innerHTML = loadingHtml();
+      try {
+        const results = await postSearch(query, Number(id));
+        resultsEl.innerHTML = results.length
+          ? `<div class="grid">${results.map(posterCard).join("")}</div>`
+          : emptyHtml(`No titles on ${name || "this service"} matched “${query}”.`);
+      } catch (err) {
+        resultsEl.innerHTML = errorHtml(err.message);
+      }
+    }
+
+    function submitProviderSearch() {
+      const query = input.value.trim();
+      if (query) showProviderSearch(query); else showBrowse();
+    }
+    input.addEventListener("keydown", (e) => { if (e.key === "Enter") submitProviderSearch(); });
+    input.addEventListener("search", submitProviderSearch);
+
+    await showBrowse();
+  }
+
+  async function renderComingSoon() {
+    setChrome({ title: "Coming Soon", showBack: false, activeTab: "home" });
+    app.innerHTML = subnavHtml("coming-soon") + loadingHtml();
     try {
-      const data = await getDiscoverByProvider(id, 1);
+      const data = await getComingSoon(1);
       let page = data.page || 1;
       app.innerHTML = `
-        <div class="grid" id="providerGrid">${(data.results || []).map(posterCard).join("") || ""}</div>
-        ${!data.results || !data.results.length ? emptyHtml("No titles found for this service.") : ""}
-        ${data.page < (data.total_pages || 1) ? `<button class="loadmore" id="providerMore">Load more</button>` : ""}
+        ${subnavHtml("coming-soon")}
+        <div class="grid" id="comingSoonGrid">${(data.results || []).map(posterCard).join("")}</div>
+        ${!data.results || !data.results.length ? emptyHtml("Nothing currently in theaters without a digital release yet.") : ""}
+        ${data.page < (data.total_pages || 1) ? `<button class="loadmore" id="comingSoonMore">Load more</button>` : ""}
       `;
-      const moreBtn = document.getElementById("providerMore");
+      wireGridSizeSlider();
+      const moreBtn = document.getElementById("comingSoonMore");
       if (moreBtn) {
         moreBtn.addEventListener("click", async () => {
           moreBtn.textContent = "Loading…";
           moreBtn.disabled = true;
-          const next = await getDiscoverByProvider(id, page + 1);
+          const next = await getComingSoon(page + 1);
           page = next.page;
-          document.getElementById("providerGrid").insertAdjacentHTML("beforeend", (next.results || []).map(posterCard).join(""));
+          document.getElementById("comingSoonGrid").insertAdjacentHTML("beforeend", (next.results || []).map(posterCard).join(""));
           if (page >= (next.total_pages || 1)) moreBtn.remove();
           else { moreBtn.textContent = "Load more"; moreBtn.disabled = false; }
         });
       }
     } catch (err) {
-      app.innerHTML = errorHtml(err.message);
+      app.innerHTML = subnavHtml("coming-soon") + errorHtml(err.message, "#/coming-soon");
     }
   }
 
   async function renderSearch(query) {
     setChrome({ title: `“${query}”`, showBack: true, activeTab: "home" });
+    // The bar lives in the top bar permanently now, independent of this
+    // view — reflect whatever query got us here (e.g. landed on directly,
+    // or via browser back/forward) rather than leaving stale text in it.
+    searchInput.value = query;
+    updateSearchClearBtn();
     app.innerHTML = loadingHtml();
     try {
       const results = await postSearch(query);
@@ -478,16 +799,73 @@
     }
   }
 
+  function certificationOf(movie) {
+    const usEntry = (movie.release_dates?.results || []).find((r) => r.iso_3166_1 === "US");
+    if (!usEntry) return "";
+    const withCert = (usEntry.release_dates || []).find((rd) => rd.certification);
+    return withCert ? withCert.certification : "";
+  }
+
+  function scoreRowHtml(voteAverage) {
+    if (!voteAverage) return "";
+    const pct = Math.round(voteAverage * 10);
+    const color = pct >= 70 ? "var(--status-complete)" : pct >= 40 ? "var(--status-nomatch)" : "var(--status-nospace)";
+    return `<div class="score-row">
+      <div class="score-ring" style="--score-pct:${pct};--score-color:${color}"><span>${pct}%</span></div>
+      <span class="score-label">User Score</span>
+    </div>`;
+  }
+
+  function crewRowHtml(crew) {
+    const director = (crew || []).find((c) => c.job === "Director");
+    const writerJobs = new Set(["Screenplay", "Writer", "Story"]);
+    const items = [];
+    if (director) items.push({ name: director.name, job: "Director" });
+    const seen = new Set(items.map((i) => i.name));
+    for (const c of crew || []) {
+      if (items.length >= 4) break;
+      if (writerJobs.has(c.job) && !seen.has(c.name)) {
+        seen.add(c.name);
+        items.push({ name: c.name, job: "Writer" });
+      }
+    }
+    if (!items.length) return "";
+    return `<div class="crew-row">${items
+      .map((i) => `<div><div class="crew-name">${escapeHtml(i.name)}</div><div class="crew-job">${i.job}</div></div>`)
+      .join("")}</div>`;
+  }
+
+  function castSectionHtml(cast) {
+    const top = (cast || []).slice(0, 15);
+    if (!top.length) return "";
+    const cards = top
+      .map(
+        (c) => `<div class="cast-card">
+          <img src="${c.profile_path ? IMG_BASE + "w185" + c.profile_path : PLACEHOLDER_POSTER}" alt="" loading="lazy">
+          <div class="cast-name">${escapeHtml(c.name)}</div>
+          <div class="cast-character">${escapeHtml(c.character || "")}</div>
+        </div>`
+      )
+      .join("");
+    return `<section class="cast-section row">
+      <h2 class="section-heading">Top Billed Cast</h2>
+      <div class="hscroll">${cards}</div>
+    </section>`;
+  }
+
   async function renderMovie(id) {
     setChrome({ title: "", showBack: true, activeTab: "home" });
     app.innerHTML = loadingHtml();
     try {
       const movie = await getMovie(id);
-      pageTitle.textContent = movie.title || movie.original_title || "";
+      document.title = `${movie.title || movie.original_title || ""} — The Family Downloader`;
       const genres = (movie.genres || []).map((g) => `<span class="genre-pill">${escapeHtml(g.name)}</span>`).join("");
       const runtime = movie.runtime ? `${Math.floor(movie.runtime / 60)}h ${movie.runtime % 60}m` : "";
       const meta = [yearOf(movie.release_date), runtime].filter(Boolean).join(" · ");
       const backdrop = backdropUrl(movie.backdrop_path);
+      const certification = certificationOf(movie);
+      const cast = movie.credits?.cast;
+      const crew = movie.credits?.crew;
 
       app.innerHTML = `
         ${backdrop ? `<img class="detail-backdrop" src="${backdrop}" alt="">` : ""}
@@ -495,13 +873,21 @@
           <img class="detail-poster" src="${posterUrl(movie.poster_path)}" alt="">
           <div class="detail-info">
             <h1>${escapeHtml(movie.title || movie.original_title)}</h1>
-            <div class="detail-meta">${escapeHtml(meta)}</div>
+            <div class="detail-meta">
+              ${certification ? `<span class="cert-badge">${escapeHtml(certification)}</span>` : ""}
+              <span>${escapeHtml(meta)}</span>
+            </div>
           </div>
         </div>
         ${genres ? `<div class="genre-pills">${genres}</div>` : ""}
+        ${scoreRowHtml(movie.vote_average)}
+        ${movie.tagline ? `<div class="tagline">${escapeHtml(movie.tagline)}</div>` : ""}
+        <h2 class="section-heading">Overview</h2>
         <div class="detail-overview">${escapeHtml(movie.overview) || "<em>No synopsis available.</em>"}</div>
+        ${crewRowHtml(crew)}
         <button class="add-btn" id="addBtn">Add to Plex</button>
         <div id="addResult"></div>
+        ${castSectionHtml(cast)}
       `;
 
       document.getElementById("addBtn").addEventListener("click", async (e) => {
@@ -546,48 +932,192 @@
     }
   }
 
+  const RETENTION_OPTIONS = [
+    { days: "", label: "Keep forever" },
+    { days: 30, label: "Clear after 30 days" },
+    { days: 60, label: "Clear after 60 days" },
+    { days: 90, label: "Clear after 90 days" },
+    { days: 180, label: "Clear after 180 days" },
+    { days: 365, label: "Clear after 1 year" },
+  ];
+
+  function retentionOptionsHtml(selectedDays) {
+    return RETENTION_OPTIONS.map((o) => {
+      const isSelected = (selectedDays || "") === o.days;
+      return `<button class="retention-option" data-days="${o.days}">
+        <span>${o.label}</span>${isSelected ? `<span class="check">&#10003;</span>` : ""}
+      </button>`;
+    }).join("");
+  }
+
   async function renderRequests() {
     setChrome({ title: "My Requests", showBack: false, activeTab: "requests" });
-    app.innerHTML = loadingHtml();
+    app.innerHTML = `
+      <div id="requestsList">${loadingHtml()}</div>
+      <div class="requests-fab">
+        <div class="split-btn">
+          <button id="clearRequestsBtn" class="split-btn-main">Clear My Requests</button>
+          <div class="split-btn-divider"></div>
+          <button id="retentionMenuBtn" class="split-btn-arrow" aria-label="Auto-clear options">&#9662;</button>
+        </div>
+        <div id="retentionMenu" class="retention-menu" hidden></div>
+      </div>
+    `;
     await loadRequests();
     activePollTimer = setInterval(loadRequests, 5000);
+
+    try {
+      const retention = await getRetention();
+      document.getElementById("retentionMenu").innerHTML = retentionOptionsHtml(retention.days);
+    } catch (err) { /* menu just stays empty if this fails */ }
+
+    document.getElementById("clearRequestsBtn").addEventListener("click", async () => {
+      if (!confirm("Clear finished, cancelled, and failed requests from history? Active downloads won't be affected.")) return;
+      try {
+        await clearRequests();
+        await loadRequests();
+      } catch (err) {
+        alert(`Couldn't clear requests: ${err.message}`);
+      }
+    });
   }
 
   async function loadRequests() {
+    const listEl = document.getElementById("requestsList");
     try {
       const rows = await listRequests();
-      if (!rows.length) { app.innerHTML = emptyHtml("Nothing requested yet — find a movie and tap Add to Plex."); return; }
-      app.innerHTML = rows.map((r) => `
-        <div class="req-row">
-          <div class="req-main">
-            <div class="req-title">${escapeHtml(r.title)}${r.release_year ? ` (${r.release_year})` : ""}</div>
-            <div class="req-sub">${new Date(r.created_at).toLocaleString([], { dateStyle: "medium", timeStyle: "short" })}</div>
-          </div>
-          ${statusPillHtml(r.status)}
-        </div>
-      `).join("");
+      listEl.innerHTML = !rows.length
+        ? emptyHtml("Nothing requested yet — find a movie and tap Add to Plex.")
+        : rows.map((r) => `
+            <div class="req-row">
+              <div class="req-main">
+                <a class="req-title" href="#/movie/${r.tmdb_id}">${escapeHtml(r.title)}${r.release_year ? ` (${r.release_year})` : ""}</a>
+                <div class="req-sub">${new Date(r.created_at).toLocaleString([], { dateStyle: "medium", timeStyle: "short" })}</div>
+              </div>
+              <div class="req-actions">
+                ${statusPillHtml(r.status)}
+                ${CANCELLABLE.has(r.status) ? `<button class="cancel-btn" data-request-id="${r.id}">Cancel</button>` : ""}
+              </div>
+            </div>
+          `).join("");
     } catch (err) {
-      app.innerHTML = errorHtml(err.message, "#/requests");
+      listEl.innerHTML = errorHtml(err.message, "#/requests");
     }
   }
 
-  // -- Search bar toggle --
+  async function renderSettings() {
+    setChrome({ title: "Settings", showBack: true, activeTab: null });
+    app.innerHTML = loadingHtml();
+    await refreshPlexSettings();
+  }
 
-  const searchToggle = document.getElementById("searchToggle");
-  const searchBar = document.getElementById("searchBar");
+  async function refreshPlexSettings() {
+    try {
+      const status = await getPlexStatus();
+      app.innerHTML = `
+        <section class="row">
+          <h2>Plex</h2>
+          ${status.linked ? `
+            <div class="plex-connected">Connected as <strong>${escapeHtml(status.username || "your account")}</strong>${status.server_name ? ` · ${escapeHtml(status.server_name)}` : ""}</div>
+            <button class="settings-btn danger" id="plexUnlinkBtn">Disconnect</button>
+          ` : `
+            <div class="plex-hint">Connect Plex so a completed download is recognized correctly, even if qBittorrent removes the torrent as soon as it finishes.</div>
+            <button class="settings-btn" id="plexLinkBtn" ${status.pending ? "disabled" : ""}>${status.pending ? "Waiting for sign-in…" : "Sign in with Plex"}</button>
+            ${status.error ? `<div class="plex-error">${escapeHtml(status.error)}</div>` : ""}
+          `}
+        </section>
+      `;
+      const linkBtn = document.getElementById("plexLinkBtn");
+      if (linkBtn) {
+        linkBtn.addEventListener("click", async () => {
+          linkBtn.disabled = true;
+          linkBtn.textContent = "Opening Plex…";
+          try {
+            const { auth_url } = await startPlexLink();
+            window.open(auth_url, "_blank");
+            await refreshPlexSettings();
+          } catch (err) {
+            linkBtn.disabled = false;
+            linkBtn.textContent = "Sign in with Plex";
+            alert(`Couldn't start Plex sign-in: ${err.message}`);
+          }
+        });
+      }
+      const unlinkBtn = document.getElementById("plexUnlinkBtn");
+      if (unlinkBtn) {
+        unlinkBtn.addEventListener("click", async () => {
+          if (!confirm("Disconnect Plex?")) return;
+          await unlinkPlex();
+          await refreshPlexSettings();
+        });
+      }
+      if (status.pending) {
+        activePollTimer = setTimeout(refreshPlexSettings, 3000);
+      }
+    } catch (err) {
+      app.innerHTML = errorHtml(err.message, "#/settings");
+    }
+  }
+
+  // -- Search bar (permanently in the top bar) --
+
   const searchInput = document.getElementById("searchInput");
-  searchToggle.addEventListener("click", () => {
-    searchBar.classList.toggle("open");
-    if (searchBar.classList.contains("open")) searchInput.focus();
-  });
+  const searchClearBtn = document.getElementById("searchClearBtn");
   function submitSearch() {
     if (searchInput.value.trim()) navigate(`#/search/${encodeURIComponent(searchInput.value.trim())}`);
+  }
+  function updateSearchClearBtn() {
+    searchClearBtn.hidden = !searchInput.value;
   }
   searchInput.addEventListener("keydown", (e) => { if (e.key === "Enter") submitSearch(); });
   // type="search" also fires a native "search" event on Enter/the clear-x —
   // catches it even if a keydown listener alone doesn't (e.g. Safari's own
   // handling of the field's built-in submit affordance).
   searchInput.addEventListener("search", submitSearch);
+  searchInput.addEventListener("input", updateSearchClearBtn);
+  searchClearBtn.addEventListener("click", () => {
+    searchInput.value = "";
+    updateSearchClearBtn();
+    searchInput.focus();
+  });
+
+  // Revolving placeholder: types a suggested title out, holds, deletes it,
+  // then moves to the next one — a terminal-style typing effect. Written
+  // to the `placeholder` attribute, so it only ever shows while the field
+  // is genuinely empty (the browser hides a placeholder the instant there's
+  // real text) and never touches `value` or interferes with typing/search.
+  const SEARCH_SUGGESTIONS = ["Dune", "The Godfather", "Inception", "Interstellar", "Parasite", "The Dark Knight"];
+  const TYPE_MS = 90;
+  const DELETE_MS = 45;
+  const HOLD_MS = 2400;
+  const BETWEEN_MS = 1000;
+  (function runSearchPlaceholderTypewriter() {
+    let phrase = 0;
+    let chars = 0;
+    let deleting = false;
+    function tick() {
+      const target = `Search "${SEARCH_SUGGESTIONS[phrase]}"…`;
+      if (!deleting) {
+        chars++;
+        searchInput.placeholder = target.slice(0, chars);
+        if (chars === target.length) { deleting = true; setTimeout(tick, HOLD_MS); return; }
+        setTimeout(tick, TYPE_MS);
+      } else {
+        chars--;
+        searchInput.placeholder = target.slice(0, chars);
+        if (chars === 0) {
+          deleting = false;
+          phrase = (phrase + 1) % SEARCH_SUGGESTIONS.length;
+          setTimeout(tick, BETWEEN_MS);
+          return;
+        }
+        setTimeout(tick, DELETE_MS);
+      }
+    }
+    tick();
+  })();
+
+  document.getElementById("settingsToggle").addEventListener("click", () => navigate("#/settings"));
 
   route();
 })();

@@ -7,9 +7,14 @@ A single connection with `check_same_thread=False` guarded by a
 import json
 import sqlite3
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from threading import Lock
+
+# Rows in these statuses are still live — an active job, or a torrent the
+# download watcher is still tracking. Retention purges (automatic or the
+# "Clear My Requests" button) never touch them, only settled history.
+NON_TERMINAL_STATUSES = {"queued", "searching", "downloading"}
 
 
 def _now() -> str:
@@ -150,6 +155,37 @@ class RequestStore:
             )
             self._conn.commit()
             return cur.rowcount
+
+    def purge_requests_older_than(self, days: int) -> int:
+        """Deletes terminal (non-active) requests created more than `days`
+        ago. `days=0` deletes every terminal request regardless of age —
+        used by the "Clear My Requests" button, which reuses this same
+        safety-filtered query rather than a separate unrestricted DELETE."""
+        cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
+        placeholders = ",".join("?" for _ in NON_TERMINAL_STATUSES)
+        with self._lock:
+            cur = self._conn.execute(
+                f"DELETE FROM requests WHERE created_at < ? AND status NOT IN ({placeholders})",
+                (cutoff, *NON_TERMINAL_STATUSES),
+            )
+            self._conn.commit()
+            return cur.rowcount
+
+    # -- settings --
+
+    def get_settings(self) -> dict:
+        row = self._conn.execute("SELECT data_json FROM settings WHERE id = 1").fetchone()
+        return json.loads(row["data_json"]) if row else {}
+
+    def update_settings(self, patch: dict) -> dict:
+        """Shallow-merges `patch` into the single settings row. A key set
+        to `None` (e.g. unlinking Plex) is stored as null, not removed —
+        callers read it back with the same `.get(...)` either way."""
+        with self._lock:
+            merged = {**self.get_settings(), **patch}
+            self._conn.execute("UPDATE settings SET data_json = ? WHERE id = 1", (json.dumps(merged),))
+            self._conn.commit()
+            return merged
 
     def close(self) -> None:
         self._conn.close()

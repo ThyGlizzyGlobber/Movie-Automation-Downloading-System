@@ -28,6 +28,12 @@ DOWNLOAD_POLL_INTERVAL_SECONDS = int(os.environ.get("DOWNLOAD_POLL_INTERVAL_SECO
 HASH_CAPTURE_ATTEMPTS = 5
 HASH_CAPTURE_INTERVAL_SECONDS = 1.0
 
+# How often the worker checks whether an automatic request-history
+# retention policy is set (a Settings-panel dropdown) and, if so, purges
+# terminal requests older than it. Retention is day-granularity, so an
+# hourly check is plenty responsive without adding meaningful load.
+RETENTION_CLEANUP_INTERVAL_SECONDS = int(os.environ.get("RETENTION_CLEANUP_INTERVAL_SECONDS", "3600"))
+
 # -- Stage 2 pipeline defaults. Plain module constants for now; Stage 7
 #    moves these into the settings table, editable from the Settings panel. --
 
