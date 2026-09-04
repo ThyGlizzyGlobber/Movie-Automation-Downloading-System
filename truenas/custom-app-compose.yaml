@@ -1,0 +1,59 @@
+# TrueNAS SCALE Custom App compose config for "movie-downloader" (Stage 5).
+#
+# Not applied via `docker compose` directly — pasted into the TrueNAS
+# Custom App form (or submitted as `custom_compose_config_string` to the
+# `app.create` / `app.update` middleware methods), which wraps it into its
+# own `ix-movie-downloader` compose project with its own bridge network
+# (frontend reaches the backend by service name, `backend:8000`, same as
+# local Compose).
+#
+# All paths below live on the NAS itself, distinct from any workstation
+# checkout: the "deployed copy" is `git clone`d to
+# /mnt/SSD/AppData/movie-downloader/repo, and only that clone (updated by
+# `git pull` from Stage 6 onward) is ever referenced here.
+#
+# TMDB_API_KEY: TrueNAS custom apps have no env_file support, so the real
+# key value has to be inlined here when actually applying this config —
+# same handling TrueNAS gives qBittorrent's own Wireguard key in this same
+# custom-app system (stored root-only, 0600, under /mnt/.ix-apps/app_configs
+# once applied). The placeholder below is what's committed to this
+# gitignored-.env-respecting repo; the live NAS deployment has the real
+# value from backend/.env substituted in at apply time, not committed here.
+
+services:
+  frontend:
+    build:
+      context: /mnt/SSD/AppData/movie-downloader/repo/frontend
+    ports:
+      - "8095:80"
+    # One directory-level bind mount, not per-file: a per-file bind mount
+    # breaks after `git pull` replaces a file via write-new+rename (the
+    # container keeps the old inode) — confirmed live during Stage 5's
+    # validation pass. A directory mount re-resolves paths on every
+    # request, which is what "frontend picks it up on next request" in
+    # the confirmed architecture actually requires. nginx.conf denies
+    # serving this same directory's Dockerfile/nginx.conf as a result.
+    volumes:
+      - /mnt/SSD/AppData/movie-downloader/repo/frontend:/usr/share/nginx/html
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+  backend:
+    build:
+      context: /mnt/SSD/AppData/movie-downloader/repo/backend
+    environment:
+      TMDB_API_KEY: "REPLACE_WITH_VALUE_FROM_backend/.env"
+      QBIT_HOST: "192.168.0.133"
+      QBIT_PORT: "30024"
+    volumes:
+      # Deployed-copy source, live-reloaded by uvicorn --reload — confirmed
+      # live during Stage 5 by editing this file directly on the NAS and
+      # watching WatchFiles pick it up with no container restart.
+      - /mnt/SSD/AppData/movie-downloader/repo/backend/app:/app/app
+      # Persistent SQLite job store — distinct from the git-tracked source
+      # above, survives container recreation and `git pull` alike.
+      - /mnt/SSD/AppData/movie-downloader/data:/app/data
+    expose:
+      - "8000"
+    restart: unless-stopped
