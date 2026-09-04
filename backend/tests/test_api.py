@@ -36,6 +36,20 @@ class FakeTMDBClient:
             raise TMDBError("not found")
         return self._movie
 
+    # -- Stage 4 discover surface --
+
+    def get_popular(self, page=1):
+        return {"results": [MOVIE], "page": page, "total_pages": 500}
+
+    def get_trending(self, time_window="week"):
+        return {"results": [MOVIE], "page": 1}
+
+    def get_watch_providers(self, region="US"):
+        return {"results": [{"provider_id": 8, "provider_name": "Netflix", "logo_path": "/netflix.png"}]}
+
+    def discover_by_provider(self, provider_id, region="US", page=1):
+        return {"results": [MOVIE], "page": page, "total_pages": 10, "provider_id": provider_id}
+
 
 class FakeQBTClient:
     def search(self, pattern, category="movies", plugins="enabled"):
@@ -158,6 +172,57 @@ def test_list_requests_newest_first_and_status_filter(client_and_deps):
 
     failed_only = client.get("/api/requests", params={"status": "failed"}).json()
     assert [r["id"] for r in failed_only] == [second["id"]]
+
+
+def test_discover_popular_passes_through_tmdb(client_and_deps):
+    client, _, _, _ = client_and_deps
+    response = client.get("/api/discover/popular", params={"page": 2})
+
+    assert response.status_code == 200
+    assert response.json()["results"] == [MOVIE]
+
+
+def test_discover_trending_passes_through_tmdb(client_and_deps):
+    client, _, _, _ = client_and_deps
+    response = client.get("/api/discover/trending")
+
+    assert response.status_code == 200
+    assert response.json()["results"] == [MOVIE]
+
+
+def test_discover_providers_returns_results_list(client_and_deps):
+    client, _, _, _ = client_and_deps
+    response = client.get("/api/discover/providers")
+
+    assert response.status_code == 200
+    assert response.json() == [{"provider_id": 8, "provider_name": "Netflix", "logo_path": "/netflix.png"}]
+
+
+def test_discover_by_provider_passes_provider_id_through(client_and_deps):
+    client, _, _, _ = client_and_deps
+    response = client.get("/api/discover/providers/8")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["results"] == [MOVIE]
+    assert body["provider_id"] == 8
+
+
+def test_get_movie_detail_returns_full_movie(client_and_deps):
+    client, _, _, _ = client_and_deps
+    response = client.get("/api/movies/693134")
+
+    assert response.status_code == 200
+    assert response.json() == MOVIE
+
+
+def test_get_movie_detail_404s_on_unknown_tmdb_id(client_and_deps):
+    client, _, tmdb, _ = client_and_deps
+    tmdb._raise_on_get_movie = True
+
+    response = client.get("/api/movies/999999")
+
+    assert response.status_code == 404
 
 
 def test_deploy_stub_returns_501(client_and_deps):

@@ -1,0 +1,21 @@
+services:
+  frontend:
+    build: ./frontend
+    ports:
+      - "8080:80"
+    depends_on:
+      - backend
+
+  backend:
+    build: ./backend
+    env_file:
+      - ./backend/.env
+    volumes:
+      - backend-data:/app/data
+    # No published port — reachable only from frontend over the internal
+    # Compose network as `backend:8000`, per the confirmed architecture.
+    expose:
+      - "8000"
+
+volumes:
+  backend-data:

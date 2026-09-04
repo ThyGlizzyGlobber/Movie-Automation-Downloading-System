@@ -92,6 +92,57 @@ def search(body: SearchRequest, tmdb: TMDBClient = Depends(get_tmdb)) -> list[di
     return data.get("results", [])
 
 
+# -- Stage 4: the browse surface the home grid and provider rows are built
+#    from. Thin pass-throughs of tmdb.py's already-TTL-cached methods —
+#    same "key never reaches the browser" rule as /api/search. --
+
+
+@app.get("/api/discover/popular")
+def discover_popular(page: int = 1, tmdb: TMDBClient = Depends(get_tmdb)) -> dict:
+    try:
+        return tmdb.get_popular(page=page)
+    except TMDBError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+@app.get("/api/discover/trending")
+def discover_trending(time_window: str = "week", tmdb: TMDBClient = Depends(get_tmdb)) -> dict:
+    try:
+        return tmdb.get_trending(time_window=time_window)
+    except TMDBError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+@app.get("/api/discover/providers")
+def discover_providers(region: str = "US", tmdb: TMDBClient = Depends(get_tmdb)) -> list[dict]:
+    try:
+        data = tmdb.get_watch_providers(region=region)
+    except TMDBError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    return data.get("results", [])
+
+
+@app.get("/api/discover/providers/{provider_id}")
+def discover_by_provider(
+    provider_id: int, region: str = "US", page: int = 1, tmdb: TMDBClient = Depends(get_tmdb)
+) -> dict:
+    try:
+        return tmdb.discover_by_provider(provider_id, region=region, page=page)
+    except TMDBError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+@app.get("/api/movies/{tmdb_id}")
+def get_movie_detail(tmdb_id: int, tmdb: TMDBClient = Depends(get_tmdb)) -> dict:
+    """Full TMDB detail for the detail view — overview, runtime, genres,
+    poster/backdrop paths. The frontend hotlinks poster/backdrop images
+    straight from TMDB's CDN using the paths returned here."""
+    try:
+        return tmdb.get_movie(tmdb_id)
+    except TMDBError as exc:
+        raise HTTPException(status_code=404, detail=f"tmdb_id {tmdb_id} not found") from exc
+
+
 @app.post("/api/requests", status_code=201)
 def create_request(
     body: CreateRequest,
