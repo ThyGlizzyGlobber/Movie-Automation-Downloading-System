@@ -348,6 +348,28 @@
   .plex-hint { color: var(--text-dim); font-size: 14px; margin-bottom: 14px; line-height: 1.4; }
   .plex-error { color: var(--status-nospace); font-size: 13px; margin-top: 10px; }
 
+  .accent-swatches { display: flex; flex-wrap: wrap; gap: 14px; margin-top: 4px; }
+  .accent-swatch {
+    width: 40px; height: 40px; border-radius: 50%; border: 2px solid transparent;
+    position: relative; padding: 0; flex: 0 0 auto;
+  }
+  .accent-swatch.selected { border-color: var(--text); }
+  .accent-swatch.selected::after {
+    content: "\2713"; position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+    color: #fff; font-size: 16px; font-weight: 700; text-shadow: 0 1px 3px rgba(0,0,0,0.7);
+  }
+  .custom-swatch {
+    background: conic-gradient(red, yellow, lime, cyan, blue, magenta, red);
+    overflow: hidden; display: flex; align-items: center; justify-content: center;
+  }
+  .custom-swatch input[type="color"] {
+    opacity: 0; width: 200%; height: 200%; border: none; padding: 0; background: none;
+  }
+  .reset-accent-btn {
+    display: block; margin-top: 14px; background: none; border: none; color: var(--text-dim);
+    font-size: 13px; text-decoration: underline; padding: 0;
+  }
+
   /* Bottom nav */
   #tabbar {
     position: fixed; left: 0; right: 0; bottom: 0; z-index: 10;
@@ -453,6 +475,22 @@
     ));
   }
 
+  // -- Accent color (Settings > Appearance) --
+
+  const DEFAULT_ACCENT = "#1e88e5";
+
+  function contrastingTextColor(hex) {
+    const n = parseInt(hex.replace("#", ""), 16);
+    const r = (n >> 16) & 255, g = (n >> 8) & 255, b = n & 255;
+    const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+    return luminance > 0.6 ? "#0f1115" : "#ffffff";
+  }
+  function applyAccentColor(hex) {
+    const color = hex || DEFAULT_ACCENT;
+    document.documentElement.style.setProperty("--accent", color);
+    document.documentElement.style.setProperty("--accent-text", contrastingTextColor(color));
+  }
+
   // -- API --
 
   async function api(path, opts) {
@@ -490,6 +528,10 @@
   const startPlexLink = () => api(`/api/plex/link`, { method: "POST" });
   const getPlexStatus = () => api(`/api/plex/status`);
   const unlinkPlex = () => api(`/api/plex/unlink`, { method: "POST" });
+  const getAppearance = () => api(`/api/settings/appearance`);
+  const setAppearance = (accentColor) => api(`/api/settings/appearance`, {
+    method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ accent_color: accentColor }),
+  });
 
   // -- Rendering helpers --
 
@@ -582,11 +624,17 @@
     t.addEventListener("click", () => navigate(t.dataset.tab === "home" ? "#/home" : "#/requests"));
   });
 
-  // Delegated once here (rather than re-attached on every requests-list
-  // poll) since #app itself is never replaced, only its innerHTML — these
-  // elements only ever exist on the Requests view, so this is a no-op
-  // everywhere else.
+  // Delegated once here (rather than re-attached on every view render)
+  // since #app itself is never replaced, only its innerHTML — each
+  // selector below only ever exists on one particular view, so this is a
+  // no-op everywhere else.
   app.addEventListener("click", async (e) => {
+    const presetSwatch = e.target.closest(".accent-swatch:not(.custom-swatch)");
+    if (presetSwatch) {
+      await chooseAccentColor(presetSwatch.dataset.color);
+      return;
+    }
+
     const cancelBtn = e.target.closest(".cancel-btn");
     if (cancelBtn) {
       if (!confirm("Delete this download and its files from qBittorrent? This can't be undone.")) return;
@@ -1005,27 +1053,83 @@
     }
   }
 
+  const ACCENT_PRESETS = [
+    { name: "Blue", color: "#1e88e5" },
+    { name: "Red", color: "#e53935" },
+    { name: "Orange", color: "#fb8c00" },
+    { name: "Yellow", color: "#fdd835" },
+    { name: "Green", color: "#43a047" },
+    { name: "Teal", color: "#00897b" },
+    { name: "Purple", color: "#8e24aa" },
+    { name: "Pink", color: "#d81b60" },
+  ];
+
+  function accentSwatchesHtml(current) {
+    const currentColor = (current || DEFAULT_ACCENT).toLowerCase();
+    const presetColors = new Set(ACCENT_PRESETS.map((p) => p.color.toLowerCase()));
+    const isCustom = !presetColors.has(currentColor);
+    const presets = ACCENT_PRESETS.map((p) => `
+      <button class="accent-swatch ${p.color.toLowerCase() === currentColor ? "selected" : ""}"
+              data-color="${p.color}" style="background:${p.color}" aria-label="${p.name}"></button>
+    `).join("");
+    return `${presets}
+      <label class="accent-swatch custom-swatch ${isCustom ? "selected" : ""}" aria-label="Custom color" style="${isCustom ? `background:${currentColor}` : ""}">
+        <input type="color" id="accentCustomInput" value="${isCustom ? currentColor : DEFAULT_ACCENT}">
+      </label>`;
+  }
+
   async function renderSettings() {
     setChrome({ title: "Settings", showBack: true, activeTab: null });
-    app.innerHTML = loadingHtml();
-    await refreshPlexSettings();
+    app.innerHTML = `
+      <section class="row" id="appearanceSection">${loadingHtml()}</section>
+      <section class="row" id="plexSection">${loadingHtml()}</section>
+    `;
+    await Promise.all([renderAppearanceSection(), refreshPlexSettings()]);
+  }
+
+  async function renderAppearanceSection() {
+    const section = document.getElementById("appearanceSection");
+    try {
+      const appearance = await getAppearance();
+      section.innerHTML = `
+        <h2>Appearance</h2>
+        <div class="accent-swatches">${accentSwatchesHtml(appearance.accent_color)}</div>
+        ${appearance.accent_color ? `<button class="reset-accent-btn" id="resetAccentBtn">Reset to default</button>` : ""}
+      `;
+      document.getElementById("accentCustomInput").addEventListener("input", async (e) => {
+        await chooseAccentColor(e.target.value);
+      });
+      const resetBtn = document.getElementById("resetAccentBtn");
+      if (resetBtn) resetBtn.addEventListener("click", () => chooseAccentColor(null));
+    } catch (err) {
+      section.innerHTML = `<h2>Appearance</h2><div class="plex-error">${escapeHtml(err.message)}</div>`;
+    }
+  }
+
+  async function chooseAccentColor(color) {
+    applyAccentColor(color);
+    try {
+      await setAppearance(color);
+    } catch (err) {
+      alert(`Couldn't save color: ${err.message}`);
+    }
+    await renderAppearanceSection();
   }
 
   async function refreshPlexSettings() {
+    const section = document.getElementById("plexSection");
     try {
       const status = await getPlexStatus();
-      app.innerHTML = `
-        <section class="row">
-          <h2>Plex</h2>
-          ${status.linked ? `
-            <div class="plex-connected">Connected as <strong>${escapeHtml(status.username || "your account")}</strong>${status.server_name ? ` · ${escapeHtml(status.server_name)}` : ""}</div>
-            <button class="settings-btn danger" id="plexUnlinkBtn">Disconnect</button>
-          ` : `
-            <div class="plex-hint">Connect Plex so a completed download is recognized correctly, even if qBittorrent removes the torrent as soon as it finishes.</div>
-            <button class="settings-btn" id="plexLinkBtn" ${status.pending ? "disabled" : ""}>${status.pending ? "Waiting for sign-in…" : "Sign in with Plex"}</button>
-            ${status.error ? `<div class="plex-error">${escapeHtml(status.error)}</div>` : ""}
-          `}
-        </section>
+      section.innerHTML = `
+        <h2>Plex</h2>
+        ${status.linked ? `
+          <div class="plex-connected">Connected as <strong>${escapeHtml(status.username || "your account")}</strong>${status.server_name ? ` · ${escapeHtml(status.server_name)}` : ""}</div>
+          <button class="settings-btn danger" id="plexUnlinkBtn">Disconnect</button>
+        ` : `
+          <div class="plex-hint">Connect Plex so a completed download is recognized correctly, even if qBittorrent removes the torrent as soon as it finishes.</div>
+          <button class="settings-btn" id="plexLinkBtn" ${status.pending ? "disabled" : ""}>${status.pending ? "Waiting for sign-in…" : "Sign in with Plex"}</button>
+          ${status.error ? `<div class="plex-error">${escapeHtml(status.error)}</div>` : ""}
+        `}
       `;
       const linkBtn = document.getElementById("plexLinkBtn");
       if (linkBtn) {
@@ -1055,7 +1159,7 @@
         activePollTimer = setTimeout(refreshPlexSettings, 3000);
       }
     } catch (err) {
-      app.innerHTML = errorHtml(err.message, "#/settings");
+      section.innerHTML = errorHtml(err.message, "#/settings");
     }
   }
 
@@ -1118,6 +1222,11 @@
   })();
 
   document.getElementById("settingsToggle").addEventListener("click", () => navigate("#/settings"));
+
+  // Applied independently of route() — a shared, household-wide choice
+  // (like Plex/retention), not per-device, so every view should reflect
+  // it as soon as it's fetched rather than waiting on the Settings page.
+  getAppearance().then((a) => applyAccentColor(a.accent_color)).catch(() => {});
 
   route();
 })();

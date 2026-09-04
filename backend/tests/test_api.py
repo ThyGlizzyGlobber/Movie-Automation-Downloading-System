@@ -333,6 +333,41 @@ def test_set_retention_persists_and_reads_back(client_and_deps):
     assert client.get("/api/settings/retention").json() == {"days": 90}
 
 
+def test_get_appearance_defaults_to_none(client_and_deps):
+    client, _, _, _, _, _ = client_and_deps
+    response = client.get("/api/settings/appearance")
+
+    assert response.status_code == 200
+    assert response.json() == {"accent_color": None}
+
+
+def test_set_appearance_persists_and_reads_back(client_and_deps):
+    client, store, _, _, _, _ = client_and_deps
+    response = client.put("/api/settings/appearance", json={"accent_color": "#8e24aa"})
+
+    assert response.status_code == 200
+    assert response.json() == {"accent_color": "#8e24aa"}
+    assert store.get_settings()["accent_color"] == "#8e24aa"
+    assert client.get("/api/settings/appearance").json() == {"accent_color": "#8e24aa"}
+
+
+def test_set_appearance_rejects_a_non_hex_color(client_and_deps):
+    client, _, _, _, _, _ = client_and_deps
+    response = client.put("/api/settings/appearance", json={"accent_color": "blue"})
+
+    assert response.status_code == 422
+
+
+def test_set_appearance_null_resets_to_default(client_and_deps):
+    client, store, _, _, _, _ = client_and_deps
+    client.put("/api/settings/appearance", json={"accent_color": "#8e24aa"})
+
+    response = client.put("/api/settings/appearance", json={"accent_color": None})
+
+    assert response.status_code == 200
+    assert store.get_settings()["accent_color"] is None
+
+
 def test_plex_status_reflects_linker(client_and_deps):
     client, _, _, _, _, plex_linker = client_and_deps
     plex_linker._status = {"linked": True, "username": "bejay", "server_name": "NAS", "pending": False, "error": None}
