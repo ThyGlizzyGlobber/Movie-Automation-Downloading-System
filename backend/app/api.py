@@ -5,13 +5,20 @@ origin. TMDB key and qBittorrent credentials never reach the browser: every
 route here is either a thin TMDB proxy or reads/writes the local job store."""
 
 from contextlib import asynccontextmanager
+from dataclasses import asdict
 
 from fastapi import Depends, FastAPI, HTTPException, Request
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from app import config
 from app.db import RequestRow, RequestStore
 from app.deploy import DeployError, run_git_pull
+from app.pipeline_settings import (
+    VALID_MIN_RESOLUTIONS,
+    is_valid_min_resolution,
+    resolve_pipeline_settings,
+    settings_from_raw,
+)
 from app.plex import PlexError, PlexLinker
 from app.qbt import QBTClient
 from app.resolve import resolve
@@ -79,6 +86,34 @@ class RetentionSettings(BaseModel):
 
 class AppearanceSettings(BaseModel):
     accent_color: str | None = Field(default=None, pattern=r"^#[0-9a-fA-F]{6}$")  # None = default blue
+
+
+class PipelineSettingsIn(BaseModel):
+    """Same "always send the full desired state, null = reset to the
+    config.py default" convention as AppearanceSettings/RetentionSettings
+    above — no partial-patch merging to worry about. Sanity validation
+    (Stage 7's second open decision) catches an edit that would otherwise
+    silently degrade every future request to "no qualifying results"."""
+
+    category: str | None = Field(default=None, min_length=1)
+    min_resolution: str | None = None
+    min_size_gb: float | None = Field(default=None, gt=0)
+    max_size_gb: float | None = Field(default=None, gt=0)
+    language_allowlist: list[str] | None = None
+    language_blocklist: list[str] | None = None
+
+    @field_validator("min_resolution")
+    @classmethod
+    def _known_resolution(cls, v: str | None) -> str | None:
+        if v is not None and not is_valid_min_resolution(v):
+            raise ValueError(f"min_resolution must be one of {VALID_MIN_RESOLUTIONS}")
+        return v
+
+    @model_validator(mode="after")
+    def _size_range_is_sane(self) -> "PipelineSettingsIn":
+        if self.min_size_gb is not None and self.max_size_gb is not None and self.min_size_gb >= self.max_size_gb:
+            raise ValueError("min_size_gb must be less than max_size_gb")
+        return self
 
 
 class RequestOut(BaseModel):
@@ -287,6 +322,42 @@ def set_appearance(body: AppearanceSettings, store: RequestStore = Depends(get_s
     # household sees it.
     store.update_settings({"accent_color": body.accent_color})
     return {"accent_color": body.accent_color}
+
+
+# -- Stage 7: the pipeline preferences a household is actually likely to
+#    want to tune (resolution floor, size range, language lists, category)
+#    — see pipeline_settings.py for why the deeper scoring weights aren't
+#    exposed here. Takes effect on the very next request; no restart, no
+#    deploy — worker.py resolves these fresh from the store every run. --
+
+
+@app.get("/api/settings/pipeline")
+def get_pipeline_settings(store: RequestStore = Depends(get_store)) -> dict:
+    return asdict(resolve_pipeline_settings(store))
+
+
+@app.put("/api/settings/pipeline")
+def set_pipeline_settings(body: PipelineSettingsIn, store: RequestStore = Depends(get_store)) -> dict:
+    patch = {
+        "category": body.category,
+        "min_resolution": body.min_resolution,
+        "min_size_gb": body.min_size_gb,
+        "max_size_gb": body.max_size_gb,
+        "language_allowlist": body.language_allowlist,
+        "language_blocklist": body.language_blocklist,
+    }
+    # Validate the *effective* result of this patch, not just the two
+    # fields in isolation — editing only min_size_gb while max_size_gb
+    # reverts to its default (or vice versa) could otherwise silently
+    # invert the range without either field looking wrong on its own.
+    prospective = settings_from_raw({**store.get_settings(), **patch})
+    if prospective.min_size_gb >= prospective.max_size_gb:
+        raise HTTPException(
+            status_code=422,
+            detail=f"min_size_gb ({prospective.min_size_gb}) must be less than max_size_gb ({prospective.max_size_gb})",
+        )
+    store.update_settings(patch)
+    return asdict(resolve_pipeline_settings(store))
 
 
 # -- Plex account linking (PIN sign-in). The resulting token is stored

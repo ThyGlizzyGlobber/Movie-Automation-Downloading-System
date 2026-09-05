@@ -4,6 +4,7 @@ import pytest
 
 from app import config
 from app.pipeline import download
+from app.pipeline_settings import PipelineSettings
 from app.qbt import QBTError
 
 _BTIH_RE = re.compile(r"btih:([a-zA-Z0-9]+)")
@@ -206,6 +207,85 @@ def test_download_prefers_2160p_over_1080p_when_floor_lowered_and_both_present(m
 
     assert result.status == "added"
     assert result.winner["fileUrl"] == "magnet:?xt=urn:btih:UHD"
+
+
+# ---------------------------------------------------------------------------
+# Stage 7: an explicit PipelineSettings object (what worker.py actually
+# passes, resolved from the Settings-panel-backed store) takes effect the
+# same way monkeypatching config.py did above — this is the real runtime
+# path, not just a test convenience.
+# ---------------------------------------------------------------------------
+
+
+def test_download_uses_explicit_settings_category():
+    qbt = FakeQBTClient(results_by_variant={"Dune: Part Two": [_result()]})
+    settings = PipelineSettings(
+        category="family-movies",
+        min_resolution="2160p",
+        min_size_gb=1,
+        max_size_gb=150,
+        language_allowlist=(),
+        language_blocklist=(),
+    )
+
+    result = download(693134, FakeTMDBClient(), qbt, settings)
+
+    assert result.status == "added"
+    assert qbt.ensured_categories == ["family-movies"]
+    assert qbt.added == [("magnet:?xt=urn:btih:AAAA", "family-movies")]
+
+
+def test_download_falls_back_to_1080p_with_explicit_settings():
+    qbt = FakeQBTClient(
+        results_by_variant={"Dune: Part Two": [_result(fileName="Dune.Part.Two.2024.1080p.WEBRip.mkv")]}
+    )
+    settings = PipelineSettings(
+        category="movies",
+        min_resolution="1080p",
+        min_size_gb=1,
+        max_size_gb=150,
+        language_allowlist=(),
+        language_blocklist=(),
+    )
+
+    result = download(693134, FakeTMDBClient(), qbt, settings)
+
+    assert result.status == "added"
+    assert result.score.resolution_score == 3
+
+
+def test_download_respects_explicit_settings_size_range():
+    qbt = FakeQBTClient(results_by_variant={"Dune: Part Two": [_result(fileSize=5_000_000_000)]})
+    settings = PipelineSettings(
+        category="movies",
+        min_resolution="2160p",
+        min_size_gb=10,  # the 5GB candidate above now falls outside the floor
+        max_size_gb=150,
+        language_allowlist=(),
+        language_blocklist=(),
+    )
+
+    result = download(693134, FakeTMDBClient(), qbt, settings)
+
+    assert result.status == "no qualifying results"
+
+
+def test_download_respects_explicit_settings_language_blocklist():
+    qbt = FakeQBTClient(
+        results_by_variant={"Dune: Part Two": [_result(fileName="Dune.Part.Two.2024.2160p.REMUX.FRENCH.mkv")]}
+    )
+    settings = PipelineSettings(
+        category="movies",
+        min_resolution="2160p",
+        min_size_gb=1,
+        max_size_gb=150,
+        language_allowlist=(),
+        language_blocklist=("french",),
+    )
+
+    result = download(693134, FakeTMDBClient(), qbt, settings)
+
+    assert result.status == "no qualifying results"
 
 
 # ---------------------------------------------------------------------------

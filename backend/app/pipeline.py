@@ -6,6 +6,7 @@ import time
 from dataclasses import dataclass
 
 from app import config
+from app.pipeline_settings import PipelineSettings
 from app.qbt import QBTClient, QBTError
 from app.resolve import MediaIdentity, resolve
 from app.score import (
@@ -32,11 +33,13 @@ class DownloadResult:
     error: str | None = None  # populated only for "add failed"
 
 
-def _search_variant(qbt: QBTClient, variant: str, identity: MediaIdentity, existing_hashes: set[str]) -> list[dict]:
-    raw_results = qbt.search(variant, category=config.CATEGORY)
+def _search_variant(
+    qbt: QBTClient, variant: str, identity: MediaIdentity, existing_hashes: set[str], settings: PipelineSettings
+) -> list[dict]:
+    raw_results = qbt.search(variant, category=settings.category)
     trustworthy = [r for r in raw_results if is_trustworthy(r)]
-    relevant = [r for r in trustworthy if passes_relevance_gate(r.get("fileName", ""), identity)]
-    viable = [r for r in relevant if passes_viability_gate(r)]
+    relevant = [r for r in trustworthy if passes_relevance_gate(r.get("fileName", ""), identity, settings)]
+    viable = [r for r in relevant if passes_viability_gate(r, settings)]
     deduped = dedup_candidates(viable)
     return exclude_existing(deduped, existing_hashes)
 
@@ -96,7 +99,10 @@ def _capture_new_hash(qbt: QBTClient, hashes_before: set[str]) -> str | None:
     return None
 
 
-def download(tmdb_id: int, tmdb_client: TMDBClient, qbt: QBTClient) -> DownloadResult:
+def download(
+    tmdb_id: int, tmdb_client: TMDBClient, qbt: QBTClient, settings: PipelineSettings | None = None
+) -> DownloadResult:
+    settings = settings or PipelineSettings.from_config()
     identity = resolve(tmdb_id, tmdb_client)
     existing_hashes = qbt.existing_torrent_hashes()
     free_space_bytes = qbt.free_space_bytes()
@@ -111,7 +117,7 @@ def download(tmdb_id: int, tmdb_client: TMDBClient, qbt: QBTClient) -> DownloadR
     last_failed_attempt: DownloadResult | None = None
 
     for variant in identity.variants:
-        candidates = _search_variant(qbt, variant, identity, existing_hashes)
+        candidates = _search_variant(qbt, variant, identity, existing_hashes, settings)
         if not candidates:
             continue
         any_candidates = True
@@ -122,9 +128,9 @@ def download(tmdb_id: int, tmdb_client: TMDBClient, qbt: QBTClient) -> DownloadR
             continue  # every candidate for this variant is too large for available space
 
         for winner, winner_score in fitting:
-            qbt.ensure_category(config.CATEGORY)
+            qbt.ensure_category(settings.category)
             try:
-                qbt.add_torrent(winner["fileUrl"], category=config.CATEGORY)
+                qbt.add_torrent(winner["fileUrl"], category=settings.category)
                 torrent_hash = _capture_new_hash(qbt, existing_hashes)
             except QBTError as exc:
                 # This candidate never actually landed in qBittorrent (a

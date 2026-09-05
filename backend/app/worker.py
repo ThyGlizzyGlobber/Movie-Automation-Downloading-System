@@ -37,6 +37,7 @@ import logging
 from app import config, plex
 from app.db import RequestStore
 from app.pipeline import download
+from app.pipeline_settings import resolve_pipeline_settings
 from app.qbt import QBTClient
 from app.tmdb import TMDBClient
 
@@ -125,7 +126,8 @@ class Worker:
 
         await asyncio.to_thread(self.store.update_status, request_id, "searching")
         try:
-            result = await asyncio.to_thread(download, row.tmdb_id, self.tmdb, self.qbt)
+            settings = await asyncio.to_thread(resolve_pipeline_settings, self.store)
+            result = await asyncio.to_thread(download, row.tmdb_id, self.tmdb, self.qbt, settings)
         except Exception as exc:  # fail safe, not silent — never leave a row stuck
             logger.exception("request %d failed", request_id)
             await asyncio.to_thread(self.store.update_status, request_id, "failed", error_message=str(exc))

@@ -368,6 +368,104 @@ def test_set_appearance_null_resets_to_default(client_and_deps):
     assert store.get_settings()["accent_color"] is None
 
 
+def test_get_pipeline_settings_defaults_match_config(client_and_deps):
+    from app import config
+
+    client, _, _, _, _, _ = client_and_deps
+    response = client.get("/api/settings/pipeline")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["category"] == config.CATEGORY
+    assert body["min_resolution"] == config.MIN_RESOLUTION
+    assert body["min_size_gb"] == config.MIN_SIZE_GB
+    assert body["max_size_gb"] == config.MAX_SIZE_GB
+    assert body["language_allowlist"] == list(config.LANGUAGE_ALLOWLIST)
+    assert body["language_blocklist"] == list(config.LANGUAGE_BLOCKLIST)
+
+
+def test_set_pipeline_settings_persists_and_reads_back(client_and_deps):
+    client, store, _, _, _, _ = client_and_deps
+    response = client.put(
+        "/api/settings/pipeline",
+        json={
+            "category": "family-movies",
+            "min_resolution": "1080p",
+            "min_size_gb": 2,
+            "max_size_gb": 80,
+            "language_allowlist": ["english"],
+            "language_blocklist": ["french"],
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "category": "family-movies",
+        "min_resolution": "1080p",
+        "min_size_gb": 2,
+        "max_size_gb": 80,
+        "language_allowlist": ["english"],
+        "language_blocklist": ["french"],
+    }
+    assert store.get_settings()["min_resolution"] == "1080p"
+    assert client.get("/api/settings/pipeline").json()["category"] == "family-movies"
+
+
+def test_set_pipeline_settings_null_fields_reset_to_default(client_and_deps):
+    from app import config
+
+    client, _, _, _, _, _ = client_and_deps
+    client.put("/api/settings/pipeline", json={"min_resolution": "720p"})
+
+    response = client.put("/api/settings/pipeline", json={"min_resolution": None})
+
+    assert response.status_code == 200
+    assert response.json()["min_resolution"] == config.MIN_RESOLUTION
+
+
+def test_set_pipeline_settings_rejects_unrecognized_resolution(client_and_deps):
+    client, _, _, _, _, _ = client_and_deps
+    response = client.put("/api/settings/pipeline", json={"min_resolution": "8k"})
+
+    assert response.status_code == 422
+
+
+def test_set_pipeline_settings_rejects_min_size_not_less_than_max(client_and_deps):
+    client, _, _, _, _, _ = client_and_deps
+    response = client.put("/api/settings/pipeline", json={"min_size_gb": 100, "max_size_gb": 50})
+
+    assert response.status_code == 422
+
+
+def test_set_pipeline_settings_rejects_blank_category(client_and_deps):
+    client, _, _, _, _, _ = client_and_deps
+    response = client.put("/api/settings/pipeline", json={"category": ""})
+
+    assert response.status_code == 422
+
+
+def test_set_pipeline_settings_rejects_a_partial_edit_that_would_invert_the_effective_range(client_and_deps):
+    """The frontend always PUTs the full form state (a null field means
+    "reset to default", same convention as AppearanceSettings/
+    RetentionSettings), but the endpoint itself doesn't assume that — an
+    omitted field reverts to config.py's default, and this must be
+    rejected if that reversion would invert the *effective* range, not
+    just checked against whatever the request happened to mention."""
+    client, store, _, _, _, _ = client_and_deps
+    client.put("/api/settings/pipeline", json={"max_size_gb": 100})
+
+    # Sends only min_size_gb — max_size_gb is absent from this request, so
+    # it would silently revert to config.py's default (150) if the write
+    # went through unchecked (100 < 150, so this specific edit wouldn't
+    # actually invert anything — the point is the check still runs against
+    # the *effective* max, not skip validation just because max_size_gb
+    # wasn't in this particular request).
+    response = client.put("/api/settings/pipeline", json={"min_size_gb": 200})
+
+    assert response.status_code == 422
+    assert store.get_settings().get("min_size_gb") is None  # rejected before the write
+
+
 def test_plex_status_reflects_linker(client_and_deps):
     client, _, _, _, _, plex_linker = client_and_deps
     plex_linker._status = {"linked": True, "username": "bejay", "server_name": "NAS", "pending": False, "error": None}

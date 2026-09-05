@@ -348,6 +348,20 @@
   .plex-hint { color: var(--text-dim); font-size: 14px; margin-bottom: 14px; line-height: 1.4; }
   .plex-error { color: var(--status-nospace); font-size: 13px; margin-top: 10px; }
 
+  .settings-field { margin-bottom: 16px; }
+  .settings-field label {
+    display: block; font-size: 13.5px; color: var(--text-dim); margin-bottom: 6px;
+  }
+  .settings-field input[type="text"], .settings-field input[type="number"], .settings-field select {
+    width: 100%; padding: 10px 12px; font-size: 15px; box-sizing: border-box;
+    background: var(--bg-card); border: 1px solid var(--border); border-radius: 8px; color: var(--text);
+  }
+  .settings-size-range { display: flex; align-items: center; gap: 10px; }
+  .settings-size-range input { flex: 1; min-width: 0; }
+  .settings-size-range span { color: var(--text-dim); font-size: 14px; }
+  .settings-hint { color: var(--text-dim); font-size: 12.5px; margin-top: 6px; line-height: 1.4; }
+  .settings-save-error { color: var(--status-nospace); font-size: 13px; margin-top: 12px; }
+
   .accent-swatches { display: flex; flex-wrap: wrap; gap: 14px; margin-top: 4px; }
   .accent-swatch {
     width: 40px; height: 40px; border-radius: 50%; border: 2px solid transparent;
@@ -534,6 +548,10 @@
   const getAppearance = () => api(`/api/settings/appearance`);
   const setAppearance = (accentColor) => api(`/api/settings/appearance`, {
     method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ accent_color: accentColor }),
+  });
+  const getPipelineSettings = () => api(`/api/settings/pipeline`);
+  const setPipelineSettings = (body) => api(`/api/settings/pipeline`, {
+    method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
   });
   const postDeploy = () => api(`/api/admin/deploy`, { method: "POST" });
 
@@ -1086,6 +1104,7 @@
     setChrome({ title: "Settings", showBack: true, activeTab: null });
     app.innerHTML = `
       <section class="row" id="appearanceSection">${loadingHtml()}</section>
+      <section class="row" id="pipelineSection">${loadingHtml()}</section>
       <section class="row" id="plexSection">${loadingHtml()}</section>
       <section class="row" id="updateSection">
         <h2>Update</h2>
@@ -1093,8 +1112,103 @@
       </section>
       <div class="about-footer">The Family Downloader</div>
     `;
-    await Promise.all([renderAppearanceSection(), refreshPlexSettings()]);
+    await Promise.all([renderAppearanceSection(), renderPipelineSection(), refreshPlexSettings()]);
     document.getElementById("deployBtn").addEventListener("click", triggerDeploy);
+  }
+
+  // -- Stage 7: pipeline preferences (resolution floor, size range,
+  //    language lists, qBittorrent category). Takes effect on the very
+  //    next request — no restart, no deploy. Whole-panel visibility is the
+  //    same accepted-risk call as everything else in Settings: anyone with
+  //    the frontend open on the LAN can edit these. --
+
+  const RESOLUTION_OPTIONS = [
+    { value: "2160p", label: "2160p / 4K" },
+    { value: "1080p", label: "1080p" },
+    { value: "720p", label: "720p" },
+    { value: "480p", label: "480p" },
+  ];
+
+  function splitCsv(value) {
+    return value.split(",").map((s) => s.trim()).filter(Boolean);
+  }
+
+  async function renderPipelineSection() {
+    const section = document.getElementById("pipelineSection");
+    try {
+      const s = await getPipelineSettings();
+      section.innerHTML = `
+        <h2>Download preferences</h2>
+        <div class="settings-field">
+          <label for="pfMinResolution">Minimum resolution</label>
+          <select id="pfMinResolution">
+            ${RESOLUTION_OPTIONS.map((r) => `<option value="${r.value}" ${r.value === s.min_resolution ? "selected" : ""}>${r.label}</option>`).join("")}
+          </select>
+          <div class="settings-hint">Lowering this lets a smaller release get picked when nothing at your usual quality qualifies — it's a floor, not a fixed target, so a better release still wins whenever one is found.</div>
+        </div>
+        <div class="settings-field">
+          <label>Size range (GB)</label>
+          <div class="settings-size-range">
+            <input type="number" id="pfMinSize" min="0" step="1" value="${s.min_size_gb}">
+            <span>to</span>
+            <input type="number" id="pfMaxSize" min="0" step="1" value="${s.max_size_gb}">
+          </div>
+        </div>
+        <div class="settings-field">
+          <label for="pfAllowlist">Only allow these languages</label>
+          <input type="text" id="pfAllowlist" placeholder="Leave blank to allow any" value="${escapeHtml(s.language_allowlist.join(", "))}">
+        </div>
+        <div class="settings-field">
+          <label for="pfBlocklist">Never allow these languages</label>
+          <input type="text" id="pfBlocklist" placeholder="Leave blank to block none" value="${escapeHtml(s.language_blocklist.join(", "))}">
+        </div>
+        <div class="settings-field">
+          <label for="pfCategory">qBittorrent category</label>
+          <input type="text" id="pfCategory" value="${escapeHtml(s.category)}">
+        </div>
+        <button class="settings-btn" id="pipelineSaveBtn">Save</button>
+        <div class="settings-save-error" id="pipelineSaveError" hidden></div>
+      `;
+      document.getElementById("pipelineSaveBtn").addEventListener("click", savePipelineSettings);
+    } catch (err) {
+      section.innerHTML = `<h2>Download preferences</h2><div class="plex-error">${escapeHtml(err.message)}</div>`;
+    }
+  }
+
+  async function savePipelineSettings() {
+    const btn = document.getElementById("pipelineSaveBtn");
+    const errorEl = document.getElementById("pipelineSaveError");
+    errorEl.hidden = true;
+
+    const minSize = Number(document.getElementById("pfMinSize").value);
+    const maxSize = Number(document.getElementById("pfMaxSize").value);
+    if (!(minSize < maxSize)) {
+      errorEl.textContent = "Minimum size must be less than maximum size.";
+      errorEl.hidden = false;
+      return;
+    }
+
+    const body = {
+      category: document.getElementById("pfCategory").value.trim() || null,
+      min_resolution: document.getElementById("pfMinResolution").value,
+      min_size_gb: minSize,
+      max_size_gb: maxSize,
+      language_allowlist: splitCsv(document.getElementById("pfAllowlist").value),
+      language_blocklist: splitCsv(document.getElementById("pfBlocklist").value),
+    };
+
+    btn.disabled = true;
+    btn.textContent = "Saving…";
+    try {
+      await setPipelineSettings(body);
+      btn.textContent = "Saved";
+      setTimeout(() => { btn.textContent = "Save"; btn.disabled = false; }, 1200);
+    } catch (err) {
+      errorEl.textContent = err.message;
+      errorEl.hidden = false;
+      btn.disabled = false;
+      btn.textContent = "Save";
+    }
   }
 
   // -- Stage 6: self-update. A plain visible button — not real auth (anyone

@@ -9,6 +9,7 @@ from urllib.parse import urlparse
 
 from app import config
 from app.normalize import normalize_text, tokenize
+from app.pipeline_settings import PipelineSettings
 from app.resolve import MediaIdentity
 
 _YEAR_TOKEN_RE = re.compile(r"^(19|20)\d{2}$")
@@ -67,31 +68,31 @@ def _resolution_score(tokens: list[str]) -> int:
     return _best_tier(tokens, config.RESOLUTION_TIERS)
 
 
-def _resolution_floor_tier() -> int:
-    """The tier value for `config.MIN_RESOLUTION`. An unrecognized setting
-    fails safe to the strictest (highest) known tier rather than silently
-    admitting everything."""
-    target = normalize_text(config.MIN_RESOLUTION)
+def _resolution_floor_tier(min_resolution: str) -> int:
+    """The tier value for a `min_resolution` setting. An unrecognized
+    setting fails safe to the strictest (highest) known tier rather than
+    silently admitting everything."""
+    target = normalize_text(min_resolution)
     for tier, phrases in config.RESOLUTION_TIERS:
         if any(normalize_text(phrase) == target for phrase in phrases):
             return tier
     return max(tier for tier, _ in config.RESOLUTION_TIERS)
 
 
-def _passes_resolution_floor(tokens: list[str]) -> bool:
+def _passes_resolution_floor(tokens: list[str], min_resolution: str) -> bool:
     """A candidate must carry a *recognized* resolution token at or above
     the configured floor — unrecognized/absent resolution info fails safe
     rather than being guessed at. Any tier above the floor is still fine:
     this is a floor, not a fixed target, so a 2160p release passes a
     "1080p" floor just as a 1080p one does."""
-    return _resolution_score(tokens) >= _resolution_floor_tier()
+    return _resolution_score(tokens) >= _resolution_floor_tier(min_resolution)
 
 
-def _passes_language_filter(tokens: list[str]) -> bool:
-    if any(normalize_text(blocked) in tokens for blocked in config.LANGUAGE_BLOCKLIST):
+def _passes_language_filter(tokens: list[str], allowlist: tuple[str, ...], blocklist: tuple[str, ...]) -> bool:
+    if any(normalize_text(blocked) in tokens for blocked in blocklist):
         return False
-    if config.LANGUAGE_ALLOWLIST:
-        return any(normalize_text(allowed) in tokens for allowed in config.LANGUAGE_ALLOWLIST)
+    if allowlist:
+        return any(normalize_text(allowed) in tokens for allowed in allowlist)
     return True
 
 
@@ -102,13 +103,14 @@ def _passes_cam_filter(tokens: list[str]) -> bool:
     return not any(normalize_text(blocked) in tokens for blocked in config.CAM_BLOCKLIST)
 
 
-def passes_relevance_gate(file_name: str, identity: MediaIdentity) -> bool:
+def passes_relevance_gate(file_name: str, identity: MediaIdentity, settings: PipelineSettings | None = None) -> bool:
+    settings = settings or PipelineSettings.from_config()
     tokens = tokenize(file_name)
     return (
         _matches_any_variant(tokens, identity)
         and _year_within_tolerance(tokens, identity.release_year)
-        and _passes_resolution_floor(tokens)
-        and _passes_language_filter(tokens)
+        and _passes_resolution_floor(tokens, settings.min_resolution)
+        and _passes_language_filter(tokens, settings.language_allowlist, settings.language_blocklist)
         and _passes_cam_filter(tokens)
     )
 
@@ -119,15 +121,16 @@ def passes_relevance_gate(file_name: str, identity: MediaIdentity) -> bool:
 # ---------------------------------------------------------------------------
 
 
-def passes_viability_gate(result: dict) -> bool:
+def passes_viability_gate(result: dict, settings: PipelineSettings | None = None) -> bool:
+    settings = settings or PipelineSettings.from_config()
     seeders = result.get("nbSeeders", -1)
     if seeders is not None and seeders >= 0 and seeders < config.MIN_SEEDERS:
         return False
 
     size = result.get("fileSize", -1) or -1
     if size > 0:
-        min_bytes = config.MIN_SIZE_GB * 1_000_000_000
-        max_bytes = config.MAX_SIZE_GB * 1_000_000_000
+        min_bytes = settings.min_size_gb * 1_000_000_000
+        max_bytes = settings.max_size_gb * 1_000_000_000
         if not (min_bytes <= size <= max_bytes):
             return False
 

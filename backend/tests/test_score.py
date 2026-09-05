@@ -1,4 +1,5 @@
 from app import config
+from app.pipeline_settings import PipelineSettings
 from app.resolve import MediaIdentity
 from app.score import (
     dedup_candidates,
@@ -173,6 +174,71 @@ def test_rank_candidates_falls_back_to_1080p_when_no_2160p_present(monkeypatch):
     ranked = rank_candidates([fhd])
     assert ranked[0][0]["fileUrl"] == "magnet:?xt=urn:btih:FHD"
     assert ranked[0][1].resolution_score == 3
+
+
+# ---------------------------------------------------------------------------
+# Stage 7: an explicit PipelineSettings object — the real runtime path
+# (worker.py resolves this from the Settings-panel-backed store), as
+# opposed to monkeypatching config.py above.
+# ---------------------------------------------------------------------------
+
+_PERMISSIVE_SETTINGS = PipelineSettings(
+    category="movies",
+    min_resolution="1080p",
+    min_size_gb=1,
+    max_size_gb=150,
+    language_allowlist=(),
+    language_blocklist=(),
+)
+
+
+def test_passes_relevance_gate_with_explicit_settings_lowered_floor():
+    assert passes_relevance_gate("Dune.Part.Two.2024.1080p.WEBRip.mkv", DUNE, _PERMISSIVE_SETTINGS) is True
+
+
+def test_passes_relevance_gate_with_explicit_settings_still_rejects_below_floor():
+    assert passes_relevance_gate("Dune.Part.Two.2024.720p.WEBRip.mkv", DUNE, _PERMISSIVE_SETTINGS) is False
+
+
+def test_passes_relevance_gate_with_explicit_settings_blocklist():
+    blocklist_settings = PipelineSettings(
+        category="movies",
+        min_resolution="2160p",
+        min_size_gb=1,
+        max_size_gb=150,
+        language_allowlist=(),
+        language_blocklist=("french",),
+    )
+    assert (
+        passes_relevance_gate("Dune.Part.Two.2024.2160p.REMUX.FRENCH.mkv", DUNE, blocklist_settings) is False
+    )
+
+
+def test_passes_relevance_gate_with_explicit_settings_allowlist_excludes_unlisted_language():
+    allowlist_settings = PipelineSettings(
+        category="movies",
+        min_resolution="2160p",
+        min_size_gb=1,
+        max_size_gb=150,
+        language_allowlist=("italian",),
+        language_blocklist=(),
+    )
+    assert (
+        passes_relevance_gate("Dune.Part.Two.2024.2160p.REMUX.ENGLISH.mkv", DUNE, allowlist_settings) is False
+    )
+
+
+def test_passes_viability_gate_with_explicit_settings_size_range():
+    tight_settings = PipelineSettings(
+        category="movies",
+        min_resolution="2160p",
+        min_size_gb=50,
+        max_size_gb=60,
+        language_allowlist=(),
+        language_blocklist=(),
+    )
+    assert passes_viability_gate(_result(fileSize=40_000_000_000), tight_settings) is False
+    assert passes_viability_gate(_result(fileSize=55_000_000_000), tight_settings) is True
 
 
 # ---------------------------------------------------------------------------
