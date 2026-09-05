@@ -48,6 +48,16 @@ logger = logging.getLogger("app.worker")
 _DIRECT_TERMINAL_STATUSES = {"no qualifying results", "insufficient free space"}
 
 
+def _score_summary(score) -> str:
+    if score is None:
+        return "score=none"
+    return (
+        f"score=composite:{score.composite},resolution:{score.resolution_score},"
+        f"source:{score.source_score},codec:{score.codec_score},"
+        f"seeder:{score.seeder_score},container:{score.container_score}"
+    )
+
+
 def _result_summary(result) -> dict:
     """Audit-trail snapshot persisted alongside the request: which variant
     matched, the winning candidate, its score breakdown, and the torrent
@@ -134,6 +144,15 @@ class Worker:
             return
 
         summary = _result_summary(result)
+        logger.info(
+            "request %d (%s) pipeline result=%s variant=%r candidates=%d %s",
+            request_id,
+            row.title,
+            result.status,
+            result.variant_used,
+            result.candidates_considered,
+            _score_summary(result.score),
+        )
         if result.status == "added":
             await asyncio.to_thread(self.store.update_status, request_id, "downloading", result=summary)
         elif result.status in _DIRECT_TERMINAL_STATUSES:
@@ -182,6 +201,7 @@ class Worker:
                 # download. Ask Plex before assuming the worse one.
                 found = await asyncio.to_thread(plex.has_in_library, self.store, row.title, row.release_year)
                 if found:
+                    logger.info("request %d (%s) downloading -> complete (confirmed via Plex)", row.id, row.title)
                     await asyncio.to_thread(self.store.update_status, row.id, "complete")
                 else:
                     message = (
@@ -189,8 +209,10 @@ class Worker:
                         if found is None
                         else "Removed from qBittorrent outside this app, and not found in Plex"
                     )
+                    logger.info("request %d (%s) downloading -> cancelled (%s)", row.id, row.title, message)
                     await asyncio.to_thread(self.store.update_status, row.id, "cancelled", error_message=message)
             elif info.get("progress", 0) >= 1:
+                logger.info("request %d (%s) downloading -> complete", row.id, row.title)
                 await asyncio.to_thread(self.store.update_status, row.id, "complete")
 
     async def _watch_retention(self) -> None:

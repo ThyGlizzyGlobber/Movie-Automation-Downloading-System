@@ -25,6 +25,24 @@ def _client_with_fake_underlying(add_torrent_return):
     return client
 
 
+# -- ping() — /api/health's reachability check --
+
+
+def test_ping_returns_true_when_qbittorrent_responds():
+    client = object.__new__(QBTClient)
+    client._client = type("FakeUnderlyingClient", (), {"app_version": lambda self: "v5.2.3"})()
+    assert client.ping() is True
+
+
+def test_ping_returns_false_when_qbittorrent_is_unreachable():
+    def _raise(self):
+        raise ConnectionError("no route to host")
+
+    client = object.__new__(QBTClient)
+    client._client = type("FakeUnderlyingClient", (), {"app_version": _raise})()
+    assert client.ping() is False
+
+
 # -- older qBittorrent: plain "Ok."/"Fails." string --
 
 

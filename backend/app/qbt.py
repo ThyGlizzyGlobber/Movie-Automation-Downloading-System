@@ -36,6 +36,17 @@ class QBTClient:
         finally:
             job.delete()
 
+    def ping(self) -> bool:
+        """Cheap, read-only reachability check for /api/health — this
+        client already authenticated at construction time, but that only
+        proves qBittorrent was up at *startup*; a healthcheck needs to know
+        it's still reachable right now (network blip, qBittorrent restart)."""
+        try:
+            self._client.app_version()
+            return True
+        except Exception:
+            return False
+
     def existing_torrent_hashes(self) -> set[str]:
         """Infohashes already present in qBittorrent, for dedup against a
         fresh search result set."""

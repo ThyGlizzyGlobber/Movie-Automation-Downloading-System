@@ -4,6 +4,7 @@ frontend (Stage 4) reaches this only via nginx's reverse proxy on the same
 origin. TMDB key and qBittorrent credentials never reach the browser: every
 route here is either a thin TMDB proxy or reads/writes the local job store."""
 
+import logging
 from contextlib import asynccontextmanager
 from dataclasses import asdict
 
@@ -13,6 +14,7 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 from app import config
 from app.db import RequestRow, RequestStore
 from app.deploy import DeployError, run_git_pull
+from app.logging_config import configure_logging
 from app.pipeline_settings import (
     VALID_MIN_RESOLUTIONS,
     is_valid_min_resolution,
@@ -24,6 +26,9 @@ from app.qbt import QBTClient
 from app.resolve import resolve
 from app.tmdb import TMDBClient, TMDBError
 from app.worker import Worker
+
+configure_logging()
+logger = logging.getLogger("app.api")
 
 
 @asynccontextmanager
@@ -296,6 +301,7 @@ def cancel_request(
         )
     qbt.delete_torrent(torrent_hash, delete_files=True)
     store.update_status(request_id, "cancelled")
+    logger.info("request %d (%s) downloading/complete -> cancelled (via API)", request_id, row.title)
     return RequestOut.from_row(store.get_request(request_id))
 
 
@@ -382,6 +388,34 @@ def plex_status(linker: PlexLinker = Depends(get_plex_linker)) -> dict:
 def unlink_plex(linker: PlexLinker = Depends(get_plex_linker)) -> dict:
     linker.unlink()
     return linker.status()
+
+
+@app.get("/api/health")
+def health(qbt: QBTClient = Depends(get_qbt)) -> dict:
+    """Always 200 — the backend process being reachable at all is the
+    caller's first signal. `qbittorrent: false` means the *dependency* is
+    unreachable right now (network blip, qBittorrent restarting), not that
+    this backend is broken, so it deliberately doesn't fail the request or
+    double as a container-restart trigger — per "fail safe, not best
+    guess," a flapping external dependency shouldn't take this app down
+    with it."""
+    return {"status": "ok", "qbittorrent": qbt.ping()}
+
+
+# -- Stage 8: raw JSON view of failure-shaped jobs, gated the same way as
+#    /api/admin/deploy below (visible, no real auth) — meant to be checked
+#    with curl, not SSHed into; no frontend UI until it's actually needed
+#    often enough to justify one (Stage 8's own open decision). --
+
+_FAILURE_STATUSES = {"failed", "no qualifying results", "insufficient free space"}
+
+
+@app.get("/api/admin/jobs")
+def admin_jobs(status: str | None = None, store: RequestStore = Depends(get_store)) -> list[RequestOut]:
+    statuses = [status] if status else sorted(_FAILURE_STATUSES)
+    rows = [r for s in statuses for r in store.list_requests(status=s)]
+    rows.sort(key=lambda r: r.id, reverse=True)
+    return [RequestOut.from_row(r) for r in rows]
 
 
 @app.post("/api/admin/deploy")

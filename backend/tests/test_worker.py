@@ -41,6 +41,9 @@ class FakeQBTClient:
         self._torrent_states = torrent_states or {}
         self.added: list[tuple[str, str]] = []
 
+    def ping(self):
+        return True
+
     def search(self, pattern, category="movies", plugins="enabled"):
         return self.results_by_variant.get(pattern, [])
 
@@ -160,6 +163,20 @@ def test_run_one_marks_failed_on_exception_and_keeps_message():
     assert "tmdb is down" in reloaded.error_message
 
 
+def test_run_one_logs_pipeline_result_with_variant_and_score(caplog):
+    store = RequestStore(":memory:")
+    row = store.create_request(tmdb_id=693134, title="Dune: Part Two", release_year=2024, query=None)
+    qbt = FakeQBTClient(results_by_variant={"Dune: Part Two": [_result()]})
+    worker = Worker(store, FakeTMDBClient(), qbt)
+
+    with caplog.at_level("INFO", logger="app.worker"):
+        asyncio.run(worker._run_one(row.id))
+
+    [record] = [r for r in caplog.records if "pipeline result" in r.message]
+    assert "variant='Dune: Part Two'" in record.message
+    assert "score=composite:" in record.message
+
+
 def test_run_one_skips_row_not_in_queued_state():
     """A stale queue entry (e.g. re-enqueued across a restart for a row
     that already finished) must not be reprocessed."""
@@ -180,16 +197,18 @@ def test_run_one_skips_row_not_in_queued_state():
 # ---------------------------------------------------------------------------
 
 
-def test_check_downloading_marks_complete_when_progress_reaches_one():
+def test_check_downloading_marks_complete_when_progress_reaches_one(caplog):
     store = RequestStore(":memory:")
     row = store.create_request(tmdb_id=693134, title="Dune: Part Two", release_year=2024, query=None)
     store.update_status(row.id, "downloading", result={"torrent_hash": "aaaa"})
     qbt = FakeQBTClient(torrent_states={"aaaa": {"progress": 1.0}})
     worker = Worker(store, FakeTMDBClient(), qbt)
 
-    asyncio.run(worker._check_downloading())
+    with caplog.at_level("INFO", logger="app.worker"):
+        asyncio.run(worker._check_downloading())
 
     assert store.get_request(row.id).status == "complete"
+    assert any("downloading -> complete" in r.message for r in caplog.records)
 
 
 def test_check_downloading_leaves_in_progress_torrent_alone():

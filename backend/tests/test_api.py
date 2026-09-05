@@ -58,9 +58,13 @@ class FakeTMDBClient:
 
 
 class FakeQBTClient:
-    def __init__(self, torrent_states=None):
+    def __init__(self, torrent_states=None, reachable=True):
         self.deleted: list[tuple[str, bool]] = []
         self._torrent_states = torrent_states or {}
+        self._reachable = reachable
+
+    def ping(self):
+        return self._reachable
 
     def search(self, pattern, category="movies", plugins="enabled"):
         return []
@@ -587,3 +591,59 @@ def test_deploy_maps_deploy_error_to_502(client_and_deps, monkeypatch):
 
     assert response.status_code == 502
     assert response.json()["detail"] == "not a git clone"
+
+
+# ---------------------------------------------------------------------------
+# Stage 8: health + admin/jobs
+# ---------------------------------------------------------------------------
+
+
+def test_health_reports_qbittorrent_reachable(client_and_deps):
+    client, _, _, _, qbt, _ = client_and_deps
+
+    response = client.get("/api/health")
+
+    assert response.status_code == 200
+    assert response.json() == {"status": "ok", "qbittorrent": True}
+
+
+def test_health_reports_qbittorrent_unreachable_without_failing(client_and_deps):
+    client, _, _, _, qbt, _ = client_and_deps
+    qbt._reachable = False
+
+    response = client.get("/api/health")
+
+    assert response.status_code == 200
+    assert response.json() == {"status": "ok", "qbittorrent": False}
+
+
+def test_admin_jobs_defaults_to_every_failure_shaped_status(client_and_deps):
+    client, store, _, _, _, _ = client_and_deps
+    failed = store.create_request(tmdb_id=1, title="Failed", release_year=2020, query=None)
+    store.update_status(failed.id, "failed", error_message="boom")
+    no_match = store.create_request(tmdb_id=2, title="No Match", release_year=2020, query=None)
+    store.update_status(no_match.id, "no qualifying results")
+    no_space = store.create_request(tmdb_id=3, title="No Space", release_year=2020, query=None)
+    store.update_status(no_space.id, "insufficient free space")
+    done = store.create_request(tmdb_id=4, title="Done", release_year=2020, query=None)
+    store.update_status(done.id, "complete")
+
+    response = client.get("/api/admin/jobs")
+
+    assert response.status_code == 200
+    ids = [row["id"] for row in response.json()]
+    assert set(ids) == {failed.id, no_match.id, no_space.id}
+    assert done.id not in ids
+
+
+def test_admin_jobs_filters_to_one_status(client_and_deps):
+    client, store, _, _, _, _ = client_and_deps
+    failed = store.create_request(tmdb_id=1, title="Failed", release_year=2020, query=None)
+    store.update_status(failed.id, "failed", error_message="boom")
+    no_match = store.create_request(tmdb_id=2, title="No Match", release_year=2020, query=None)
+    store.update_status(no_match.id, "no qualifying results")
+
+    response = client.get("/api/admin/jobs", params={"status": "failed"})
+
+    ids = [row["id"] for row in response.json()]
+    assert ids == [failed.id]
