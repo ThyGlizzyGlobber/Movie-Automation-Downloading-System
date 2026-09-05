@@ -10,9 +10,9 @@ Full staged proposal with design rationale: https://claude.ai/code/artifact/bcbb
 
 ## Status
 
-- **Current stage:** Stage 8 complete — all stages in the original plan now built and deployed.
-- **Deployed:** yes — running on the real TrueNAS SCALE box (SmithFamilyNAS) as a Custom App named `movie-downloader`, frontend published at `http://192.168.0.133:8095/`, at commit `49b860c` (Stage 8) as of this file's last update. The user pulled it live via the Settings panel's "Check for updates" button; confirmed genuinely live (not just reported) with direct `curl`s from this workstation immediately after — `GET /api/health` returned `{"status":"ok","qbittorrent":true}` and `GET /api/admin/jobs` correctly surfaced an old "no qualifying results" row as raw JSON. Self-update: the Settings panel's "Check for updates" button runs a genuine `git pull` against a live, read-only GitHub deploy key.
-- **Last updated:** 2026-09-05.
+- **Current stage:** Stages 0-8 (movies) complete and deployed. Stage 9 (TV discovery & episode resolution) built and unit-tested, not yet pushed/deployed to the NAS. Stages 10-12 (episode-aware matching, subscriptions/scheduling, TV frontend) designed but not yet built — see the Stages section and the 2026-09-05 decision-log entry below.
+- **Deployed:** yes — running on the real TrueNAS SCALE box (SmithFamilyNAS) as a Custom App named `movie-downloader`, frontend published at `http://192.168.0.133:8095/`, at commit `49b860c` (Stage 8) as of this file's last update. The user pulled it live via the Settings panel's "Check for updates" button; confirmed genuinely live (not just reported) with direct `curl`s from this workstation immediately after — `GET /api/health` returned `{"status":"ok","qbittorrent":true}` and `GET /api/admin/jobs` correctly surfaced an old "no qualifying results" row as raw JSON. Self-update: the Settings panel's "Check for updates" button runs a genuine `git pull` against a live, read-only GitHub deploy key. Stage 9's code isn't on the NAS yet — nothing in it changes a running route, so there's no user-facing gap yet, but it still needs a commit/push and a "Check for updates" click before the deployed clone matches the working tree.
+- **Last updated:** 2026-09-06.
 
 ---
 
@@ -302,6 +302,85 @@ No SSH/NAS access used or needed this session — everything validated against t
 
 ---
 
+### Stage 9 — TV discovery & episode resolution
+*Depends on: none beyond the existing TMDB client. Mirrors Stage 1, for shows.*
+
+**Purpose:** Everything the iPad UI needs to browse/search TV shows is TMDB, proxied through the backend, plus resolving one selected show into an identity and a per-episode search query — the Stage 1 equivalent for shows, not movies.
+
+**Deliverables / done when:**
+- `backend/app/tmdb.py` gains `/tv` wrappers: `search_tv`, `get_tv(tmdb_id)` (append_to_response credits), `get_tv_season(tmdb_id, season_number)` (episode list with `air_date`), `get_tv_popular`/`get_tv_trending` (TTL-cached, same `ttl_cache` decorator Stage 1 already built).
+- New `backend/app/tv_resolve.py`: `ShowIdentity` dataclass (tmdb_id, title, original_title, variants) — reuses `resolve.py`'s `generate_variants`/subtitle-splitting logic (extracted to be shared, not copy-pasted, per "one normalizer, many uses"). `episode_query(title_variant, season, episode) -> str` builds `"{variant} S{season:02d}E{episode:02d}"`.
+- CLI: `resolve-show <tmdb-id>`.
+
+**Open decisions:**
+- [x] Episode token format: `S01E04` only for v1 — the dominant modern scene/indexer convention. Alternate formats (`1x04`, `Season 1 Episode 4`) are a named, documented gap, same style as Stage 2's cam-tag gap — not solved here, revisit only if it turns out to matter against real search results.
+
+**Validation:** Unit tests on variant/episode-query generation. Manual CLI runs against real TMDB for a currently-airing show (season/episode data, air dates).
+
+**Stage 9 complete.** `backend/app/tmdb.py` gained `search_tv`, `get_tv` (`append_to_response=credits`), `get_tv_season(tmdb_id, season_number)` (returns just the episode list, each carrying `episode_number`/`air_date`), and TTL-cached `get_tv_popular`/`get_tv_trending` — same `ttl_cache` decorator and 300s window Stage 1 already built, no new caching mechanism. New `backend/app/tv_resolve.py`: `ShowIdentity` dataclass (`tmdb_id`, `title`, `original_title`, `variants` — deliberately no `release_year` field, since a show has no single release year the way a movie does; the episode token is the tighter matching signal for Stage 10 anyway), `episode_query(title_variant, season, episode) -> str` (`"{variant} S{season:02d}E{episode:02d}"`), and `resolve_show(tmdb_id, client)`. `cli.py` gained `resolve-show <tmdb-id>`.
+
+One refactor beyond the plan's literal deliverables list, matching what the TV-planning session's decision-log entry already called for: `generate_variants`/`_title_without_subtitle` moved out of `resolve.py` into `normalize.py` (alongside the token utilities they already depend on, per "one normalizer, many uses") so `tv_resolve.py` reuses the exact same function rather than a copy — `resolve.py` now just imports it, and every pre-existing `test_resolve.py` test still passes unchanged since it imports `generate_variants` from `app.resolve`, which still re-exposes it. `resolve_show` passes `release_year=None` into the shared generator, so a show only ever gets a title variant, an original-title variant (if different), and a subtitle-free variant — never a "+year" variant.
+
+14 new unit tests (`test_tmdb.py`'s new TV-wrapper cases, `test_tv_resolve.py`), 227 total passing. Manually verified live against real TMDB: `resolve-show 1399` (Game of Thrones, no subtitle) → 1 variant; `search_tv("Lanterns", year=2026)` found the real show (tmdb_id 95350) among 2 results; `resolve-show 95350` → 1 variant (`Lanterns`); `get_tv(95350)["number_of_seasons"]` → 1, and `get_tv_season(95350, 1)` returned 8 real episodes with real air dates — as of this session's date (2026-09-06), 4 have already aired (through "The Weenie," 2026-09-06), which happens to line up almost exactly with the plan's own "Lanterns" worked example from the 2026-09-04 decision-log entry (add a show with only some episodes aired, auto-grab the next one). The subtitle-splitting case (`Star Trek: Discovery` -> also `Star Trek`) and the original-title-differs case (Attack on Titan / 進撃の巨人) weren't re-run live — both reuse `normalize.py`'s already-live-tested (Stage 1) splitting/dedup logic verbatim, so they're covered by `test_tv_resolve.py`'s fixture-based unit tests instead of a second live call. Ready for Stage 10.
+
+---
+
+### Stage 10 — Episode-aware match, score & download
+*Depends on: Stage 9. Mirrors Stage 2, reusing its pass-two scorer unchanged.*
+
+**Purpose:** Confirm a search result is actually the specific episode Stage 9 resolved (not just the right show, and not a season pack), then rank survivors with the exact same quality scorer movies already use.
+
+**Deliverables / done when:**
+- New pass-one episode-identity check (in `score.py` or a small `tv_score.py`): whole-token exact match on the `s01e04`-style token via the existing `tokenize`/`has_token` utilities — no year-tolerance check for TV (an episode's air-year can legitimately differ from the show's first-air-year; the episode token is already a tighter signal than year ever was for movies). Resolution floor, language allow/blocklist, and the cam blocklist are reused unchanged from `score.py`.
+- Refactor: extract the "rank → filter-to-free-space → add → capture-hash-with-retry" loop out of `pipeline.py`'s `download()` into a shared helper, so a new `download_episode(show_identity, season, episode, tmdb, qbt, settings)` reuses it instead of duplicating that (nontrivial, bug-prone-in-the-past per Stage 3's hash-capture fix) logic.
+- CLI: `download-episode <tmdb-id> <season> <episode>`.
+
+**Settled:**
+- **Season packs are out of scope for v1.** A season-pack torrent covers many episodes at once, which doesn't fit the per-episode dedup ledger (Stage 11) cleanly — one add would need to retroactively mark several episodes "complete." Documented as a future stage if wanted, not solved here, matching the project's existing pattern of naming known gaps rather than papering over them. A solo season-pack-shaped result (an `s01` token with no episode token) is explicitly rejected by the pass-one gate, not silently accepted as an episode match.
+
+**Validation:** Unit tests mirroring Stage 2's — fixture result sets including a season-pack fixture that must be rejected, messy `nbSeeders`/`fileSize` cases reused as-is. Manual CLI run against a real airing show's most recent episode.
+
+---
+
+### Stage 11 — Subscriptions, scheduling & per-episode dedup
+*Depends on: Stage 10. The core architectural-gap stage the 2026-09-04 decision-log entry flagged: everything built through Stage 8 is a one-shot request, and "watch this show" needs a standing subscription that outlives one.*
+
+**Purpose:** A show, once added, keeps itself up to date — newly aired episodes get found and downloaded on a schedule, without anyone re-opening the app, and without ever re-searching or re-adding an episode already handled.
+
+**Deliverables / done when:**
+- Two new SQLite tables (`db.py`): `shows` (id, tmdb_id, title, status `watching`/`paused`, created_at, last_checked_at) — the standing subscription; `show_episodes` (id, show_id, season_number, episode_number, request_id, created_at, `UNIQUE(show_id, season_number, episode_number)`) — the dedup ledger, distinct from the audit trail.
+- `requests` table gains nullable `media_type` (default `'movie'`), `show_id`, `season_number`, `episode_number` columns — an episode's actual search/score/add audit trail is a normal `requests` row, reusing every existing status (`queued` → … → `complete`/`failed`/etc.), the download watcher, retention purge, and the cancel endpoint completely unchanged.
+- `worker.py` gains a 4th background loop, `_watch_shows` (same `asyncio.sleep(interval)` pattern as `_watch_retention`): for each `watching` show, fetch current season/episode data from TMDB, diff against `show_episodes`, and for every aired-but-not-yet-dedup'd episode: create a `requests` row (`media_type='episode'`), insert its `show_episodes` marker, and `enqueue()` it into the **same** queue/pipeline lock movies already use — no second lock, no distributed queue.
+- `POST /api/shows` (subscribe) runs this exact same check logic immediately, so it catches up every already-aired episode — "add show mid-season" and "scheduled recheck" are the same code path, not two.
+- `POST /api/shows/{id}/pause`, `/resume`; `DELETE /api/shows/{id}` (unsubscribes — stops future checks, keeps all history rows, same "hidden, never unrecoverable" principle as cancelling a movie request).
+
+**Settled:**
+- **Confirmed architecture needs no change**, closing out the re-litigation the deferred prompt explicitly asked for. The single `asyncio.Lock` still serializes all actual search/score/add work (movie and episode requests share one queue); SQLite persistence is just two more plain-`sqlite3` tables; still no distributed job queue. The scheduler loop itself doesn't touch qBittorrent (it only reads TMDB and diffs against `show_episodes`), so it never contends with the pipeline lock — it just calls `enqueue()`, exactly like `Worker.start()`'s boot-time re-enqueue of leftover `queued` rows already does today.
+- **Catch-up on add is the only behavior** — adding a show always backfills every already-aired, not-yet-downloaded episode. No "watch from now on only" toggle in v1 — matches the deferred prompt's own worked example (add "Lanterns" with only 3 episodes aired, auto-grab episode 4).
+- **Specials (season 0) excluded by default.**
+- **Which seasons get checked each cycle:** the latest season only, plus re-reading `number_of_seasons` from `/tv/{id}` each cycle to notice a new season announced/started. An older season resuming after a long hiatus is a known, accepted gap.
+
+**Open decisions:**
+- [ ] Check interval: proposed as one global `config.py` constant (`SHOW_CHECK_INTERVAL_SECONDS`, default 6 hours), not a per-show or Settings-panel value in v1 — matching "household scale" simplicity elsewhere. Left open rather than settled, since it trades off promptness against indexer request volume in a way that's genuinely a household preference, not an engineering call — revisit before or during Stage 11's build if the default feels wrong.
+
+**Validation:** Unit tests for the diff/dedup logic (fixture: a show with some episodes already in `show_episodes`, some newly aired, some unaired), the pause/resume/unsubscribe state transitions, and add-triggers-catchup. Manual run against a real currently-airing show on the NAS.
+
+---
+
+### Stage 12 — TV frontend & API surface
+*Depends on: Stage 11.*
+
+**Purpose:** Expose TV browsing and subscription management on the iPad — distinct from movies' one-shot "Add to Plex," since a show is an ongoing relationship, not a single request.
+
+**Deliverables / done when:**
+- `GET /api/tv/discover/{popular,trending}`, `GET /api/tv/{tmdb_id}` (thin TMDB pass-throughs, same key-never-reaches-the-browser rule as movies).
+- `GET`/`POST`/`DELETE /api/shows[/…]`, `POST /api/shows/{id}/pause|resume` — thin wrappers per Stage 11.
+- `frontend/index.html`: a TV browse surface (popular/trending grid + search, mirroring the movie home grid), a show detail view with a three-state button (**Add Show** / **Watching ✓** / **Paused**, replacing movies' one-shot Add-to-Plex/Added), and a **Watching** list view (each show's last-checked time and latest episode status). The existing requests list already shows episode rows for free once `media_type`/`show_id`/season/episode are in the API response — it just needs a label change (`"{Show} S01E04"` instead of title/year) for episode rows.
+
+**Validation:** Manual walkthrough — browse TV, add a show with some episodes already aired, confirm catch-up requests appear in the requests list and actually add real torrents (a disposable/low-stakes show, same pattern every prior stage's live validation used), pause a show and confirm no new requests appear on the next scheduled check, unsubscribe and confirm history rows survive.
+
+---
+
 ## Non-goals (this pass)
 
 - No MVP code, no scaffolding, no repo structure commitment beyond what's stated above.
@@ -356,4 +435,18 @@ No SSH/NAS access used or needed this session — everything validated against t
 
   No SSH/NAS access used or needed this session — this stage is pure observability plumbing with nothing new to cross-check against live search/scoring data, so validation stayed at the unit-test level (fake-qBittorrent unreachability for the health check, genuinely-failed/no-match/no-space rows for the admin endpoint, asserting the transition log lines actually fire and carry variant/score) rather than a live induced-failure pass against the real NAS. That real pass — killing the actual qBittorrent app mid-request and watching `/api/health` flip plus the transition log appear in TrueNAS's own app log viewer — is flagged as still worth doing once this deploys, the same way Stage 4's frontend caveat got closed out by Stage 5. Nothing in this session touched the real NAS deployment — both Stage 7 and Stage 8 need a `git pull` (or "Check for updates") on the deployed clone before the live app reflects either. This closes out every stage in the plan's original spine — no further stages are queued (the TV/episode-tracking capability flagged in the 2026-09-04 decision-log entry above remains its own separate, not-yet-designed future work, per that entry's own framing).
 - **2026-09-05** — Same day, immediately after: the user pulled Stage 7+8 onto the real NAS via the Settings panel's "Check for updates" button (no SSH needed — the same visible-button flow Stage 6 built). Confirmed the deploy genuinely took effect, not just trusted the report: direct `curl`s from this workstation to the live deployed stack (`http://192.168.0.133:8095/`, LAN-reachable the same way every prior stage's validation was) returned real responses from both new Stage 8 routes — `GET /api/health` → `{"status":"ok","qbittorrent":true}`, and `GET /api/admin/jobs` → the real Andrei Rublev "no qualifying results" row left over from Stages 3-5's own disposable validation runs, returned as raw JSON exactly as designed — plus `GET /api/settings/pipeline` confirming Stage 7 is live too. This closes the "still worth doing once deployed" live-validation gap the Stage 8 write-up flagged above. The plan's original stage sequence is now fully built *and* running live.
+- **2026-09-05** — TV planning session, per the prompt this file has carried since Stage 2 closed (2026-09-04 entry above). Read the whole plan plus `backend/app/{tmdb,resolve,score,pipeline,pipeline_settings,worker,db,api,config}.py` to ground the design in what's actually reusable rather than designing in the abstract. Produced Stages 9-12 above (TV discovery & episode resolution; episode-aware match/score/download; subscriptions, scheduling & per-episode dedup; TV frontend & API), reviewed with the user via a plan-mode proposal and approved as written — no pushback on any of the calls below.
+
+  Key findings that shaped the design: `worker.py` already runs three independent `asyncio.sleep`-loop background tasks (`_process_queue` under the pipeline lock, `_watch_downloads`, `_watch_retention`), so a fourth loop for show-checking (`_watch_shows`, Stage 11) is the same established pattern, not new architecture — directly answering the deferred prompt's question about whether background/scheduled work changes any locked-in architecture decision. Answer: no. The single `asyncio.Lock`, SQLite persistence, and no-distributed-queue decisions all hold unchanged; the scheduler loop only talks to TMDB and a new dedup table, then calls the same `enqueue()` movies already use. `score.py`'s pass-two scorer and `normalize.py`'s whole-token matching are release-shape-agnostic and are reused completely unchanged for episodes — only a new pass-one episode-token check (`s01e04`-style, whole-token, no year-tolerance) is genuinely new matching logic.
+
+  Real scoping calls made this session, all flagged as such rather than silently assumed: **season packs are explicitly out of scope for v1** (Stage 10) — a season-pack add doesn't fit a per-episode dedup ledger cleanly, and a solo season-pack-shaped result is now supposed to be *rejected*, not accepted, by the new pass-one gate; **catch-up-on-add is the only behavior** (Stage 11) — adding a show always backfills every already-aired episode, directly answering the deferred prompt's own "Lanterns" worked example, with no opt-out toggle in v1; **specials excluded by default**; **only the latest season gets checked each cycle** (plus watching `number_of_seasons` for a season rollover), an accepted gap for an old season resuming after a long hiatus. One decision deliberately left open rather than settled: the show-recheck interval (proposed default 6 hours, a plain `config.py` constant, no Settings-panel control in v1) — this trades promptness against indexer request volume in a way that's a genuine household preference, not an engineering call, so it's flagged for revisiting at or before Stage 11's build rather than guessed at here.
+
+  Data-model decision: extend the existing `requests` table with nullable `media_type`/`show_id`/`season_number`/`episode_number` columns rather than building a parallel audit-trail table for episodes — an episode's search/score/add history is a normal `requests` row and gets every existing status, the download watcher, retention purge, and cancel endpoint for free. Two new tables (`shows`, `show_episodes`) hold only the subscription and the dedup ledger, which are genuinely new concepts a movie request never needed.
+
+  No code written this session — this was explicitly a design-only session, matching how the 2026-09-04 entry originally framed it ("needs its own dedicated planning session... Not added to the stage list yet"). Stage 9 is ready to build as a normal implementation session next.
+- **2026-09-06** — Stage 9 built and verified (see the Stage 9 section above for the full breakdown: `tmdb.py`'s new `/tv` wrappers, `tv_resolve.py`'s `ShowIdentity`/`episode_query`/`resolve_show`, and `generate_variants`'s move from `resolve.py` into `normalize.py` so it's genuinely shared rather than duplicated for shows). No SSH/NAS access needed or used this session — validated locally against the real TMDB API (reachable directly from this workstation, same as every prior TMDB-touching stage) plus the local unit test suite; nothing about this stage touches qBittorrent or the deployed NAS stack. 227 tests passing (213 pre-existing + 14 new), all pre-existing tests — including `test_resolve.py`'s `generate_variants` cases — unchanged and still green after the extraction into `normalize.py`, confirming the refactor is genuinely behavior-preserving rather than just plausible.
+
+  Live TMDB validation happened to land on a real instance of the plan's own "Lanterns" worked example from the 2026-09-04 TV-planning entry: `search_tv("Lanterns", year=2026)` found the real show (tmdb_id 95350); `resolve-show 95350` correctly resolved it with one variant (no subtitle/original-title/year to add); `get_tv_season(95350, 1)` returned 8 real episodes, 4 already aired as of today (2026-09-06, through "The Weenie") — precisely the "some episodes aired, grab the next one" shape Stage 11's catch-up-on-add design is built around, confirmed against real data rather than a hypothetical. Also confirmed live: `get_tv_popular`/`get_tv_trending` return real TV rows and are genuinely TTL-cached (same mechanism Stage 1 built, no new caching code), and `resolve-show 1399` (Game of Thrones) round-trips cleanly as a no-subtitle, single-variant case. The subtitle-splitting and original-title-differs paths (`Star Trek: Discovery`, Attack on Titan) were exercised through `test_tv_resolve.py`'s fixture-based unit tests rather than a second live call, since both reuse `normalize.py`'s already-live-tested (Stage 1) logic verbatim — nothing new to prove there beyond "the shared function still gets called correctly for a show."
+
+  Nothing committed or pushed this session, and nothing deployed to the NAS — left for the user to decide, same as Stage 5's precedent. Ready for Stage 10.
 

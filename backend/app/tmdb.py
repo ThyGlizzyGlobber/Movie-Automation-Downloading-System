@@ -188,6 +188,33 @@ class TMDBClient:
         ]
         return {**data, "results": filtered}
 
+    # -- TV (Stage 9): mirrors the movie wrappers above, same
+    #    key-never-reaches-the-browser rule. --
+
+    def search_tv(self, query: str, year: int | None = None) -> dict:
+        params = {"query": query}
+        if year:
+            params["first_air_date_year"] = year
+        return self._get("/search/tv", params)
+
+    def get_tv(self, tmdb_id: int) -> dict:
+        return self._get(f"/tv/{tmdb_id}", {"append_to_response": "credits"})
+
+    def get_tv_season(self, tmdb_id: int, season_number: int) -> list[dict]:
+        """Episode list (each carrying `episode_number`/`air_date`) for one
+        season — the data `tv_resolve.py`'s show-checking logic diffs
+        against to notice newly-aired episodes."""
+        data = self._get(f"/tv/{tmdb_id}/season/{season_number}")
+        return data.get("episodes", [])
+
+    @ttl_cache(POPULAR_DISCOVER_TTL_SECONDS)
+    def get_tv_popular(self, page: int = 1) -> dict:
+        return self._get("/tv/popular", {"page": page})
+
+    @ttl_cache(POPULAR_DISCOVER_TTL_SECONDS)
+    def get_tv_trending(self, time_window: str = "week") -> dict:
+        return self._get(f"/trending/tv/{time_window}")
+
     def get_coming_soon(self, region: str = "US", page: int = 1) -> dict:
         """Now-playing titles that are both a recent release and have no
         Digital/Physical release date on record for `region` yet — the

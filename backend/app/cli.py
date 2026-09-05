@@ -6,6 +6,7 @@ from app.pipeline import download
 from app.qbt import QBTClient
 from app.resolve import resolve
 from app.tmdb import TMDBClient
+from app.tv_resolve import resolve_show
 
 
 def cmd_resolve(args: argparse.Namespace) -> int:
@@ -16,6 +17,19 @@ def cmd_resolve(args: argparse.Namespace) -> int:
     print(f"title:          {identity.title}")
     print(f"original_title: {identity.original_title}")
     print(f"release_year:   {identity.release_year}")
+    print("variants:")
+    for i, variant in enumerate(identity.variants, start=1):
+        print(f"  {i}. {variant}")
+    return 0
+
+
+def cmd_resolve_show(args: argparse.Namespace) -> int:
+    client = TMDBClient(TMDB_API_KEY)
+    identity = resolve_show(args.tmdb_id, client)
+
+    print(f"tmdb_id:        {identity.tmdb_id}")
+    print(f"title:          {identity.title}")
+    print(f"original_title: {identity.original_title}")
     print("variants:")
     for i, variant in enumerate(identity.variants, start=1):
         print(f"  {i}. {variant}")
@@ -58,6 +72,12 @@ def main(argv: list[str] | None = None) -> int:
     resolve_parser = subparsers.add_parser("resolve", help="Resolve a TMDB id into a media identity + query variants")
     resolve_parser.add_argument("tmdb_id", type=int)
     resolve_parser.set_defaults(func=cmd_resolve)
+
+    resolve_show_parser = subparsers.add_parser(
+        "resolve-show", help="Resolve a TMDB TV id into a show identity + query variants"
+    )
+    resolve_show_parser.add_argument("tmdb_id", type=int)
+    resolve_show_parser.set_defaults(func=cmd_resolve_show)
 
     download_parser = subparsers.add_parser("download", help="Run the full search/match/score/add pipeline for a TMDB id")
     download_parser.add_argument("tmdb_id", type=int)

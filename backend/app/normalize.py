@@ -40,3 +40,49 @@ def token_overlap(a: str, b: str) -> set[str]:
     """Set of normalized tokens shared between two strings, ignoring order
     and duplicates. Used for title-relevance gating."""
     return set(tokenize(a)) & set(tokenize(b))
+
+
+# -- Title-variant generation. Shared by resolve.py (movies) and
+#    tv_resolve.py (shows) — a title's subtitle/original-title/year
+#    shape doesn't depend on what kind of thing it is. --
+
+_SUBTITLE_SEPARATORS = (":", " - ")
+MAX_VARIANTS = 4
+
+
+def _title_without_subtitle(title: str) -> str | None:
+    for sep in _SUBTITLE_SEPARATORS:
+        if sep in title:
+            head = title.split(sep, 1)[0].strip()
+            if head and head != title:
+                return head
+    return None
+
+
+def generate_variants(title: str, original_title: str, release_year: int | None) -> list[str]:
+    """Up to MAX_VARIANTS ranked queries: canonical title, original_title
+    (if different), title without subtitle, title+year. Deduplicated on
+    normalized form, original ranking order preserved."""
+    candidates = [title]
+
+    if normalize_text(original_title) != normalize_text(title):
+        candidates.append(original_title)
+
+    subtitle_free = _title_without_subtitle(title)
+    if subtitle_free and normalize_text(subtitle_free) not in {normalize_text(c) for c in candidates}:
+        candidates.append(subtitle_free)
+
+    if release_year:
+        candidates.append(f"{title} {release_year}")
+
+    seen: set[str] = set()
+    variants: list[str] = []
+    for candidate in candidates:
+        key = normalize_text(candidate)
+        if key and key not in seen:
+            seen.add(key)
+            variants.append(candidate)
+        if len(variants) == MAX_VARIANTS:
+            break
+
+    return variants

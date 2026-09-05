@@ -208,6 +208,103 @@ def test_available_on_provider_false_when_region_absent():
     assert _available_on_provider(watch_providers, "US", 8) is False
 
 
+def test_search_tv_passes_first_air_date_year_when_given():
+    client = TMDBClient(api_key="test-key")
+    captured = {}
+
+    def fake_get(path, params=None):
+        captured["path"] = path
+        captured["params"] = params
+        return {"results": []}
+
+    client._get = fake_get
+    client.search_tv("Lanterns", year=2026)
+
+    assert captured["path"] == "/search/tv"
+    assert captured["params"] == {"query": "Lanterns", "first_air_date_year": 2026}
+
+
+def test_search_tv_omits_year_param_when_not_given():
+    client = TMDBClient(api_key="test-key")
+    captured = {}
+
+    def fake_get(path, params=None):
+        captured["params"] = params
+        return {"results": []}
+
+    client._get = fake_get
+    client.search_tv("Lanterns")
+
+    assert captured["params"] == {"query": "Lanterns"}
+
+
+def test_get_tv_requests_credits_append():
+    client = TMDBClient(api_key="test-key")
+    captured = {}
+
+    def fake_get(path, params=None):
+        captured["path"] = path
+        captured["params"] = params
+        return {"id": 1, "name": "Lanterns"}
+
+    client._get = fake_get
+    result = client.get_tv(1)
+
+    assert captured["path"] == "/tv/1"
+    assert captured["params"] == {"append_to_response": "credits"}
+    assert result["name"] == "Lanterns"
+
+
+def test_get_tv_season_returns_episode_list():
+    client = TMDBClient(api_key="test-key")
+
+    def fake_get(path, params=None):
+        assert path == "/tv/1/season/1"
+        return {"episodes": [{"episode_number": 1, "air_date": "2026-01-01"}, {"episode_number": 2, "air_date": "2026-01-08"}]}
+
+    client._get = fake_get
+    episodes = client.get_tv_season(1, 1)
+
+    assert [e["episode_number"] for e in episodes] == [1, 2]
+
+
+def test_get_tv_season_missing_episodes_key_returns_empty_list():
+    client = TMDBClient(api_key="test-key")
+    client._get = lambda path, params=None: {}
+
+    assert client.get_tv_season(1, 1) == []
+
+
+def test_get_tv_popular_is_ttl_cached():
+    client = TMDBClient(api_key="test-key")
+    calls = []
+
+    def fake_get(path, params=None):
+        calls.append(path)
+        return {"results": [{"id": 1, "name": "Popular Show"}]}
+
+    client._get = fake_get
+    client.get_tv_popular()
+    client.get_tv_popular()
+
+    assert calls == ["/tv/popular"]
+
+
+def test_get_tv_trending_is_ttl_cached():
+    client = TMDBClient(api_key="test-key")
+    calls = []
+
+    def fake_get(path, params=None):
+        calls.append(path)
+        return {"results": [{"id": 1, "name": "Trending Show"}]}
+
+    client._get = fake_get
+    client.get_tv_trending()
+    client.get_tv_trending()
+
+    assert calls == ["/trending/tv/week"]
+
+
 def test_search_within_provider_filters_to_titles_on_that_service(monkeypatch):
     client = TMDBClient(api_key="test-key")
     search_response = {
