@@ -131,6 +131,16 @@ MAX_SIZE_GB = 150
 # disguised as results rather than real torrents — excluded outright.
 PLUGIN_DISTRUST = frozenset({"jackett"})
 
+# -- Stage 10: episode-aware match, score & download. --
+
+# Separate from CATEGORY ("movies"): this string is both qBittorrent's
+# search-plugin category filter (searching under "movies" would miss real
+# TV releases entirely) and the torrents_add() category label, so TV
+# downloads need their own value, not a Settings-panel choice yet — same
+# "plain module constant ahead of a settings table" pattern CATEGORY itself
+# started as in Stage 2.
+TV_CATEGORY = "tv"
+
 # -- Stage 6: git-based deploy & update. --
 
 # Root of the deployed-copy git clone (contains .git) as seen from inside

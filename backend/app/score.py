@@ -51,8 +51,12 @@ def _contains_phrase(tokens: list[str], phrase: str) -> bool:
     return any(tokens[i : i + n] == phrase_tokens for i in range(len(tokens) - n + 1))
 
 
-def _matches_any_variant(tokens: list[str], identity: MediaIdentity) -> bool:
-    return any(_contains_phrase(tokens, variant) for variant in identity.variants)
+def matches_any_variant(tokens: list[str], variants: list[str]) -> bool:
+    """Public (Stage 10: reused by tv_score.py's episode gate — a show's
+    title-variant list is matched the exact same way a movie's is, so this
+    takes the plain variant list rather than a MediaIdentity, decoupling it
+    from any one identity type)."""
+    return any(_contains_phrase(tokens, variant) for variant in variants)
 
 
 def _year_within_tolerance(tokens: list[str], release_year: int | None) -> bool:
@@ -79,16 +83,19 @@ def _resolution_floor_tier(min_resolution: str) -> int:
     return max(tier for tier, _ in config.RESOLUTION_TIERS)
 
 
-def _passes_resolution_floor(tokens: list[str], min_resolution: str) -> bool:
+def passes_resolution_floor(tokens: list[str], min_resolution: str) -> bool:
     """A candidate must carry a *recognized* resolution token at or above
     the configured floor — unrecognized/absent resolution info fails safe
     rather than being guessed at. Any tier above the floor is still fine:
     this is a floor, not a fixed target, so a 2160p release passes a
-    "1080p" floor just as a 1080p one does."""
+    "1080p" floor just as a 1080p one does. Public: Stage 10 reuses this
+    unchanged for episode matching, same floor/setting either way."""
     return _resolution_score(tokens) >= _resolution_floor_tier(min_resolution)
 
 
-def _passes_language_filter(tokens: list[str], allowlist: tuple[str, ...], blocklist: tuple[str, ...]) -> bool:
+def passes_language_filter(tokens: list[str], allowlist: tuple[str, ...], blocklist: tuple[str, ...]) -> bool:
+    """Public: reused unchanged by tv_score.py (Stage 10) — a release's
+    language tags mean the same thing whether it's a movie or an episode."""
     if any(normalize_text(blocked) in tokens for blocked in blocklist):
         return False
     if allowlist:
@@ -96,10 +103,11 @@ def _passes_language_filter(tokens: list[str], allowlist: tuple[str, ...], block
     return True
 
 
-def _passes_cam_filter(tokens: list[str]) -> bool:
+def passes_cam_filter(tokens: list[str]) -> bool:
     """Rejects releases explicitly tagged as a cam/telesync/screener rip.
     Doesn't (can't) catch a bootleg that just omits any source tag — see
-    config.py's CAM_BLOCKLIST comment."""
+    config.py's CAM_BLOCKLIST comment. Public: reused unchanged by
+    tv_score.py (Stage 10)."""
     return not any(normalize_text(blocked) in tokens for blocked in config.CAM_BLOCKLIST)
 
 
@@ -107,11 +115,11 @@ def passes_relevance_gate(file_name: str, identity: MediaIdentity, settings: Pip
     settings = settings or PipelineSettings.from_config()
     tokens = tokenize(file_name)
     return (
-        _matches_any_variant(tokens, identity)
+        matches_any_variant(tokens, identity.variants)
         and _year_within_tolerance(tokens, identity.release_year)
-        and _passes_resolution_floor(tokens, settings.min_resolution)
-        and _passes_language_filter(tokens, settings.language_allowlist, settings.language_blocklist)
-        and _passes_cam_filter(tokens)
+        and passes_resolution_floor(tokens, settings.min_resolution)
+        and passes_language_filter(tokens, settings.language_allowlist, settings.language_blocklist)
+        and passes_cam_filter(tokens)
     )
 
 

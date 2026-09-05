@@ -3,9 +3,10 @@ import re
 import pytest
 
 from app import config
-from app.pipeline import download
+from app.pipeline import download, download_episode
 from app.pipeline_settings import PipelineSettings
 from app.qbt import QBTError
+from app.tv_resolve import ShowIdentity
 
 _BTIH_RE = re.compile(r"btih:([a-zA-Z0-9]+)")
 
@@ -425,3 +426,158 @@ def test_download_retries_hash_capture_until_torrent_is_indexed(monkeypatch):
 
     assert result.status == "added"
     assert result.torrent_hash == "ffff"
+
+
+# ---------------------------------------------------------------------------
+# Stage 10: download_episode() — the same rank/fit/add/hash-capture loop
+# (_rank_and_add, shared with download() above), driven by episode identity
+# instead of title+year and config.TV_CATEGORY instead of settings.category.
+# ---------------------------------------------------------------------------
+
+LANTERNS = ShowIdentity(
+    tmdb_id=95350,
+    title="Lanterns",
+    original_title="Lanterns",
+    variants=["Lanterns"],
+)
+
+
+def _episode_result(**overrides):
+    base = {
+        "engineName": "piratebay",
+        "fileName": "Lanterns.S01E04.2160p.WEB-DL.mkv",
+        "fileUrl": "magnet:?xt=urn:btih:AAAA",
+        "fileSize": 5_000_000_000,
+        "nbSeeders": 100,
+    }
+    base.update(overrides)
+    return base
+
+
+def test_download_episode_adds_winner_from_first_variant_that_has_candidates():
+    qbt = FakeQBTClient(results_by_variant={"Lanterns S01E04": [_episode_result()]})
+
+    result = download_episode(LANTERNS, 1, 4, qbt)
+
+    assert result.status == "added"
+    assert result.variant_used == "Lanterns"
+    assert result.season == 1
+    assert result.episode == 4
+    assert qbt.added == [("magnet:?xt=urn:btih:AAAA", "tv")]
+    assert qbt.ensured_categories == ["tv"]
+
+
+def test_download_episode_no_qualifying_results_when_search_comes_up_empty():
+    qbt = FakeQBTClient(results_by_variant={})
+
+    result = download_episode(LANTERNS, 1, 4, qbt)
+
+    assert result.status == "no qualifying results"
+    assert qbt.added == []
+
+
+def test_download_episode_rejects_wrong_episode():
+    qbt = FakeQBTClient(
+        results_by_variant={"Lanterns S01E04": [_episode_result(fileName="Lanterns.S01E05.2160p.WEB-DL.mkv")]}
+    )
+
+    result = download_episode(LANTERNS, 1, 4, qbt)
+
+    assert result.status == "no qualifying results"
+
+
+def test_download_episode_rejects_season_pack():
+    qbt = FakeQBTClient(
+        results_by_variant={"Lanterns S01E04": [_episode_result(fileName="Lanterns.S01.COMPLETE.2160p.WEB-DL.mkv")]}
+    )
+
+    result = download_episode(LANTERNS, 1, 4, qbt)
+
+    assert result.status == "no qualifying results"
+
+
+def test_download_episode_excludes_candidate_already_present_in_qbittorrent():
+    qbt = FakeQBTClient(
+        results_by_variant={"Lanterns S01E04": [_episode_result(fileUrl="magnet:?xt=urn:btih:AAAA")]},
+        existing_hashes={"aaaa"},
+    )
+
+    result = download_episode(LANTERNS, 1, 4, qbt)
+
+    assert result.status == "no qualifying results"
+    assert qbt.added == []
+
+
+def test_download_episode_insufficient_free_space_when_only_candidate_is_too_large():
+    qbt = FakeQBTClient(
+        results_by_variant={"Lanterns S01E04": [_episode_result(fileSize=90_000_000_000)]},
+        free_space_bytes=10_000_000_000,
+    )
+
+    result = download_episode(LANTERNS, 1, 4, qbt)
+
+    assert result.status == "insufficient free space"
+    assert qbt.added == []
+
+
+def test_download_episode_falls_back_to_next_variant_when_first_has_no_candidates():
+    identity = ShowIdentity(tmdb_id=1, title="Show", original_title="Le Show", variants=["Show", "Le Show"])
+    qbt = FakeQBTClient(
+        results_by_variant={
+            "Show S01E04": [],
+            "Le Show S01E04": [_episode_result(fileName="Le.Show.S01E04.2160p.WEB-DL.mkv")],
+        }
+    )
+
+    result = download_episode(identity, 1, 4, qbt)
+
+    assert result.status == "added"
+    assert result.variant_used == "Le Show"
+    assert qbt.searched_variants == ["Show S01E04", "Le Show S01E04"]
+
+
+def test_download_episode_captures_hash_of_newly_added_torrent():
+    qbt = FakeQBTClient(results_by_variant={"Lanterns S01E04": [_episode_result(fileUrl="magnet:?xt=urn:btih:EEEE")]})
+
+    result = download_episode(LANTERNS, 1, 4, qbt)
+
+    assert result.status == "added"
+    assert result.torrent_hash == "eeee"
+
+
+def test_download_episode_falls_back_to_next_candidate_when_add_fails():
+    bad = _episode_result(fileUrl="magnet:?xt=urn:btih:AAAA", nbSeeders=100)
+    good = _episode_result(fileUrl="magnet:?xt=urn:btih:BBBB", fileSize=4_000_000_000, nbSeeders=50)
+
+    class PartlyRejectingQBTClient(FakeQBTClient):
+        def add_torrent(self, file_url, category):
+            if file_url == "magnet:?xt=urn:btih:AAAA":
+                raise QBTError("qBittorrent rejected the add ('Fails.')")
+            super().add_torrent(file_url, category)
+
+    qbt = PartlyRejectingQBTClient(results_by_variant={"Lanterns S01E04": [bad, good]})
+
+    result = download_episode(LANTERNS, 1, 4, qbt)
+
+    assert result.status == "added"
+    assert result.torrent_hash == "bbbb"
+    assert qbt.added == [("magnet:?xt=urn:btih:BBBB", "tv")]
+
+
+def test_download_episode_uses_explicit_settings_resolution_floor(monkeypatch):
+    qbt = FakeQBTClient(
+        results_by_variant={"Lanterns S01E04": [_episode_result(fileName="Lanterns.S01E04.1080p.WEB-DL.mkv")]}
+    )
+    settings = PipelineSettings(
+        category="movies",
+        min_resolution="1080p",
+        min_size_gb=1,
+        max_size_gb=150,
+        language_allowlist=(),
+        language_blocklist=(),
+    )
+
+    result = download_episode(LANTERNS, 1, 4, qbt, settings)
+
+    assert result.status == "added"
+    assert result.score.resolution_score == 3

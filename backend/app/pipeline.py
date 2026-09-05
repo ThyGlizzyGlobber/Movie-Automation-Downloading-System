@@ -19,6 +19,8 @@ from app.score import (
     rank_candidates,
 )
 from app.tmdb import TMDBClient
+from app.tv_resolve import ShowIdentity, episode_query
+from app.tv_score import passes_episode_relevance_gate
 
 
 @dataclass
@@ -31,6 +33,20 @@ class DownloadResult:
     candidates_considered: int = 0
     torrent_hash: str | None = None
     error: str | None = None  # populated only for "add failed"
+
+
+@dataclass
+class EpisodeDownloadResult:
+    status: str  # same vocabulary as DownloadResult
+    identity: ShowIdentity
+    season: int
+    episode: int
+    variant_used: str | None = None
+    winner: dict | None = None
+    score: Score | None = None
+    candidates_considered: int = 0
+    torrent_hash: str | None = None
+    error: str | None = None
 
 
 def _search_variant(
@@ -99,6 +115,52 @@ def _capture_new_hash(qbt: QBTClient, hashes_before: set[str]) -> str | None:
     return None
 
 
+@dataclass
+class _AddAttempt:
+    """One candidate's add outcome — either a genuine success (`succeeded`,
+    `torrent_hash` set) or a failure worth remembering as the audit trail
+    if every candidate for this request ultimately fails (see
+    `last_failed_attempt` in both `download()` and `download_episode()`)."""
+
+    winner: dict
+    score: Score
+    succeeded: bool = False
+    torrent_hash: str | None = None
+    error: str | None = None
+
+
+def _rank_and_add(
+    qbt: QBTClient, candidates: list[dict], free_space_bytes: int, category: str, existing_hashes: set[str]
+) -> tuple[list[tuple[dict, Score]], _AddAttempt | None]:
+    """Shared by `download()` (movies) and `download_episode()` (Stage 10,
+    TV) — ranking, the free-space fit filter, and the add-with-hash-capture
+    retry loop don't depend on what kind of media is being downloaded, only
+    the search/identity/relevance side above this does. Tries each fitting
+    candidate (best-ranked first) until one actually lands in qBittorrent,
+    falling through to the next on a confirmed add failure (a real-world
+    case: a scraper listing a link qBittorrent can never fetch) rather than
+    failing the whole request while other candidates remain untried.
+    Returns the fitting list (so a caller can tell "nothing fit" from
+    "nothing to rank" apart) plus either the successful attempt or the
+    *last* failed one, for a full audit trail either way — "hidden, never
+    unrecoverable"."""
+    ranked = rank_candidates(candidates)
+    fitting = _candidates_that_fit(ranked, free_space_bytes)
+
+    last_attempt: _AddAttempt | None = None
+    for winner, winner_score in fitting:
+        qbt.ensure_category(category)
+        try:
+            qbt.add_torrent(winner["fileUrl"], category=category)
+            torrent_hash = _capture_new_hash(qbt, existing_hashes)
+        except QBTError as exc:
+            last_attempt = _AddAttempt(winner=winner, score=winner_score, error=str(exc))
+            continue
+        return fitting, _AddAttempt(winner=winner, score=winner_score, succeeded=True, torrent_hash=torrent_hash)
+
+    return fitting, last_attempt
+
+
 def download(
     tmdb_id: int, tmdb_client: TMDBClient, qbt: QBTClient, settings: PipelineSettings | None = None
 ) -> DownloadResult:
@@ -107,13 +169,6 @@ def download(
     existing_hashes = qbt.existing_torrent_hashes()
     free_space_bytes = qbt.free_space_bytes()
     any_candidates = False
-    # Real-world case that motivated this: a scraper (limetorrents) listing
-    # a link qBittorrent could never actually fetch — the #1-ranked
-    # candidate failing to add used to fail the whole request outright,
-    # even with 79 other candidates still on the table. Keeps the most
-    # recent failed attempt (variant/winner/score/candidates_considered/
-    # error) so a total failure still carries a full audit trail, same as
-    # a success would — "hidden, never unrecoverable".
     last_failed_attempt: DownloadResult | None = None
 
     for variant in identity.variants:
@@ -122,43 +177,118 @@ def download(
             continue
         any_candidates = True
 
-        ranked = rank_candidates(candidates)
-        fitting = _candidates_that_fit(ranked, free_space_bytes)
-        if not fitting:
+        fitting, attempt = _rank_and_add(qbt, candidates, free_space_bytes, settings.category, existing_hashes)
+        if not fitting or attempt is None:
             continue  # every candidate for this variant is too large for available space
 
-        for winner, winner_score in fitting:
-            qbt.ensure_category(settings.category)
-            try:
-                qbt.add_torrent(winner["fileUrl"], category=settings.category)
-                torrent_hash = _capture_new_hash(qbt, existing_hashes)
-            except QBTError as exc:
-                # This candidate never actually landed in qBittorrent (a
-                # dead/unreachable link, most commonly) — try the next-best
-                # one instead of giving up on the whole request.
-                last_failed_attempt = DownloadResult(
-                    status="add failed",
-                    identity=identity,
-                    variant_used=variant,
-                    winner=winner,
-                    score=winner_score,
-                    candidates_considered=len(candidates),
-                    error=str(exc),
-                )
-                continue
-
+        if attempt.succeeded:
             return DownloadResult(
                 status="added",
                 identity=identity,
                 variant_used=variant,
-                winner=winner,
-                score=winner_score,
+                winner=attempt.winner,
+                score=attempt.score,
                 candidates_considered=len(candidates),
-                torrent_hash=torrent_hash,
+                torrent_hash=attempt.torrent_hash,
             )
+
+        last_failed_attempt = DownloadResult(
+            status="add failed",
+            identity=identity,
+            variant_used=variant,
+            winner=attempt.winner,
+            score=attempt.score,
+            candidates_considered=len(candidates),
+            error=attempt.error,
+        )
 
     if last_failed_attempt is not None:
         return last_failed_attempt
 
     status = "insufficient free space" if any_candidates else "no qualifying results"
     return DownloadResult(status=status, identity=identity)
+
+
+def _search_episode_variant(
+    qbt: QBTClient,
+    variant: str,
+    identity: ShowIdentity,
+    season: int,
+    episode: int,
+    existing_hashes: set[str],
+    settings: PipelineSettings,
+) -> list[dict]:
+    query = episode_query(variant, season, episode)
+    raw_results = qbt.search(query, category=config.TV_CATEGORY)
+    trustworthy = [r for r in raw_results if is_trustworthy(r)]
+    relevant = [
+        r
+        for r in trustworthy
+        if passes_episode_relevance_gate(r.get("fileName", ""), identity, season, episode, settings)
+    ]
+    viable = [r for r in relevant if passes_viability_gate(r, settings)]
+    deduped = dedup_candidates(viable)
+    return exclude_existing(deduped, existing_hashes)
+
+
+def download_episode(
+    identity: ShowIdentity,
+    season: int,
+    episode: int,
+    qbt: QBTClient,
+    settings: PipelineSettings | None = None,
+) -> EpisodeDownloadResult:
+    """The Stage 10 equivalent of `download()`, for one specific episode.
+    Takes an already-resolved `ShowIdentity` rather than a tmdb_id + TMDB
+    client — unlike a movie request, an episode request is always issued
+    against a show that's already been resolved (Stage 9's `resolve_show`,
+    or Stage 12's subscription row), so there's no TMDB call to make here.
+    Reuses `_rank_and_add` unchanged; only the search/relevance side above
+    it (episode identity instead of title+year, `config.TV_CATEGORY`
+    instead of `settings.category`) differs from `download()`."""
+    settings = settings or PipelineSettings.from_config()
+    existing_hashes = qbt.existing_torrent_hashes()
+    free_space_bytes = qbt.free_space_bytes()
+    any_candidates = False
+    last_failed_attempt: EpisodeDownloadResult | None = None
+
+    for variant in identity.variants:
+        candidates = _search_episode_variant(qbt, variant, identity, season, episode, existing_hashes, settings)
+        if not candidates:
+            continue
+        any_candidates = True
+
+        fitting, attempt = _rank_and_add(qbt, candidates, free_space_bytes, config.TV_CATEGORY, existing_hashes)
+        if not fitting or attempt is None:
+            continue
+
+        if attempt.succeeded:
+            return EpisodeDownloadResult(
+                status="added",
+                identity=identity,
+                season=season,
+                episode=episode,
+                variant_used=variant,
+                winner=attempt.winner,
+                score=attempt.score,
+                candidates_considered=len(candidates),
+                torrent_hash=attempt.torrent_hash,
+            )
+
+        last_failed_attempt = EpisodeDownloadResult(
+            status="add failed",
+            identity=identity,
+            season=season,
+            episode=episode,
+            variant_used=variant,
+            winner=attempt.winner,
+            score=attempt.score,
+            candidates_considered=len(candidates),
+            error=attempt.error,
+        )
+
+    if last_failed_attempt is not None:
+        return last_failed_attempt
+
+    status = "insufficient free space" if any_candidates else "no qualifying results"
+    return EpisodeDownloadResult(status=status, identity=identity, season=season, episode=episode)
