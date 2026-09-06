@@ -3,7 +3,7 @@ import re
 import pytest
 
 from app import config
-from app.pipeline import download, download_episode
+from app.pipeline import download, download_episode, find_best_episode_candidate
 from app.pipeline_settings import PipelineSettings
 from app.qbt import QBTError
 from app.tv_resolve import ShowIdentity
@@ -40,11 +40,13 @@ class FakeQBTClient:
         self._existing_hashes = existing_hashes or set()
         self._free_space_bytes = free_space_bytes
         self.searched_variants: list[str] = []
+        self.searched_categories: list[str] = []
         self.added: list[tuple[str, str]] = []
         self.ensured_categories: list[str] = []
 
     def search(self, pattern, category="movies", plugins="enabled"):
         self.searched_variants.append(pattern)
+        self.searched_categories.append(category)
         return self.results_by_variant.get(pattern, [])
 
     def existing_torrent_hashes(self):
@@ -91,6 +93,24 @@ def test_download_adds_winner_from_first_variant_that_has_candidates():
     assert result.variant_used == "Dune: Part Two"
     assert qbt.added == [("magnet:?xt=urn:btih:AAAA", "movies")]
     assert qbt.ensured_categories == ["movies"]
+
+
+def test_download_searches_unscoped_but_still_adds_under_the_configured_category():
+    """A real, live-caught bug (Stage 12's Lanterns S01E03 validation): at
+    least one real, enabled qBittorrent search plugin (sktorrent) returns
+    zero results when the search itself is scoped to a specific category,
+    even though the exact same query against "all" categories finds real,
+    otherwise-qualifying releases — the plugin simply doesn't tag its own
+    listings correctly. Search must stay unscoped; only the add-time label
+    (what qBittorrent files the torrent under, and where it saves to)
+    should still use the configured category."""
+    qbt = FakeQBTClient(results_by_variant={"Dune: Part Two": [_result()]})
+
+    result = download(693134, FakeTMDBClient(), qbt)
+
+    assert result.status == "added"
+    assert qbt.searched_categories == ["all"]
+    assert qbt.added == [("magnet:?xt=urn:btih:AAAA", "movies")]
 
 
 def test_download_falls_back_to_next_variant_when_first_has_no_candidates():
@@ -467,6 +487,19 @@ def test_download_episode_adds_winner_from_first_variant_that_has_candidates():
     assert qbt.ensured_categories == ["tv"]
 
 
+def test_download_episode_searches_unscoped_but_still_adds_under_tv_category():
+    """Same real bug as `download()`'s equivalent test above — a real
+    plugin (sktorrent) returned zero results when scoped to `category="tv"`
+    but found the real release under "all". See that test's docstring."""
+    qbt = FakeQBTClient(results_by_variant={"Lanterns S01E04": [_episode_result()]})
+
+    result = download_episode(LANTERNS, 1, 4, qbt)
+
+    assert result.status == "added"
+    assert qbt.searched_categories == ["all"]
+    assert qbt.added == [("magnet:?xt=urn:btih:AAAA", "tv")]
+
+
 def test_download_episode_no_qualifying_results_when_search_comes_up_empty():
     qbt = FakeQBTClient(results_by_variant={})
 
@@ -581,3 +614,61 @@ def test_download_episode_uses_explicit_settings_resolution_floor(monkeypatch):
 
     assert result.status == "added"
     assert result.score.resolution_score == 3
+
+
+# ---------------------------------------------------------------------------
+# Stage 12.x: find_best_episode_candidate() — a read-only peek at what
+# download_episode() would add right now, without ever calling add_torrent.
+# Backs worker.py's auto-recheck loop's "is there something better than
+# what I already have" check.
+# ---------------------------------------------------------------------------
+
+
+def test_find_best_episode_candidate_returns_the_top_ranked_candidate():
+    qbt = FakeQBTClient(results_by_variant={"Lanterns S01E04": [_episode_result()]})
+
+    result = find_best_episode_candidate(LANTERNS, 1, 4, qbt)
+
+    assert result is not None
+    winner, score = result
+    assert winner["fileName"] == "Lanterns.S01E04.2160p.WEB-DL.mkv"
+    assert score.composite > 0
+
+
+def test_find_best_episode_candidate_never_adds_anything():
+    qbt = FakeQBTClient(results_by_variant={"Lanterns S01E04": [_episode_result()]})
+
+    find_best_episode_candidate(LANTERNS, 1, 4, qbt)
+
+    assert qbt.added == []
+    assert qbt.ensured_categories == []
+
+
+def test_find_best_episode_candidate_returns_none_when_nothing_qualifies():
+    qbt = FakeQBTClient(results_by_variant={})
+
+    assert find_best_episode_candidate(LANTERNS, 1, 4, qbt) is None
+
+
+def test_find_best_episode_candidate_excludes_candidates_that_do_not_fit_free_space():
+    qbt = FakeQBTClient(
+        results_by_variant={"Lanterns S01E04": [_episode_result(fileSize=90_000_000_000)]},
+        free_space_bytes=10_000_000_000,
+    )
+
+    assert find_best_episode_candidate(LANTERNS, 1, 4, qbt) is None
+
+
+def test_find_best_episode_candidate_falls_back_across_variants():
+    identity = ShowIdentity(tmdb_id=1, title="Show", original_title="Le Show", variants=["Show", "Le Show"])
+    qbt = FakeQBTClient(
+        results_by_variant={
+            "Show S01E04": [],
+            "Le Show S01E04": [_episode_result(fileName="Le.Show.S01E04.2160p.WEB-DL.mkv")],
+        }
+    )
+
+    result = find_best_episode_candidate(identity, 1, 4, qbt)
+
+    assert result is not None
+    assert result[0]["fileName"] == "Le.Show.S01E04.2160p.WEB-DL.mkv"

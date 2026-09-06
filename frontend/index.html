@@ -359,6 +359,11 @@
   .settings-size-range { display: flex; align-items: center; gap: 10px; }
   .settings-size-range input { flex: 1; min-width: 0; }
   .settings-size-range span { color: var(--text-dim); font-size: 14px; }
+  .settings-checkbox-label {
+    display: flex !important; align-items: center; gap: 10px; color: var(--text) !important;
+    font-size: 15px !important; margin-bottom: 0 !important; cursor: pointer;
+  }
+  .settings-checkbox-label input[type="checkbox"] { width: 18px; height: 18px; flex-shrink: 0; }
   .settings-hint { color: var(--text-dim); font-size: 12.5px; margin-top: 6px; line-height: 1.4; }
   .settings-save-error { color: var(--status-nospace); font-size: 13px; margin-top: 12px; }
 
@@ -551,6 +556,10 @@
   });
   const getPipelineSettings = () => api(`/api/settings/pipeline`);
   const setPipelineSettings = (body) => api(`/api/settings/pipeline`, {
+    method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+  });
+  const getTvSettings = () => api(`/api/settings/tv`);
+  const setTvSettings = (body) => api(`/api/settings/tv`, {
     method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
   });
   const postDeploy = () => api(`/api/admin/deploy`, { method: "POST" });
@@ -1105,6 +1114,7 @@
     app.innerHTML = `
       <section class="row" id="appearanceSection">${loadingHtml()}</section>
       <section class="row" id="pipelineSection">${loadingHtml()}</section>
+      <section class="row" id="tvScheduleSection">${loadingHtml()}</section>
       <section class="row" id="plexSection">${loadingHtml()}</section>
       <section class="row" id="updateSection">
         <h2>Update</h2>
@@ -1112,7 +1122,12 @@
       </section>
       <div class="about-footer">The Family Downloader</div>
     `;
-    await Promise.all([renderAppearanceSection(), renderPipelineSection(), refreshPlexSettings()]);
+    await Promise.all([
+      renderAppearanceSection(),
+      renderPipelineSection(),
+      renderTvScheduleSection(),
+      refreshPlexSettings(),
+    ]);
     document.getElementById("deployBtn").addEventListener("click", triggerDeploy);
   }
 
@@ -1201,6 +1216,76 @@
     btn.textContent = "Saving…";
     try {
       await setPipelineSettings(body);
+      btn.textContent = "Saved";
+      setTimeout(() => { btn.textContent = "Save"; btn.disabled = false; }, 1200);
+    } catch (err) {
+      errorEl.textContent = err.message;
+      errorEl.hidden = false;
+      btn.disabled = false;
+      btn.textContent = "Save";
+    }
+  }
+
+  // -- Stage 12.x: how often subscribed shows get checked for new
+  //    episodes, and the optional auto-recheck (retry a stuck episode, or
+  //    look for a better release once one's already downloaded). Same
+  //    "takes effect on the next wake-up, no restart" pattern as Download
+  //    preferences above. Auto-recheck defaults off — it's new, automatic,
+  //    unattended behavior, including replacing an already-downloaded
+  //    file on an upgrade, so it stays opt-in until turned on here. --
+
+  async function renderTvScheduleSection() {
+    const section = document.getElementById("tvScheduleSection");
+    try {
+      const s = await getTvSettings();
+      section.innerHTML = `
+        <h2>TV show scheduling</h2>
+        <div class="settings-field">
+          <label for="tvCheckInterval">Check subscribed shows every (hours)</label>
+          <input type="number" id="tvCheckInterval" min="0.5" step="0.5" value="${s.show_check_interval_hours}">
+          <div class="settings-hint">How often to look for newly-aired episodes on shows you're watching.</div>
+        </div>
+        <div class="settings-field">
+          <label class="settings-checkbox-label">
+            <input type="checkbox" id="tvRecheckEnabled" ${s.episode_recheck_enabled ? "checked" : ""}>
+            Automatically recheck episodes
+          </label>
+          <div class="settings-hint">Retries an episode that found nothing yet, and looks for a better release once one's already downloaded — replacing it if something better turns up.</div>
+        </div>
+        <div class="settings-field">
+          <label for="tvRecheckInterval">Recheck every (hours)</label>
+          <input type="number" id="tvRecheckInterval" min="0.1" step="0.1" value="${s.episode_recheck_interval_hours}">
+        </div>
+        <div class="settings-field">
+          <label for="tvRecheckLimit">Stop rechecking after this many attempts</label>
+          <input type="number" id="tvRecheckLimit" min="0" step="1" value="${s.episode_recheck_max_attempts}">
+          <div class="settings-hint">0 means keep rechecking indefinitely.</div>
+        </div>
+        <button class="settings-btn" id="tvScheduleSaveBtn">Save</button>
+        <div class="settings-save-error" id="tvScheduleSaveError" hidden></div>
+      `;
+      document.getElementById("tvScheduleSaveBtn").addEventListener("click", saveTvScheduleSettings);
+    } catch (err) {
+      section.innerHTML = `<h2>TV show scheduling</h2><div class="plex-error">${escapeHtml(err.message)}</div>`;
+    }
+  }
+
+  async function saveTvScheduleSettings() {
+    const btn = document.getElementById("tvScheduleSaveBtn");
+    const errorEl = document.getElementById("tvScheduleSaveError");
+    errorEl.hidden = true;
+
+    const body = {
+      show_check_interval_hours: Number(document.getElementById("tvCheckInterval").value),
+      episode_recheck_enabled: document.getElementById("tvRecheckEnabled").checked,
+      episode_recheck_interval_hours: Number(document.getElementById("tvRecheckInterval").value),
+      episode_recheck_max_attempts: Number(document.getElementById("tvRecheckLimit").value),
+    };
+
+    btn.disabled = true;
+    btn.textContent = "Saving…";
+    try {
+      await setTvSettings(body);
       btn.textContent = "Saved";
       setTimeout(() => { btn.textContent = "Save"; btn.disabled = false; }, 1200);
     } catch (err) {

@@ -34,6 +34,19 @@ def is_trustworthy(result: dict) -> bool:
     if file_url.startswith("magnet:"):
         return True
 
+    # "descrLink-only": some plugins (confirmed live — limetorrents, Stage
+    # 12's real Lanterns S01E03 validation) hand back the site's own details
+    # *webpage* as `fileUrl`, identical to `descrLink`, instead of a real
+    # magnet/.torrent link. qBittorrent's add doesn't raise on this — it
+    # just fetches the HTML, fails to parse it as a torrent, and the
+    # torrent silently never gets indexed, which looked from the outside
+    # like every candidate "failing to add" for no visible reason. This was
+    # always a named Stage 2 deliverable ("skip descrLink-only results")
+    # but was never actually implemented until this was caught live.
+    descr_link = (result.get("descrLink") or "").strip()
+    if descr_link and file_url == descr_link:
+        return False
+
     host = urlparse(file_url).hostname
     return host is not None and host.lower() not in _LOCAL_HOSTS
 

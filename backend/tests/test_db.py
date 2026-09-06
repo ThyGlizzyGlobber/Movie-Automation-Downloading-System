@@ -152,6 +152,205 @@ def test_purge_requests_older_than_deletes_only_old_terminal_rows():
     assert remaining_ids == {old_downloading.id, recent_complete.id}
 
 
+def test_create_request_defaults_to_movie_media_type():
+    store = _store()
+    row = store.create_request(tmdb_id=693134, title="Dune: Part Two", release_year=2024, query=None)
+
+    assert row.media_type == "movie"
+    assert row.show_id is None
+    assert row.season_number is None
+    assert row.episode_number is None
+
+
+# ---------------------------------------------------------------------------
+# Stage 12 — shows (standing subscriptions) & show_episodes (dedup ledger)
+# ---------------------------------------------------------------------------
+
+
+def test_create_episode_request_sets_episode_fields():
+    store = _store()
+    show = store.create_show(tmdb_id=95350, title="Lanterns")
+
+    row = store.create_episode_request(
+        tmdb_id=95350, show_id=show.id, title="Lanterns", season_number=1, episode_number=4
+    )
+
+    assert row.media_type == "episode"
+    assert row.show_id == show.id
+    assert row.season_number == 1
+    assert row.episode_number == 4
+    assert row.status == "queued"
+    assert row.query is None
+    assert row.release_year is None
+
+
+def test_create_show_starts_watching_with_no_last_checked():
+    store = _store()
+    row = store.create_show(tmdb_id=95350, title="Lanterns")
+
+    assert row.id == 1
+    assert row.status == "watching"
+    assert row.last_checked_at is None
+
+
+def test_get_show_by_tmdb_id_missing_returns_none():
+    store = _store()
+    assert store.get_show_by_tmdb_id(999) is None
+
+
+def test_get_show_by_tmdb_id_finds_it():
+    store = _store()
+    show = store.create_show(tmdb_id=95350, title="Lanterns")
+
+    assert store.get_show_by_tmdb_id(95350).id == show.id
+
+
+def test_list_shows_filters_by_status():
+    store = _store()
+    watching = store.create_show(tmdb_id=1, title="A")
+    paused = store.create_show(tmdb_id=2, title="B")
+    store.update_show_status(paused.id, "paused")
+
+    assert [s.id for s in store.list_shows(status="watching")] == [watching.id]
+    assert [s.id for s in store.list_shows(status="paused")] == [paused.id]
+
+
+def test_update_show_status_pauses_and_resumes():
+    store = _store()
+    show = store.create_show(tmdb_id=1, title="A")
+
+    store.update_show_status(show.id, "paused")
+    assert store.get_show(show.id).status == "paused"
+
+    store.update_show_status(show.id, "watching")
+    assert store.get_show(show.id).status == "watching"
+
+
+def test_update_show_last_checked_sets_timestamp():
+    store = _store()
+    show = store.create_show(tmdb_id=1, title="A")
+
+    store.update_show_last_checked(show.id)
+
+    assert store.get_show(show.id).last_checked_at is not None
+
+
+def test_delete_show_removes_it_but_keeps_history():
+    store = _store()
+    show = store.create_show(tmdb_id=1, title="A")
+    request_row = store.create_episode_request(tmdb_id=1, show_id=show.id, title="A", season_number=1, episode_number=1)
+    store.add_show_episode(show.id, 1, 1, request_row.id)
+
+    assert store.delete_show(show.id) is True
+
+    assert store.get_show(show.id) is None
+    assert store.get_request(request_row.id) is not None
+    assert store.has_show_episode(show.id, 1, 1) is True  # ledger row untouched
+
+
+def test_delete_show_missing_returns_false():
+    store = _store()
+    assert store.delete_show(999) is False
+
+
+def test_has_show_episode_false_until_added():
+    store = _store()
+    show = store.create_show(tmdb_id=1, title="A")
+
+    assert store.has_show_episode(show.id, 1, 1) is False
+
+    store.add_show_episode(show.id, 1, 1, request_id=1)
+
+    assert store.has_show_episode(show.id, 1, 1) is True
+
+
+def test_new_show_episode_starts_with_zero_recheck_count():
+    store = _store()
+    show = store.create_show(tmdb_id=1, title="A")
+    store.add_show_episode(show.id, 1, 1, request_id=1)
+
+    [row] = store.list_show_episodes(show.id)
+    assert row.recheck_count == 0
+    assert row.last_rechecked_at is None
+
+
+def test_list_show_episodes_filters_by_show():
+    store = _store()
+    show_a = store.create_show(tmdb_id=1, title="A")
+    show_b = store.create_show(tmdb_id=2, title="B")
+    store.add_show_episode(show_a.id, 1, 1, request_id=1)
+    store.add_show_episode(show_b.id, 1, 1, request_id=2)
+
+    rows = store.list_show_episodes(show_a.id)
+
+    assert len(rows) == 1
+    assert rows[0].show_id == show_a.id
+
+
+def test_list_show_episodes_without_show_id_returns_all():
+    store = _store()
+    show_a = store.create_show(tmdb_id=1, title="A")
+    show_b = store.create_show(tmdb_id=2, title="B")
+    store.add_show_episode(show_a.id, 1, 1, request_id=1)
+    store.add_show_episode(show_b.id, 1, 1, request_id=2)
+
+    assert len(store.list_show_episodes()) == 2
+
+
+def test_record_episode_recheck_bumps_count_and_timestamp_without_new_request():
+    store = _store()
+    show = store.create_show(tmdb_id=1, title="A")
+    store.add_show_episode(show.id, 1, 1, request_id=1)
+    [row] = store.list_show_episodes(show.id)
+
+    store.record_episode_recheck(row.id)
+
+    [reloaded] = store.list_show_episodes(show.id)
+    assert reloaded.recheck_count == 1
+    assert reloaded.last_rechecked_at is not None
+    assert reloaded.request_id == 1  # unchanged — nothing new was found
+
+
+def test_record_episode_recheck_repoints_request_id_when_given_one():
+    store = _store()
+    show = store.create_show(tmdb_id=1, title="A")
+    store.add_show_episode(show.id, 1, 1, request_id=1)
+    [row] = store.list_show_episodes(show.id)
+
+    store.record_episode_recheck(row.id, new_request_id=99)
+
+    [reloaded] = store.list_show_episodes(show.id)
+    assert reloaded.recheck_count == 1
+    assert reloaded.request_id == 99
+
+
+def test_record_episode_recheck_accumulates_across_multiple_calls():
+    store = _store()
+    show = store.create_show(tmdb_id=1, title="A")
+    store.add_show_episode(show.id, 1, 1, request_id=1)
+    [row] = store.list_show_episodes(show.id)
+
+    store.record_episode_recheck(row.id)
+    store.record_episode_recheck(row.id)
+
+    [reloaded] = store.list_show_episodes(show.id)
+    assert reloaded.recheck_count == 2
+
+
+def test_add_show_episode_is_idempotent_via_unique_constraint():
+    store = _store()
+    show = store.create_show(tmdb_id=1, title="A")
+
+    store.add_show_episode(show.id, 1, 1, request_id=1)
+    store.add_show_episode(show.id, 1, 1, request_id=2)  # INSERT OR IGNORE, not a crash
+
+    rows = store._conn.execute(
+        "SELECT * FROM show_episodes WHERE show_id = ? AND season_number = 1 AND episode_number = 1", (show.id,)
+    ).fetchall()
+    assert len(rows) == 1
+    assert rows[0]["request_id"] == 1  # first insert wins
+
+
 def test_purge_requests_older_than_zero_clears_all_terminal_regardless_of_age():
     store = _store()
     recent_failed = store.create_request(tmdb_id=1, title="Recent Failed", release_year=2020, query=None)

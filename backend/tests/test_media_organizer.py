@@ -8,6 +8,7 @@ from app.media_organizer import (
     MediaOrganizerError,
     build_episode_path,
     build_movie_path,
+    find_existing_episode_file,
     organize_episode,
     organize_movie,
     select_video_file,
@@ -128,6 +129,66 @@ def test_select_video_file_raises_when_nothing_qualifies():
     qbt = FakeQBTClient("/downloads", [{"name": "Lanterns.S01E01.nfo", "size": 1000}])
     with pytest.raises(MediaOrganizerError):
         select_video_file(qbt, "abc123")
+
+
+# ---------------------------------------------------------------------------
+# find_existing_episode_file — Stage 12's pre-subscribe "already on disk"
+# check, so a first-time subscribe doesn't re-grab what's already there
+# ---------------------------------------------------------------------------
+
+
+def test_find_existing_episode_file_matches_the_apps_own_organized_naming(tmp_path, monkeypatch):
+    monkeypatch.setattr(config, "TV_LIBRARY_ROOT", tmp_path)
+    target = tmp_path / "Lanterns (2026) {tmdb-95350}" / "Season 01" / "Lanterns - s01e01.mkv"
+    target.parent.mkdir(parents=True)
+    target.write_bytes(b"data")
+
+    found = find_existing_episode_file(LANTERNS, 1, 1)
+
+    assert found == target
+
+
+def test_find_existing_episode_file_matches_a_raw_unorganized_release_name(tmp_path, monkeypatch):
+    """A torrent this app added but never successfully organized (e.g. the
+    max_ratio race flagged in project.md's Stage 11 decision log), or one
+    added completely outside this app, still sits under its own scene-
+    release name rather than this app's `- sNNeNN` convention — must still
+    be found."""
+    monkeypatch.setattr(config, "TV_LIBRARY_ROOT", tmp_path)
+    target = tmp_path / "Lanterns.S01E02.2160p.AMZN.WEB-DL.DDP5.1.DV.HDR.H.265-G66.mkv"
+    target.write_bytes(b"data")
+
+    found = find_existing_episode_file(LANTERNS, 1, 2)
+
+    assert found == target
+
+
+def test_find_existing_episode_file_returns_none_when_nothing_matches(tmp_path, monkeypatch):
+    monkeypatch.setattr(config, "TV_LIBRARY_ROOT", tmp_path)
+    (tmp_path / "Some Other Show S01E01.mkv").write_bytes(b"data")
+
+    assert find_existing_episode_file(LANTERNS, 1, 1) is None
+
+
+def test_find_existing_episode_file_does_not_match_a_different_episode(tmp_path, monkeypatch):
+    monkeypatch.setattr(config, "TV_LIBRARY_ROOT", tmp_path)
+    (tmp_path / "Lanterns.S01E02.2160p.mkv").write_bytes(b"data")
+
+    assert find_existing_episode_file(LANTERNS, 1, 1) is None
+
+
+def test_find_existing_episode_file_ignores_non_video_files(tmp_path, monkeypatch):
+    monkeypatch.setattr(config, "TV_LIBRARY_ROOT", tmp_path)
+    (tmp_path / "Lanterns.S01E01.nfo").write_bytes(b"data")
+    (tmp_path / "Lanterns.S01E01.srt").write_bytes(b"data")
+
+    assert find_existing_episode_file(LANTERNS, 1, 1) is None
+
+
+def test_find_existing_episode_file_returns_none_when_root_does_not_exist(tmp_path, monkeypatch):
+    monkeypatch.setattr(config, "TV_LIBRARY_ROOT", tmp_path / "does-not-exist")
+
+    assert find_existing_episode_file(LANTERNS, 1, 1) is None
 
 
 # ---------------------------------------------------------------------------

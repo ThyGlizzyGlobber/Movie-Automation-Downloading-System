@@ -57,6 +57,40 @@ def test_is_trustworthy_accepts_real_http_source():
     assert is_trustworthy(_result(fileUrl="https://thepiratebay.org/torrent/12345")) is True
 
 
+def test_is_trustworthy_rejects_descrlink_only_result():
+    """A real, live-caught case (Stage 12's Lanterns S01E03 validation):
+    limetorrents' plugin hands back its own details webpage as `fileUrl`,
+    byte-identical to `descrLink` — not a magnet or a real .torrent link.
+    qBittorrent's add doesn't raise on this; it just fetches HTML, fails to
+    parse it as a torrent, and the add silently never indexes. This was a
+    named Stage 2 deliverable ("skip descrLink-only results") that had
+    never actually been implemented until this was caught live."""
+    url = "https://www.limetorrents.lol/Some-Torrent-12345.html"
+    assert is_trustworthy(_result(fileUrl=url, descrLink=url)) is False
+
+
+def test_is_trustworthy_accepts_a_real_fileurl_that_merely_shares_a_descrlink_field():
+    """`descrLink` present but genuinely different from `fileUrl` is the
+    normal, healthy shape (a details page alongside a real download link)
+    — must not be rejected."""
+    assert (
+        is_trustworthy(
+            _result(
+                fileUrl="https://torlock.com/file/12345/movie.torrent",
+                descrLink="https://torlock.com/torrent/12345/movie.html",
+            )
+        )
+        is True
+    )
+
+
+def test_is_trustworthy_accepts_magnet_even_with_a_matching_descrlink():
+    """A magnet is trusted unconditionally before the descrLink comparison
+    even runs — some plugins duplicate the magnet into both fields."""
+    magnet = "magnet:?xt=urn:btih:AAAA"
+    assert is_trustworthy(_result(fileUrl=magnet, descrLink=magnet)) is True
+
+
 # ---------------------------------------------------------------------------
 # Pass one: relevance gate
 # ---------------------------------------------------------------------------

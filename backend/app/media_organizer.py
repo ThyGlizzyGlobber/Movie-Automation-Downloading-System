@@ -24,10 +24,12 @@ import shutil
 from pathlib import Path
 
 from app import config
-from app.normalize import has_token
+from app.normalize import has_token, tokenize
 from app.qbt import QBTClient
 from app.resolve import MediaIdentity
+from app.score import matches_any_variant
 from app.tv_resolve import ShowIdentity
+from app.tv_score import has_episode_token
 
 logger = logging.getLogger("app.media_organizer")
 
@@ -74,6 +76,42 @@ def select_video_file(qbt: QBTClient, torrent_hash: str) -> Path:
 
     winner = max(candidates, key=lambda f: f.get("size", 0))
     return Path(save_path) / winner["name"]
+
+
+def find_existing_episode_file(show_identity: ShowIdentity, season: int, episode: int) -> Path | None:
+    """Best-effort scan of the whole `TV_LIBRARY_ROOT` for a video file that
+    already represents this episode — checked by worker.py's `check_show()`
+    (Stage 12) before ever creating a download request for a newly-
+    discovered aired episode, so a first-time subscribe to a show that
+    already has episodes on disk doesn't try to re-grab them.
+
+    Matches on filename tokens the same whole-token way the search pipeline
+    itself does (`matches_any_variant` + `has_episode_token`), not a
+    substring guess or this app's own `<Show Title> - sNNeNN` naming
+    specifically — a file still sitting under its original scene-release
+    name (e.g. a torrent this app added but never successfully organized,
+    or one added completely outside this app) is found just as reliably as
+    one `organize_episode()` already placed and renamed. Deliberately not
+    scoped to the show's own organized subfolder for the same reason: an
+    unorganized file has no reason to be there yet.
+
+    Real, not a guarantee: it only looks under `TV_LIBRARY_ROOT`, so an
+    episode sitting in qBittorrent's own in-progress/incomplete-downloads
+    location, or organized under a completely different library layout,
+    won't be found — a named, not-solved gap, same style as this project's
+    others. Returns `None` (rather than raising) when the root doesn't
+    exist at all — nothing local exercises the real mount, same as every
+    other `TV_LIBRARY_ROOT` caller."""
+    root = config.TV_LIBRARY_ROOT
+    if not root.is_dir():
+        return None
+    for path in root.rglob("*"):
+        if not path.is_file() or path.suffix.lower() not in config.VIDEO_EXTENSIONS:
+            continue
+        tokens = tokenize(path.stem)
+        if matches_any_variant(tokens, show_identity.variants) and has_episode_token(tokens, season, episode):
+            return path
+    return None
 
 
 def build_episode_path(show_identity: ShowIdentity, season: int, episode: int, ext: str) -> Path:

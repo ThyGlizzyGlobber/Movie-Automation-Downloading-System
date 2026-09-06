@@ -17,7 +17,7 @@ from app.score import matches_any_variant, passes_cam_filter, passes_language_fi
 from app.tv_resolve import ShowIdentity
 
 
-def _has_episode_token(tokens: list[str], season: int, episode: int) -> bool:
+def has_episode_token(tokens: list[str], season: int, episode: int) -> bool:
     """True if `tokens` carries the episode identity as either a single
     contiguous token ("S01E04" -> "s01e04", no separator in the release
     name) or as two adjacent tokens ("S01.E04"/"S01 E04" -> "s01", "e04").
@@ -44,7 +44,7 @@ def passes_episode_relevance_gate(
     tokens = tokenize(file_name)
     return (
         matches_any_variant(tokens, identity.variants)
-        and _has_episode_token(tokens, season, episode)
+        and has_episode_token(tokens, season, episode)
         and passes_resolution_floor(tokens, settings.min_resolution)
         and passes_language_filter(tokens, settings.language_allowlist, settings.language_blocklist)
         and passes_cam_filter(tokens)

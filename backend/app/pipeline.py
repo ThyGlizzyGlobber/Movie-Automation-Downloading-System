@@ -52,7 +52,18 @@ class EpisodeDownloadResult:
 def _search_variant(
     qbt: QBTClient, variant: str, identity: MediaIdentity, existing_hashes: set[str], settings: PipelineSettings
 ) -> list[dict]:
-    raw_results = qbt.search(variant, category=settings.category)
+    # Search unscoped ("all"), not `settings.category` — confirmed live
+    # (Stage 12's real Lanterns S01E03 validation) that at least one real,
+    # enabled plugin (sktorrent) simply returns zero results when qBittorrent
+    # asks it to filter to a specific category, silently hiding otherwise-
+    # qualifying releases, even though the same query against "all"
+    # categories finds them. `settings.category` is still exactly what gets
+    # applied to the torrent once added (see `_rank_and_add` below) — this
+    # only changes what's asked for at *search* time; our own relevance
+    # gate (title/year/token matching) is what actually decides relevance,
+    # not qBittorrent's per-plugin category tagging, which turned out to be
+    # an unreliable pre-filter to trust.
+    raw_results = qbt.search(variant, category="all")
     trustworthy = [r for r in raw_results if is_trustworthy(r)]
     relevant = [r for r in trustworthy if passes_relevance_gate(r.get("fileName", ""), identity, settings)]
     viable = [r for r in relevant if passes_viability_gate(r, settings)]
@@ -219,7 +230,11 @@ def _search_episode_variant(
     settings: PipelineSettings,
 ) -> list[dict]:
     query = episode_query(variant, season, episode)
-    raw_results = qbt.search(query, category=config.TV_CATEGORY)
+    # See `_search_variant`'s comment above — searching "all" rather than
+    # `config.TV_CATEGORY` for the same reason (a real plugin returning zero
+    # results when category-filtered). `config.TV_CATEGORY` is still what
+    # the torrent gets labeled as once added, in `_rank_and_add` below.
+    raw_results = qbt.search(query, category="all")
     trustworthy = [r for r in raw_results if is_trustworthy(r)]
     relevant = [
         r
@@ -229,6 +244,36 @@ def _search_episode_variant(
     viable = [r for r in relevant if passes_viability_gate(r, settings)]
     deduped = dedup_candidates(viable)
     return exclude_existing(deduped, existing_hashes)
+
+
+def find_best_episode_candidate(
+    identity: ShowIdentity,
+    season: int,
+    episode: int,
+    qbt: QBTClient,
+    settings: PipelineSettings | None = None,
+) -> tuple[dict, Score] | None:
+    """Read-only peek at what `download_episode()` would add right now,
+    without actually adding it — Stage 12.x's auto-recheck loop uses this
+    to decide *whether* a fresh search has turned up something worth
+    switching to, before ever touching qBittorrent's `add_torrent`. Same
+    fallback-across-variants and free-space-fit filtering as the real add
+    path (`_rank_and_add`), so "would this get added" and "did this get
+    added" never quietly disagree. `None` if nothing fitting turns up
+    across every variant."""
+    settings = settings or PipelineSettings.from_config()
+    existing_hashes = qbt.existing_torrent_hashes()
+    free_space_bytes = qbt.free_space_bytes()
+
+    for variant in identity.variants:
+        candidates = _search_episode_variant(qbt, variant, identity, season, episode, existing_hashes, settings)
+        if not candidates:
+            continue
+        ranked = rank_candidates(candidates)
+        fitting = _candidates_that_fit(ranked, free_space_bytes)
+        if fitting:
+            return fitting[0]
+    return None
 
 
 def download_episode(

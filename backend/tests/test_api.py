@@ -56,6 +56,18 @@ class FakeTMDBClient:
     def get_coming_soon(self, region="US", page=1):
         return {"results": [MOVIE], "page": page, "total_pages": 3}
 
+    # -- Stage 12: show subscriptions --
+
+    def get_tv(self, tmdb_id):
+        if self._raise_on_get_movie:
+            from app.tmdb import TMDBError
+
+            raise TMDBError("not found")
+        return {"id": tmdb_id, "name": "Lanterns", "original_name": "Lanterns", "number_of_seasons": 1}
+
+    def get_tv_season(self, tmdb_id, season_number):
+        return []
+
 
 class FakeQBTClient:
     def __init__(self, torrent_states=None, reachable=True):
@@ -95,9 +107,18 @@ class NoOpWorker:
 
     def __init__(self):
         self.enqueued: list[int] = []
+        self.checked_shows: list[int] = []
 
     def enqueue(self, request_id: int) -> None:
         self.enqueued.append(request_id)
+
+    def check_show(self, show) -> int:
+        """Stands in for the real catch-up check api.py's POST /api/shows
+        triggers immediately after creating a subscription — records that
+        it was called rather than actually hitting TMDB (see test_worker.py
+        for the real check_show()/scheduler logic)."""
+        self.checked_shows.append(show.id)
+        return 0
 
     async def start(self) -> None:
         pass
@@ -470,6 +491,82 @@ def test_set_pipeline_settings_rejects_a_partial_edit_that_would_invert_the_effe
     assert store.get_settings().get("min_size_gb") is None  # rejected before the write
 
 
+# ---------------------------------------------------------------------------
+# /api/settings/tv — Stage 12.x show-check interval & episode auto-recheck
+# ---------------------------------------------------------------------------
+
+
+def test_get_tv_settings_defaults_match_config(client_and_deps):
+    from app import config
+
+    client, _, _, _, _, _ = client_and_deps
+    response = client.get("/api/settings/tv")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["show_check_interval_hours"] == config.SHOW_CHECK_INTERVAL_HOURS
+    assert body["episode_recheck_enabled"] == config.EPISODE_RECHECK_ENABLED
+    assert body["episode_recheck_interval_hours"] == config.EPISODE_RECHECK_INTERVAL_HOURS
+    assert body["episode_recheck_max_attempts"] == config.EPISODE_RECHECK_MAX_ATTEMPTS
+
+
+def test_set_tv_settings_persists_and_reads_back(client_and_deps):
+    client, store, _, _, _, _ = client_and_deps
+    response = client.put(
+        "/api/settings/tv",
+        json={
+            "show_check_interval_hours": 2,
+            "episode_recheck_enabled": True,
+            "episode_recheck_interval_hours": 0.5,
+            "episode_recheck_max_attempts": 0,
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "show_check_interval_hours": 2,
+        "episode_recheck_enabled": True,
+        "episode_recheck_interval_hours": 0.5,
+        "episode_recheck_max_attempts": 0,
+    }
+    assert store.get_settings()["episode_recheck_enabled"] is True
+    assert client.get("/api/settings/tv").json()["show_check_interval_hours"] == 2
+
+
+def test_set_tv_settings_null_fields_reset_to_default(client_and_deps):
+    from app import config
+
+    client, _, _, _, _, _ = client_and_deps
+    client.put("/api/settings/tv", json={"episode_recheck_enabled": True})
+
+    response = client.put("/api/settings/tv", json={"episode_recheck_enabled": None})
+
+    assert response.status_code == 200
+    assert response.json()["episode_recheck_enabled"] == config.EPISODE_RECHECK_ENABLED
+
+
+def test_set_tv_settings_accepts_zero_max_attempts_as_infinite(client_and_deps):
+    client, _, _, _, _, _ = client_and_deps
+    response = client.put("/api/settings/tv", json={"episode_recheck_max_attempts": 0})
+
+    assert response.status_code == 200
+    assert response.json()["episode_recheck_max_attempts"] == 0
+
+
+def test_set_tv_settings_rejects_negative_max_attempts(client_and_deps):
+    client, _, _, _, _, _ = client_and_deps
+    response = client.put("/api/settings/tv", json={"episode_recheck_max_attempts": -1})
+
+    assert response.status_code == 422
+
+
+def test_set_tv_settings_rejects_non_positive_interval(client_and_deps):
+    client, _, _, _, _, _ = client_and_deps
+    response = client.put("/api/settings/tv", json={"show_check_interval_hours": 0})
+
+    assert response.status_code == 422
+
+
 def test_plex_status_reflects_linker(client_and_deps):
     client, _, _, _, _, plex_linker = client_and_deps
     plex_linker._status = {"linked": True, "username": "bejay", "server_name": "NAS", "pending": False, "error": None}
@@ -647,3 +744,123 @@ def test_admin_jobs_filters_to_one_status(client_and_deps):
 
     ids = [row["id"] for row in response.json()]
     assert ids == [failed.id]
+
+
+# ---------------------------------------------------------------------------
+# /api/shows — Stage 12 standing subscriptions
+# ---------------------------------------------------------------------------
+
+
+def test_create_show_subscribes_and_runs_immediate_catchup(client_and_deps):
+    client, store, _, worker, _, _ = client_and_deps
+
+    response = client.post("/api/shows", json={"tmdb_id": 95350})
+
+    assert response.status_code == 201
+    body = response.json()
+    assert body["tmdb_id"] == 95350
+    assert body["title"] == "Lanterns"
+    assert body["status"] == "watching"
+    assert body["last_checked_at"] is None  # NoOpWorker.check_show doesn't touch it
+    assert worker.checked_shows == [body["id"]]
+    assert store.get_show(body["id"]) is not None
+
+
+def test_create_show_404s_on_unknown_tmdb_id(client_and_deps):
+    client, _, tmdb, _, _, _ = client_and_deps
+    tmdb._raise_on_get_movie = True
+
+    response = client.post("/api/shows", json={"tmdb_id": 999999})
+
+    assert response.status_code == 404
+
+
+def test_create_show_rejects_a_second_subscription_to_the_same_show(client_and_deps):
+    client, _, _, _, _, _ = client_and_deps
+    client.post("/api/shows", json={"tmdb_id": 95350})
+
+    response = client.post("/api/shows", json={"tmdb_id": 95350})
+
+    assert response.status_code == 409
+
+
+def test_list_shows_returns_subscriptions(client_and_deps):
+    client, store, _, _, _, _ = client_and_deps
+    store.create_show(tmdb_id=1, title="A")
+    store.create_show(tmdb_id=2, title="B")
+
+    response = client.get("/api/shows")
+
+    assert response.status_code == 200
+    assert {s["tmdb_id"] for s in response.json()} == {1, 2}
+
+
+def test_list_shows_filters_by_status(client_and_deps):
+    client, store, _, _, _, _ = client_and_deps
+    watching = store.create_show(tmdb_id=1, title="A")
+    paused = store.create_show(tmdb_id=2, title="B")
+    store.update_show_status(paused.id, "paused")
+
+    response = client.get("/api/shows", params={"status": "watching"})
+
+    assert [s["id"] for s in response.json()] == [watching.id]
+
+
+def test_get_show_404s_when_missing(client_and_deps):
+    client, _, _, _, _, _ = client_and_deps
+    response = client.get("/api/shows/999")
+    assert response.status_code == 404
+
+
+def test_pause_and_resume_show(client_and_deps):
+    client, store, _, _, _, _ = client_and_deps
+    show = store.create_show(tmdb_id=1, title="A")
+
+    paused = client.post(f"/api/shows/{show.id}/pause")
+    assert paused.status_code == 200
+    assert paused.json()["status"] == "paused"
+
+    resumed = client.post(f"/api/shows/{show.id}/resume")
+    assert resumed.status_code == 200
+    assert resumed.json()["status"] == "watching"
+
+
+def test_pause_show_404s_when_missing(client_and_deps):
+    client, _, _, _, _, _ = client_and_deps
+    response = client.post("/api/shows/999/pause")
+    assert response.status_code == 404
+
+
+def test_unsubscribe_show_deletes_it_but_keeps_request_history(client_and_deps):
+    client, store, _, _, _, _ = client_and_deps
+    show = store.create_show(tmdb_id=1, title="A")
+    request_row = store.create_episode_request(
+        tmdb_id=1, show_id=show.id, title="A", season_number=1, episode_number=1
+    )
+
+    response = client.delete(f"/api/shows/{show.id}")
+
+    assert response.status_code == 200
+    assert response.json() == {"deleted": True}
+    assert store.get_show(show.id) is None
+    assert store.get_request(request_row.id) is not None
+
+
+def test_unsubscribe_show_404s_when_missing(client_and_deps):
+    client, _, _, _, _, _ = client_and_deps
+    response = client.delete("/api/shows/999")
+    assert response.status_code == 404
+
+
+def test_list_requests_exposes_episode_fields(client_and_deps):
+    client, store, _, _, _, _ = client_and_deps
+    show = store.create_show(tmdb_id=1, title="A")
+    store.create_episode_request(tmdb_id=1, show_id=show.id, title="A", season_number=1, episode_number=4)
+
+    response = client.get("/api/requests")
+
+    [row] = response.json()
+    assert row["media_type"] == "episode"
+    assert row["show_id"] == show.id
+    assert row["season_number"] == 1
+    assert row["episode_number"] == 4

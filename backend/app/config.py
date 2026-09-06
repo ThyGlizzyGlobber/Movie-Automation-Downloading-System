@@ -174,6 +174,31 @@ TV_LIBRARY_ROOT = Path(os.environ.get("TV_LIBRARY_ROOT", "/tv-library"))
 # ignored outright, not just deprioritized.
 VIDEO_EXTENSIONS = frozenset({".mkv", ".mp4", ".avi", ".m4v", ".ts", ".wmv", ".mov"})
 
+# -- Stage 12: subscriptions, scheduling & per-episode dedup. --
+
+# Defaults for `tv_settings.py`'s `TVScheduleSettings` — a household can
+# override all of these from the Settings panel (`GET`/`PUT
+# /api/settings/tv`), same "plain config.py default, real value lives in
+# the settings table" pattern Stage 7 established for PipelineSettings.
+# How often worker.py's `_watch_shows` loop rechecks every "watching" show
+# for newly-aired episodes.
+SHOW_CHECK_INTERVAL_HOURS = 6.0
+
+# Episode auto-recheck (retry a stuck episode, or look for a better release
+# once one is already downloaded): off by default — this is new, automatic,
+# unattended behavior (including auto-replacing an already-downloaded file
+# on an upgrade), so it's opt-in rather than silently changing what a
+# household that never touches Settings already gets.
+EPISODE_RECHECK_ENABLED = False
+EPISODE_RECHECK_INTERVAL_HOURS = 1.0
+EPISODE_RECHECK_MAX_ATTEMPTS = 3  # 0 = keep rechecking indefinitely
+
+# How often worker.py's `_watch_episode_rechecks` loop wakes up to ask "is
+# anything due for a recheck right now" — a fixed polling granularity, not
+# itself a Settings-panel value (the *interval* between actual rechecks is
+# the adjustable knob; this is just how finely that's measured).
+EPISODE_RECHECK_POLL_INTERVAL_SECONDS = int(os.environ.get("EPISODE_RECHECK_POLL_INTERVAL_SECONDS", "900"))
+
 # This container's path to Plex's movie library root — same dataset
 # qBittorrent's "movies" category downloads into, for the same hardlink-
 # needs-one-filesystem reason as TV_LIBRARY_ROOT. Movies were never

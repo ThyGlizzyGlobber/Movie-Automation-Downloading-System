@@ -12,7 +12,7 @@ from fastapi import Depends, FastAPI, HTTPException, Request
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 from app import config
-from app.db import RequestRow, RequestStore
+from app.db import RequestRow, RequestStore, ShowRow
 from app.deploy import DeployError, run_git_pull
 from app.logging_config import configure_logging
 from app.pipeline_settings import (
@@ -25,6 +25,8 @@ from app.plex import PlexError, PlexLinker
 from app.qbt import QBTClient
 from app.resolve import resolve
 from app.tmdb import TMDBClient, TMDBError
+from app.tv_resolve import resolve_show
+from app.tv_settings import resolve_tv_settings
 from app.worker import Worker
 
 configure_logging()
@@ -121,6 +123,18 @@ class PipelineSettingsIn(BaseModel):
         return self
 
 
+class TVScheduleSettingsIn(BaseModel):
+    """Same "always send the full desired state, null = reset to the
+    config.py default" convention as every other settings model. 0 is a
+    valid, deliberate `episode_recheck_max_attempts` (infinite) — only
+    negative values are rejected."""
+
+    show_check_interval_hours: float | None = Field(default=None, gt=0)
+    episode_recheck_enabled: bool | None = None
+    episode_recheck_interval_hours: float | None = Field(default=None, gt=0)
+    episode_recheck_max_attempts: int | None = Field(default=None, ge=0)
+
+
 class RequestOut(BaseModel):
     id: int
     query: str | None
@@ -132,9 +146,30 @@ class RequestOut(BaseModel):
     result: dict | None
     created_at: str
     updated_at: str
+    media_type: str
+    show_id: int | None
+    season_number: int | None
+    episode_number: int | None
 
     @classmethod
     def from_row(cls, row: RequestRow) -> "RequestOut":
+        return cls(**row.__dict__)
+
+
+class SubscribeShowRequest(BaseModel):
+    tmdb_id: int
+
+
+class ShowOut(BaseModel):
+    id: int
+    tmdb_id: int
+    title: str
+    status: str
+    created_at: str
+    last_checked_at: str | None
+
+    @classmethod
+    def from_row(cls, row: ShowRow) -> "ShowOut":
         return cls(**row.__dict__)
 
 
@@ -305,6 +340,70 @@ def cancel_request(
     return RequestOut.from_row(store.get_request(request_id))
 
 
+# -- Stage 12: standing show subscriptions. POST creates the subscription
+#    and immediately runs the same catch-up check the scheduler uses, so
+#    subscribing mid-season backfills every already-aired episode right
+#    away rather than waiting for the next background cycle. --
+
+
+@app.post("/api/shows", status_code=201)
+def create_show(
+    body: SubscribeShowRequest,
+    store: RequestStore = Depends(get_store),
+    tmdb: TMDBClient = Depends(get_tmdb),
+    worker: Worker = Depends(get_worker),
+) -> ShowOut:
+    if store.get_show_by_tmdb_id(body.tmdb_id) is not None:
+        raise HTTPException(status_code=409, detail="already subscribed to this show")
+    try:
+        identity = resolve_show(body.tmdb_id, tmdb)
+    except TMDBError as exc:
+        raise HTTPException(status_code=404, detail=f"tmdb_id {body.tmdb_id} not found") from exc
+
+    row = store.create_show(tmdb_id=body.tmdb_id, title=identity.title)
+    worker.check_show(row)
+    return ShowOut.from_row(store.get_show(row.id))
+
+
+@app.get("/api/shows")
+def list_shows(status: str | None = None, store: RequestStore = Depends(get_store)) -> list[ShowOut]:
+    return [ShowOut.from_row(r) for r in store.list_shows(status=status)]
+
+
+@app.get("/api/shows/{show_id}")
+def get_show(show_id: int, store: RequestStore = Depends(get_store)) -> ShowOut:
+    row = store.get_show(show_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail="show not found")
+    return ShowOut.from_row(row)
+
+
+@app.post("/api/shows/{show_id}/pause")
+def pause_show(show_id: int, store: RequestStore = Depends(get_store)) -> ShowOut:
+    if store.get_show(show_id) is None:
+        raise HTTPException(status_code=404, detail="show not found")
+    store.update_show_status(show_id, "paused")
+    return ShowOut.from_row(store.get_show(show_id))
+
+
+@app.post("/api/shows/{show_id}/resume")
+def resume_show(show_id: int, store: RequestStore = Depends(get_store)) -> ShowOut:
+    if store.get_show(show_id) is None:
+        raise HTTPException(status_code=404, detail="show not found")
+    store.update_show_status(show_id, "watching")
+    return ShowOut.from_row(store.get_show(show_id))
+
+
+@app.delete("/api/shows/{show_id}")
+def unsubscribe_show(show_id: int, store: RequestStore = Depends(get_store)) -> dict:
+    """Unsubscribes — stops future checks. Every `requests`/`show_episodes`
+    row this show ever produced stays exactly as it was, same "hidden,
+    never unrecoverable" principle as cancelling a movie request."""
+    if not store.delete_show(show_id):
+        raise HTTPException(status_code=404, detail="show not found")
+    return {"deleted": True}
+
+
 @app.get("/api/settings/retention")
 def get_retention(store: RequestStore = Depends(get_store)) -> dict:
     return {"days": store.get_settings().get("request_retention_days")}
@@ -366,6 +465,30 @@ def set_pipeline_settings(body: PipelineSettingsIn, store: RequestStore = Depend
     return asdict(resolve_pipeline_settings(store))
 
 
+# -- Stage 12.x: show-check interval and episode auto-recheck scheduling —
+#    same "takes effect on the next wake-up, no restart" pattern as the
+#    pipeline settings above. `episode_recheck_enabled` defaults to False
+#    (opt-in): this is new, automatic, unattended behavior, including
+#    auto-replacing an already-downloaded file on a quality upgrade. --
+
+
+@app.get("/api/settings/tv")
+def get_tv_settings(store: RequestStore = Depends(get_store)) -> dict:
+    return asdict(resolve_tv_settings(store))
+
+
+@app.put("/api/settings/tv")
+def set_tv_settings(body: TVScheduleSettingsIn, store: RequestStore = Depends(get_store)) -> dict:
+    patch = {
+        "show_check_interval_hours": body.show_check_interval_hours,
+        "episode_recheck_enabled": body.episode_recheck_enabled,
+        "episode_recheck_interval_hours": body.episode_recheck_interval_hours,
+        "episode_recheck_max_attempts": body.episode_recheck_max_attempts,
+    }
+    store.update_settings(patch)
+    return asdict(resolve_tv_settings(store))
+
+
 # -- Plex account linking (PIN sign-in). The resulting token is stored
 #    server-side only — these routes never return it. See plex.py. --
 
@@ -407,7 +530,7 @@ def health(qbt: QBTClient = Depends(get_qbt)) -> dict:
 #    with curl, not SSHed into; no frontend UI until it's actually needed
 #    often enough to justify one (Stage 8's own open decision). --
 
-_FAILURE_STATUSES = {"failed", "no qualifying results", "insufficient free space"}
+_FAILURE_STATUSES = {"failed", "no qualifying results", "insufficient free space", "downloaded, not filed"}
 
 
 @app.get("/api/admin/jobs")
