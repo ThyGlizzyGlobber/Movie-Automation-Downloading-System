@@ -90,6 +90,13 @@ class QBTClient:
         results = self._client.torrents_info(torrent_hashes=torrent_hash)
         return dict(results[0]) if results else None
 
+    def torrent_files(self, torrent_hash: str) -> list[dict]:
+        """A completed (or in-progress) torrent's file list — name (relative
+        to its `save_path`, may include subfolders for a multi-file
+        torrent) and size — for Stage 11's `media_organizer.select_video_file`
+        to pick the real episode file out of."""
+        return [dict(f) for f in self._client.torrents_files(torrent_hash=torrent_hash)]
+
     def delete_torrent(self, torrent_hash: str, delete_files: bool = True) -> None:
         """Cancel a request from this app's own UI: removes the torrent
         from qBittorrent and, by default, its downloaded files/folder too —

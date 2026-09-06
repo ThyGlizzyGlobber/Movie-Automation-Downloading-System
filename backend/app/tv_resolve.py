@@ -20,6 +20,12 @@ class ShowIdentity:
     title: str
     original_title: str
     variants: list[str] = field(default_factory=list)
+    # Deliberately unused by matching (Stage 9's episode-token signal is
+    # tighter than any year check) — carried only for Stage 11's Plex
+    # folder-naming convention, "<Show> (<year>) {tmdb-<id>}", which wants
+    # a year purely as a display/disambiguation hint. `None` when TMDB
+    # hasn't got a first_air_date yet (an unreleased show).
+    first_air_year: int | None = None
 
 
 def episode_query(title_variant: str, season: int, episode: int) -> str:
@@ -31,6 +37,8 @@ def resolve_show(tmdb_id: int, client: TMDBClient) -> ShowIdentity:
 
     title = show.get("name") or show.get("original_name") or ""
     original_title = show.get("original_name") or title
+    first_air_date = show.get("first_air_date") or ""
+    first_air_year = int(first_air_date[:4]) if first_air_date[:4].isdigit() else None
 
     # No release-year variant: unlike a movie, a show has no single release
     # year an episode's search query would benefit from (the episode token
@@ -42,4 +50,5 @@ def resolve_show(tmdb_id: int, client: TMDBClient) -> ShowIdentity:
         title=title,
         original_title=original_title,
         variants=variants,
+        first_air_year=first_air_year,
     )

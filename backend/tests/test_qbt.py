@@ -83,3 +83,24 @@ def test_add_torrent_raises_when_metadata_reports_a_failure():
     )
     with pytest.raises(QBTError):
         client.add_torrent("http://dead-link.example/x.torrent", category="movies")
+
+
+# -- torrent_files() — Stage 11's media_organizer reads this to pick the
+#    real episode file out of a completed torrent --
+
+
+def test_torrent_files_converts_each_entry_to_a_plain_dict():
+    class FakeFile(dict):
+        """qbittorrentapi's TorrentFile is dict-like but has its own type;
+        `dict(f)` in qbt.py must work against anything shaped like it."""
+
+    client = object.__new__(QBTClient)
+    fake_files = [FakeFile(name="Show.S01E01.mkv", size=8_000_000_000), FakeFile(name="Show.S01E01.nfo", size=1000)]
+    client._client = type(
+        "FakeUnderlyingClient", (), {"torrents_files": lambda self, torrent_hash=None, **kw: fake_files}
+    )()
+
+    result = client.torrent_files("abc123")
+
+    assert result == [{"name": "Show.S01E01.mkv", "size": 8_000_000_000}, {"name": "Show.S01E01.nfo", "size": 1000}]
+    assert all(type(r) is dict for r in result)

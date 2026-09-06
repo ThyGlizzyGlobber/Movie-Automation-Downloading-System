@@ -2,6 +2,7 @@ import argparse
 import sys
 
 from app.config import QBIT_HOST, QBIT_PASSWORD, QBIT_PORT, QBIT_USERNAME, TMDB_API_KEY
+from app.media_organizer import MediaOrganizerError, organize_episode, select_video_file
 from app.pipeline import download, download_episode
 from app.qbt import QBTClient
 from app.resolve import resolve
@@ -95,6 +96,31 @@ def cmd_download_episode(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_organize_episode(args: argparse.Namespace) -> int:
+    """Manual dev entry point for Stage 11's organizer, mirroring how
+    Stage 10's download-episode shipped CLI-only ahead of any worker/API
+    wiring: a persisted episode "downloading" row for the watcher to gate
+    on doesn't exist until Stage 12 adds the schema for one. Runs against a
+    real, already-completed torrent (add one first with `download-episode`,
+    wait for it to finish in qBittorrent, then pass its hash here)."""
+    tmdb_client = TMDBClient(TMDB_API_KEY)
+    qbt = QBTClient(QBIT_HOST, QBIT_PORT, QBIT_USERNAME, QBIT_PASSWORD)
+    identity = resolve_show(args.tmdb_id, tmdb_client)
+
+    try:
+        source_path = select_video_file(qbt, args.torrent_hash)
+        target_path = organize_episode(identity, args.season, args.episode, source_path)
+    except MediaOrganizerError as exc:
+        print(f"status:   downloaded, not filed ({exc})")
+        return 1
+
+    print(f"show:     {identity.title}")
+    print(f"episode:  S{args.season:02d}E{args.episode:02d}")
+    print(f"source:   {source_path}")
+    print(f"target:   {target_path}")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="app.cli")
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -120,6 +146,15 @@ def main(argv: list[str] | None = None) -> int:
     download_episode_parser.add_argument("season", type=int)
     download_episode_parser.add_argument("episode", type=int)
     download_episode_parser.set_defaults(func=cmd_download_episode)
+
+    organize_episode_parser = subparsers.add_parser(
+        "organize-episode", help="Place an already-completed episode torrent's file into Plex's library layout"
+    )
+    organize_episode_parser.add_argument("tmdb_id", type=int)
+    organize_episode_parser.add_argument("season", type=int)
+    organize_episode_parser.add_argument("episode", type=int)
+    organize_episode_parser.add_argument("torrent_hash", type=str)
+    organize_episode_parser.set_defaults(func=cmd_organize_episode)
 
     args = parser.parse_args(argv)
     return args.func(args)

@@ -56,6 +56,29 @@ def test_resolve_show_drops_subtitle_for_a_variant():
     assert identity.variants == ["Star Trek: Discovery", "Star Trek"]
 
 
+def test_resolve_show_captures_first_air_year():
+    client = TMDBClient(api_key="test-key")
+    client._get = lambda path, params=None: {
+        "id": 95350,
+        "name": "Lanterns",
+        "original_name": "Lanterns",
+        "first_air_date": "2026-08-16",
+    }
+
+    identity = resolve_show(95350, client)
+
+    assert identity.first_air_year == 2026
+
+
+def test_resolve_show_first_air_year_is_none_when_unset():
+    client = TMDBClient(api_key="test-key")
+    client._get = lambda path, params=None: {"id": 1, "name": "Unreleased", "original_name": "Unreleased"}
+
+    identity = resolve_show(1, client)
+
+    assert identity.first_air_year is None
+
+
 def test_resolve_show_requests_credits_append():
     client = TMDBClient(api_key="test-key")
     captured = {}

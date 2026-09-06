@@ -158,3 +158,18 @@ DEPLOY_REPO_PATH = Path(os.environ.get("DEPLOY_REPO_PATH", "/repo"))
 GIT_SSH_KEY_PATH = os.environ.get("GIT_SSH_KEY_PATH")
 
 DEPLOY_TIMEOUT_SECONDS = int(os.environ.get("DEPLOY_TIMEOUT_SECONDS", "60"))
+
+# -- Stage 11: post-download file organization & Plex library layout. --
+
+# This container's path to the root of Plex's TV library, on the same
+# underlying dataset qBittorrent's "tv" category downloads into (required
+# for the hardlink in media_organizer.py to work at all — a hardlink can't
+# cross filesystems). Real host path is a NAS-deployment detail pinned down
+# in truenas/custom-app-compose.yaml, not here; local/test runs default to
+# a plainly-fake path since nothing local exercises this without the mount.
+TV_LIBRARY_ROOT = Path(os.environ.get("TV_LIBRARY_ROOT", "/tv-library"))
+
+# Extensions media_organizer.select_video_file() will consider an episode's
+# real video file. Anything else in a torrent (.nfo, .srt, .txt) is
+# ignored outright, not just deprioritized.
+VIDEO_EXTENSIONS = frozenset({".mkv", ".mp4", ".avi", ".m4v", ".ts", ".wmv", ".mov"})
