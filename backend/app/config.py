@@ -173,3 +173,12 @@ TV_LIBRARY_ROOT = Path(os.environ.get("TV_LIBRARY_ROOT", "/tv-library"))
 # real video file. Anything else in a torrent (.nfo, .srt, .txt) is
 # ignored outright, not just deprioritized.
 VIDEO_EXTENSIONS = frozenset({".mkv", ".mp4", ".avi", ".m4v", ".ts", ".wmv", ".mov"})
+
+# This container's path to Plex's movie library root — same dataset
+# qBittorrent's "movies" category downloads into, for the same hardlink-
+# needs-one-filesystem reason as TV_LIBRARY_ROOT. Movies were never
+# organized before this (Stages 0-8 left qBittorrent's own raw download
+# folder as the final resting place); this only renames the *folder* a
+# movie sits in to a Plex-recognized `<Title> (<year>) {tmdb-<id>}` shape,
+# never the file itself, per the user's explicit ask.
+MOVIE_LIBRARY_ROOT = Path(os.environ.get("MOVIE_LIBRARY_ROOT", "/movie-library"))

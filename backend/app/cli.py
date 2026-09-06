@@ -2,7 +2,7 @@ import argparse
 import sys
 
 from app.config import QBIT_HOST, QBIT_PASSWORD, QBIT_PORT, QBIT_USERNAME, TMDB_API_KEY
-from app.media_organizer import MediaOrganizerError, organize_episode, select_video_file
+from app.media_organizer import MediaOrganizerError, organize_episode, organize_movie, select_video_file
 from app.pipeline import download, download_episode
 from app.qbt import QBTClient
 from app.resolve import resolve
@@ -121,6 +121,28 @@ def cmd_organize_episode(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_organize_movie(args: argparse.Namespace) -> int:
+    """Manual dev entry point, same reasoning as cmd_organize_episode: no
+    worker/API wiring yet, so this is how a movie's folder gets renamed to
+    Plex's `<Title> (<year>) {tmdb-<id>}` shape until Stage 12-equivalent
+    wiring exists for movies too."""
+    tmdb_client = TMDBClient(TMDB_API_KEY)
+    qbt = QBTClient(QBIT_HOST, QBIT_PORT, QBIT_USERNAME, QBIT_PASSWORD)
+    identity = resolve(args.tmdb_id, tmdb_client)
+
+    try:
+        source_path = select_video_file(qbt, args.torrent_hash)
+        target_path = organize_movie(identity, source_path)
+    except MediaOrganizerError as exc:
+        print(f"status:   downloaded, not filed ({exc})")
+        return 1
+
+    print(f"movie:    {identity.title} ({identity.release_year})")
+    print(f"source:   {source_path}")
+    print(f"target:   {target_path}")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="app.cli")
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -155,6 +177,13 @@ def main(argv: list[str] | None = None) -> int:
     organize_episode_parser.add_argument("episode", type=int)
     organize_episode_parser.add_argument("torrent_hash", type=str)
     organize_episode_parser.set_defaults(func=cmd_organize_episode)
+
+    organize_movie_parser = subparsers.add_parser(
+        "organize-movie", help="Rename an already-completed movie torrent's folder into Plex's library shape"
+    )
+    organize_movie_parser.add_argument("tmdb_id", type=int)
+    organize_movie_parser.add_argument("torrent_hash", type=str)
+    organize_movie_parser.set_defaults(func=cmd_organize_movie)
 
     args = parser.parse_args(argv)
     return args.func(args)

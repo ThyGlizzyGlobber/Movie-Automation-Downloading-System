@@ -1,11 +1,16 @@
-"""Stage 11: places a completed episode download where Plex's TV agent
-reliably recognizes it, using this app's own already-resolved show/season/
-episode identity rather than re-parsing the downloaded release's filename.
+"""Stage 11: places a completed download where Plex reliably recognizes it,
+using this app's own already-resolved identity rather than re-parsing the
+downloaded release's filename.
 
-Two steps, deliberately separate: `select_video_file` picks the real
-episode file out of a completed torrent's file list; `organize_episode`
-hardlinks that file into Plex's library layout. Season packs never reach
-this module — Stage 10's pass-one gate rejects them before an episode
+`select_video_file` picks the real video file out of a completed torrent's
+file list, for either media type. `organize_episode` hardlinks an episode
+into Plex's TV layout, renaming the file itself to `SxxEyy`. `organize_movie`
+does the movie equivalent, but deliberately renames only the *folder* that
+holds the file, not the file itself — Plex primarily matches a movie by its
+folder name, and there's no reason to touch a filename that's already
+sitting where qBittorrent (and its own seeding) expects it, when a sibling
+hardlink achieves the same recognition. Season packs never reach the
+episode path — Stage 10's pass-one gate rejects them before an episode
 request is ever created — so "one torrent -> one episode's file" is the
 only shape `select_video_file` has to handle; a release whose real file
 doesn't fit that assumption is a named, documented gap, same style as
@@ -21,6 +26,7 @@ from pathlib import Path
 from app import config
 from app.normalize import has_token
 from app.qbt import QBTClient
+from app.resolve import MediaIdentity
 from app.tv_resolve import ShowIdentity
 
 logger = logging.getLogger("app.media_organizer")
@@ -85,6 +91,18 @@ def build_episode_path(show_identity: ShowIdentity, season: int, episode: int, e
     return config.TV_LIBRARY_ROOT / show_folder / season_folder / filename
 
 
+def build_movie_path(identity: MediaIdentity, filename: str) -> Path:
+    """`<MOVIE_LIBRARY_ROOT>/<Title> ({year}) {tmdb-<id>}/<filename>` —
+    same `{tmdb-<id>}` folder hint as TV, but `filename` is passed through
+    verbatim (the original release's own name), not rebuilt: only the
+    folder needs to say which movie this is for Plex to match it, and
+    qBittorrent's own copy already sits under that same filename."""
+    title = _sanitize(identity.title)
+    folder = f"{title} ({identity.release_year})" if identity.release_year else title
+    folder += f" {{tmdb-{identity.tmdb_id}}}"
+    return config.MOVIE_LIBRARY_ROOT / folder / filename
+
+
 def _link_or_copy(source: Path, target: Path) -> None:
     """Hardlinks `source` into `target` — the same safe pattern Sonarr/
     Radarr rely on: qBittorrent's own copy keeps seeding, untouched, while
@@ -120,6 +138,20 @@ def organize_episode(show_identity: ShowIdentity, season: int, episode: int, sou
     touched."""
     source_path = Path(source_path)
     target = build_episode_path(show_identity, season, episode, source_path.suffix)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    _link_or_copy(source_path, target)
+    return target
+
+
+def organize_movie(identity: MediaIdentity, source_path: Path) -> Path:
+    """Places one movie's already-selected video file (see
+    `select_video_file`) into a Plex-recognizable folder — the file's own
+    name is kept exactly as-is; only the folder it sits in is renamed to
+    `<Title> (<year>) {tmdb-<id>}`. Same hardlink-first, copy-fallback
+    placement as `organize_episode`, and the same "only after the torrent
+    is fully complete" rule."""
+    source_path = Path(source_path)
+    target = build_movie_path(identity, source_path.name)
     target.parent.mkdir(parents=True, exist_ok=True)
     _link_or_copy(source_path, target)
     return target

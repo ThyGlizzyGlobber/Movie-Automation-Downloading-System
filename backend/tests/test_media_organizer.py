@@ -7,9 +7,12 @@ from app import config
 from app.media_organizer import (
     MediaOrganizerError,
     build_episode_path,
+    build_movie_path,
     organize_episode,
+    organize_movie,
     select_video_file,
 )
+from app.resolve import MediaIdentity
 from app.tv_resolve import ShowIdentity
 
 LANTERNS = ShowIdentity(
@@ -26,6 +29,22 @@ DISCOVERY = ShowIdentity(
     original_title="Star Trek: Discovery",
     variants=["Star Trek: Discovery", "Star Trek"],
     first_air_year=None,
+)
+
+DUNE = MediaIdentity(
+    tmdb_id=693134,
+    title="Dune: Part Two",
+    original_title="Dune: Part Two",
+    release_year=2024,
+    variants=["Dune: Part Two"],
+)
+
+UNTITLED = MediaIdentity(
+    tmdb_id=1,
+    title="Untitled Project",
+    original_title="Untitled Project",
+    release_year=None,
+    variants=["Untitled Project"],
 )
 
 
@@ -220,3 +239,59 @@ def test_organize_episode_falls_back_to_copy_when_filesystem_lacks_hardlink_supp
 
     assert target.read_bytes() == b"episode bytes"
     assert os.stat(source).st_ino != os.stat(target).st_ino
+
+
+# ---------------------------------------------------------------------------
+# build_movie_path / organize_movie — folder renamed, filename untouched
+# ---------------------------------------------------------------------------
+
+
+def test_build_movie_path_includes_year_and_tmdb_hint():
+    path = build_movie_path(DUNE, "Dune.Part.Two.2024.2160p.REMUX.mkv")
+    assert path == config.MOVIE_LIBRARY_ROOT / "Dune Part Two (2024) {tmdb-693134}" / "Dune.Part.Two.2024.2160p.REMUX.mkv"
+
+
+def test_build_movie_path_omits_year_when_unknown():
+    path = build_movie_path(UNTITLED, "release.mkv")
+    assert path.parent.name == "Untitled Project {tmdb-1}"
+
+
+def test_build_movie_path_keeps_original_filename_verbatim():
+    path = build_movie_path(DUNE, "dune.part.two.2024.REMUX-SOMEGROUP.mkv")
+    assert path.name == "dune.part.two.2024.REMUX-SOMEGROUP.mkv"
+
+
+def test_build_movie_path_sanitizes_unsafe_characters_in_folder_only():
+    identity = MediaIdentity(
+        tmdb_id=789, title="Se7en: Director's Cut", original_title="Se7en", release_year=1995, variants=["Se7en"]
+    )
+    path = build_movie_path(identity, "Se7en.1995.mkv")
+    assert ":" not in path.parent.name
+    assert path.name == "Se7en.1995.mkv"  # filename never sanitized — it's passed through verbatim
+
+
+def test_organize_movie_hardlinks_without_renaming_the_file(tmp_path, monkeypatch):
+    monkeypatch.setattr(config, "MOVIE_LIBRARY_ROOT", tmp_path / "library")
+    source_dir = tmp_path / "downloads" / "Dune Part Two 2024 2160p REMUX-GROUP"
+    source_dir.mkdir(parents=True)
+    source = source_dir / "Dune Part Two 2024 2160p REMUX-GROUP.mkv"
+    source.write_bytes(b"movie bytes")
+
+    target = organize_movie(DUNE, source)
+
+    assert target.name == "Dune Part Two 2024 2160p REMUX-GROUP.mkv"  # unchanged
+    assert target.parent.name == "Dune Part Two (2024) {tmdb-693134}"
+    assert target.read_bytes() == b"movie bytes"
+    assert os.stat(source).st_ino == os.stat(target).st_ino  # a real hardlink
+
+
+def test_organize_movie_is_idempotent_when_rerun(tmp_path, monkeypatch):
+    monkeypatch.setattr(config, "MOVIE_LIBRARY_ROOT", tmp_path / "library")
+    source = tmp_path / "movie.mkv"
+    source.write_bytes(b"first")
+
+    organize_movie(DUNE, source)
+    source.write_bytes(b"second")
+    target = organize_movie(DUNE, source)
+
+    assert target.read_bytes() == b"second"
