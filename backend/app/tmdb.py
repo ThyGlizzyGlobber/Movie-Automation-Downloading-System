@@ -138,6 +138,13 @@ class TMDBClient:
         )
 
     @ttl_cache(POPULAR_DISCOVER_TTL_SECONDS)
+    def discover_by_genre(self, genre_id: int, region: str = "US", page: int = 1) -> dict:
+        return self._get(
+            "/discover/movie",
+            {"with_genres": genre_id, "region": region, "page": page, "sort_by": "popularity.desc"},
+        )
+
+    @ttl_cache(POPULAR_DISCOVER_TTL_SECONDS)
     def get_now_playing(self, region: str = "US", page: int = 1) -> dict:
         return self._get("/movie/now_playing", {"region": region, "page": page})
 
@@ -232,6 +239,13 @@ class TMDBClient:
                 "page": page,
                 "sort_by": "popularity.desc",
             },
+        )
+
+    @ttl_cache(POPULAR_DISCOVER_TTL_SECONDS)
+    def discover_tv_by_genre(self, genre_id: int, region: str = "US", page: int = 1) -> dict:
+        return self._get(
+            "/discover/tv",
+            {"with_genres": genre_id, "region": region, "page": page, "sort_by": "popularity.desc"},
         )
 
     @ttl_cache(POPULAR_DISCOVER_TTL_SECONDS)

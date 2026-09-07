@@ -52,8 +52,10 @@
   #backBtn, #settingsToggle {
     flex: 0 0 auto; background: none; border: none; color: var(--text);
     font-size: 20px; padding: 6px 8px; border-radius: 8px; line-height: 1;
+    display: flex; align-items: center; justify-content: center;
   }
   #backBtn:active, #settingsToggle:active { background: var(--bg-card); }
+  #settingsToggle svg { width: 20px; height: 20px; fill: currentColor; }
   /* Same slot the old page-title text sat in — right after the (contextual)
      back button — just a static mark now rather than dynamic per-page text. */
   #topbarLogo { flex: 0 0 auto; width: 30px; height: 30px; border-radius: 8px; display: block; }
@@ -111,6 +113,18 @@
     text-transform: uppercase; letter-spacing: 0.04em;
     margin: 0 0 10px 2px;
   }
+  /* A row whose title expands to a dedicated full-list page (Prime-Video-
+     style) — same type scale as the plain h2 above, but accent-colored
+     with a trailing chevron so it visibly reads as tappable, not just a
+     label. */
+  section.row .row-title {
+    display: inline-flex; align-items: center; gap: 4px;
+    font-size: 15px; font-weight: 600; color: var(--accent);
+    text-transform: uppercase; letter-spacing: 0.04em;
+    margin: 0 0 10px 2px;
+  }
+  section.row .row-title-arrow { font-size: 17px; line-height: 1; font-weight: 700; }
+  section.row .row-title:active { opacity: 0.7; }
 
   .hscroll {
     display: flex; gap: 10px; overflow-x: auto; padding-bottom: 4px;
@@ -180,16 +194,11 @@
     display: flex; align-items: center; justify-content: space-between;
     gap: 12px; margin-bottom: 22px;
   }
-  .subnav-tabs { display: flex; gap: 8px; }
-  .subtab {
-    padding: 8px 18px; border-radius: 999px; font-size: 14px; font-weight: 600;
-    background: var(--bg-card); color: var(--text-dim); border: 1px solid var(--border);
-  }
-  .subtab.active { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
+  .subnav h1 { font-size: 21px; margin: 0; }
 
-  /* Plex-style grid density slider, shown top-right on the same row as the
-     Discover/Coming Soon tabs. Controls --poster-min, so it affects every
-     .grid on the page (not just the current view). */
+  /* Plex-style grid density slider, shown top-right on the same row as a
+     category page's own title. Controls --poster-min, so it affects
+     every .grid/.hscroll on the page (not just the current view). */
   .grid-size { display: flex; align-items: center; gap: 6px; flex: 0 0 auto; }
   .grid-size-icon { color: var(--text-dim); flex: 0 0 auto; line-height: 1; }
   .grid-size-icon.small { font-size: 9px; }
@@ -198,12 +207,11 @@
     width: 78px; accent-color: var(--accent);
   }
 
-  .loadmore {
-    display: block; width: 100%; margin-top: 12px; padding: 12px;
-    background: var(--bg-card); border: 1px solid var(--border); color: var(--text);
-    border-radius: 10px; font-size: 15px;
-  }
-  .loadmore:active { background: var(--bg-elevated); }
+  /* Invisible trigger an IntersectionObserver watches to auto-load the
+     next page as the user scrolls near it — see wireInfiniteGrid(). Its
+     own spinner only shows while a background page fetch is in flight. */
+  .grid-sentinel { height: 1px; margin-top: 12px; }
+  .grid-sentinel .spinner { margin-top: 16px; }
 
   .empty, .error, .loading {
     color: var(--text-dim); text-align: center; padding: 40px 20px; font-size: 15px;
@@ -363,7 +371,7 @@
     display: flex; align-items: center; justify-content: space-between; gap: 10px;
     padding: 14px 4px; border-bottom: 1px solid var(--border);
   }
-  .req-main { min-width: 0; }
+  .req-main { min-width: 0; flex: 1; }
   .req-title {
     display: block; font-size: 15.5px; font-weight: 600;
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
@@ -401,6 +409,16 @@
   }
   .cancel-btn:active { background: color-mix(in srgb, var(--status-nospace) 18%, transparent); }
   .cancel-btn[disabled] { opacity: 0.5; }
+  /* A finished download's "Cancel" is really "delete" (there's nothing
+     left in progress to cancel) — a plain circular X reads simpler than
+     a text pill for that, same treatment as .search-clear-btn. */
+  .req-delete-btn {
+    flex: 0 0 auto; width: 28px; height: 28px; border-radius: 50%;
+    background: none; border: none; color: var(--status-nospace); font-size: 15px;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .req-delete-btn:active { background: color-mix(in srgb, var(--status-nospace) 18%, transparent); }
+  .req-delete-btn[disabled] { opacity: 0.5; }
   /* Watching list's Pause/Resume — same pill shape as .cancel-btn but a
      neutral (not destructive) color, since pausing isn't deleting anything. */
   .toggle-show-btn {
@@ -410,12 +428,13 @@
   .toggle-show-btn:active { background: color-mix(in srgb, var(--accent) 18%, transparent); }
   .toggle-show-btn[disabled] { opacity: 0.5; }
 
-  /* Floating above the tab bar, bottom-left — not part of the scrolling
-     list, so it stays reachable regardless of scroll position. Bottom-left
-     specifically so it never collides with the global .downloads-fab,
-     which owns bottom-right on every page including this one. */
+  /* Floating above the tab bar, bottom-right — not part of the scrolling
+     list, so it stays reachable regardless of scroll position. Shares the
+     exact right/bottom inset the global .downloads-fab uses everywhere
+     else, since the two never appear on screen together — .downloads-fab
+     is hidden on this exact page (see route()). */
   .clear-requests-fab {
-    position: fixed; left: 14px; bottom: calc(76px + var(--safe-bottom)); z-index: 9;
+    position: fixed; right: 32px; bottom: calc(84px + var(--safe-bottom)); z-index: 9;
   }
   .split-btn {
     display: flex; align-items: stretch; background: var(--bg-card);
@@ -456,12 +475,13 @@
      Hidden on the Requests page itself via route()'s own toggle — no
      point offering to navigate to where you already are. */
   .downloads-fab {
-    position: fixed; right: 14px; bottom: calc(76px + var(--safe-bottom)); z-index: 9;
-    width: 52px; height: 52px; border-radius: 50%; border: none;
+    position: fixed; right: 32px; bottom: calc(84px + var(--safe-bottom)); z-index: 9;
+    width: 56px; height: 56px; border-radius: 50%; border: none;
     background: var(--accent); color: var(--accent-text);
-    display: flex; align-items: center; justify-content: center; font-size: 22px;
+    display: flex; align-items: center; justify-content: center;
     box-shadow: 0 4px 14px rgba(0,0,0,0.35);
   }
+  .downloads-fab svg { width: 28px; height: 28px; fill: currentColor; }
   .downloads-fab:active { opacity: 0.85; }
   /* Same-specificity tie with the UA's [hidden]{display:none} as
      .search-clear-btn above — without this, the class rule's own
@@ -544,7 +564,8 @@
     flex: 1; display: flex; flex-direction: column; align-items: center; gap: 2px;
     padding: 6px 0; color: var(--text-dim); font-size: 11px; background: none; border: none;
   }
-  .tab .icon { font-size: 21px; }
+  .tab .icon { display: flex; }
+  .tab .icon svg { width: 22px; height: 22px; fill: currentColor; }
   .tab.active { color: var(--accent); }
 
   /* Desktop nav: a top horizontal bar (Netflix-style) replaces the bottom
@@ -558,7 +579,7 @@
     #tabbar { display: none; }
     .top-nav-links { display: flex; align-items: center; gap: 4px; flex: 0 0 auto; }
     main { padding-bottom: 40px; }
-    .clear-requests-fab, .downloads-fab { bottom: 20px; }
+    .clear-requests-fab, .downloads-fab { bottom: 28px; }
   }
 </style>
 </head>
@@ -568,6 +589,7 @@
   <button id="backBtn" style="display:none" aria-label="Back">&larr;</button>
   <img id="topbarLogo" src="/icon-192.png" alt="The Family Downloader">
   <nav class="top-nav-links">
+    <button class="top-nav-link" data-tab="home">Home</button>
     <button class="top-nav-link" data-tab="movies">Movies</button>
     <button class="top-nav-link" data-tab="tv">TV Shows</button>
   </nav>
@@ -575,14 +597,23 @@
     <input id="searchInput" type="search" enterkeyhint="search" aria-label="Search movies and TV shows">
     <button id="searchClearBtn" class="search-clear-btn" aria-label="Clear search" hidden>&#10005;</button>
   </div>
-  <button id="settingsToggle" aria-label="Settings">&#9881;&#65039;</button>
+  <button id="settingsToggle" aria-label="Settings">
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" aria-hidden="true"><path d="M19.14,12.94c0.04-0.3,0.06-0.61,0.06-0.94c0-0.32-0.02-0.64-0.07-0.94l2.03-1.58c0.18-0.14,0.23-0.41,0.12-0.61 l-1.92-3.32c-0.12-0.22-0.37-0.29-0.59-0.22l-2.39,0.96c-0.5-0.38-1.03-0.7-1.62-0.94L14.4,2.81c-0.04-0.24-0.24-0.41-0.48-0.41 h-3.84c-0.24,0-0.43,0.17-0.47,0.41L9.25,5.35C8.66,5.59,8.12,5.92,7.63,6.29L5.24,5.33c-0.22-0.08-0.47,0-0.59,0.22L2.74,8.87 C2.62,9.08,2.66,9.34,2.86,9.48l2.03,1.58C4.84,11.36,4.8,11.69,4.8,12s0.02,0.64,0.07,0.94l-2.03,1.58 c-0.18,0.14-0.23,0.41-0.12,0.61l1.92,3.32c0.12,0.22,0.37,0.29,0.59,0.22l2.39-0.96c0.5,0.38,1.03,0.7,1.62,0.94l0.36,2.54 c0.05,0.24,0.24,0.41,0.48,0.41h3.84c0.24,0,0.44-0.17,0.47-0.41l0.36-2.54c0.59-0.24,1.13-0.56,1.62-0.94l2.39,0.96 c0.22,0.08,0.47,0,0.59-0.22l1.92-3.32c0.12-0.22,0.07-0.47-0.12-0.61L19.14,12.94z M12,15.6c-1.98,0-3.6-1.62-3.6-3.6 s1.62-3.6,3.6-3.6s3.6,1.62,3.6,3.6S13.98,15.6,12,15.6z"/></svg>
+  </button>
 </div>
 
 <main id="app"><div class="loading"><div class="spinner"></div></div></main>
 
 <nav id="tabbar">
-  <button class="tab" data-tab="movies"><span class="icon">&#127916;</span>Movies</button>
-  <button class="tab" data-tab="tv"><span class="icon">&#128250;</span>TV Shows</button>
+  <button class="tab" data-tab="home">
+    <span class="icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" aria-hidden="true"><path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z"/></svg></span>Home
+  </button>
+  <button class="tab" data-tab="movies">
+    <span class="icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" aria-hidden="true"><path d="M18 4l2 4h-3l-2-4h-2l2 4h-3l-2-4H8l2 4H7L5 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V4h-4z"/></svg></span>Movies
+  </button>
+  <button class="tab" data-tab="tv">
+    <span class="icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 3H3c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h5v2h8v-2h5c1.1 0 1.99-.9 1.99-2L23 5c0-1.1-.9-2-2-2zm0 14H3V5h18v12z"/></svg></span>TV Shows
+  </button>
 </nav>
 
 <!-- Global downloads FAB (Stage 14.x) — outside #app so route changes
@@ -590,7 +621,9 @@
      (queued/searching/downloading) request count. Hidden while already
      on the Requests page — see route(). -->
 <button id="downloadsFab" class="downloads-fab" aria-label="Requests">
-  &#11015;&#65039;
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 -960 960 960" aria-hidden="true">
+    <path d="M480-320 280-520l56-58 104 104v-326h80v326l104-104 56 58-200 200ZM240-160v-160h80v80h320v-80h80v160H240Z"/>
+  </svg>
   <span id="downloadsBadge" class="downloads-badge" hidden>0</span>
 </button>
 
@@ -637,6 +670,38 @@
         <div class="provider-label">${escapeHtml(cp.name)}</div>
       </a>`).join("");
   }
+
+  // Curated genre rows (Netflix/Prime-style "Comedies", "Action", etc.) —
+  // TMDB's genre ids are fixed, well-known constants, so these are hand-
+  // picked here rather than fetched from a genre-list endpoint (none
+  // exists, and building one just to map id -> name for a handful of
+  // rows this app itself chooses would be pure overhead).
+  const MOVIE_GENRES = [
+    { id: 28, label: "Action" }, { id: 35, label: "Comedies" }, { id: 27, label: "Horror" },
+    { id: 10749, label: "Romance" }, { id: 16, label: "Animation" }, { id: 99, label: "Documentaries" },
+  ];
+  const TV_GENRES = [
+    { id: 35, label: "Comedies" }, { id: 18, label: "Dramas" }, { id: 10765, label: "Sci-Fi & Fantasy" },
+    { id: 16, label: "Animation" }, { id: 99, label: "Documentaries" }, { id: 80, label: "Crime" },
+    { id: 10764, label: "Reality" },
+  ];
+  // Home mixes movie+TV per named genre — ids diverge by media type (e.g.
+  // Action is 28 for movies but "Action & Adventure" is 10759 for TV;
+  // Sci-Fi is 878 for movies vs 10765 for TV) so each row pairs a label
+  // with both ids explicitly rather than reusing MOVIE_GENRES/TV_GENRES
+  // positionally.
+  const HOME_GENRES = [
+    { label: "Comedies", movieId: 35, tvId: 35 },
+    { label: "Action & Adventure", movieId: 28, tvId: 10759 },
+    { label: "Sci-Fi & Fantasy", movieId: 878, tvId: 10765 },
+    { label: "Animation", movieId: 16, tvId: 16 },
+    { label: "Documentaries", movieId: 99, tvId: 99 },
+  ];
+  // Subset of CURATED_PROVIDERS surfaced as inline "Popular on X" rows on
+  // the Movies/TV curated pages — all 8 as rows would make an already-
+  // heavy page noticeably heavier; the full list stays reachable via the
+  // existing "Browse a Service" chip grid on the same page.
+  const ROW_PROVIDERS = CURATED_PROVIDERS.slice(0, 4); // Netflix, Prime Video, Disney+, Max
 
   const STATUS_META = {
     "queued": { label: "Queued", cls: "status-queued" },
@@ -707,6 +772,7 @@
   const getDiscoverPopular = (page) => api(`/api/discover/popular?page=${page || 1}`);
   const getDiscoverTrending = (page) => api(`/api/discover/trending?page=${page || 1}`);
   const getDiscoverByProvider = (id, page) => api(`/api/discover/providers/${id}?page=${page || 1}`);
+  const getDiscoverByGenre = (id, page) => api(`/api/discover/genre/${id}?page=${page || 1}`);
   const getComingSoon = (page) => api(`/api/discover/coming-soon?page=${page || 1}`);
   const getMovie = (id) => api(`/api/movies/${id}`);
   const postSearch = (query, providerId) => api(`/api/search`, {
@@ -718,6 +784,7 @@
   const getTvDiscoverPopular = (page) => api(`/api/tv/discover/popular?page=${page || 1}`);
   const getTvDiscoverTrending = (page) => api(`/api/tv/discover/trending?page=${page || 1}`);
   const getTvDiscoverByProvider = (id, page) => api(`/api/tv/discover/providers/${id}?page=${page || 1}`);
+  const getTvDiscoverByGenre = (id, page) => api(`/api/tv/discover/genre/${id}?page=${page || 1}`);
   const getTvShow = (id) => api(`/api/tv/${id}`);
   const postSearchTv = (query, providerId) => api(`/api/tv/search`, {
     method: "POST", headers: { "Content-Type": "application/json" },
@@ -785,6 +852,60 @@
     </a>`;
   }
 
+  // Tags each item of a discover-shaped {results:[...]} response with its
+  // media type — mixed Home rows combine a movie call + a TV call whose
+  // raw TMDB items don't self-describe which one they are, and
+  // posterCard takes mediaType as a plain function arg, not derived from
+  // the item itself.
+  function tagMediaType(items, mediaType) {
+    return items.map((it) => ({ ...it, __mediaType: mediaType }));
+  }
+
+  // Netflix/Prime-style horizontal row. Wraps posterCard output in the
+  // existing section.row/.hscroll shells — mediaType is either a fixed
+  // string ("movie"/"tv") for a same-type row, or a function (item) =>
+  // "movie"|"tv" for a mixed row (used with tagMediaType'd items).
+  // expandHref, when given, turns the title into a link to a dedicated
+  // full-list page for that one category (Prime-Video-style "click a row
+  // title to see more") — a trailing chevron plus the accent color marks
+  // it as clickable, since a plain <h2> alone doesn't read as tappable.
+  function rowHtml(title, items, mediaType, expandHref) {
+    if (!items || !items.length) return "";
+    const cards = items
+      .map((it) => posterCard(it, typeof mediaType === "function" ? mediaType(it) : mediaType))
+      .join("");
+    const heading = expandHref
+      ? `<a class="row-title" href="${expandHref}">${escapeHtml(title)}<span class="row-title-arrow">›</span></a>`
+      : `<h2>${escapeHtml(title)}</h2>`;
+    return `<section class="row">${heading}<div class="hscroll">${cards}</div></section>`;
+  }
+
+  // Simplified hero for curated landing pages (Home, Movies, TV) — reuses
+  // .hero/.hero-content/backdropUrl() verbatim, the same shape
+  // renderMovie/renderShow use for their detail-page hero, just without
+  // the poster/season/subscribe controls: title, a short overview, one
+  // "More Info" link into the detail route.
+  function homeHeroHtml(item, mediaType) {
+    if (!item) return "";
+    const isTv = mediaType === "tv";
+    const title = escapeHtml(item.title || item.name || item.original_title || item.original_name || "");
+    const backdrop = backdropUrl(item.backdrop_path);
+    const raw = item.overview || "";
+    const overview = raw.length > 220 ? raw.slice(0, 220).trim() + "…" : raw;
+    const href = isTv ? `#/tv/${item.id}` : `#/movies/${item.id}`;
+    return `<div class="hero" style="${backdrop ? `background-image:url('${backdrop}')` : ""}">
+      <div class="hero-content">
+        <div class="detail-info">
+          <h1>${title}</h1>
+          <div class="detail-overview">${escapeHtml(overview)}</div>
+          <div class="hero-actions" style="margin-top:14px">
+            <a class="add-btn" href="${href}">More Info</a>
+          </div>
+        </div>
+      </div>
+    </div>`;
+  }
+
   function loadingHtml() { return `<div class="loading"><div class="spinner"></div></div>`; }
   function errorHtml(msg, retryHash) {
     return `<div class="error">Couldn't load that.<br>${escapeHtml(msg || "")}
@@ -822,31 +943,6 @@
   }
   setGridSize(getGridSize());
 
-  // Shared filter-tab row for both Movies (Popular/Trending/Coming Soon)
-  // and TV (Popular/Trending/Watching) — `tabs` is [{key, label, hash}].
-  // Carries the grid-size slider top-right, on the same row, unless the
-  // active tab is a list view (Watching) rather than a poster grid.
-  function subnavHtml(tabs, activeKey, { showGridSize = true } = {}) {
-    const links = tabs
-      .map((t) => `<a class="subtab ${t.key === activeKey ? "active" : ""}" href="${t.hash}">${escapeHtml(t.label)}</a>`)
-      .join("");
-    return `<div class="subnav">
-      <div class="subnav-tabs">${links}</div>
-      ${showGridSize ? gridSizeHtml() : ""}
-    </div>`;
-  }
-
-  const MOVIES_TABS = [
-    { key: "popular", label: "Popular", hash: "#/movies" },
-    { key: "trending", label: "Trending", hash: "#/movies/trending" },
-    { key: "coming-soon", label: "Coming Soon", hash: "#/movies/coming-soon" },
-  ];
-  const TV_TABS = [
-    { key: "popular", label: "Popular", hash: "#/tv" },
-    { key: "trending", label: "Trending", hash: "#/tv/trending" },
-    { key: "watching", label: "Watching", hash: "#/tv/watching" },
-  ];
-
   // -- Router --
 
   const app = document.getElementById("app");
@@ -877,7 +973,7 @@
     });
   }
 
-  const SECTION_HASH = { movies: "#/movies", tv: "#/tv" };
+  const SECTION_HASH = { home: "#/home", movies: "#/movies", tv: "#/tv" };
   function navigate(hash) { window.location.hash = hash; }
   backBtn.addEventListener("click", () => window.history.back());
 
@@ -933,7 +1029,7 @@
       toggleShowBtn.disabled = true;
       try {
         await (isPaused ? resumeShow(showId) : pauseShow(showId));
-        await renderTv("watching");
+        await renderWatching();
       } catch (err) {
         alert(`Couldn't update this show: ${err.message}`);
         toggleShowBtn.disabled = false;
@@ -947,7 +1043,7 @@
       unsubBtn.disabled = true;
       try {
         await deleteShow(unsubBtn.dataset.unsubShow);
-        await renderTv("watching");
+        await renderWatching();
       } catch (err) {
         alert(`Couldn't unsubscribe: ${err.message}`);
         unsubBtn.disabled = false;
@@ -955,21 +1051,22 @@
       return;
     }
 
-    const cancelBtn = e.target.closest(".cancel-btn");
+    const cancelBtn = e.target.closest(".cancel-btn, .req-delete-btn");
     if (cancelBtn) {
+      const isDelete = cancelBtn.classList.contains("req-delete-btn");
       const confirmMsg = cancelBtn.dataset.status === "queued"
         ? "Remove this request from the queue? This can't be undone."
         : "Delete this download and its files from qBittorrent? This can't be undone.";
       if (!confirm(confirmMsg)) return;
       cancelBtn.disabled = true;
-      cancelBtn.textContent = "Cancelling…";
+      if (!isDelete) cancelBtn.textContent = "Cancelling…";
       try {
         await cancelRequest(cancelBtn.dataset.requestId);
         await loadRequests();
       } catch (err) {
         alert(`Couldn't cancel: ${err.message}`);
         cancelBtn.disabled = false;
-        cancelBtn.textContent = "Cancel";
+        if (!isDelete) cancelBtn.textContent = "Cancel";
       }
       return;
     }
@@ -996,14 +1093,19 @@
   });
 
   const routes = [
-    { re: /^#\/movies$/, handler: () => renderMovies("popular") },
-    { re: /^#\/movies\/trending$/, handler: () => renderMovies("trending") },
-    { re: /^#\/movies\/coming-soon$/, handler: () => renderMovies("coming-soon") },
+    { re: /^#\/home$/, handler: renderHome },
+    { re: /^#\/movies$/, handler: renderMovies },
+    { re: /^#\/movies\/trending$/, handler: () => renderCategory("Trending Movies", getDiscoverTrending, "movie") },
+    { re: /^#\/movies\/popular$/, handler: () => renderCategory("Popular Movies", getDiscoverPopular, "movie") },
+    { re: /^#\/movies\/coming-soon$/, handler: () => renderCategory("New Releases", getComingSoon, "movie") },
+    { re: /^#\/movies\/genre\/(\d+)\/(.*)$/, handler: (m) => renderCategory(decodeURIComponent(m[2]), (p) => getDiscoverByGenre(m[1], p), "movie") },
     { re: /^#\/movies\/provider\/(\d+)\/(.*)$/, handler: (m) => renderProvider(m[1], decodeURIComponent(m[2]), "movie") },
     { re: /^#\/movies\/(\d+)$/, handler: (m) => renderMovie(m[1]) },
-    { re: /^#\/tv$/, handler: () => renderTv("popular") },
-    { re: /^#\/tv\/trending$/, handler: () => renderTv("trending") },
-    { re: /^#\/tv\/watching$/, handler: () => renderTv("watching") },
+    { re: /^#\/tv$/, handler: renderTv },
+    { re: /^#\/tv\/trending$/, handler: () => renderCategory("Trending TV Shows", getTvDiscoverTrending, "tv") },
+    { re: /^#\/tv\/popular$/, handler: () => renderCategory("Popular TV Shows", getTvDiscoverPopular, "tv") },
+    { re: /^#\/tv\/genre\/(\d+)\/(.*)$/, handler: (m) => renderCategory(decodeURIComponent(m[2]), (p) => getTvDiscoverByGenre(m[1], p), "tv") },
+    { re: /^#\/tv\/watching$/, handler: renderWatching },
     { re: /^#\/tv\/provider\/(\d+)\/(.*)$/, handler: (m) => renderProvider(m[1], decodeURIComponent(m[2]), "tv") },
     { re: /^#\/tv\/(\d+)$/, handler: (m) => renderShow(m[1]) },
     { re: /^#\/requests$/, handler: renderRequests },
@@ -1013,86 +1115,280 @@
 
   function route() {
     stopPolling();
-    const hash = window.location.hash || "#/movies";
+    const hash = window.location.hash || "#/home";
     downloadsFab.hidden = hash.startsWith("#/requests");
     for (const r of routes) {
       const m = hash.match(r.re);
       if (m) { r.handler(m); return; }
     }
-    navigate("#/movies");
+    navigate("#/home");
   }
   window.addEventListener("hashchange", route);
 
   // -- Views --
 
-  // Shared paginated-grid markup + "Load more" wiring — backs Movies'
+  // Subscribed-shows rows for Home/TV — listShows() alone doesn't carry
+  // poster art or a real "when did this last air" signal, so each show
+  // gets enriched with its own already-existing GET /api/tv/{id} detail
+  // (poster_path, on_plex, and last_episode_to_air.air_date — real TMDB
+  // data, so a show correctly jumps to the front the moment a new
+  // episode actually airs, no extra polling/caching needed on this end).
+  async function fetchEnrichedWatchingShows() {
+    const shows = await listShows();
+    return Promise.all(shows.map(async (s) => {
+      let detail = {};
+      try { detail = await getTvShow(s.tmdb_id); } catch (err) { /* fall through with no poster/air-date */ }
+      return {
+        id: s.tmdb_id,
+        name: s.title,
+        poster_path: detail.poster_path || null,
+        on_plex: detail.on_plex || false,
+        __mediaType: "tv",
+        created_at: s.created_at,
+        last_air_date: detail.last_episode_to_air?.air_date || null,
+      };
+    }));
+  }
+
+  // "New In Watching" (most recently *aired* episode first — a show with
+  // an episode airing today jumps straight to the front) and "Subscribed
+  // Shows" (most recently *subscribed* first) — two different orderings
+  // of the same subscribed-shows list, both expanding to the existing
+  // full Watching page (pause/resume/unsubscribe controls, unchanged).
+  function watchingRowsHtml(enrichedShows) {
+    const byNewestEpisode = [...enrichedShows].sort(
+      (a, b) => (b.last_air_date || "").localeCompare(a.last_air_date || "")
+    );
+    const bySubscribed = [...enrichedShows].sort(
+      (a, b) => (b.created_at || "").localeCompare(a.created_at || "")
+    );
+    return (
+      rowHtml("New In Watching", byNewestEpisode, (it) => it.__mediaType, "#/tv/watching") +
+      rowHtml("Subscribed Shows", bySubscribed, (it) => it.__mediaType, "#/tv/watching")
+    );
+  }
+
+  // The merged Home feed — mixes movies and TV into one curated,
+  // row-based landing page, at the user's explicit request, alongside
+  // (not instead of) the separate movie-only/TV-only Movies/TV pages
+  // below. No subnav — straight into a hero banner + rows.
+  async function renderHome() {
+    setChrome({ title: "", showBack: false, activeTab: "home" });
+    app.innerHTML = loadingHtml();
+
+    // One Promise.all resolves every row's data in parallel; a single
+    // loadingHtml() covers the whole wait rather than a progressive
+    // per-row reveal — simplest correct option, and every row is a
+    // single page (~20 items, no pagination), so the wait is bounded by
+    // the slowest of these parallel calls, not a serial chain.
+    const jobs = [
+      { key: "movieTrending", fn: () => getDiscoverTrending(1) },
+      { key: "tvTrending", fn: () => getTvDiscoverTrending(1) },
+      { key: "moviePopular", fn: () => getDiscoverPopular(1) },
+      { key: "tvPopular", fn: () => getTvDiscoverPopular(1) },
+      { key: "comingSoon", fn: () => getComingSoon(1) },
+      { key: "watchingShows", fn: fetchEnrichedWatchingShows },
+      ...HOME_GENRES.flatMap((g) => [
+        { key: `gm-${g.movieId}`, fn: () => getDiscoverByGenre(g.movieId, 1) },
+        { key: `gt-${g.tvId}`, fn: () => getTvDiscoverByGenre(g.tvId, 1) },
+      ]),
+    ];
+
+    try {
+      const results = await Promise.all(jobs.map((j) => j.fn()));
+      const byKey = {};
+      jobs.forEach((j, i) => { byKey[j.key] = results[i]; });
+
+      const topMovie = byKey.movieTrending.results?.[0];
+      const topTv = byKey.tvTrending.results?.[0];
+      const heroIsTv = topTv && (!topMovie || (topTv.popularity || 0) > (topMovie.popularity || 0));
+      const heroItem = heroIsTv ? topTv : topMovie;
+
+      const mixedTrending = [
+        ...tagMediaType(byKey.movieTrending.results || [], "movie"),
+        ...tagMediaType(byKey.tvTrending.results || [], "tv"),
+      ].sort((a, b) => (b.popularity || 0) - (a.popularity || 0)).slice(0, 20);
+
+      // Each named genre does a movie call + a TV call, interleaved into
+      // one mixed row rather than split into two half-width rows — reads
+      // as a single Netflix-style row.
+      const genreRowsHtml = HOME_GENRES.map((g) => {
+        const movieItems = tagMediaType(byKey[`gm-${g.movieId}`].results || [], "movie");
+        const tvItems = tagMediaType(byKey[`gt-${g.tvId}`].results || [], "tv");
+        const merged = [];
+        for (let i = 0; i < Math.max(movieItems.length, tvItems.length); i++) {
+          if (movieItems[i]) merged.push(movieItems[i]);
+          if (tvItems[i]) merged.push(tvItems[i]);
+        }
+        return rowHtml(g.label, merged, (it) => it.__mediaType);
+      }).join("");
+
+      app.innerHTML = `
+        ${homeHeroHtml(heroItem, heroIsTv ? "tv" : "movie")}
+        ${watchingRowsHtml(byKey.watchingShows || [])}
+        ${rowHtml("Trending Now", mixedTrending, (it) => it.__mediaType)}
+        ${rowHtml("Popular Movies", byKey.moviePopular.results || [], "movie", "#/movies/popular")}
+        ${rowHtml("Popular TV Shows", byKey.tvPopular.results || [], "tv", "#/tv/popular")}
+        ${rowHtml("New Releases", byKey.comingSoon.results || [], "movie", "#/movies/coming-soon")}
+        ${genreRowsHtml}
+        <section class="row">
+          <h2>Browse a Service</h2>
+          <div class="provider-row">${providerChipsHtml("#/movies/provider")}</div>
+        </section>
+      `;
+    } catch (err) {
+      app.innerHTML = errorHtml(err.message, "#/home");
+    }
+  }
+
+  // Shared paginated-grid markup + infinite-scroll wiring — backs Movies'
   // Popular/Trending/Coming Soon, TV's Popular/Trending, and Provider
   // browse, all of which are "fetch a {results, page, total_pages} page,
-  // append the next one on demand" in the exact same shape.
-  function gridSectionHtml(gridId, moreBtnId, data, mediaType, emptyMessage) {
+  // append the next one as the user scrolls" in the exact same shape.
+  function gridSectionHtml(gridId, sentinelId, data, mediaType, emptyMessage) {
     const results = data.results || [];
     return `
       <div class="grid" id="${gridId}">${results.map((it) => posterCard(it, mediaType)).join("")}</div>
       ${!results.length && emptyMessage ? emptyHtml(emptyMessage) : ""}
-      ${data.page < (data.total_pages || 1) ? `<button class="loadmore" id="${moreBtnId}">Load more</button>` : ""}
+      <div class="grid-sentinel" id="${sentinelId}"><div class="spinner" hidden></div></div>
     `;
   }
 
-  function wireLoadMore(gridId, moreBtnId, fetchPage, mediaType, startPage) {
-    let page = startPage || 1;
-    const moreBtn = document.getElementById(moreBtnId);
-    if (!moreBtn) return;
-    moreBtn.addEventListener("click", async () => {
-      moreBtn.textContent = "Loading…";
-      moreBtn.disabled = true;
-      const next = await fetchPage(page + 1);
-      page = next.page;
-      document.getElementById(gridId).insertAdjacentHTML(
-        "beforeend", (next.results || []).map((it) => posterCard(it, mediaType)).join("")
-      );
-      if (page >= (next.total_pages || 1)) moreBtn.remove();
-      else { moreBtn.textContent = "Load more"; moreBtn.disabled = false; }
-    });
+  function gridColumnCount(gridEl) {
+    // .grid uses grid-template-columns: repeat(auto-fill, minmax(...)) —
+    // the browser resolves that into an actual per-viewport track list
+    // (varies with window width and the grid-size slider's --poster-min),
+    // which is exactly the "how many posters fit per row right now"
+    // this needs; reading it forces the layout pass that makes it accurate.
+    const tracks = getComputedStyle(gridEl).gridTemplateColumns.split(" ").filter(Boolean);
+    return tracks.length || 1;
   }
 
-  async function renderMovies(tab) {
-    setChrome({ title: "", showBack: false, activeTab: "movies" });
-    app.innerHTML = subnavHtml(MOVIES_TABS, tab) + loadingHtml();
-    try {
-      if (tab === "trending") {
-        const data = await getDiscoverTrending(1);
-        app.innerHTML = `
-          ${subnavHtml(MOVIES_TABS, "trending")}
-          ${gridSectionHtml("trendingGrid", "trendingMore", data, "movie", "Nothing trending right now.")}
-        `;
-        wireGridSizeSlider();
-        wireLoadMore("trendingGrid", "trendingMore", getDiscoverTrending, "movie", data.page);
-      } else if (tab === "coming-soon") {
-        const data = await getComingSoon(1);
-        app.innerHTML = `
-          ${subnavHtml(MOVIES_TABS, "coming-soon")}
-          ${gridSectionHtml("comingSoonGrid", "comingSoonMore", data, "movie", "Nothing currently in theaters without a digital release yet.")}
-        `;
-        wireGridSizeSlider();
-        wireLoadMore("comingSoonGrid", "comingSoonMore", getComingSoon, "movie", data.page);
-      } else {
-        const popular = await getDiscoverPopular(1);
-        app.innerHTML = `
-          ${subnavHtml(MOVIES_TABS, "popular")}
-          <section class="row">
-            <h2>Browse a service</h2>
-            <div class="provider-row">${providerChipsHtml("#/movies/provider")}</div>
-          </section>
-          <section class="row">
-            <h2>Popular</h2>
-            ${gridSectionHtml("popularGrid", "popularMore", popular, "movie")}
-          </section>
-        `;
-        wireGridSizeSlider();
-        wireLoadMore("popularGrid", "popularMore", getDiscoverPopular, "movie", popular.page);
+  // Auto-loads more pages as the user scrolls near the bottom of a grid,
+  // via an IntersectionObserver on an invisible sentinel element —
+  // replaces the old "Load more" button entirely, at the user's explicit
+  // request. Also front-loads enough pages up front to fill at least 4
+  // full rows before ever waiting on scroll: TMDB always returns a fixed
+  // 20 results per page regardless of how many columns actually fit, so
+  // one page is rarely "4 rows" on a wide desktop window or a small
+  // grid-size slider setting.
+  async function wireInfiniteGrid(gridId, sentinelId, fetchPage, mediaType, initialData) {
+    const gridEl = document.getElementById(gridId);
+    const sentinel = document.getElementById(sentinelId);
+    if (!gridEl || !sentinel) return;
+    const spinner = sentinel.querySelector(".spinner");
+    let page = initialData.page || 1;
+    let totalPages = initialData.total_pages || 1;
+    let loading = false;
+
+    async function loadNextPage() {
+      if (loading || page >= totalPages) return false;
+      loading = true;
+      if (spinner) spinner.hidden = false;
+      try {
+        const next = await fetchPage(page + 1);
+        page = next.page;
+        totalPages = next.total_pages || totalPages;
+        gridEl.insertAdjacentHTML(
+          "beforeend", (next.results || []).map((it) => posterCard(it, mediaType)).join("")
+        );
+        return true;
+      } finally {
+        loading = false;
+        if (spinner) spinner.hidden = true;
       }
+    }
+
+    const TARGET_ROWS = 4;
+    while (page < totalPages && gridEl.children.length < gridColumnCount(gridEl) * TARGET_ROWS) {
+      if (!(await loadNextPage())) break;
+    }
+
+    if (page >= totalPages) return; // nothing left to lazily load — no observer needed
+
+    // IntersectionObserver only reports a *transition* across its
+    // threshold, not "still intersecting" on every subsequent layout
+    // change — so once the sentinel is continuously inside the rootMargin
+    // zone (a short page, or a wide/dense grid), appending a page shifts
+    // it without ever re-crossing that boundary, and the callback goes
+    // silent forever even though there's more to load. Re-observing after
+    // every successful load forces a fresh report of the sentinel's
+    // *current* state (observe() always delivers one), so a still-close
+    // sentinel immediately queues the next page instead of stalling.
+    const observer = new IntersectionObserver((entries) => {
+      if (entries.some((e) => e.isIntersecting)) {
+        observer.unobserve(sentinel);
+        loadNextPage().then((loaded) => {
+          if (loaded && page < totalPages) observer.observe(sentinel);
+        });
+      }
+    }, { rootMargin: "800px 0px" });
+    observer.observe(sentinel);
+  }
+
+  // Curated, row-based Movies page — no more Popular/Trending/Coming Soon
+  // tabs (removed at the user's explicit request); each row's title is
+  // now the way to reach that one category's own full list (see
+  // renderCategory()), Prime-Video-style.
+  async function renderMovies() {
+    setChrome({ title: "", showBack: false, activeTab: "movies" });
+    app.innerHTML = loadingHtml();
+    try {
+      const jobs = [
+        { key: "trending", fn: () => getDiscoverTrending(1) },
+        { key: "popular", fn: () => getDiscoverPopular(1) },
+        { key: "comingSoon", fn: () => getComingSoon(1) },
+        ...MOVIE_GENRES.map((g) => ({ key: `genre-${g.id}`, fn: () => getDiscoverByGenre(g.id, 1) })),
+        ...ROW_PROVIDERS.map((p) => ({ key: `provider-${p.id}`, fn: () => getDiscoverByProvider(p.id, 1) })),
+      ];
+      const results = await Promise.all(jobs.map((j) => j.fn()));
+      const byKey = {};
+      jobs.forEach((j, i) => { byKey[j.key] = results[i]; });
+
+      app.innerHTML = `
+        ${homeHeroHtml(byKey.trending.results?.[0], "movie")}
+        ${rowHtml("Trending Movies", byKey.trending.results || [], "movie", "#/movies/trending")}
+        ${rowHtml("Popular", byKey.popular.results || [], "movie", "#/movies/popular")}
+        ${rowHtml("New Releases", byKey.comingSoon.results || [], "movie", "#/movies/coming-soon")}
+        ${MOVIE_GENRES.map((g) => rowHtml(
+          g.label, byKey[`genre-${g.id}`].results || [], "movie",
+          `#/movies/genre/${g.id}/${encodeURIComponent(g.label)}`
+        )).join("")}
+        <section class="row">
+          <h2>Browse a Service</h2>
+          <div class="provider-row">${providerChipsHtml("#/movies/provider")}</div>
+        </section>
+        ${ROW_PROVIDERS.map((p) => rowHtml(
+          `Popular on ${p.name}`, byKey[`provider-${p.id}`].results || [], "movie",
+          `#/movies/provider/${p.id}/${encodeURIComponent(p.name)}`
+        )).join("")}
+      `;
     } catch (err) {
-      app.innerHTML = subnavHtml(MOVIES_TABS, tab) + errorHtml(err.message, MOVIES_TABS.find((t) => t.key === tab).hash);
+      app.innerHTML = errorHtml(err.message, "#/movies");
+    }
+  }
+
+  // One category's full, paginated list — the row-title-click destination
+  // for Trending/Popular/New Releases/genre rows on Home/Movies/TV.
+  // Provider rows keep linking to the existing renderProvider instead
+  // (unchanged, has its own within-provider search box).
+  async function renderCategory(title, fetchPage, mediaType) {
+    const backHash = mediaType === "tv" ? "#/tv" : "#/movies";
+    setChrome({ title, showBack: true, activeTab: mediaType === "tv" ? "tv" : "movies" });
+    app.innerHTML = loadingHtml();
+    try {
+      const data = await fetchPage(1);
+      app.innerHTML = `
+        <div class="subnav">
+          <h1>${escapeHtml(title)}</h1>
+          ${gridSizeHtml()}
+        </div>
+        ${gridSectionHtml("categoryGrid", "categoryMore", data, mediaType, "Nothing found.")}
+      `;
+      wireGridSizeSlider();
+      wireInfiniteGrid("categoryGrid", "categoryMore", fetchPage, mediaType, data);
+    } catch (err) {
+      app.innerHTML = errorHtml(err.message, backHash);
     }
   }
 
@@ -1117,7 +1413,7 @@
       try {
         const data = await discoverByProvider(id, 1);
         resultsEl.innerHTML = gridSectionHtml("providerGrid", "providerMore", data, mediaType, "No titles found for this service.");
-        wireLoadMore("providerGrid", "providerMore", (p) => discoverByProvider(id, p), mediaType, data.page);
+        wireInfiniteGrid("providerGrid", "providerMore", (p) => discoverByProvider(id, p), mediaType, data);
       } catch (err) {
         resultsEl.innerHTML = errorHtml(err.message);
       }
@@ -1147,39 +1443,57 @@
 
   // -- TV section (Stage 14) --
 
-  async function renderTv(tab) {
+  // Curated, row-based TV Shows page — same treatment as Movies, TV-only.
+  // No "New Releases" row — there's no TV equivalent of getComingSoon.
+  async function renderTv() {
     setChrome({ title: "", showBack: false, activeTab: "tv" });
-    app.innerHTML = subnavHtml(TV_TABS, tab, { showGridSize: tab !== "watching" }) + loadingHtml();
+    app.innerHTML = loadingHtml();
     try {
-      if (tab === "trending") {
-        const data = await getTvDiscoverTrending(1);
-        app.innerHTML = `
-          ${subnavHtml(TV_TABS, "trending")}
-          ${gridSectionHtml("tvTrendingGrid", "tvTrendingMore", data, "tv", "Nothing trending right now.")}
-        `;
-        wireGridSizeSlider();
-        wireLoadMore("tvTrendingGrid", "tvTrendingMore", getTvDiscoverTrending, "tv", data.page);
-      } else if (tab === "watching") {
-        const shows = await listShows();
-        app.innerHTML = `${subnavHtml(TV_TABS, "watching", { showGridSize: false })}${watchingListHtml(shows)}`;
-      } else {
-        const popular = await getTvDiscoverPopular(1);
-        app.innerHTML = `
-          ${subnavHtml(TV_TABS, "popular")}
-          <section class="row">
-            <h2>Browse a service</h2>
-            <div class="provider-row">${providerChipsHtml("#/tv/provider")}</div>
-          </section>
-          <section class="row">
-            <h2>Popular</h2>
-            ${gridSectionHtml("tvPopularGrid", "tvPopularMore", popular, "tv")}
-          </section>
-        `;
-        wireGridSizeSlider();
-        wireLoadMore("tvPopularGrid", "tvPopularMore", getTvDiscoverPopular, "tv", popular.page);
-      }
+      const jobs = [
+        { key: "trending", fn: () => getTvDiscoverTrending(1) },
+        { key: "popular", fn: () => getTvDiscoverPopular(1) },
+        { key: "watchingShows", fn: fetchEnrichedWatchingShows },
+        ...TV_GENRES.map((g) => ({ key: `genre-${g.id}`, fn: () => getTvDiscoverByGenre(g.id, 1) })),
+        ...ROW_PROVIDERS.map((p) => ({ key: `provider-${p.id}`, fn: () => getTvDiscoverByProvider(p.id, 1) })),
+      ];
+      const results = await Promise.all(jobs.map((j) => j.fn()));
+      const byKey = {};
+      jobs.forEach((j, i) => { byKey[j.key] = results[i]; });
+
+      app.innerHTML = `
+        ${homeHeroHtml(byKey.trending.results?.[0], "tv")}
+        ${watchingRowsHtml(byKey.watchingShows || [])}
+        ${rowHtml("Trending TV Shows", byKey.trending.results || [], "tv", "#/tv/trending")}
+        ${rowHtml("Popular", byKey.popular.results || [], "tv", "#/tv/popular")}
+        ${TV_GENRES.map((g) => rowHtml(
+          g.label, byKey[`genre-${g.id}`].results || [], "tv",
+          `#/tv/genre/${g.id}/${encodeURIComponent(g.label)}`
+        )).join("")}
+        <section class="row">
+          <h2>Browse a Service</h2>
+          <div class="provider-row">${providerChipsHtml("#/tv/provider")}</div>
+        </section>
+        ${ROW_PROVIDERS.map((p) => rowHtml(
+          `Popular on ${p.name}`, byKey[`provider-${p.id}`].results || [], "tv",
+          `#/tv/provider/${p.id}/${encodeURIComponent(p.name)}`
+        )).join("")}
+      `;
     } catch (err) {
-      app.innerHTML = subnavHtml(TV_TABS, tab) + errorHtml(err.message, TV_TABS.find((t) => t.key === tab).hash);
+      app.innerHTML = errorHtml(err.message, "#/tv");
+    }
+  }
+
+  // The full subscribed-shows list — pause/resume/unsubscribe controls,
+  // unchanged from before; both new curated-page Watching rows expand
+  // here.
+  async function renderWatching() {
+    setChrome({ title: "Watching", showBack: true, activeTab: "tv" });
+    app.innerHTML = loadingHtml();
+    try {
+      const shows = await listShows();
+      app.innerHTML = watchingListHtml(shows);
+    } catch (err) {
+      app.innerHTML = errorHtml(err.message, "#/tv");
     }
   }
 
@@ -1668,6 +1982,18 @@
     return { label: packScopeLabel(r), href: `#/tv/${r.tmdb_id}` };
   }
 
+  // "Cancel" only really makes sense while something's still in progress
+  // (queued/downloading) — a "complete" request has nothing left to
+  // cancel, so its action is really "delete the download," shown as a
+  // plain X instead of the same red text pill.
+  function cancelActionHtml(r) {
+    if (!CANCELLABLE.has(r.status)) return "";
+    if (r.status === "complete") {
+      return `<button class="req-delete-btn" data-request-id="${r.id}" data-status="${r.status}" aria-label="Delete">&#10005;</button>`;
+    }
+    return `<button class="cancel-btn" data-request-id="${r.id}" data-status="${r.status}">Cancel</button>`;
+  }
+
   function requestRowHtml(r) {
     const { label, href } = requestLabelAndHref(r);
     return `
@@ -1678,7 +2004,7 @@
         </div>
         <div class="req-actions">
           ${statusPillHtml(r.status)}
-          ${CANCELLABLE.has(r.status) ? `<button class="cancel-btn" data-request-id="${r.id}" data-status="${r.status}">Cancel</button>` : ""}
+          ${cancelActionHtml(r)}
         </div>
       </div>
     `;
@@ -1694,7 +2020,7 @@
         </div>
         <div class="req-actions">
           ${statusPillHtml(r.status)}
-          ${CANCELLABLE.has(r.status) ? `<button class="cancel-btn" data-request-id="${r.id}" data-status="${r.status}">Cancel</button>` : ""}
+          ${cancelActionHtml(r)}
         </div>
       </div>
     `;
@@ -1722,7 +2048,7 @@
       <div class="req-group">
         <div class="req-row req-group-header" data-toggle-group="${group.showId}">
           <button class="req-group-toggle-btn" data-toggle-group="${group.showId}" aria-label="${expanded ? "Collapse" : "Expand"}">
-            ${expanded ? "▾" : "▸"}
+            ${expanded ? "▼" : "▶"}
           </button>
           <div class="req-main">
             <a class="req-title" href="#/tv/${group.tmdbId}">${escapeHtml(group.title)}</a>

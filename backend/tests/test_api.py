@@ -66,6 +66,9 @@ class FakeTMDBClient:
     def discover_by_provider(self, provider_id, region="US", page=1):
         return {"results": [MOVIE], "page": page, "total_pages": 10, "provider_id": provider_id}
 
+    def discover_by_genre(self, genre_id, region="US", page=1):
+        return {"results": [MOVIE], "page": page, "total_pages": 10, "genre_id": genre_id}
+
     def get_coming_soon(self, region="US", page=1):
         return {"results": [MOVIE], "page": page, "total_pages": 3}
 
@@ -94,6 +97,9 @@ class FakeTMDBClient:
 
     def discover_tv_by_provider(self, provider_id, region="US", page=1):
         return {"results": [SHOW], "page": page, "total_pages": 10, "provider_id": provider_id}
+
+    def discover_tv_by_genre(self, genre_id, region="US", page=1):
+        return {"results": [SHOW], "page": page, "total_pages": 10, "genre_id": genre_id}
 
     def get_tv_season(self, tmdb_id, season_number):
         return []
@@ -690,6 +696,16 @@ def test_discover_by_provider_passes_provider_id_through(client_and_deps):
     assert body["provider_id"] == 8
 
 
+def test_discover_by_genre_passes_genre_id_through(client_and_deps):
+    client, _, _, _, _, _ = client_and_deps
+    response = client.get("/api/discover/genre/28")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["results"] == [dict(MOVIE, on_plex=False)]
+    assert body["genre_id"] == 28
+
+
 def test_discover_coming_soon_passes_through_tmdb(client_and_deps):
     client, _, _, _, _, _ = client_and_deps
     response = client.get("/api/discover/coming-soon", params={"page": 2})
@@ -779,6 +795,16 @@ def test_tv_discover_by_provider_passes_provider_id_through(client_and_deps):
     body = response.json()
     assert body["results"] == [dict(SHOW, on_plex=False)]
     assert body["provider_id"] == 8
+
+
+def test_tv_discover_by_genre_passes_genre_id_through(client_and_deps):
+    client, _, _, _, _, _ = client_and_deps
+    response = client.get("/api/tv/discover/genre/35")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["results"] == [dict(SHOW, on_plex=False)]
+    assert body["genre_id"] == 35
 
 
 def test_deploy_runs_git_pull_and_returns_its_result(client_and_deps, monkeypatch):

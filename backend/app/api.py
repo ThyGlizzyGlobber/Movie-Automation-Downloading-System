@@ -315,6 +315,22 @@ def discover_by_provider(
     return data
 
 
+@app.get("/api/discover/genre/{genre_id}")
+def discover_by_genre(
+    genre_id: int,
+    region: str = "US",
+    page: int = 1,
+    store: RequestStore = Depends(get_store),
+    tmdb: TMDBClient = Depends(get_tmdb),
+) -> dict:
+    try:
+        data = tmdb.discover_by_genre(genre_id, region=region, page=page)
+    except TMDBError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    data["results"] = _annotate_on_plex(data.get("results", []), "movie", store, title_key="title", date_key="release_date")
+    return data
+
+
 @app.get("/api/discover/coming-soon")
 def discover_coming_soon(
     region: str = "US", page: int = 1, store: RequestStore = Depends(get_store), tmdb: TMDBClient = Depends(get_tmdb)
@@ -382,6 +398,22 @@ def tv_discover_by_provider(
 ) -> dict:
     try:
         data = tmdb.discover_tv_by_provider(provider_id, region=region, page=page)
+    except TMDBError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    data["results"] = _annotate_on_plex(data.get("results", []), "show", store, title_key="name", date_key="first_air_date")
+    return data
+
+
+@app.get("/api/tv/discover/genre/{genre_id}")
+def tv_discover_by_genre(
+    genre_id: int,
+    region: str = "US",
+    page: int = 1,
+    store: RequestStore = Depends(get_store),
+    tmdb: TMDBClient = Depends(get_tmdb),
+) -> dict:
+    try:
+        data = tmdb.discover_tv_by_genre(genre_id, region=region, page=page)
     except TMDBError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
     data["results"] = _annotate_on_plex(data.get("results", []), "show", store, title_key="name", date_key="first_air_date")

@@ -345,6 +345,64 @@ def test_discover_tv_by_provider_passes_provider_and_region_through():
     assert calls == [("/discover/tv", {"with_watch_providers": 8, "watch_region": "GB", "page": 2, "sort_by": "popularity.desc"})]
 
 
+def test_discover_by_genre_passes_genre_and_region_through():
+    client = TMDBClient(api_key="test-key")
+    calls = []
+
+    def fake_get(path, params=None):
+        calls.append((path, params))
+        return {"results": [{"id": 1, "title": "Some Movie"}]}
+
+    client._get = fake_get
+    client.discover_by_genre(28, region="GB", page=2)
+
+    assert calls == [("/discover/movie", {"with_genres": 28, "region": "GB", "page": 2, "sort_by": "popularity.desc"})]
+
+
+def test_discover_by_genre_is_ttl_cached():
+    client = TMDBClient(api_key="test-key")
+    calls = []
+
+    def fake_get(path, params=None):
+        calls.append(path)
+        return {"results": [{"id": 1, "title": "Some Movie"}]}
+
+    client._get = fake_get
+    client.discover_by_genre(28)
+    client.discover_by_genre(28)
+
+    assert calls == ["/discover/movie"]
+
+
+def test_discover_tv_by_genre_passes_genre_and_region_through():
+    client = TMDBClient(api_key="test-key")
+    calls = []
+
+    def fake_get(path, params=None):
+        calls.append((path, params))
+        return {"results": [{"id": 1, "name": "Some Show"}]}
+
+    client._get = fake_get
+    client.discover_tv_by_genre(35, region="GB", page=2)
+
+    assert calls == [("/discover/tv", {"with_genres": 35, "region": "GB", "page": 2, "sort_by": "popularity.desc"})]
+
+
+def test_discover_tv_by_genre_is_ttl_cached():
+    client = TMDBClient(api_key="test-key")
+    calls = []
+
+    def fake_get(path, params=None):
+        calls.append(path)
+        return {"results": [{"id": 1, "name": "Some Show"}]}
+
+    client._get = fake_get
+    client.discover_tv_by_genre(35)
+    client.discover_tv_by_genre(35)
+
+    assert calls == ["/discover/tv"]
+
+
 def test_search_tv_within_provider_filters_to_shows_on_that_service(monkeypatch):
     client = TMDBClient(api_key="test-key")
     search_response = {
