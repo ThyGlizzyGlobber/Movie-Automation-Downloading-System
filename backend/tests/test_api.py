@@ -19,12 +19,25 @@ MOVIE = {
     "release_date": "2024-03-01",
 }
 
+SHOW = {
+    "id": 95350,
+    "name": "Lanterns",
+    "original_name": "Lanterns",
+    "first_air_date": "2026-01-01",
+    "status": "Returning Series",
+    "number_of_seasons": 1,
+}
+
 
 class FakeTMDBClient:
-    def __init__(self, search_results=None, movie=None, raise_on_get_movie=False):
+    def __init__(
+        self, search_results=None, movie=None, raise_on_get_movie=False, tv_search_results=None, raise_on_get_tv=False
+    ):
         self._search_results = search_results if search_results is not None else [MOVIE]
         self._movie = movie or MOVIE
         self._raise_on_get_movie = raise_on_get_movie
+        self._tv_search_results = tv_search_results if tv_search_results is not None else [SHOW]
+        self._raise_on_get_tv = raise_on_get_tv
 
     def search_movie(self, query, year=None):
         return {"results": self._search_results}
@@ -44,8 +57,8 @@ class FakeTMDBClient:
     def get_available_popular(self, page=1, region="US"):
         return {"results": [MOVIE], "page": page, "total_pages": 500}
 
-    def get_available_trending(self, time_window="week", region="US"):
-        return {"results": [MOVIE], "page": 1}
+    def get_available_trending(self, time_window="week", region="US", page=1):
+        return {"results": [MOVIE], "page": page}
 
     def get_watch_providers(self, region="US"):
         return {"results": [{"provider_id": 8, "provider_name": "Netflix", "logo_path": "/netflix.png"}]}
@@ -59,11 +72,28 @@ class FakeTMDBClient:
     # -- Stage 12: show subscriptions --
 
     def get_tv(self, tmdb_id):
-        if self._raise_on_get_movie:
+        if self._raise_on_get_movie or self._raise_on_get_tv:
             from app.tmdb import TMDBError
 
             raise TMDBError("not found")
-        return {"id": tmdb_id, "name": "Lanterns", "original_name": "Lanterns", "number_of_seasons": 1}
+        return dict(SHOW, id=tmdb_id)
+
+    # -- Stage 14: TV browse surface --
+
+    def get_tv_popular(self, page=1):
+        return {"results": [SHOW], "page": page, "total_pages": 500}
+
+    def get_tv_trending(self, time_window="week", page=1):
+        return {"results": [SHOW], "page": page}
+
+    def search_tv(self, query, year=None):
+        return {"results": self._tv_search_results}
+
+    def search_tv_within_provider(self, query, provider_id, region="US"):
+        return {"results": self._tv_search_results, "provider_id": provider_id}
+
+    def discover_tv_by_provider(self, provider_id, region="US", page=1):
+        return {"results": [SHOW], "page": page, "total_pages": 10, "provider_id": provider_id}
 
     def get_tv_season(self, tmdb_id, season_number):
         return []
@@ -177,7 +207,7 @@ def test_search_returns_tmdb_results(client_and_deps):
     response = client.post("/api/search", json={"query": "dune"})
 
     assert response.status_code == 200
-    assert response.json() == [MOVIE]
+    assert response.json() == [dict(MOVIE, on_plex=False)]
 
 
 def test_search_rejects_empty_query(client_and_deps):
@@ -197,7 +227,7 @@ def test_search_with_provider_id_uses_provider_scoped_search(client_and_deps):
     response = client.post("/api/search", json={"query": "dune", "provider_id": 8})
 
     assert response.status_code == 200
-    assert response.json() == [MOVIE]
+    assert response.json() == [dict(MOVIE, on_plex=False)]
     assert calls == [("dune", 8)]
 
 
@@ -612,7 +642,7 @@ def test_discover_popular_passes_through_tmdb(client_and_deps):
     response = client.get("/api/discover/popular", params={"page": 2})
 
     assert response.status_code == 200
-    assert response.json()["results"] == [MOVIE]
+    assert response.json()["results"] == [dict(MOVIE, on_plex=False)]
 
 
 def test_discover_trending_passes_through_tmdb(client_and_deps):
@@ -620,7 +650,7 @@ def test_discover_trending_passes_through_tmdb(client_and_deps):
     response = client.get("/api/discover/trending")
 
     assert response.status_code == 200
-    assert response.json()["results"] == [MOVIE]
+    assert response.json()["results"] == [dict(MOVIE, on_plex=False)]
 
 
 def test_discover_providers_returns_results_list(client_and_deps):
@@ -637,7 +667,7 @@ def test_discover_by_provider_passes_provider_id_through(client_and_deps):
 
     assert response.status_code == 200
     body = response.json()
-    assert body["results"] == [MOVIE]
+    assert body["results"] == [dict(MOVIE, on_plex=False)]
     assert body["provider_id"] == 8
 
 
@@ -646,7 +676,7 @@ def test_discover_coming_soon_passes_through_tmdb(client_and_deps):
     response = client.get("/api/discover/coming-soon", params={"page": 2})
 
     assert response.status_code == 200
-    assert response.json()["results"] == [MOVIE]
+    assert response.json()["results"] == [dict(MOVIE, on_plex=False)]
 
 
 def test_get_movie_detail_returns_full_movie(client_and_deps):
@@ -654,7 +684,7 @@ def test_get_movie_detail_returns_full_movie(client_and_deps):
     response = client.get("/api/movies/693134")
 
     assert response.status_code == 200
-    assert response.json() == MOVIE
+    assert response.json() == dict(MOVIE, on_plex=False)
 
 
 def test_get_movie_detail_404s_on_unknown_tmdb_id(client_and_deps):
@@ -664,6 +694,72 @@ def test_get_movie_detail_404s_on_unknown_tmdb_id(client_and_deps):
     response = client.get("/api/movies/999999")
 
     assert response.status_code == 404
+
+
+def test_tv_discover_popular_passes_through_tmdb(client_and_deps):
+    client, _, _, _, _, _ = client_and_deps
+    response = client.get("/api/tv/discover/popular", params={"page": 2})
+
+    assert response.status_code == 200
+    assert response.json()["results"] == [dict(SHOW, on_plex=False)]
+    assert response.json()["page"] == 2
+
+
+def test_tv_discover_trending_passes_through_tmdb(client_and_deps):
+    client, _, _, _, _, _ = client_and_deps
+    response = client.get("/api/tv/discover/trending")
+
+    assert response.status_code == 200
+    assert response.json()["results"] == [dict(SHOW, on_plex=False)]
+
+
+def test_get_tv_detail_returns_full_show(client_and_deps):
+    client, _, _, _, _, _ = client_and_deps
+    response = client.get("/api/tv/95350")
+
+    assert response.status_code == 200
+    assert response.json() == dict(SHOW, on_plex=False)
+
+
+def test_get_tv_detail_404s_on_unknown_tmdb_id(client_and_deps):
+    client, _, tmdb, _, _, _ = client_and_deps
+    tmdb._raise_on_get_tv = True
+
+    response = client.get("/api/tv/999999")
+
+    assert response.status_code == 404
+
+
+def test_search_tv_returns_tmdb_results(client_and_deps):
+    client, _, _, _, _, _ = client_and_deps
+    response = client.post("/api/tv/search", json={"query": "lanterns"})
+
+    assert response.status_code == 200
+    assert response.json() == [dict(SHOW, on_plex=False)]
+
+
+def test_search_tv_with_provider_id_uses_provider_scoped_search(client_and_deps):
+    client, _, tmdb, _, _, _ = client_and_deps
+    calls = []
+    tmdb.search_tv_within_provider = lambda query, provider_id, region="US": (
+        calls.append((query, provider_id)) or {"results": [SHOW]}
+    )
+
+    response = client.post("/api/tv/search", json={"query": "lanterns", "provider_id": 8})
+
+    assert response.status_code == 200
+    assert response.json() == [dict(SHOW, on_plex=False)]
+    assert calls == [("lanterns", 8)]
+
+
+def test_tv_discover_by_provider_passes_provider_id_through(client_and_deps):
+    client, _, _, _, _, _ = client_and_deps
+    response = client.get("/api/tv/discover/providers/8")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["results"] == [dict(SHOW, on_plex=False)]
+    assert body["provider_id"] == 8
 
 
 def test_deploy_runs_git_pull_and_returns_its_result(client_and_deps, monkeypatch):
@@ -793,6 +889,21 @@ def test_list_shows_returns_subscriptions(client_and_deps):
 
     assert response.status_code == 200
     assert {s["tmdb_id"] for s in response.json()} == {1, 2}
+
+
+def test_show_out_exposes_latest_request(client_and_deps):
+    client, store, _, _, _, _ = client_and_deps
+    show = store.create_show(tmdb_id=1, title="A")
+
+    no_history = client.get(f"/api/shows/{show.id}").json()
+    assert no_history["latest_request"] is None
+
+    store.create_episode_request(tmdb_id=1, show_id=show.id, title="A", season_number=1, episode_number=1)
+    newest = store.create_episode_request(tmdb_id=1, show_id=show.id, title="A", season_number=1, episode_number=2)
+
+    with_history = client.get(f"/api/shows/{show.id}").json()
+    assert with_history["latest_request"]["id"] == newest.id
+    assert with_history["latest_request"]["episode_number"] == 2
 
 
 def test_list_shows_filters_by_status(client_and_deps):

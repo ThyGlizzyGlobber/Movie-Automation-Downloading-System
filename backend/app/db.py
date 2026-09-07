@@ -278,6 +278,14 @@ class RequestStore:
         row = self._conn.execute("SELECT * FROM requests WHERE id = ?", (request_id,)).fetchone()
         return RequestRow._from_row(row) if row else None
 
+    def get_latest_request_for_show(self, show_id: int) -> RequestRow | None:
+        """Most recent episode/pack request row for a subscribed show —
+        backs the Watching list's "latest episode status" (Stage 14)."""
+        row = self._conn.execute(
+            "SELECT * FROM requests WHERE show_id = ? ORDER BY id DESC LIMIT 1", (show_id,)
+        ).fetchone()
+        return RequestRow._from_row(row) if row else None
+
     def list_requests(self, status: str | None = None) -> list[RequestRow]:
         if status:
             rows = self._conn.execute(

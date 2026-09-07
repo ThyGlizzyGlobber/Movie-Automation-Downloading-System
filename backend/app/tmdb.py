@@ -118,8 +118,8 @@ class TMDBClient:
         return self._get("/movie/popular", {"page": page})
 
     @ttl_cache(POPULAR_DISCOVER_TTL_SECONDS)
-    def get_trending(self, time_window: str = "week") -> dict:
-        return self._get(f"/trending/movie/{time_window}")
+    def get_trending(self, time_window: str = "week", page: int = 1) -> dict:
+        return self._get(f"/trending/movie/{time_window}", {"page": page})
 
     @ttl_cache(POPULAR_DISCOVER_TTL_SECONDS)
     def get_watch_providers(self, region: str = "US") -> dict:
@@ -159,10 +159,10 @@ class TMDBClient:
         ]
         return {**popular, "results": filtered}
 
-    def get_available_trending(self, time_window: str = "week", region: str = "US") -> dict:
+    def get_available_trending(self, time_window: str = "week", region: str = "US", page: int = 1) -> dict:
         """Same digital-availability filter as get_available_popular,
         applied to the Trending row."""
-        trending = self.get_trending(time_window=time_window)
+        trending = self.get_trending(time_window=time_window, page=page)
         filtered = [
             movie
             for movie in trending.get("results", [])
@@ -212,8 +212,41 @@ class TMDBClient:
         return self._get("/tv/popular", {"page": page})
 
     @ttl_cache(POPULAR_DISCOVER_TTL_SECONDS)
-    def get_tv_trending(self, time_window: str = "week") -> dict:
-        return self._get(f"/trending/tv/{time_window}")
+    def get_tv_trending(self, time_window: str = "week", page: int = 1) -> dict:
+        return self._get(f"/trending/tv/{time_window}", {"page": page})
+
+    # -- Stage 14.x: provider (streaming service) browse/search for TV,
+    #    mirroring discover_by_provider/get_movie_watch_providers/
+    #    search_within_provider above. TMDB's watch-provider ids are shared
+    #    across movie/TV (Netflix is always 8, etc.), so the frontend's
+    #    existing curated provider list needs no changes, just a TV-shaped
+    #    call for each. --
+
+    @ttl_cache(POPULAR_DISCOVER_TTL_SECONDS)
+    def discover_tv_by_provider(self, provider_id: int, region: str = "US", page: int = 1) -> dict:
+        return self._get(
+            "/discover/tv",
+            {
+                "with_watch_providers": provider_id,
+                "watch_region": region,
+                "page": page,
+                "sort_by": "popularity.desc",
+            },
+        )
+
+    @ttl_cache(POPULAR_DISCOVER_TTL_SECONDS)
+    def get_tv_watch_providers(self, tmdb_id: int) -> dict:
+        data = self._get(f"/tv/{tmdb_id}/watch/providers")
+        return data.get("results", {})
+
+    def search_tv_within_provider(self, query: str, provider_id: int, region: str = "US") -> dict:
+        data = self.search_tv(query)
+        filtered = [
+            show
+            for show in data.get("results", [])
+            if _available_on_provider(self.get_tv_watch_providers(show["id"]), region, provider_id)
+        ]
+        return {**data, "results": filtered}
 
     def get_coming_soon(self, region: str = "US", page: int = 1) -> dict:
         """Now-playing titles that are both a recent release and have no

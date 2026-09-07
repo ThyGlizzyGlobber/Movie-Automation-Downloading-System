@@ -329,3 +329,43 @@ def test_search_within_provider_filters_to_titles_on_that_service(monkeypatch):
     result = client.search_within_provider("some query", provider_id=8, region="US")
 
     assert [m["title"] for m in result["results"]] == ["On Netflix"]
+
+
+def test_discover_tv_by_provider_passes_provider_and_region_through():
+    client = TMDBClient(api_key="test-key")
+    calls = []
+
+    def fake_get(path, params=None):
+        calls.append((path, params))
+        return {"results": [{"id": 1, "name": "Some Show"}]}
+
+    client._get = fake_get
+    client.discover_tv_by_provider(8, region="GB", page=2)
+
+    assert calls == [("/discover/tv", {"with_watch_providers": 8, "watch_region": "GB", "page": 2, "sort_by": "popularity.desc"})]
+
+
+def test_search_tv_within_provider_filters_to_shows_on_that_service(monkeypatch):
+    client = TMDBClient(api_key="test-key")
+    search_response = {
+        "results": [
+            {"id": 1, "name": "On Netflix"},
+            {"id": 2, "name": "On Disney Plus Only"},
+        ]
+    }
+    watch_providers_by_id = {
+        1: {"results": {"US": {"flatrate": [{"provider_id": 8}]}}},
+        2: {"results": {"US": {"flatrate": [{"provider_id": 337}]}}},
+    }
+
+    def fake_get(path, params=None):
+        if path == "/search/tv":
+            return search_response
+        show_id = int(path.split("/")[2])
+        return watch_providers_by_id[show_id]
+
+    monkeypatch.setattr(client, "_get", fake_get)
+
+    result = client.search_tv_within_provider("some query", provider_id=8, region="US")
+
+    assert [s["name"] for s in result["results"]] == ["On Netflix"]

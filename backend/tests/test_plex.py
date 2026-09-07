@@ -3,7 +3,7 @@ import asyncio
 import pytest
 
 from app.db import RequestStore
-from app.plex import PlexClient, PlexError, PlexLinker, has_in_library
+from app.plex import PlexClient, PlexError, PlexLinker, has_in_library, plex_library_lookup
 
 
 class FakeResponse:
@@ -131,6 +131,114 @@ def test_has_movie_false_when_no_results():
     client = PlexClient("client-1", session=session)
 
     assert client.has_movie("http://server", "tok", "Some Movie", None) is False
+
+
+# ---------------------------------------------------------------------------
+# library_index / plex_library_lookup — Stage 14's batched, cached "On
+# Plex" badge lookup (one bulk fetch per grid render instead of N).
+# ---------------------------------------------------------------------------
+
+
+def test_library_index_groups_years_by_normalized_title():
+    metadata = {
+        "MediaContainer": {
+            "Metadata": [
+                {"title": "Dune: Part Two", "year": 2024},
+                {"title": "dune part two", "year": 2025},  # same normalized key, different posting
+                {"title": "Lanterns", "year": 2026},
+            ]
+        }
+    }
+    session = FakeSession(get_responses=[FakeResponse(json_data=metadata)])
+    client = PlexClient("client-1", session=session)
+
+    index = client.library_index("http://server", "tok", "movie")
+
+    assert index == {"dune part two": [2024, 2025], "lanterns": [2026]}
+    assert session.get_calls[0][1] == {"type": 1}
+
+
+def test_library_index_show_type_uses_type_2():
+    session = FakeSession(get_responses=[FakeResponse(json_data={"MediaContainer": {"Metadata": []}})])
+    client = PlexClient("client-1", session=session)
+
+    client.library_index("http://server", "tok", "show")
+
+    assert session.get_calls[0][1] == {"type": 2}
+
+
+def test_library_index_raises_on_error_response():
+    session = FakeSession(get_responses=[FakeResponse(status_code=500)])
+    client = PlexClient("client-1", session=session)
+
+    with pytest.raises(PlexError):
+        client.library_index("http://server", "tok", "movie")
+
+
+def test_plex_library_lookup_returns_none_when_not_linked():
+    store = RequestStore(":memory:")
+    assert plex_library_lookup(store, "movie") is None
+
+
+def test_plex_library_lookup_matches_title_and_year(monkeypatch):
+    store = RequestStore(":memory:")
+    store.update_settings(
+        {"plex_client_id": "client-1", "plex_server_url": "http://server-a", "plex_server_token": "tok"}
+    )
+    monkeypatch.setattr(
+        PlexClient, "library_index", lambda self, url, token, media_type: {"dune part two": [2024]}
+    )
+
+    matcher = plex_library_lookup(store, "movie")
+
+    assert matcher("Dune: Part Two", 2024) is True
+    assert matcher("Dune: Part Two", 2030) is False  # outside year tolerance
+    assert matcher("Some Other Movie", None) is False
+
+
+def test_plex_library_lookup_year_tolerance_and_no_year_given(monkeypatch):
+    store = RequestStore(":memory:")
+    store.update_settings(
+        {"plex_client_id": "client-1", "plex_server_url": "http://server-b", "plex_server_token": "tok"}
+    )
+    monkeypatch.setattr(PlexClient, "library_index", lambda self, url, token, media_type: {"lanterns": [2026]})
+
+    matcher = plex_library_lookup(store, "show")
+
+    assert matcher("Lanterns", 2027) is True  # within YEAR_TOLERANCE
+    assert matcher("Lanterns", None) is True  # title matched, no year to check further
+
+
+def test_plex_library_lookup_fails_safe_on_plex_error(monkeypatch):
+    store = RequestStore(":memory:")
+    store.update_settings(
+        {"plex_client_id": "client-1", "plex_server_url": "http://server-c", "plex_server_token": "tok"}
+    )
+
+    def raise_error(self, url, token, media_type):
+        raise PlexError("boom")
+
+    monkeypatch.setattr(PlexClient, "library_index", raise_error)
+
+    matcher = plex_library_lookup(store, "movie")
+
+    assert matcher("Anything", 2024) is False
+
+
+def test_plex_library_lookup_caches_within_ttl(monkeypatch):
+    store = RequestStore(":memory:")
+    store.update_settings(
+        {"plex_client_id": "client-1", "plex_server_url": "http://server-d", "plex_server_token": "tok"}
+    )
+    calls = []
+    monkeypatch.setattr(
+        PlexClient, "library_index", lambda self, url, token, media_type: calls.append(1) or {}
+    )
+
+    plex_library_lookup(store, "movie")
+    plex_library_lookup(store, "movie")
+
+    assert len(calls) == 1  # second call hit the cache, no second Plex fetch
 
 
 # ---------------------------------------------------------------------------

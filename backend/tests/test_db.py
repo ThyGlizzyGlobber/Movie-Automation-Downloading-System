@@ -284,6 +284,25 @@ def test_delete_show_missing_returns_false():
     assert store.delete_show(999) is False
 
 
+def test_get_latest_request_for_show_returns_none_with_no_requests():
+    store = _store()
+    show = store.create_show(tmdb_id=1, title="A")
+
+    assert store.get_latest_request_for_show(show.id) is None
+
+
+def test_get_latest_request_for_show_returns_most_recent():
+    store = _store()
+    show = store.create_show(tmdb_id=1, title="A")
+    store.create_episode_request(tmdb_id=1, show_id=show.id, title="A", season_number=1, episode_number=1)
+    newest = store.create_episode_request(tmdb_id=1, show_id=show.id, title="A", season_number=1, episode_number=2)
+
+    latest = store.get_latest_request_for_show(show.id)
+
+    assert latest.id == newest.id
+    assert latest.episode_number == 2
+
+
 def test_has_show_episode_false_until_added():
     store = _store()
     show = store.create_show(tmdb_id=1, title="A")

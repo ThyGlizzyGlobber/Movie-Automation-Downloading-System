@@ -21,7 +21,7 @@ from app.pipeline_settings import (
     resolve_pipeline_settings,
     settings_from_raw,
 )
-from app.plex import PlexError, PlexLinker
+from app.plex import PlexError, PlexLinker, plex_library_lookup
 from app.qbt import QBTClient
 from app.resolve import resolve
 from app.tmdb import TMDBClient, TMDBError
@@ -192,10 +192,52 @@ class ShowOut(BaseModel):
     status: str
     created_at: str
     last_checked_at: str | None
+    # Stage 14: the Watching list's "latest episode status" — the most
+    # recent episode/pack request this show has produced, or None if it
+    # hasn't been checked yet (e.g. just subscribed, catch-up still queued).
+    latest_request: RequestOut | None = None
 
     @classmethod
-    def from_row(cls, row: ShowRow) -> "ShowOut":
-        return cls(**row.__dict__)
+    def from_row(cls, row: ShowRow, latest_request: RequestOut | None = None) -> "ShowOut":
+        return cls(**row.__dict__, latest_request=latest_request)
+
+
+def _show_out(store: RequestStore, row: ShowRow) -> ShowOut:
+    latest = store.get_latest_request_for_show(row.id)
+    return ShowOut.from_row(row, latest_request=RequestOut.from_row(latest) if latest else None)
+
+
+# ---------------------------------------------------------------------------
+# Stage 14: "On Plex" badge — annotates already-fetched TMDB result lists
+# (and single-item detail responses) with `on_plex`, using one cached,
+# whole-library Plex lookup per request rather than one live Plex call per
+# item. See plex.py's `plex_library_lookup` for the caching design.
+# ---------------------------------------------------------------------------
+
+
+def _annotate_on_plex(
+    results: list[dict], media_type: str, store: RequestStore, *, title_key: str, date_key: str
+) -> list[dict]:
+    """Returns a *new* list of *new* dicts, `on_plex` added to each — never
+    mutates the input items in place. Several of tmdb.py's methods
+    (popular/trending/discover-by-provider/coming-soon) are TTL-cached and
+    hand back the same item dict object on every cache hit; mutating those
+    in place would bake one request's Plex-link state into the shared
+    cache for every later hit until the (independent) TMDB cache itself
+    expires."""
+    matcher = plex_library_lookup(store, media_type)
+    annotated = []
+    for item in results:
+        year_str = (item.get(date_key) or "")[:4]
+        year = int(year_str) if year_str.isdigit() else None
+        on_plex = bool(matcher(item.get(title_key) or "", year)) if matcher else False
+        annotated.append({**item, "on_plex": on_plex})
+    return annotated
+
+
+def _on_plex_for(title: str, year: int | None, media_type: str, store: RequestStore) -> bool:
+    matcher = plex_library_lookup(store, media_type)
+    return bool(matcher(title, year)) if matcher else False
 
 
 # ---------------------------------------------------------------------------
@@ -204,7 +246,9 @@ class ShowOut(BaseModel):
 
 
 @app.post("/api/search")
-def search(body: SearchRequest, tmdb: TMDBClient = Depends(get_tmdb)) -> list[dict]:
+def search(
+    body: SearchRequest, store: RequestStore = Depends(get_store), tmdb: TMDBClient = Depends(get_tmdb)
+) -> list[dict]:
     try:
         if body.provider_id is not None:
             data = tmdb.search_within_provider(body.query, body.provider_id)
@@ -212,7 +256,8 @@ def search(body: SearchRequest, tmdb: TMDBClient = Depends(get_tmdb)) -> list[di
             data = tmdb.search_movie(body.query, year=body.year)
     except TMDBError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
-    return data.get("results", [])
+    results = data.get("results", [])
+    return _annotate_on_plex(results, "movie", store, title_key="title", date_key="release_date")
 
 
 # -- Stage 4: the browse surface the home grid and provider rows are built
@@ -221,21 +266,27 @@ def search(body: SearchRequest, tmdb: TMDBClient = Depends(get_tmdb)) -> list[di
 
 
 @app.get("/api/discover/popular")
-def discover_popular(page: int = 1, tmdb: TMDBClient = Depends(get_tmdb)) -> dict:
+def discover_popular(page: int = 1, store: RequestStore = Depends(get_store), tmdb: TMDBClient = Depends(get_tmdb)) -> dict:
     # Digital-availability filtered: Coming Soon is the dedicated tab for
     # theatrical-only titles, so Discover shouldn't also surface them.
     try:
-        return tmdb.get_available_popular(page=page)
+        data = tmdb.get_available_popular(page=page)
     except TMDBError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
+    data["results"] = _annotate_on_plex(data.get("results", []), "movie", store, title_key="title", date_key="release_date")
+    return data
 
 
 @app.get("/api/discover/trending")
-def discover_trending(time_window: str = "week", tmdb: TMDBClient = Depends(get_tmdb)) -> dict:
+def discover_trending(
+    time_window: str = "week", page: int = 1, store: RequestStore = Depends(get_store), tmdb: TMDBClient = Depends(get_tmdb)
+) -> dict:
     try:
-        return tmdb.get_available_trending(time_window=time_window)
+        data = tmdb.get_available_trending(time_window=time_window, page=page)
     except TMDBError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
+    data["results"] = _annotate_on_plex(data.get("results", []), "movie", store, title_key="title", date_key="release_date")
+    return data
 
 
 @app.get("/api/discover/providers")
@@ -249,31 +300,120 @@ def discover_providers(region: str = "US", tmdb: TMDBClient = Depends(get_tmdb))
 
 @app.get("/api/discover/providers/{provider_id}")
 def discover_by_provider(
-    provider_id: int, region: str = "US", page: int = 1, tmdb: TMDBClient = Depends(get_tmdb)
+    provider_id: int,
+    region: str = "US",
+    page: int = 1,
+    store: RequestStore = Depends(get_store),
+    tmdb: TMDBClient = Depends(get_tmdb),
 ) -> dict:
     try:
-        return tmdb.discover_by_provider(provider_id, region=region, page=page)
+        data = tmdb.discover_by_provider(provider_id, region=region, page=page)
     except TMDBError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
+    data["results"] = _annotate_on_plex(data.get("results", []), "movie", store, title_key="title", date_key="release_date")
+    return data
 
 
 @app.get("/api/discover/coming-soon")
-def discover_coming_soon(region: str = "US", page: int = 1, tmdb: TMDBClient = Depends(get_tmdb)) -> dict:
+def discover_coming_soon(
+    region: str = "US", page: int = 1, store: RequestStore = Depends(get_store), tmdb: TMDBClient = Depends(get_tmdb)
+) -> dict:
     try:
-        return tmdb.get_coming_soon(region=region, page=page)
+        data = tmdb.get_coming_soon(region=region, page=page)
     except TMDBError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
+    data["results"] = _annotate_on_plex(data.get("results", []), "movie", store, title_key="title", date_key="release_date")
+    return data
 
 
 @app.get("/api/movies/{tmdb_id}")
-def get_movie_detail(tmdb_id: int, tmdb: TMDBClient = Depends(get_tmdb)) -> dict:
+def get_movie_detail(
+    tmdb_id: int, store: RequestStore = Depends(get_store), tmdb: TMDBClient = Depends(get_tmdb)
+) -> dict:
     """Full TMDB detail for the detail view — overview, runtime, genres,
     poster/backdrop paths. The frontend hotlinks poster/backdrop images
     straight from TMDB's CDN using the paths returned here."""
     try:
-        return tmdb.get_movie(tmdb_id)
+        movie = tmdb.get_movie(tmdb_id)
     except TMDBError as exc:
         raise HTTPException(status_code=404, detail=f"tmdb_id {tmdb_id} not found") from exc
+    year_str = (movie.get("release_date") or "")[:4]
+    year = int(year_str) if year_str.isdigit() else None
+    return {**movie, "on_plex": _on_plex_for(movie.get("title") or "", year, "movie", store)}
+
+
+# -- Stage 14: TV browse surface — the show equivalent of the movie routes
+#    above. Same thin-pass-through/on_plex-annotation/key-never-reaches-
+#    the-browser rules. --
+
+
+@app.get("/api/tv/discover/popular")
+def tv_discover_popular(
+    page: int = 1, store: RequestStore = Depends(get_store), tmdb: TMDBClient = Depends(get_tmdb)
+) -> dict:
+    try:
+        data = tmdb.get_tv_popular(page=page)
+    except TMDBError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    data["results"] = _annotate_on_plex(data.get("results", []), "show", store, title_key="name", date_key="first_air_date")
+    return data
+
+
+@app.get("/api/tv/discover/trending")
+def tv_discover_trending(
+    time_window: str = "week", page: int = 1, store: RequestStore = Depends(get_store), tmdb: TMDBClient = Depends(get_tmdb)
+) -> dict:
+    try:
+        data = tmdb.get_tv_trending(time_window=time_window, page=page)
+    except TMDBError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    data["results"] = _annotate_on_plex(data.get("results", []), "show", store, title_key="name", date_key="first_air_date")
+    return data
+
+
+@app.get("/api/tv/discover/providers/{provider_id}")
+def tv_discover_by_provider(
+    provider_id: int,
+    region: str = "US",
+    page: int = 1,
+    store: RequestStore = Depends(get_store),
+    tmdb: TMDBClient = Depends(get_tmdb),
+) -> dict:
+    try:
+        data = tmdb.discover_tv_by_provider(provider_id, region=region, page=page)
+    except TMDBError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    data["results"] = _annotate_on_plex(data.get("results", []), "show", store, title_key="name", date_key="first_air_date")
+    return data
+
+
+@app.get("/api/tv/{tmdb_id}")
+def get_tv_detail(tmdb_id: int, store: RequestStore = Depends(get_store), tmdb: TMDBClient = Depends(get_tmdb)) -> dict:
+    """Full TMDB show detail — overview, seasons, status (Returning
+    Series/Ended/Canceled), genres, poster/backdrop paths. Backs the show
+    detail view's subscribe/pause/resume/bulk-download controls."""
+    try:
+        show = tmdb.get_tv(tmdb_id)
+    except TMDBError as exc:
+        raise HTTPException(status_code=404, detail=f"tmdb_id {tmdb_id} not found") from exc
+    year_str = (show.get("first_air_date") or "")[:4]
+    year = int(year_str) if year_str.isdigit() else None
+    return {**show, "on_plex": _on_plex_for(show.get("name") or "", year, "show", store)}
+
+
+@app.post("/api/tv/search")
+def search_tv(
+    body: SearchRequest, store: RequestStore = Depends(get_store), tmdb: TMDBClient = Depends(get_tmdb)
+) -> list[dict]:
+    try:
+        if body.provider_id is not None:
+            data = tmdb.search_tv_within_provider(body.query, body.provider_id)
+        else:
+            data = tmdb.search_tv(body.query, year=body.year)
+    except TMDBError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    results = data.get("results", [])
+    return _annotate_on_plex(results, "show", store, title_key="name", date_key="first_air_date")
 
 
 @app.post("/api/requests", status_code=201)
@@ -387,12 +527,12 @@ def create_show(
 
     row = store.create_show(tmdb_id=body.tmdb_id, title=identity.title)
     worker.check_show(row)
-    return ShowOut.from_row(store.get_show(row.id))
+    return _show_out(store, store.get_show(row.id))
 
 
 @app.get("/api/shows")
 def list_shows(status: str | None = None, store: RequestStore = Depends(get_store)) -> list[ShowOut]:
-    return [ShowOut.from_row(r) for r in store.list_shows(status=status)]
+    return [_show_out(store, r) for r in store.list_shows(status=status)]
 
 
 @app.get("/api/shows/{show_id}")
@@ -400,7 +540,7 @@ def get_show(show_id: int, store: RequestStore = Depends(get_store)) -> ShowOut:
     row = store.get_show(show_id)
     if row is None:
         raise HTTPException(status_code=404, detail="show not found")
-    return ShowOut.from_row(row)
+    return _show_out(store, row)
 
 
 @app.post("/api/shows/{show_id}/pause")
@@ -408,7 +548,7 @@ def pause_show(show_id: int, store: RequestStore = Depends(get_store)) -> ShowOu
     if store.get_show(show_id) is None:
         raise HTTPException(status_code=404, detail="show not found")
     store.update_show_status(show_id, "paused")
-    return ShowOut.from_row(store.get_show(show_id))
+    return _show_out(store, store.get_show(show_id))
 
 
 @app.post("/api/shows/{show_id}/resume")
@@ -416,7 +556,7 @@ def resume_show(show_id: int, store: RequestStore = Depends(get_store)) -> ShowO
     if store.get_show(show_id) is None:
         raise HTTPException(status_code=404, detail="show not found")
     store.update_show_status(show_id, "watching")
-    return ShowOut.from_row(store.get_show(show_id))
+    return _show_out(store, store.get_show(show_id))
 
 
 @app.delete("/api/shows/{show_id}")

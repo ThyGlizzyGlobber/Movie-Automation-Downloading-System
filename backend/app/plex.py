@@ -13,10 +13,12 @@ the settings table (db.py) alongside the per-server access token."""
 import asyncio
 import time
 import uuid
+from typing import Callable
 from urllib.parse import urlencode
 
 import requests
 
+from app.cache import TTLCache
 from app.normalize import normalize_text
 
 PLEX_TV_BASE = "https://plex.tv"
@@ -24,6 +26,10 @@ PRODUCT_NAME = "The Family Downloader"
 PIN_POLL_INTERVAL_SECONDS = 2
 PIN_TIMEOUT_SECONDS = 900  # Plex PINs expire ~15 minutes after creation
 YEAR_TOLERANCE = 1
+
+# Plex's /library/all `type` param: 1=movie, 2=show (3=season, 4=episode,
+# unused here). Stage 14's grid-wide "On Plex" badge.
+_LIBRARY_TYPE = {"movie": 1, "show": 2}
 
 
 class PlexError(RuntimeError):
@@ -130,6 +136,76 @@ class PlexClient:
                 continue
             return True
         return False
+
+    def library_index(self, server_url: str, server_token: str, media_type: str) -> dict[str, list[int | None]]:
+        """Every title in one whole library section (`media_type`
+        "movie"/"show"), as `normalize_text(title) -> [years...]` — one bulk
+        `/library/all` call (no title filter) rather than the N per-item
+        calls `has_movie` makes, so a discover/search grid of 20-40 items
+        can check "is this on Plex" against one fetch instead of 20-40 live
+        requests. See `plex_library_lookup` below for the caller-facing,
+        cached version of this."""
+        response = self.session.get(
+            f"{server_url}/library/all",
+            headers={"Accept": "application/json", "X-Plex-Token": server_token},
+            params={"type": _LIBRARY_TYPE[media_type]},
+            timeout=15,
+        )
+        if not response.ok:
+            raise PlexError(f"Plex library fetch failed: {response.status_code}")
+        items = response.json().get("MediaContainer", {}).get("Metadata", []) or []
+        index: dict[str, list[int | None]] = {}
+        for item in items:
+            key = normalize_text(item.get("title", ""))
+            if not key:
+                continue
+            index.setdefault(key, []).append(item.get("year"))
+        return index
+
+
+# One cache per (server_url, server_token, media_type) — a fresh PlexClient
+# is constructed per call below (matching has_in_library's existing
+# pattern), so `app.cache.ttl_cache`'s self-keying decorator would never
+# actually hit; this is keyed on the request's own identity instead.
+_LIBRARY_INDEX_TTL_SECONDS = 120
+_library_index_cache = TTLCache(_LIBRARY_INDEX_TTL_SECONDS)
+
+
+def plex_library_lookup(store, media_type: str) -> Callable[[str, int | None], bool] | None:
+    """Returns a matcher `(title, year) -> bool` backed by one cached,
+    whole-library snapshot, or `None` if Plex isn't linked. Meant to be
+    called once per API request (not once per item) so a whole page of
+    discover/search results can be annotated with a single Plex round trip
+    every ~2 minutes rather than one per item. Reads settings fresh each
+    call (Plex can be linked/unlinked while the backend is running), same
+    as `has_in_library`."""
+    settings = store.get_settings()
+    server_url = settings.get("plex_server_url")
+    server_token = settings.get("plex_server_token")
+    if not server_url or not server_token:
+        return None
+
+    cache_key = (server_url, server_token, media_type)
+    index, hit = _library_index_cache.get(cache_key)
+    if not hit:
+        client = PlexClient(settings.get("plex_client_id") or new_client_identifier())
+        try:
+            index = client.library_index(server_url, server_token, media_type)
+        except PlexError:
+            # Fail safe, not best guess: a Plex hiccup must not break
+            # browsing — every item just reports "not on Plex" this request.
+            index = {}
+        _library_index_cache.set(cache_key, index)
+
+    def matcher(title: str, year: int | None) -> bool:
+        years = index.get(normalize_text(title))
+        if years is None:
+            return False
+        if year is None:
+            return True
+        return any(y is None or abs(y - year) <= YEAR_TOLERANCE for y in years)
+
+    return matcher
 
 
 def has_in_library(store, title: str, year: int | None) -> bool | None:

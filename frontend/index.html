@@ -88,8 +88,22 @@
   .inline-search:focus { outline: 2px solid var(--accent); }
 
   /* 130px (not just the tab bar's ~90px) so scrolled content on the
-     Requests view clears the floating .requests-fab above the tab bar. */
-  main { padding: 14px 14px calc(130px + var(--safe-bottom)); min-height: 60vh; }
+     Requests view clears the floating .requests-fab above the tab bar.
+     max-width + centering keeps a desktop-width browser window from
+     stretching a single grid/detail column edge to edge. */
+  main {
+    padding: 14px 14px calc(130px + var(--safe-bottom));
+    min-height: 60vh;
+    max-width: 1600px; margin: 0 auto;
+  }
+
+  .top-nav-links { display: none; }
+  .top-nav-link {
+    padding: 8px 14px; border-radius: 8px; font-size: 14.5px; font-weight: 600;
+    color: var(--text-dim); background: none; border: none;
+  }
+  .top-nav-link:hover { color: var(--text); background: var(--bg-card); }
+  .top-nav-link.active { color: var(--text); }
 
   section.row { margin-bottom: 26px; }
   section.row h2 {
@@ -107,6 +121,7 @@
   .poster-card {
     display: block; flex: 0 0 auto; width: var(--poster-min, 112px); scroll-snap-align: start;
   }
+  .poster-art { position: relative; border-radius: 10px; overflow: hidden; }
   .poster-card img {
     width: 100%; height: auto; aspect-ratio: 2 / 3; object-fit: cover; border-radius: 10px;
     background: var(--bg-card); display: block;
@@ -115,6 +130,23 @@
     font-size: 12.5px; margin-top: 6px; color: var(--text);
     display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
     overflow: hidden; line-height: 1.25;
+  }
+  /* "On Plex" badge (Stage 14) — a quick-glance band across the bottom of
+     any poster already in the household's Plex library, distinct from
+     "I requested this" (the app's own status pills). Green, matching the
+     existing --status-complete "done/good" color language. */
+  .on-plex-badge {
+    position: absolute; left: 0; right: 0; bottom: 0;
+    background: color-mix(in srgb, var(--status-complete) 30%, black 55%);
+    color: var(--status-complete);
+    font-size: 10px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase;
+    text-align: center; padding: 4px 2px;
+  }
+  @media (hover: hover) {
+    .poster-art { transition: transform 0.15s ease, box-shadow 0.15s ease; }
+    .poster-card:hover .poster-art {
+      transform: scale(1.045); box-shadow: 0 8px 20px rgba(0,0,0,0.5); z-index: 1;
+    }
   }
 
   .grid {
@@ -254,6 +286,32 @@
     border-radius: 10px; font-size: 14px; display: flex; align-items: center; gap: 10px;
   }
 
+  /* Show detail (Stage 14): subscribe state + bulk-download actions,
+     styled alongside .add-btn above rather than as a separate system. */
+  .unsubscribe-link {
+    display: block; width: 100%; text-align: center; margin-top: 10px;
+    background: none; border: none; color: var(--text-dim); font-size: 13.5px; text-decoration: underline;
+  }
+  .bulk-btn {
+    width: 100%; margin-top: 10px; padding: 13px; font-size: 15px; font-weight: 600;
+    background: var(--bg-card); color: var(--text); border: 1px solid var(--border); border-radius: 12px;
+  }
+  .bulk-btn.primary { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
+  .bulk-btn:active { opacity: 0.85; }
+  .bulk-btn[disabled] { color: var(--text-dim); opacity: 0.6; }
+  .bulk-hint { color: var(--text-dim); font-size: 12.5px; margin-top: 6px; text-align: center; }
+  .season-list { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; }
+  .season-row {
+    display: flex; align-items: center; justify-content: space-between; gap: 10px;
+    padding: 10px 12px; background: var(--bg-card); border-radius: 10px; font-size: 14px;
+  }
+  .season-btn {
+    font-size: 12.5px; font-weight: 600; padding: 7px 14px; border-radius: 999px;
+    background: none; color: var(--accent); border: 1px solid var(--accent);
+  }
+  .season-btn:active { background: color-mix(in srgb, var(--accent) 18%, transparent); }
+  .season-btn[disabled] { color: var(--text-dim); border-color: var(--border); }
+
   /* Status pills, shared between detail confirm + requests list */
   .status-pill {
     display: inline-flex; align-items: center; gap: 6px;
@@ -290,12 +348,26 @@
   .req-title:active { opacity: 0.7; }
   .req-sub { font-size: 12.5px; color: var(--text-dim); margin-top: 3px; }
   .req-actions { display: flex; align-items: center; gap: 10px; flex: 0 0 auto; }
+  .watch-pills { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+  .watch-link {
+    font-size: 12.5px; font-weight: 600; padding: 5px 12px; border-radius: 999px;
+    background: transparent; color: var(--text-dim); border: 1px solid var(--border);
+  }
+  .watch-link:active { background: var(--bg-card); }
   .cancel-btn {
     font-size: 12.5px; font-weight: 600; padding: 5px 12px; border-radius: 999px;
     background: transparent; color: var(--status-nospace); border: 1px solid var(--status-nospace);
   }
   .cancel-btn:active { background: color-mix(in srgb, var(--status-nospace) 18%, transparent); }
   .cancel-btn[disabled] { opacity: 0.5; }
+  /* Watching list's Pause/Resume — same pill shape as .cancel-btn but a
+     neutral (not destructive) color, since pausing isn't deleting anything. */
+  .toggle-show-btn {
+    font-size: 12.5px; font-weight: 600; padding: 5px 12px; border-radius: 999px;
+    background: transparent; color: var(--accent); border: 1px solid var(--accent);
+  }
+  .toggle-show-btn:active { background: color-mix(in srgb, var(--accent) 18%, transparent); }
+  .toggle-show-btn[disabled] { opacity: 0.5; }
 
   /* Floating above the tab bar, bottom-right — not part of the scrolling
      list, so it stays reachable regardless of scroll position. */
@@ -405,6 +477,20 @@
   }
   .tab .icon { font-size: 21px; }
   .tab.active { color: var(--accent); }
+
+  /* Desktop nav: a top horizontal bar (Netflix-style) replaces the bottom
+     tab bar above this width; below it, today's #tabbar stays. Both are
+     driven by the same setChrome({activeTab}) call — see .tab/.top-nav-link
+     "active" class toggling in JS — so there's one source of truth for
+     which section is active, just two pieces of markup. Declared last so
+     it wins the cascade over the plain #tabbar/.top-nav-links rules above,
+     which share the same specificity. */
+  @media (min-width: 860px) {
+    #tabbar { display: none; }
+    .top-nav-links { display: flex; align-items: center; gap: 4px; flex: 0 0 auto; }
+    main { padding-bottom: 40px; }
+    .requests-fab { bottom: 20px; }
+  }
 </style>
 </head>
 <body>
@@ -412,8 +498,13 @@
 <div id="topbar">
   <button id="backBtn" style="display:none" aria-label="Back">&larr;</button>
   <img id="topbarLogo" src="/icon-192.png" alt="The Family Downloader">
+  <nav class="top-nav-links">
+    <button class="top-nav-link" data-tab="movies">Movies</button>
+    <button class="top-nav-link" data-tab="tv">TV Shows</button>
+    <button class="top-nav-link" data-tab="requests">Requests</button>
+  </nav>
   <div class="search-input-wrap">
-    <input id="searchInput" type="search" enterkeyhint="search" aria-label="Search movies">
+    <input id="searchInput" type="search" enterkeyhint="search" aria-label="Search movies and TV shows">
     <button id="searchClearBtn" class="search-clear-btn" aria-label="Clear search" hidden>&#10005;</button>
   </div>
   <button id="settingsToggle" aria-label="Settings">&#9881;&#65039;</button>
@@ -422,7 +513,8 @@
 <main id="app"><div class="loading"><div class="spinner"></div></div></main>
 
 <nav id="tabbar">
-  <button class="tab" data-tab="home"><span class="icon">&#127968;</span>Home</button>
+  <button class="tab" data-tab="movies"><span class="icon">&#127916;</span>Movies</button>
+  <button class="tab" data-tab="tv"><span class="icon">&#128250;</span>TV Shows</button>
   <button class="tab" data-tab="requests"><span class="icon">&#128229;</span>Requests</button>
 </nav>
 
@@ -459,6 +551,16 @@
     { id: 2303, name: "Paramount+", icon: "paramount-plus.png" },
     { id: 386, name: "Peacock", icon: "peacock.png" },
   ];
+
+  // TMDB's watch-provider ids are shared across movies and TV (Netflix is
+  // always 8, etc.), so the same curated chip list backs both sections —
+  // only the link prefix differs ("#/movies/provider" vs "#/tv/provider").
+  function providerChipsHtml(hrefPrefix) {
+    return CURATED_PROVIDERS.map((cp) => `<a href="${hrefPrefix}/${cp.id}/${encodeURIComponent(cp.name)}">
+        <div class="provider-chip"><img src="/icons/${cp.icon}" alt=""></div>
+        <div class="provider-label">${escapeHtml(cp.name)}</div>
+      </a>`).join("");
+  }
 
   const STATUS_META = {
     "queued": { label: "Queued", cls: "status-queued" },
@@ -527,7 +629,7 @@
     return res.status === 204 ? null : res.json();
   }
   const getDiscoverPopular = (page) => api(`/api/discover/popular?page=${page || 1}`);
-  const getDiscoverTrending = () => api(`/api/discover/trending`);
+  const getDiscoverTrending = (page) => api(`/api/discover/trending?page=${page || 1}`);
   const getDiscoverByProvider = (id, page) => api(`/api/discover/providers/${id}?page=${page || 1}`);
   const getComingSoon = (page) => api(`/api/discover/coming-soon?page=${page || 1}`);
   const getMovie = (id) => api(`/api/movies/${id}`);
@@ -535,6 +637,27 @@
     method: "POST", headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ query, provider_id: providerId || null }),
   });
+
+  // -- Stage 14: TV browse + subscription surface --
+  const getTvDiscoverPopular = (page) => api(`/api/tv/discover/popular?page=${page || 1}`);
+  const getTvDiscoverTrending = (page) => api(`/api/tv/discover/trending?page=${page || 1}`);
+  const getTvDiscoverByProvider = (id, page) => api(`/api/tv/discover/providers/${id}?page=${page || 1}`);
+  const getTvShow = (id) => api(`/api/tv/${id}`);
+  const postSearchTv = (query, providerId) => api(`/api/tv/search`, {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ query, provider_id: providerId || null }),
+  });
+  const listShows = (status) => api(`/api/shows${status ? `?status=${status}` : ""}`);
+  const createShow = (tmdb_id) => api(`/api/shows`, {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ tmdb_id }),
+  });
+  const pauseShow = (id) => api(`/api/shows/${id}/pause`, { method: "POST" });
+  const resumeShow = (id) => api(`/api/shows/${id}/resume`, { method: "POST" });
+  const deleteShow = (id) => api(`/api/shows/${id}`, { method: "DELETE" });
+  const bulkDownload = (id, body) => api(`/api/shows/${id}/bulk-download`, {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+  });
+
   const listRequests = () => api(`/api/requests`);
   const createRequest = (tmdb_id, query) => api(`/api/requests`, {
     method: "POST", headers: { "Content-Type": "application/json" },
@@ -566,10 +689,19 @@
 
   // -- Rendering helpers --
 
-  function posterCard(movie) {
-    const title = escapeHtml(movie.title || movie.original_title || "Untitled");
-    return `<a class="poster-card" href="#/movie/${movie.id}">
-      <img src="${posterUrl(movie.poster_path)}" alt="" loading="lazy">
+  // mediaType: "movie" (default) or "tv" — picks the title/date field and
+  // the detail-page link target. Wraps the poster in .poster-art so the
+  // "On Plex" badge (Stage 14) can sit pinned to its bottom edge, and so
+  // the desktop hover-lift affects only the artwork, not the caption.
+  function posterCard(item, mediaType) {
+    const isTv = mediaType === "tv";
+    const title = escapeHtml(item.title || item.name || item.original_title || item.original_name || "Untitled");
+    const href = isTv ? `#/tv/${item.id}` : `#/movies/${item.id}`;
+    return `<a class="poster-card" href="${href}">
+      <div class="poster-art">
+        <img src="${posterUrl(item.poster_path)}" alt="" loading="lazy">
+        ${item.on_plex ? `<div class="on-plex-badge">On Plex</div>` : ""}
+      </div>
       <div class="cap">${title}</div>
     </a>`;
   }
@@ -577,7 +709,7 @@
   function loadingHtml() { return `<div class="loading"><div class="spinner"></div></div>`; }
   function errorHtml(msg, retryHash) {
     return `<div class="error">Couldn't load that.<br>${escapeHtml(msg || "")}
-      <br><a class="retry" href="${retryHash || "#/home"}" onclick="location.reload()">Retry</a></div>`;
+      <br><a class="retry" href="${retryHash || "#/movies"}" onclick="location.reload()">Retry</a></div>`;
   }
   function emptyHtml(msg) { return `<div class="empty">${escapeHtml(msg)}</div>`; }
 
@@ -611,18 +743,30 @@
   }
   setGridSize(getGridSize());
 
-  // Top-of-Home sub menu: Discover (the trending/popular/provider surface)
-  // vs. Coming Soon (still-in-cinemas, no digital release yet). Carries the
-  // grid-size slider top-right, on the same row.
-  function subnavHtml(active) {
+  // Shared filter-tab row for both Movies (Popular/Trending/Coming Soon)
+  // and TV (Popular/Trending/Watching) — `tabs` is [{key, label, hash}].
+  // Carries the grid-size slider top-right, on the same row, unless the
+  // active tab is a list view (Watching) rather than a poster grid.
+  function subnavHtml(tabs, activeKey, { showGridSize = true } = {}) {
+    const links = tabs
+      .map((t) => `<a class="subtab ${t.key === activeKey ? "active" : ""}" href="${t.hash}">${escapeHtml(t.label)}</a>`)
+      .join("");
     return `<div class="subnav">
-      <div class="subnav-tabs">
-        <a class="subtab ${active === "discover" ? "active" : ""}" href="#/home">Discover</a>
-        <a class="subtab ${active === "coming-soon" ? "active" : ""}" href="#/coming-soon">Coming Soon</a>
-      </div>
-      ${gridSizeHtml()}
+      <div class="subnav-tabs">${links}</div>
+      ${showGridSize ? gridSizeHtml() : ""}
     </div>`;
   }
+
+  const MOVIES_TABS = [
+    { key: "popular", label: "Popular", hash: "#/movies" },
+    { key: "trending", label: "Trending", hash: "#/movies/trending" },
+    { key: "coming-soon", label: "Coming Soon", hash: "#/movies/coming-soon" },
+  ];
+  const TV_TABS = [
+    { key: "popular", label: "Popular", hash: "#/tv" },
+    { key: "trending", label: "Trending", hash: "#/tv/trending" },
+    { key: "watching", label: "Watching", hash: "#/tv/watching" },
+  ];
 
   // -- Router --
 
@@ -643,16 +787,17 @@
   function setChrome({ title, showBack, activeTab }) {
     document.title = title ? `${title} — The Family Downloader` : "The Family Downloader";
     backBtn.style.display = showBack ? "" : "none";
-    document.querySelectorAll(".tab").forEach((t) => {
+    document.querySelectorAll(".tab, .top-nav-link").forEach((t) => {
       t.classList.toggle("active", t.dataset.tab === activeTab);
     });
   }
 
+  const SECTION_HASH = { movies: "#/movies", tv: "#/tv", requests: "#/requests" };
   function navigate(hash) { window.location.hash = hash; }
   backBtn.addEventListener("click", () => window.history.back());
 
-  document.querySelectorAll(".tab").forEach((t) => {
-    t.addEventListener("click", () => navigate(t.dataset.tab === "home" ? "#/home" : "#/requests"));
+  document.querySelectorAll(".tab, .top-nav-link").forEach((t) => {
+    t.addEventListener("click", () => navigate(SECTION_HASH[t.dataset.tab] || "#/movies"));
   });
 
   // Delegated once here (rather than re-attached on every view render)
@@ -663,6 +808,35 @@
     const presetSwatch = e.target.closest(".accent-swatch:not(.custom-swatch)");
     if (presetSwatch) {
       await chooseAccentColor(presetSwatch.dataset.color);
+      return;
+    }
+
+    const toggleShowBtn = e.target.closest(".toggle-show-btn");
+    if (toggleShowBtn) {
+      const showId = toggleShowBtn.dataset.toggleShow;
+      const isPaused = toggleShowBtn.dataset.currentStatus === "paused";
+      toggleShowBtn.disabled = true;
+      try {
+        await (isPaused ? resumeShow(showId) : pauseShow(showId));
+        await renderTv("watching");
+      } catch (err) {
+        alert(`Couldn't update this show: ${err.message}`);
+        toggleShowBtn.disabled = false;
+      }
+      return;
+    }
+
+    const unsubBtn = e.target.closest("[data-unsub-show]");
+    if (unsubBtn) {
+      if (!confirm("Unsubscribe from this show? Its download history stays in Requests.")) return;
+      unsubBtn.disabled = true;
+      try {
+        await deleteShow(unsubBtn.dataset.unsubShow);
+        await renderTv("watching");
+      } catch (err) {
+        alert(`Couldn't unsubscribe: ${err.message}`);
+        unsubBtn.disabled = false;
+      }
       return;
     }
 
@@ -704,75 +878,113 @@
   });
 
   const routes = [
-    { re: /^#\/home$/, handler: renderHome },
-    { re: /^#\/coming-soon$/, handler: renderComingSoon },
+    { re: /^#\/movies$/, handler: () => renderMovies("popular") },
+    { re: /^#\/movies\/trending$/, handler: () => renderMovies("trending") },
+    { re: /^#\/movies\/coming-soon$/, handler: () => renderMovies("coming-soon") },
+    { re: /^#\/movies\/provider\/(\d+)\/(.*)$/, handler: (m) => renderProvider(m[1], decodeURIComponent(m[2]), "movie") },
+    { re: /^#\/movies\/(\d+)$/, handler: (m) => renderMovie(m[1]) },
+    { re: /^#\/tv$/, handler: () => renderTv("popular") },
+    { re: /^#\/tv\/trending$/, handler: () => renderTv("trending") },
+    { re: /^#\/tv\/watching$/, handler: () => renderTv("watching") },
+    { re: /^#\/tv\/provider\/(\d+)\/(.*)$/, handler: (m) => renderProvider(m[1], decodeURIComponent(m[2]), "tv") },
+    { re: /^#\/tv\/(\d+)$/, handler: (m) => renderShow(m[1]) },
     { re: /^#\/requests$/, handler: renderRequests },
-    { re: /^#\/movie\/(\d+)$/, handler: (m) => renderMovie(m[1]) },
-    { re: /^#\/provider\/(\d+)\/(.*)$/, handler: (m) => renderProvider(m[1], decodeURIComponent(m[2])) },
     { re: /^#\/search\/(.*)$/, handler: (m) => renderSearch(decodeURIComponent(m[1])) },
     { re: /^#\/settings$/, handler: renderSettings },
   ];
 
   function route() {
     stopPolling();
-    const hash = window.location.hash || "#/home";
+    const hash = window.location.hash || "#/movies";
     for (const r of routes) {
       const m = hash.match(r.re);
       if (m) { r.handler(m); return; }
     }
-    navigate("#/home");
+    navigate("#/movies");
   }
   window.addEventListener("hashchange", route);
 
   // -- Views --
 
-  async function renderHome() {
-    setChrome({ title: "", showBack: false, activeTab: "home" });
-    app.innerHTML = loadingHtml();
-    try {
-      const [trending, popular] = await Promise.all([getDiscoverTrending(), getDiscoverPopular(1)]);
-      const chips = CURATED_PROVIDERS.map((cp) => `<a href="#/provider/${cp.id}/${encodeURIComponent(cp.name)}">
-          <div class="provider-chip"><img src="/icons/${cp.icon}" alt=""></div>
-          <div class="provider-label">${escapeHtml(cp.name)}</div>
-        </a>`).join("");
+  // Shared paginated-grid markup + "Load more" wiring — backs Movies'
+  // Popular/Trending/Coming Soon, TV's Popular/Trending, and Provider
+  // browse, all of which are "fetch a {results, page, total_pages} page,
+  // append the next one on demand" in the exact same shape.
+  function gridSectionHtml(gridId, moreBtnId, data, mediaType, emptyMessage) {
+    const results = data.results || [];
+    return `
+      <div class="grid" id="${gridId}">${results.map((it) => posterCard(it, mediaType)).join("")}</div>
+      ${!results.length && emptyMessage ? emptyHtml(emptyMessage) : ""}
+      ${data.page < (data.total_pages || 1) ? `<button class="loadmore" id="${moreBtnId}">Load more</button>` : ""}
+    `;
+  }
 
-      app.innerHTML = `
-        ${subnavHtml("discover")}
-        <section class="row">
-          <h2>Trending this week</h2>
-          <div class="hscroll">${(trending.results || []).map(posterCard).join("") || emptyHtml("Nothing trending right now.")}</div>
-        </section>
-        <section class="row">
-          <h2>Browse a service</h2>
-          <div class="provider-row">${chips}</div>
-        </section>
-        <section class="row">
-          <h2>Popular</h2>
-          <div class="grid" id="popularGrid">${(popular.results || []).map(posterCard).join("")}</div>
-          ${popular.page < (popular.total_pages || 1) ? `<button class="loadmore" id="popularMore">Load more</button>` : ""}
-        </section>
-      `;
-      wireGridSizeSlider();
-      let page = popular.page || 1;
-      const moreBtn = document.getElementById("popularMore");
-      if (moreBtn) {
-        moreBtn.addEventListener("click", async () => {
-          moreBtn.textContent = "Loading…";
-          moreBtn.disabled = true;
-          const next = await getDiscoverPopular(page + 1);
-          page = next.page;
-          document.getElementById("popularGrid").insertAdjacentHTML("beforeend", (next.results || []).map(posterCard).join(""));
-          if (page >= (next.total_pages || 1)) moreBtn.remove();
-          else { moreBtn.textContent = "Load more"; moreBtn.disabled = false; }
-        });
+  function wireLoadMore(gridId, moreBtnId, fetchPage, mediaType, startPage) {
+    let page = startPage || 1;
+    const moreBtn = document.getElementById(moreBtnId);
+    if (!moreBtn) return;
+    moreBtn.addEventListener("click", async () => {
+      moreBtn.textContent = "Loading…";
+      moreBtn.disabled = true;
+      const next = await fetchPage(page + 1);
+      page = next.page;
+      document.getElementById(gridId).insertAdjacentHTML(
+        "beforeend", (next.results || []).map((it) => posterCard(it, mediaType)).join("")
+      );
+      if (page >= (next.total_pages || 1)) moreBtn.remove();
+      else { moreBtn.textContent = "Load more"; moreBtn.disabled = false; }
+    });
+  }
+
+  async function renderMovies(tab) {
+    setChrome({ title: "", showBack: false, activeTab: "movies" });
+    app.innerHTML = subnavHtml(MOVIES_TABS, tab) + loadingHtml();
+    try {
+      if (tab === "trending") {
+        const data = await getDiscoverTrending(1);
+        app.innerHTML = `
+          ${subnavHtml(MOVIES_TABS, "trending")}
+          ${gridSectionHtml("trendingGrid", "trendingMore", data, "movie", "Nothing trending right now.")}
+        `;
+        wireGridSizeSlider();
+        wireLoadMore("trendingGrid", "trendingMore", getDiscoverTrending, "movie", data.page);
+      } else if (tab === "coming-soon") {
+        const data = await getComingSoon(1);
+        app.innerHTML = `
+          ${subnavHtml(MOVIES_TABS, "coming-soon")}
+          ${gridSectionHtml("comingSoonGrid", "comingSoonMore", data, "movie", "Nothing currently in theaters without a digital release yet.")}
+        `;
+        wireGridSizeSlider();
+        wireLoadMore("comingSoonGrid", "comingSoonMore", getComingSoon, "movie", data.page);
+      } else {
+        const popular = await getDiscoverPopular(1);
+        app.innerHTML = `
+          ${subnavHtml(MOVIES_TABS, "popular")}
+          <section class="row">
+            <h2>Browse a service</h2>
+            <div class="provider-row">${providerChipsHtml("#/movies/provider")}</div>
+          </section>
+          <section class="row">
+            <h2>Popular</h2>
+            ${gridSectionHtml("popularGrid", "popularMore", popular, "movie")}
+          </section>
+        `;
+        wireGridSizeSlider();
+        wireLoadMore("popularGrid", "popularMore", getDiscoverPopular, "movie", popular.page);
       }
     } catch (err) {
-      app.innerHTML = errorHtml(err.message, "#/home");
+      app.innerHTML = subnavHtml(MOVIES_TABS, tab) + errorHtml(err.message, MOVIES_TABS.find((t) => t.key === tab).hash);
     }
   }
 
-  async function renderProvider(id, name) {
-    setChrome({ title: name || "Browse", showBack: true, activeTab: "home" });
+  // mediaType: "movie" (default) or "tv" — same provider ids work for
+  // both (TMDB's watch-provider ids are shared across media types), just
+  // a different discover/search call and poster-card link target.
+  async function renderProvider(id, name, mediaType) {
+    const isTv = mediaType === "tv";
+    const discoverByProvider = isTv ? getTvDiscoverByProvider : getDiscoverByProvider;
+    const searchFn = isTv ? postSearchTv : postSearch;
+    setChrome({ title: name || "Browse", showBack: true, activeTab: isTv ? "tv" : "movies" });
     app.innerHTML = `
       <input type="search" class="inline-search" id="providerSearchInput"
              placeholder="Search within ${escapeHtml(name || "this service")}…">
@@ -784,25 +996,9 @@
     async function showBrowse() {
       resultsEl.innerHTML = loadingHtml();
       try {
-        const data = await getDiscoverByProvider(id, 1);
-        let page = data.page || 1;
-        resultsEl.innerHTML = `
-          <div class="grid" id="providerGrid">${(data.results || []).map(posterCard).join("")}</div>
-          ${!data.results || !data.results.length ? emptyHtml("No titles found for this service.") : ""}
-          ${data.page < (data.total_pages || 1) ? `<button class="loadmore" id="providerMore">Load more</button>` : ""}
-        `;
-        const moreBtn = document.getElementById("providerMore");
-        if (moreBtn) {
-          moreBtn.addEventListener("click", async () => {
-            moreBtn.textContent = "Loading…";
-            moreBtn.disabled = true;
-            const next = await getDiscoverByProvider(id, page + 1);
-            page = next.page;
-            document.getElementById("providerGrid").insertAdjacentHTML("beforeend", (next.results || []).map(posterCard).join(""));
-            if (page >= (next.total_pages || 1)) moreBtn.remove();
-            else { moreBtn.textContent = "Load more"; moreBtn.disabled = false; }
-          });
-        }
+        const data = await discoverByProvider(id, 1);
+        resultsEl.innerHTML = gridSectionHtml("providerGrid", "providerMore", data, mediaType, "No titles found for this service.");
+        wireLoadMore("providerGrid", "providerMore", (p) => discoverByProvider(id, p), mediaType, data.page);
       } catch (err) {
         resultsEl.innerHTML = errorHtml(err.message);
       }
@@ -811,9 +1007,9 @@
     async function showProviderSearch(query) {
       resultsEl.innerHTML = loadingHtml();
       try {
-        const results = await postSearch(query, Number(id));
+        const results = await searchFn(query, Number(id));
         resultsEl.innerHTML = results.length
-          ? `<div class="grid">${results.map(posterCard).join("")}</div>`
+          ? `<div class="grid">${results.map((it) => posterCard(it, mediaType)).join("")}</div>`
           : emptyHtml(`No titles on ${name || "this service"} matched “${query}”.`);
       } catch (err) {
         resultsEl.innerHTML = errorHtml(err.message);
@@ -830,38 +1026,256 @@
     await showBrowse();
   }
 
-  async function renderComingSoon() {
-    setChrome({ title: "Coming Soon", showBack: false, activeTab: "home" });
-    app.innerHTML = subnavHtml("coming-soon") + loadingHtml();
+  // -- TV section (Stage 14) --
+
+  async function renderTv(tab) {
+    setChrome({ title: "", showBack: false, activeTab: "tv" });
+    app.innerHTML = subnavHtml(TV_TABS, tab, { showGridSize: tab !== "watching" }) + loadingHtml();
     try {
-      const data = await getComingSoon(1);
-      let page = data.page || 1;
-      app.innerHTML = `
-        ${subnavHtml("coming-soon")}
-        <div class="grid" id="comingSoonGrid">${(data.results || []).map(posterCard).join("")}</div>
-        ${!data.results || !data.results.length ? emptyHtml("Nothing currently in theaters without a digital release yet.") : ""}
-        ${data.page < (data.total_pages || 1) ? `<button class="loadmore" id="comingSoonMore">Load more</button>` : ""}
-      `;
-      wireGridSizeSlider();
-      const moreBtn = document.getElementById("comingSoonMore");
-      if (moreBtn) {
-        moreBtn.addEventListener("click", async () => {
-          moreBtn.textContent = "Loading…";
-          moreBtn.disabled = true;
-          const next = await getComingSoon(page + 1);
-          page = next.page;
-          document.getElementById("comingSoonGrid").insertAdjacentHTML("beforeend", (next.results || []).map(posterCard).join(""));
-          if (page >= (next.total_pages || 1)) moreBtn.remove();
-          else { moreBtn.textContent = "Load more"; moreBtn.disabled = false; }
-        });
+      if (tab === "trending") {
+        const data = await getTvDiscoverTrending(1);
+        app.innerHTML = `
+          ${subnavHtml(TV_TABS, "trending")}
+          ${gridSectionHtml("tvTrendingGrid", "tvTrendingMore", data, "tv", "Nothing trending right now.")}
+        `;
+        wireGridSizeSlider();
+        wireLoadMore("tvTrendingGrid", "tvTrendingMore", getTvDiscoverTrending, "tv", data.page);
+      } else if (tab === "watching") {
+        const shows = await listShows();
+        app.innerHTML = `${subnavHtml(TV_TABS, "watching", { showGridSize: false })}${watchingListHtml(shows)}`;
+      } else {
+        const popular = await getTvDiscoverPopular(1);
+        app.innerHTML = `
+          ${subnavHtml(TV_TABS, "popular")}
+          <section class="row">
+            <h2>Browse a service</h2>
+            <div class="provider-row">${providerChipsHtml("#/tv/provider")}</div>
+          </section>
+          <section class="row">
+            <h2>Popular</h2>
+            ${gridSectionHtml("tvPopularGrid", "tvPopularMore", popular, "tv")}
+          </section>
+        `;
+        wireGridSizeSlider();
+        wireLoadMore("tvPopularGrid", "tvPopularMore", getTvDiscoverPopular, "tv", popular.page);
       }
     } catch (err) {
-      app.innerHTML = subnavHtml("coming-soon") + errorHtml(err.message, "#/coming-soon");
+      app.innerHTML = subnavHtml(TV_TABS, tab) + errorHtml(err.message, TV_TABS.find((t) => t.key === tab).hash);
     }
   }
 
+  function relativeTime(iso) {
+    if (!iso) return "never";
+    const diffMs = Date.now() - new Date(iso).getTime();
+    const mins = Math.round(diffMs / 60000);
+    if (mins < 1) return "just now";
+    if (mins < 60) return `${mins}m ago`;
+    const hours = Math.round(mins / 60);
+    if (hours < 24) return `${hours}h ago`;
+    return `${Math.round(hours / 24)}d ago`;
+  }
+
+  function pad2(n) { return String(n).padStart(2, "0"); }
+
+  function watchStatusPillHtml(status) {
+    const cls = status === "paused" ? "status-queued" : "status-complete";
+    const label = status === "paused" ? "Paused" : "Watching";
+    return `<span class="status-pill ${cls}"><span class="status-dot ${cls}"></span>${label}</span>`;
+  }
+
+  // The second pill on a Watching row: what the show's most recent
+  // episode/pack request actually did, or a plain "not checked yet" when
+  // there's no history (just subscribed, catch-up still queued).
+  function latestRequestPillHtml(req) {
+    if (!req) return `<span class="status-pill status-queued"><span class="status-dot status-queued"></span>Not checked yet</span>`;
+    const label = req.media_type === "episode"
+      ? `S${pad2(req.season_number)}E${pad2(req.episode_number)}`
+      : req.season_number != null ? `Season ${req.season_number}` : "Complete Series";
+    const m = statusMeta(req.status);
+    return `<span class="status-pill ${m.cls}"><span class="status-dot ${m.cls}"></span>${label} — ${m.label}</span>`;
+  }
+
+  function watchingListHtml(shows) {
+    if (!shows.length) return emptyHtml("Not watching anything yet — find a show and tap Add Show.");
+    return shows.map((s) => `
+      <div class="req-row">
+        <div class="req-main">
+          <a class="req-title" href="#/tv/${s.tmdb_id}">${escapeHtml(s.title)}</a>
+          <div class="req-sub">Last checked ${relativeTime(s.last_checked_at)}</div>
+          <div class="watch-pills" style="margin-top:6px">
+            ${watchStatusPillHtml(s.status)}
+            ${latestRequestPillHtml(s.latest_request)}
+          </div>
+        </div>
+        <div class="req-actions">
+          <button class="toggle-show-btn" data-toggle-show="${s.id}" data-current-status="${s.status}">
+            ${s.status === "paused" ? "Resume" : "Pause"}
+          </button>
+          <button class="watch-link" data-unsub-show="${s.id}">Unsubscribe</button>
+        </div>
+      </div>
+    `).join("");
+  }
+
+  // -- Show detail (Stage 14) --
+
+  function subscribeAreaHtml(subscription) {
+    if (!subscription) return `<button class="add-btn" id="subscribeBtn">Add Show</button>`;
+    if (subscription.status === "paused") {
+      return `
+        <button class="add-btn" id="resumeBtn">Paused — Tap to Resume</button>
+        <button class="unsubscribe-link" id="unsubBtn">Unsubscribe</button>
+      `;
+    }
+    return `
+      <button class="add-btn" id="pauseBtn">Watching &#10003;</button>
+      <button class="unsubscribe-link" id="unsubBtn">Unsubscribe</button>
+    `;
+  }
+
+  // Bulk-download (Stage 13) only works once subscribed — the endpoint
+  // takes a local `shows.id`, not a bare tmdb_id — so it's surfaced as
+  // disabled-with-a-hint rather than silently auto-subscribing on click.
+  function bulkAreaHtml(subscription, isEndedOrCanceled, seasons) {
+    const disabled = !subscription;
+    const seriesBtn = `<button class="bulk-btn ${isEndedOrCanceled ? "primary" : ""}" id="bulkSeriesBtn" ${disabled ? "disabled" : ""}>Download complete series</button>`;
+    const hint = disabled ? `<div class="bulk-hint">Add this show to enable bulk downloads</div>` : "";
+    const seasonRows = seasons.length
+      ? `<div class="season-list">${seasons.map((s) => `
+          <div class="season-row">
+            <span>${escapeHtml(s.name || `Season ${s.season_number}`)}</span>
+            <button class="season-btn" data-bulk-season="${s.season_number}" ${disabled ? "disabled" : ""}>Download</button>
+          </div>
+        `).join("")}</div>`
+      : "";
+    return `
+      <h2 class="section-heading">Bulk download</h2>
+      ${seriesBtn}
+      ${hint}
+      ${seasonRows}
+      <div id="bulkResult"></div>
+    `;
+  }
+
+  function bulkResultHtml(req) {
+    return `<div class="add-confirm">${statusPillHtml(req.status)}<span>Added to <a href="#/requests">Requests</a>.</span></div>`;
+  }
+
+  async function renderShow(id) {
+    setChrome({ title: "", showBack: true, activeTab: "tv" });
+    app.innerHTML = loadingHtml();
+    try {
+      const [show, shows] = await Promise.all([getTvShow(id), listShows()]);
+      document.title = `${show.name || show.original_name || ""} — The Family Downloader`;
+      let subscription = shows.find((s) => s.tmdb_id === Number(id)) || null;
+
+      const genres = (show.genres || []).map((g) => `<span class="genre-pill">${escapeHtml(g.name)}</span>`).join("");
+      const backdrop = backdropUrl(show.backdrop_path);
+      const cast = show.credits?.cast;
+      const crew = show.credits?.crew;
+      const isEndedOrCanceled = show.status === "Ended" || show.status === "Canceled";
+      const seasons = (show.seasons || []).filter((s) => s.season_number > 0);
+
+      app.innerHTML = `
+        ${backdrop ? `<img class="detail-backdrop" src="${backdrop}" alt="">` : ""}
+        <div class="detail-head" style="${backdrop ? "" : "margin-top:0"}">
+          <img class="detail-poster" src="${posterUrl(show.poster_path)}" alt="">
+          <div class="detail-info">
+            <h1>${escapeHtml(show.name || show.original_name)}</h1>
+            <div class="detail-meta">
+              ${show.status ? `<span class="cert-badge">${escapeHtml(show.status)}</span>` : ""}
+              <span>${escapeHtml(yearOf(show.first_air_date))}</span>
+            </div>
+          </div>
+        </div>
+        ${genres ? `<div class="genre-pills">${genres}</div>` : ""}
+        ${scoreRowHtml(show.vote_average)}
+        <h2 class="section-heading">Overview</h2>
+        <div class="detail-overview">${escapeHtml(show.overview) || "<em>No synopsis available.</em>"}</div>
+        ${crewRowHtml(crew)}
+        ${show.on_plex ? `<div class="bulk-hint">Already on Plex</div>` : ""}
+        <div id="subscribeArea">${subscribeAreaHtml(subscription)}</div>
+        <div id="bulkArea">${bulkAreaHtml(subscription, isEndedOrCanceled, seasons)}</div>
+        ${castSectionHtml(cast)}
+      `;
+
+      function wireSubscribeArea() {
+        const addBtn = document.getElementById("subscribeBtn");
+        if (addBtn) addBtn.addEventListener("click", async () => {
+          addBtn.disabled = true;
+          addBtn.textContent = "Adding…";
+          try {
+            subscription = await createShow(Number(id));
+            document.getElementById("subscribeArea").innerHTML = subscribeAreaHtml(subscription);
+            document.getElementById("bulkArea").innerHTML = bulkAreaHtml(subscription, isEndedOrCanceled, seasons);
+            wireSubscribeArea();
+            wireBulkArea();
+          } catch (err) {
+            addBtn.disabled = false;
+            addBtn.textContent = "Add Show";
+            alert(`Couldn't add this show: ${err.message}`);
+          }
+        });
+        const pauseBtn = document.getElementById("pauseBtn");
+        if (pauseBtn) pauseBtn.addEventListener("click", async () => {
+          if (!confirm("Pause this show? New episodes won't be grabbed until you resume.")) return;
+          subscription = await pauseShow(subscription.id);
+          document.getElementById("subscribeArea").innerHTML = subscribeAreaHtml(subscription);
+          wireSubscribeArea();
+        });
+        const resumeBtn = document.getElementById("resumeBtn");
+        if (resumeBtn) resumeBtn.addEventListener("click", async () => {
+          subscription = await resumeShow(subscription.id);
+          document.getElementById("subscribeArea").innerHTML = subscribeAreaHtml(subscription);
+          wireSubscribeArea();
+        });
+        const unsubBtn = document.getElementById("unsubBtn");
+        if (unsubBtn) unsubBtn.addEventListener("click", async () => {
+          if (!confirm("Unsubscribe from this show? Its download history stays in Requests.")) return;
+          await deleteShow(subscription.id);
+          subscription = null;
+          document.getElementById("subscribeArea").innerHTML = subscribeAreaHtml(subscription);
+          document.getElementById("bulkArea").innerHTML = bulkAreaHtml(subscription, isEndedOrCanceled, seasons);
+          wireSubscribeArea();
+          wireBulkArea();
+        });
+      }
+
+      function wireBulkArea() {
+        const resultBox = document.getElementById("bulkResult");
+        async function runBulkDownload(btn, body) {
+          btn.disabled = true;
+          const originalText = btn.textContent;
+          btn.textContent = "Adding…";
+          try {
+            const req = await bulkDownload(subscription.id, body);
+            resultBox.innerHTML = bulkResultHtml(req);
+          } catch (err) {
+            resultBox.innerHTML = `<div class="add-confirm">Couldn't add that: ${escapeHtml(err.message)}</div>`;
+          } finally {
+            btn.disabled = false;
+            btn.textContent = originalText;
+          }
+        }
+        const seriesBtn = document.getElementById("bulkSeriesBtn");
+        if (seriesBtn) seriesBtn.addEventListener("click", () => runBulkDownload(seriesBtn, { scope: "series" }));
+        document.querySelectorAll("[data-bulk-season]").forEach((btn) => {
+          btn.addEventListener("click", () => runBulkDownload(btn, { scope: "season", season_number: Number(btn.dataset.bulkSeason) }));
+        });
+      }
+
+      wireSubscribeArea();
+      wireBulkArea();
+    } catch (err) {
+      app.innerHTML = errorHtml(err.message);
+    }
+  }
+
+  // -- Unified search (Stage 14): movies and TV shows in parallel,
+  //    grouped into two independently-empty-stated sections. --
+
   async function renderSearch(query) {
-    setChrome({ title: `“${query}”`, showBack: true, activeTab: "home" });
+    setChrome({ title: `“${query}”`, showBack: true, activeTab: null });
     // The bar lives in the top bar permanently now, independent of this
     // view — reflect whatever query got us here (e.g. landed on directly,
     // or via browser back/forward) rather than leaving stale text in it.
@@ -869,10 +1283,24 @@
     updateSearchClearBtn();
     app.innerHTML = loadingHtml();
     try {
-      const results = await postSearch(query);
-      app.innerHTML = results.length
-        ? `<div class="grid">${results.map(posterCard).join("")}</div>`
-        : emptyHtml("No movies matched that search.");
+      const [movies, shows] = await Promise.all([
+        postSearch(query).catch(() => []),
+        postSearchTv(query).catch(() => []),
+      ]);
+      if (!movies.length && !shows.length) {
+        app.innerHTML = emptyHtml(`Nothing matched “${query}”.`);
+        return;
+      }
+      app.innerHTML = `
+        <section class="row">
+          <h2>Movies</h2>
+          ${movies.length ? `<div class="grid">${movies.map((it) => posterCard(it, "movie")).join("")}</div>` : emptyHtml("No movies matched.")}
+        </section>
+        <section class="row">
+          <h2>TV Shows</h2>
+          ${shows.length ? `<div class="grid">${shows.map((it) => posterCard(it, "tv")).join("")}</div>` : emptyHtml("No TV shows matched.")}
+        </section>
+      `;
     } catch (err) {
       app.innerHTML = errorHtml(err.message);
     }
@@ -933,7 +1361,7 @@
   }
 
   async function renderMovie(id) {
-    setChrome({ title: "", showBack: true, activeTab: "home" });
+    setChrome({ title: "", showBack: true, activeTab: "movies" });
     app.innerHTML = loadingHtml();
     try {
       const movie = await getMovie(id);
@@ -964,6 +1392,7 @@
         <h2 class="section-heading">Overview</h2>
         <div class="detail-overview">${escapeHtml(movie.overview) || "<em>No synopsis available.</em>"}</div>
         ${crewRowHtml(crew)}
+        ${movie.on_plex ? `<div class="bulk-hint">Already on Plex</div>` : ""}
         <button class="add-btn" id="addBtn">Add to Plex</button>
         <div id="addResult"></div>
         ${castSectionHtml(cast)}
@@ -1061,16 +1490,33 @@
     });
   }
 
+  // A movie request's title/link is just its own title/tmdb_id; an
+  // episode or pack request's `title` is the *show's* title (set at
+  // creation — see db.py), so both link to the show detail page and get a
+  // label naming which episode/season/series this particular row was for.
+  function requestLabelAndHref(r) {
+    if (r.media_type === "episode") {
+      return { label: `${r.title} S${pad2(r.season_number)}E${pad2(r.episode_number)}`, href: `#/tv/${r.tmdb_id}` };
+    }
+    if (r.media_type === "pack") {
+      const scope = r.season_number != null ? `Season ${r.season_number}` : "Complete Series";
+      return { label: `${r.title} — ${scope}`, href: `#/tv/${r.tmdb_id}` };
+    }
+    return { label: `${r.title}${r.release_year ? ` (${r.release_year})` : ""}`, href: `#/movies/${r.tmdb_id}` };
+  }
+
   async function loadRequests() {
     const listEl = document.getElementById("requestsList");
     try {
       const rows = await listRequests();
       listEl.innerHTML = !rows.length
-        ? emptyHtml("Nothing requested yet — find a movie and tap Add to Plex.")
-        : rows.map((r) => `
+        ? emptyHtml("Nothing requested yet — find a movie or show and tap Add.")
+        : rows.map((r) => {
+            const { label, href } = requestLabelAndHref(r);
+            return `
             <div class="req-row">
               <div class="req-main">
-                <a class="req-title" href="#/movie/${r.tmdb_id}">${escapeHtml(r.title)}${r.release_year ? ` (${r.release_year})` : ""}</a>
+                <a class="req-title" href="${href}">${escapeHtml(label)}</a>
                 <div class="req-sub">${new Date(r.created_at).toLocaleString([], { dateStyle: "medium", timeStyle: "short" })}</div>
               </div>
               <div class="req-actions">
@@ -1078,7 +1524,8 @@
                 ${CANCELLABLE.has(r.status) ? `<button class="cancel-btn" data-request-id="${r.id}">Cancel</button>` : ""}
               </div>
             </div>
-          `).join("");
+          `;
+          }).join("");
     } catch (err) {
       listEl.innerHTML = errorHtml(err.message, "#/requests");
     }
