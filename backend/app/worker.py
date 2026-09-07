@@ -66,9 +66,25 @@ episode if something genuinely scores higher than what's already in place.
 A replacement adds the new torrent first and lets the existing organize-
 on-complete path place it (`organize_episode()` is idempotent — it
 replaces the file at the same deterministic path); only once that's
-confirmed does `_organize_and_complete_episode` clean up the old torrent
-it's replacing, via a `replaces_torrent_hash` marker on the new request —
-never delete-then-hope-the-replacement-works.
+confirmed does the old torrent it's replacing get folded into the same
+durable cleanup sweep as the new one, via a `replaces_torrent_hash` marker
+on the new request — never delete-then-hope-the-replacement-works.
+
+A 7th loop, `_watch_source_cleanup` (Stage 13.x, rebuilt after a real bug),
+removes a now-redundant original torrent once its file(s) are safely
+organized, after `config.SOURCE_CLEANUP_DELAY_SECONDS`. The original
+version fired this off as an in-memory `asyncio.create_task` the instant
+organizing succeeded — simple, but silently lost the work forever if the
+backend restarted, or the one-shot delete itself failed, anywhere in that
+window; found live when a user-side qBittorrent action collided with the
+window for one real episode. Rebuilt to be durable like every other loop
+here: `mark_organized()` persists what needs cleaning up (which torrent
+hash(es), which organized path(s) to re-verify first) straight onto the
+request row, `_watch_source_cleanup` re-derives its work fresh from the
+database every cycle, and a failed attempt is retried on the next sweep
+rather than abandoned. Once a row's cleanup is marked done — success, or a
+deliberate, permanent skip (its organized copy has since gone missing) —
+it's never revisited again.
 
 A movie row gets the same organize-on-complete gate as an episode row
 (`_organize_and_complete_movie`, mirroring `_organize_and_complete_episode`
@@ -81,6 +97,7 @@ had no automatic organize step at all — `organize_movie()` was Stage
 import asyncio
 import logging
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
 from app import config, plex
 from app.db import NON_TERMINAL_STATUSES, RequestStore, ShowEpisodeRow, ShowRow
@@ -181,10 +198,6 @@ class Worker:
         self.queue: asyncio.Queue[int] = asyncio.Queue()
         self._pipeline_lock = asyncio.Lock()
         self._tasks: list[asyncio.Task] = []
-        # Fire-and-forget delayed source-cleanup tasks (Stage 13.x) — kept
-        # in a set purely so nothing garbage-collects them mid-sleep; each
-        # discards itself on completion via add_done_callback below.
-        self._cleanup_tasks: set[asyncio.Task] = set()
 
     def enqueue(self, request_id: int) -> None:
         self.queue.put_nowait(request_id)
@@ -201,6 +214,7 @@ class Worker:
             asyncio.create_task(self._watch_retention(), name="worker-retention"),
             asyncio.create_task(self._watch_shows(), name="worker-shows"),
             asyncio.create_task(self._watch_episode_rechecks(), name="worker-episode-rechecks"),
+            asyncio.create_task(self._watch_source_cleanup(), name="worker-source-cleanup"),
         ]
 
     async def stop(self) -> None:
@@ -365,27 +379,17 @@ class Worker:
             )
             return
         logger.info("request %d (%s) downloading -> complete (organized to %s)", row.id, label, target_path)
-        await asyncio.to_thread(self.store.update_status, row.id, "complete")
-        self._schedule_source_cleanup(torrent_hash, label, [target_path])
-
-        # Stage 12.x's quality-upgrade recheck: the new file is safely in
-        # place at the same deterministic library path (organize_episode()
-        # already replaced whatever was there), so only *now* is it safe to
-        # remove the torrent it superseded. Never the other way around —
-        # deleting the old one first would risk leaving nothing in the
-        # library if this add had failed instead. Best-effort: a cleanup
-        # failure doesn't undo the "complete" status above, since the thing
-        # that actually matters (the better file is in place) already
-        # succeeded — an orphaned old torrent is a lesser, recoverable loose
-        # end, not a reason to report this as broken.
+        # Stage 12.x's quality-upgrade recheck: the superseded torrent (if
+        # any) is folded into the same durable cleanup sweep as the new
+        # one, never deleted ahead of it — the new file is safely in place
+        # at the same deterministic library path before either one is ever
+        # touched, so an upgrade can never leave nothing in the library if
+        # the add had failed instead.
         old_hash = (row.result or {}).get("replaces_torrent_hash")
-        if old_hash:
-            try:
-                if await asyncio.to_thread(self.qbt.torrent_info, old_hash) is not None:
-                    await asyncio.to_thread(self.qbt.delete_torrent, old_hash, delete_files=True)
-                    logger.info("request %d (%s) upgrade complete — removed superseded torrent %s", row.id, label, old_hash)
-            except Exception:
-                logger.exception("request %d (%s) upgrade: couldn't clean up superseded torrent %s", row.id, label, old_hash)
+        pending_hashes = [torrent_hash] + ([old_hash] if old_hash else [])
+        await asyncio.to_thread(
+            self.store.mark_organized, row.id, [str(target_path)], pending_hashes, self._next_cleanup_attempt_at()
+        )
 
     async def _organize_and_complete_movie(self, row) -> None:
         """Movie equivalent of `_organize_and_complete_episode` — a movie
@@ -412,8 +416,9 @@ class Worker:
             )
             return
         logger.info("request %d (%s) downloading -> complete (organized to %s)", row.id, label, target_path)
-        await asyncio.to_thread(self.store.update_status, row.id, "complete")
-        self._schedule_source_cleanup(torrent_hash, label, [target_path])
+        await asyncio.to_thread(
+            self.store.mark_organized, row.id, [str(target_path)], [torrent_hash], self._next_cleanup_attempt_at()
+        )
 
     async def _organize_and_complete_pack(self, row) -> None:
         """Stage 13's fan-out point: a bulk season/complete-series pack row
@@ -473,26 +478,49 @@ class Worker:
             organized,
             len(placed),
         )
-        await asyncio.to_thread(self.store.update_status, row.id, "complete")
-        self._schedule_source_cleanup(torrent_hash, label, [p for _, _, p in placed])
+        await asyncio.to_thread(
+            self.store.mark_organized,
+            row.id,
+            [str(p) for _, _, p in placed],
+            [torrent_hash],
+            self._next_cleanup_attempt_at(),
+        )
 
-    def _schedule_source_cleanup(self, torrent_hash: str, label: str, target_paths: list) -> None:
-        """Fires off `_cleanup_source_after_delay` without blocking the
-        caller — organizing a request is done the moment its file(s) are
-        placed; removing the now-redundant original is a lower-priority
-        follow-up, not something worth holding up "complete" for."""
-        task = asyncio.create_task(self._cleanup_source_after_delay(torrent_hash, label, target_paths))
-        self._cleanup_tasks.add(task)
-        task.add_done_callback(self._cleanup_tasks.discard)
+    def _next_cleanup_attempt_at(self) -> str:
+        return (datetime.now(timezone.utc) + timedelta(seconds=config.SOURCE_CLEANUP_DELAY_SECONDS)).isoformat()
 
-    async def _cleanup_source_after_delay(self, torrent_hash: str, label: str, target_paths: list) -> None:
+    async def _watch_source_cleanup(self) -> None:
+        while True:
+            try:
+                await self._run_due_source_cleanups()
+            except Exception:
+                logger.exception("source cleanup watch cycle failed")
+            await asyncio.sleep(config.SOURCE_CLEANUP_POLL_INTERVAL_SECONDS)
+
+    async def _run_due_source_cleanups(self) -> None:
+        for row in await asyncio.to_thread(self.store.list_due_source_cleanups):
+            await self._attempt_source_cleanup(row)
+
+    async def _attempt_source_cleanup(self, row) -> None:
         """Stage 13.x, at the user's explicit request: once a torrent's
         file(s) have been organized into Plex's library layout, remove the
-        original torrent — qBittorrent queue entry *and* its own
+        original torrent(s) — qBittorrent queue entry *and* its own
         downloaded copy — after `config.SOURCE_CLEANUP_DELAY_SECONDS`,
         once a final re-check confirms every organized copy is genuinely
-        still there. Safe by construction, not just by intent: a hardlinked
-        organized copy shares the exact same underlying bytes as the
+        still there. Durable and restart-safe (a real gap in the original
+        Stage 13.x version, found live: a fire-and-forget in-memory
+        `asyncio.create_task` that silently lost its work forever if the
+        backend restarted, or the one-shot delete itself failed, anywhere
+        in the delay window): every attempt re-derives its work fresh from
+        `list_due_source_cleanups`, same pattern as every other polling
+        loop in this file, so nothing is ever lost to a restart, and a
+        failed attempt is retried on the next sweep rather than abandoned.
+        Once this marks a row 'done' (success, or a deliberate permanent
+        skip below), `list_due_source_cleanups` never surfaces it again —
+        no retry after that point, ever.
+
+        Safe by construction, not just by intent: a hardlinked organized
+        copy shares the exact same underlying bytes as the
         torrent's own file (deleting one link never touches the data the
         other still points at), and the copy-fallback case already made a
         fully independent copy at organize time — either way, nothing
@@ -503,26 +531,56 @@ class Worker:
 
         A real, deliberate tradeoff, not a free lunch: this stops the
         torrent seeding earlier than the household's own qBittorrent-side
-        seeding-time limit would have. Best-effort — if an organized copy
-        has gone missing by the time the delay elapses, or qBittorrent has
-        already removed the torrent itself, this skips cleanly rather than
-        deleting anything or raising."""
-        await asyncio.sleep(config.SOURCE_CLEANUP_DELAY_SECONDS)
-        try:
-            still_present = [await asyncio.to_thread(p.exists) for p in target_paths]
-            if not all(still_present):
-                logger.warning(
-                    "source cleanup for torrent %s (%s) skipped — an organized copy is missing, not touching the original",
-                    torrent_hash,
-                    label,
-                )
-                return
-            if await asyncio.to_thread(self.qbt.torrent_info, torrent_hash) is None:
-                return  # already gone (this app's own doing, or otherwise) — nothing left to clean up
-            await asyncio.to_thread(self.qbt.delete_torrent, torrent_hash, delete_files=True)
-            logger.info("source cleanup: removed original torrent %s (%s) after organizing", torrent_hash, label)
-        except Exception:
-            logger.exception("source cleanup failed for torrent %s (%s)", torrent_hash, label)
+        seeding-time limit would have. If an organized copy has gone
+        missing by the time this runs, that's treated as a permanent,
+        deliberate skip (not a transient failure to retry) — the copy
+        being gone is itself the anomaly, and retrying forever wouldn't
+        fix that."""
+        result = row.result or {}
+        organized_paths = result.get("organized_paths") or []
+        hashes = result.get("pending_cleanup_hashes") or []
+        label = _request_label(row)
+
+        if not hashes:
+            await asyncio.to_thread(self.store.mark_source_cleanup_done, row.id)
+            return
+
+        # An empty organized_paths must never be treated as "nothing to
+        # check, proceed" (Python's all([]) is vacuously True) — that
+        # would let a row with no on-record organized copy sail straight
+        # past the safety check below and delete originals no one ever
+        # confirmed were safe to remove.
+        still_present = bool(organized_paths) and all(
+            [await asyncio.to_thread(Path(p).exists) for p in organized_paths]
+        )
+        if not still_present:
+            logger.warning(
+                "source cleanup for request %d (%s) skipped — an organized copy is missing, not touching the original",
+                row.id,
+                label,
+            )
+            await asyncio.to_thread(self.store.mark_source_cleanup_done, row.id)
+            return
+
+        remaining: list[str] = []
+        for torrent_hash in hashes:
+            try:
+                if await asyncio.to_thread(self.qbt.torrent_info, torrent_hash) is not None:
+                    await asyncio.to_thread(self.qbt.delete_torrent, torrent_hash, delete_files=True)
+                    logger.info(
+                        "source cleanup: removed original torrent %s (%s) after organizing", torrent_hash, label
+                    )
+                # else: already gone (this app's own doing, or otherwise) — nothing left to clean up for this hash
+            except Exception:
+                logger.exception("source cleanup failed for torrent %s (%s) — will retry", torrent_hash, label)
+                remaining.append(torrent_hash)
+
+        if remaining:
+            await asyncio.to_thread(
+                self.store.defer_source_cleanup, row.id, remaining, self._next_cleanup_attempt_at()
+            )
+        else:
+            await asyncio.to_thread(self.store.mark_source_cleanup_done, row.id)
 
     async def _watch_retention(self) -> None:
         while True:

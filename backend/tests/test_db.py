@@ -75,6 +75,63 @@ def test_update_status_without_result_keeps_previous_result():
     assert store.get_request(row.id).result == {"torrent_hash": "abcd"}
 
 
+def test_mark_organized_sets_complete_and_pending_cleanup():
+    store = _store()
+    row = store.create_request(tmdb_id=1, title="A", release_year=2020, query=None)
+    store.update_status(row.id, "downloading", result={"torrent_hash": "aaaa", "winner": {"fileName": "x"}})
+
+    store.mark_organized(row.id, ["/library/A.mkv"], ["aaaa"], "2000-01-01T00:00:00+00:00")
+
+    reloaded = store.get_request(row.id)
+    assert reloaded.status == "complete"
+    assert reloaded.source_cleanup_status == "pending"
+    assert reloaded.source_cleanup_next_attempt_at == "2000-01-01T00:00:00+00:00"
+    # Merged into the existing result blob, not replacing it
+    assert reloaded.result["winner"] == {"fileName": "x"}
+    assert reloaded.result["organized_paths"] == ["/library/A.mkv"]
+    assert reloaded.result["pending_cleanup_hashes"] == ["aaaa"]
+
+
+def test_list_due_source_cleanups_only_returns_pending_and_due():
+    store = _store()
+    due = store.create_request(tmdb_id=1, title="Due", release_year=2020, query=None)
+    store.mark_organized(due.id, ["/x.mkv"], ["aaaa"], "2000-01-01T00:00:00+00:00")  # long past
+
+    not_due = store.create_request(tmdb_id=2, title="Not due", release_year=2020, query=None)
+    future = (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat()
+    store.mark_organized(not_due.id, ["/y.mkv"], ["bbbb"], future)
+
+    never_organized = store.create_request(tmdb_id=3, title="Never organized", release_year=2020, query=None)
+
+    assert [r.id for r in store.list_due_source_cleanups()] == [due.id]
+    assert never_organized.id not in [r.id for r in store.list_due_source_cleanups()]
+
+
+def test_mark_source_cleanup_done_removes_it_from_due_list():
+    store = _store()
+    row = store.create_request(tmdb_id=1, title="A", release_year=2020, query=None)
+    store.mark_organized(row.id, ["/x.mkv"], ["aaaa"], "2000-01-01T00:00:00+00:00")
+
+    store.mark_source_cleanup_done(row.id)
+
+    assert store.get_request(row.id).source_cleanup_status == "done"
+    assert store.list_due_source_cleanups() == []
+
+
+def test_defer_source_cleanup_updates_remaining_hashes_and_next_attempt():
+    store = _store()
+    row = store.create_request(tmdb_id=1, title="A", release_year=2020, query=None)
+    store.mark_organized(row.id, ["/x.mkv"], ["aaaa", "bbbb"], "2000-01-01T00:00:00+00:00")
+
+    store.defer_source_cleanup(row.id, ["bbbb"], "2000-06-01T00:00:00+00:00")
+
+    reloaded = store.get_request(row.id)
+    assert reloaded.source_cleanup_status == "pending"  # still owed — not done
+    assert reloaded.source_cleanup_next_attempt_at == "2000-06-01T00:00:00+00:00"
+    assert reloaded.result["pending_cleanup_hashes"] == ["bbbb"]
+    assert reloaded.result["organized_paths"] == ["/x.mkv"]  # untouched
+
+
 def test_queued_request_ids_only_returns_queued():
     store = _store()
     queued = store.create_request(tmdb_id=1, title="A", release_year=2020, query=None)

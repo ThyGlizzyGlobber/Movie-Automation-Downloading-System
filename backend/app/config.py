@@ -231,6 +231,16 @@ EPISODE_RECHECK_POLL_INTERVAL_SECONDS = int(os.environ.get("EPISODE_RECHECK_POLL
 # behind on the real NAS).
 SOURCE_CLEANUP_DELAY_SECONDS = int(os.environ.get("SOURCE_CLEANUP_DELAY_SECONDS", "60"))
 
+# Post-fix (originally fire-and-forget, in-memory only — lost its work
+# permanently if the backend restarted or the one-shot delete failed
+# anywhere in the delay window, a real gap found live): how often
+# worker.py's `_watch_source_cleanup` loop wakes up to check "is any
+# organized request's cleanup due right now" — a fixed polling
+# granularity, same relationship to SOURCE_CLEANUP_DELAY_SECONDS that
+# EPISODE_RECHECK_POLL_INTERVAL_SECONDS has to *_INTERVAL_HOURS above.
+# Also reused as the retry backoff after a failed cleanup attempt.
+SOURCE_CLEANUP_POLL_INTERVAL_SECONDS = int(os.environ.get("SOURCE_CLEANUP_POLL_INTERVAL_SECONDS", "15"))
+
 # This container's path to Plex's movie library root — same dataset
 # qBittorrent's "movies" category downloads into, for the same hardlink-
 # needs-one-filesystem reason as TV_LIBRARY_ROOT. Movies were never

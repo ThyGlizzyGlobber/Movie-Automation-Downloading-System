@@ -28,19 +28,11 @@ def _fast_hash_capture(monkeypatch):
     sleeps in pipeline.download()'s torrent-hash capture retry loop."""
     monkeypatch.setattr(config, "HASH_CAPTURE_ATTEMPTS", 1)
     monkeypatch.setattr(config, "HASH_CAPTURE_INTERVAL_SECONDS", 0)
-    # Stage 13.x's post-organize source cleanup sleeps for this before
-    # acting — zero it out so tests that drain `worker._cleanup_tasks`
-    # don't actually wait a real minute.
+    # Stage 13.x's post-organize source cleanup schedules its next attempt
+    # this far in the future — zero it out so a freshly-organized row is
+    # immediately due for `_run_due_source_cleanups()` rather than tests
+    # needing to wait out a real delay.
     monkeypatch.setattr(config, "SOURCE_CLEANUP_DELAY_SECONDS", 0)
-
-
-async def _drain_cleanup_tasks(worker: Worker) -> None:
-    """Awaits every fire-and-forget source-cleanup task the call under
-    test scheduled — `asyncio.run()` on its own would cancel them mid-
-    flight instead of letting them finish, since nothing else awaits a
-    task created via `asyncio.create_task`."""
-    for task in list(worker._cleanup_tasks):
-        await task
 
 MOVIE = {
     "title": "Dune: Part Two",
@@ -1657,7 +1649,11 @@ def test_organize_and_complete_episode_cleans_up_superseded_torrent(tmp_path, mo
     )
     worker = Worker(store, FakeTMDBClient(), qbt)
 
-    asyncio.run(worker._check_downloading())
+    async def _run():
+        await worker._check_downloading()
+        await worker._run_due_source_cleanups()
+
+    asyncio.run(_run())
 
     assert store.get_request(row.id).status == "complete"
     assert ("aaaa", True) in qbt.deleted
@@ -1668,7 +1664,7 @@ def test_organize_and_complete_episode_skips_cleanup_when_superseded_torrent_alr
     must not attempt a delete — unrelated to (and not to be confused
     with) Stage 13.x's separate post-organize source cleanup of the
     *current* ("bbbb") torrent, which is expected to still happen once
-    drained below."""
+    the sweep below runs."""
     monkeypatch.setattr(config, "TV_LIBRARY_ROOT", tmp_path)
     source = tmp_path / "episode.mkv"
     source.write_bytes(b"data")
@@ -1687,7 +1683,7 @@ def test_organize_and_complete_episode_skips_cleanup_when_superseded_torrent_alr
 
     async def _run():
         await worker._check_downloading()
-        await _drain_cleanup_tasks(worker)
+        await worker._run_due_source_cleanups()
 
     asyncio.run(_run())
 
@@ -1696,6 +1692,11 @@ def test_organize_and_complete_episode_skips_cleanup_when_superseded_torrent_alr
 
 
 def test_organize_and_complete_episode_still_completes_if_cleanup_of_old_torrent_fails(tmp_path, monkeypatch):
+    """Organizing succeeds and earns "complete" regardless of what happens
+    to cleanup afterward — and, since this session's durability fix, a
+    failed cleanup attempt is retried on the next sweep rather than lost:
+    once qBittorrent stops erroring, a later sweep picks up exactly where
+    the failed one left off and finishes the job."""
     monkeypatch.setattr(config, "TV_LIBRARY_ROOT", tmp_path)
     source = tmp_path / "episode.mkv"
     source.write_bytes(b"data")
@@ -1708,8 +1709,12 @@ def test_organize_and_complete_episode_still_completes_if_cleanup_of_old_torrent
     store.update_status(row.id, "downloading", result={"torrent_hash": "bbbb", "replaces_torrent_hash": "aaaa"})
 
     class BoomOnDeleteQBTClient(FakeQBTClient):
+        boom = True
+
         def delete_torrent(self, torrent_hash, delete_files=True):
-            raise RuntimeError("qbittorrent unreachable")
+            if self.boom:
+                raise RuntimeError("qbittorrent unreachable")
+            super().delete_torrent(torrent_hash, delete_files)
 
     qbt = BoomOnDeleteQBTClient(
         torrent_states={
@@ -1721,8 +1726,18 @@ def test_organize_and_complete_episode_still_completes_if_cleanup_of_old_torrent
     worker = Worker(store, FakeTMDBClient(), qbt)
 
     asyncio.run(worker._check_downloading())
-
     assert store.get_request(row.id).status == "complete"  # cleanup failure doesn't undo this
+
+    asyncio.run(worker._run_due_source_cleanups())
+    reloaded = store.get_request(row.id)
+    assert reloaded.source_cleanup_status == "pending"  # not lost — still owed, will retry
+    assert qbt.deleted == []
+
+    qbt.boom = False
+    asyncio.run(worker._run_due_source_cleanups())
+    assert store.get_request(row.id).source_cleanup_status == "done"
+    assert ("bbbb", True) in qbt.deleted
+    assert ("aaaa", True) in qbt.deleted
 
 
 # ---------------------------------------------------------------------------
@@ -1753,7 +1768,7 @@ def test_check_downloading_schedules_source_cleanup_after_organizing_episode(tmp
 
     async def _run():
         await worker._check_downloading()
-        await _drain_cleanup_tasks(worker)
+        await worker._run_due_source_cleanups()
 
     asyncio.run(_run())
 
@@ -1761,35 +1776,68 @@ def test_check_downloading_schedules_source_cleanup_after_organizing_episode(tmp
     assert ("aaaa", True) in qbt.deleted
 
 
-def test_source_cleanup_skips_when_organized_copy_is_missing(monkeypatch):
+def _pending_cleanup_row(store, torrent_hash: str, organized_paths: list, pending_hashes: list) -> None:
+    """Builds a real request row already past organizing, sitting in
+    `source_cleanup_status = 'pending'` — the same state `mark_organized`
+    leaves a row in — so `_attempt_source_cleanup` can be exercised
+    directly and realistically, through the actual persisted row shape
+    rather than raw positional arguments."""
+    row = store.create_request(tmdb_id=1, title="Lanterns S01E01", release_year=None, query=None)
+    store.update_status(row.id, "downloading", result={"torrent_hash": torrent_hash})
+    store.mark_organized(row.id, [str(p) for p in organized_paths], pending_hashes, "2000-01-01T00:00:00+00:00")
+    return row.id
+
+
+def test_source_cleanup_skips_when_organized_copy_is_missing():
     """A safety abort, not expected in practice: if the organized copy has
-    somehow vanished by the time the delay elapses, the original must not
-    be deleted — losing both would be unrecoverable."""
+    somehow vanished by the time this runs, the original must not be
+    deleted — losing both would be unrecoverable. This is a deliberate,
+    permanent skip (marked 'done'), not something later retried."""
     store = RequestStore(":memory:")
     qbt = FakeQBTClient(torrent_states={"aaaa": {"progress": 1.0}})
     worker = Worker(store, FakeTMDBClient(), qbt)
+    request_id = _pending_cleanup_row(store, "aaaa", [Path("/does/not/exist.mkv")], ["aaaa"])
 
-    asyncio.run(worker._cleanup_source_after_delay("aaaa", "Lanterns S01E01", [Path("/does/not/exist.mkv")]))
+    asyncio.run(worker._attempt_source_cleanup(store.get_request(request_id)))
 
     assert qbt.deleted == []
+    assert store.get_request(request_id).source_cleanup_status == "done"
+
+
+def test_source_cleanup_skips_when_organized_paths_is_empty():
+    """Python's all([]) is vacuously True — an empty organized_paths list
+    must not be mistaken for "nothing to check, safe to proceed", or a
+    row with no on-record organized copy would delete its original(s)
+    without ever having actually verified anything was placed."""
+    store = RequestStore(":memory:")
+    qbt = FakeQBTClient(torrent_states={"aaaa": {"progress": 1.0}})
+    worker = Worker(store, FakeTMDBClient(), qbt)
+    request_id = _pending_cleanup_row(store, "aaaa", [], ["aaaa"])
+
+    asyncio.run(worker._attempt_source_cleanup(store.get_request(request_id)))
+
+    assert qbt.deleted == []
+    assert store.get_request(request_id).source_cleanup_status == "done"
 
 
 def test_source_cleanup_noop_when_torrent_already_gone(tmp_path):
-    """The torrent might already be gone by the time the delay elapses
-    (e.g. the household's own seeding-time limit beat this to it) — a
-    clean no-op, not an error."""
+    """The torrent might already be gone by the time this runs (e.g. the
+    household's own seeding-time limit beat this to it) — a clean no-op,
+    marked done, not an error and not retried."""
     target = tmp_path / "organized.mkv"
     target.write_bytes(b"data")
     store = RequestStore(":memory:")
     qbt = FakeQBTClient(torrent_states={})  # "aaaa" already gone
     worker = Worker(store, FakeTMDBClient(), qbt)
+    request_id = _pending_cleanup_row(store, "aaaa", [target], ["aaaa"])
 
-    asyncio.run(worker._cleanup_source_after_delay("aaaa", "Lanterns S01E01", [target]))
+    asyncio.run(worker._attempt_source_cleanup(store.get_request(request_id)))
 
     assert qbt.deleted == []
+    assert store.get_request(request_id).source_cleanup_status == "done"
 
 
-def test_source_cleanup_failure_is_logged_not_raised(tmp_path, caplog):
+def test_source_cleanup_failure_is_logged_and_stays_pending_for_retry(tmp_path, caplog):
     target = tmp_path / "organized.mkv"
     target.write_bytes(b"data")
 
@@ -1800,11 +1848,13 @@ def test_source_cleanup_failure_is_logged_not_raised(tmp_path, caplog):
     store = RequestStore(":memory:")
     qbt = BoomOnDeleteQBTClient(torrent_states={"aaaa": {"progress": 1.0}})
     worker = Worker(store, FakeTMDBClient(), qbt)
+    request_id = _pending_cleanup_row(store, "aaaa", [target], ["aaaa"])
 
     with caplog.at_level("ERROR", logger="app.worker"):
-        asyncio.run(worker._cleanup_source_after_delay("aaaa", "Lanterns S01E01", [target]))
+        asyncio.run(worker._attempt_source_cleanup(store.get_request(request_id)))
 
     assert "source cleanup failed" in caplog.text
+    assert store.get_request(request_id).source_cleanup_status == "pending"  # not "done" — will retry
 
 
 def test_check_downloading_schedules_source_cleanup_after_organizing_pack(tmp_path, monkeypatch):
@@ -1831,9 +1881,67 @@ def test_check_downloading_schedules_source_cleanup_after_organizing_pack(tmp_pa
 
     async def _run():
         await worker._check_downloading()
-        await _drain_cleanup_tasks(worker)
+        await worker._run_due_source_cleanups()
 
     asyncio.run(_run())
 
     assert store.get_request(row.id).status == "complete"
     assert ("cccc", True) in qbt.deleted
+
+
+def test_source_cleanup_survives_a_fresh_worker_instance(tmp_path, monkeypatch):
+    """The actual regression this session's fix exists for: the original
+    Stage 13.x cleanup lived only in an in-memory asyncio task, so a
+    backend restart between organizing and the delay elapsing lost that
+    work forever. Simulated here as literally as a unit test can — the
+    Worker that organized the request is discarded (as if the process had
+    restarted) and a brand new Worker, sharing only the same persistent
+    store, is the one that runs the sweep."""
+    monkeypatch.setattr(config, "TV_LIBRARY_ROOT", tmp_path)
+    source = tmp_path / "downloads" / "Lanterns.S01E01.mkv"
+    source.parent.mkdir(parents=True)
+    source.write_bytes(b"data")
+
+    store = RequestStore(":memory:")
+    show = store.create_show(tmdb_id=95350, title="Lanterns")
+    row = store.create_episode_request(
+        tmdb_id=95350, show_id=show.id, title="Lanterns", season_number=1, episode_number=1
+    )
+    store.update_status(row.id, "downloading", result={"torrent_hash": "aaaa"})
+    qbt = FakeQBTClient(
+        torrent_states={"aaaa": {"progress": 1.0, "save_path": str(source.parent)}},
+        torrent_files={"aaaa": [{"name": source.name, "size": 4}]},
+    )
+    first_worker = Worker(store, FakeTMDBClient(), qbt)
+    asyncio.run(first_worker._check_downloading())
+    assert store.get_request(row.id).status == "complete"
+    assert store.get_request(row.id).source_cleanup_status == "pending"
+    assert qbt.deleted == []  # not cleaned up yet — "first_worker" is about to be discarded, unswept
+
+    del first_worker  # simulates the process restarting before the sweep ran
+    second_worker = Worker(store, FakeTMDBClient(), qbt)
+    asyncio.run(second_worker._run_due_source_cleanups())
+
+    assert ("aaaa", True) in qbt.deleted
+    assert store.get_request(row.id).source_cleanup_status == "done"
+
+
+def test_source_cleanup_never_retries_once_marked_done(tmp_path):
+    """Answers the user's explicit question directly: once cleanup is
+    confirmed done, a later sweep must not touch that torrent again, even
+    if source_cleanup_next_attempt_at is technically in the past."""
+    target = tmp_path / "organized.mkv"
+    target.write_bytes(b"data")
+    store = RequestStore(":memory:")
+    qbt = FakeQBTClient(torrent_states={"aaaa": {"progress": 1.0}})
+    worker = Worker(store, FakeTMDBClient(), qbt)
+    request_id = _pending_cleanup_row(store, "aaaa", [target], ["aaaa"])
+
+    asyncio.run(worker._run_due_source_cleanups())
+    assert len(qbt.deleted) == 1
+    assert store.get_request(request_id).source_cleanup_status == "done"
+
+    # A second sweep must find nothing due — list_due_source_cleanups only
+    # ever returns 'pending' rows, and this one is now 'done'.
+    asyncio.run(worker._run_due_source_cleanups())
+    assert len(qbt.deleted) == 1  # unchanged — delete_torrent was not called again

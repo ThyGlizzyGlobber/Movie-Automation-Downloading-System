@@ -47,6 +47,19 @@ class RequestRow:
     # "one season" (Stage 13's original shape), unchanged; both set means
     # "seasons season_number through season_range_end inclusive".
     season_range_end: int | None = None
+    # Durable, restart-safe post-organize source cleanup (replaces Stage
+    # 13.x's original fire-and-forget in-memory version — see
+    # worker.py's _watch_source_cleanup). NULL means "not applicable"
+    # (every row created before this existed, or a row that was never
+    # organized); 'pending' means a cleanup attempt is owed once
+    # `source_cleanup_next_attempt_at` arrives; 'done' means it either
+    # succeeded or was deliberately, permanently skipped (see
+    # worker.py's `_attempt_source_cleanup`) — either way, never retried
+    # again. `result["organized_paths"]`/`result["pending_cleanup_hashes"]`
+    # (plain JSON inside the existing result blob, not new columns) carry
+    # what actually needs cleaning up.
+    source_cleanup_status: str | None = None
+    source_cleanup_next_attempt_at: str | None = None
 
     @classmethod
     def _from_row(cls, row: sqlite3.Row) -> "RequestRow":
@@ -66,6 +79,8 @@ class RequestRow:
             season_number=row["season_number"],
             episode_number=row["episode_number"],
             season_range_end=row["season_range_end"],
+            source_cleanup_status=row["source_cleanup_status"],
+            source_cleanup_next_attempt_at=row["source_cleanup_next_attempt_at"],
         )
 
 
@@ -161,6 +176,10 @@ class RequestStore:
             self._ensure_column("requests", "season_number", "season_number INTEGER")
             self._ensure_column("requests", "episode_number", "episode_number INTEGER")
             self._ensure_column("requests", "season_range_end", "season_range_end INTEGER")
+            self._ensure_column("requests", "source_cleanup_status", "source_cleanup_status TEXT")
+            self._ensure_column(
+                "requests", "source_cleanup_next_attempt_at", "source_cleanup_next_attempt_at TEXT"
+            )
 
             # Stage 12: the standing subscription. One row per subscribed
             # show — a UNIQUE tmdb_id stops two subscriptions to the same
@@ -342,6 +361,68 @@ class RequestStore:
                 "UPDATE requests SET status = ?, error_message = ?, "
                 "result_json = COALESCE(?, result_json), updated_at = ? WHERE id = ?",
                 (status, error_message, json.dumps(result) if result is not None else None, _now(), request_id),
+            )
+            self._conn.commit()
+
+    def mark_organized(
+        self, request_id: int, organized_paths: list[str], pending_cleanup_hashes: list[str], next_attempt_at: str
+    ) -> None:
+        """Marks a request 'complete' with everything worker.py's durable
+        `_watch_source_cleanup` sweep needs to eventually remove the now-
+        redundant original torrent(s) — `organized_paths` (the file(s)
+        actually placed, re-checked before any deletion) and
+        `pending_cleanup_hashes` (normally just the one torrent that was
+        organized, but an episode upgrade also folds in the superseded
+        torrent it replaced) both persisted into the existing `result`
+        JSON blob alongside whatever's already there (the winning
+        candidate, score breakdown, etc.), not a separate table."""
+        with self._lock:
+            row = self._conn.execute("SELECT result_json FROM requests WHERE id = ?", (request_id,)).fetchone()
+            existing = json.loads(row["result_json"]) if row and row["result_json"] else {}
+            merged = {**existing, "organized_paths": organized_paths, "pending_cleanup_hashes": pending_cleanup_hashes}
+            self._conn.execute(
+                "UPDATE requests SET status = 'complete', error_message = NULL, result_json = ?, "
+                "source_cleanup_status = 'pending', source_cleanup_next_attempt_at = ?, updated_at = ? "
+                "WHERE id = ?",
+                (json.dumps(merged), next_attempt_at, _now(), request_id),
+            )
+            self._conn.commit()
+
+    def list_due_source_cleanups(self) -> list[RequestRow]:
+        """Every request whose organize-time cleanup is still owed and due
+        right now — restart-safe by construction, same as every other
+        polling loop in this app: re-derived fresh from the database on
+        every call rather than tracked only in memory."""
+        rows = self._conn.execute(
+            "SELECT * FROM requests WHERE source_cleanup_status = 'pending' "
+            "AND source_cleanup_next_attempt_at <= ? ORDER BY id ASC",
+            (_now(),),
+        ).fetchall()
+        return [RequestRow._from_row(r) for r in rows]
+
+    def mark_source_cleanup_done(self, request_id: int) -> None:
+        """Cleanup either succeeded or was deliberately, permanently
+        skipped (e.g. the organized copy has gone missing) — either way,
+        `list_due_source_cleanups` must never surface this row again."""
+        with self._lock:
+            self._conn.execute(
+                "UPDATE requests SET source_cleanup_status = 'done' WHERE id = ?", (request_id,)
+            )
+            self._conn.commit()
+
+    def defer_source_cleanup(self, request_id: int, remaining_hashes: list[str], next_attempt_at: str) -> None:
+        """A cleanup attempt failed (or only partially succeeded, e.g. the
+        current torrent deleted but a superseded one didn't) — stays
+        'pending' with the still-outstanding hashes persisted and a later
+        `next_attempt_at`, so the next sweep picks up exactly where this
+        one left off."""
+        with self._lock:
+            row = self._conn.execute("SELECT result_json FROM requests WHERE id = ?", (request_id,)).fetchone()
+            existing = json.loads(row["result_json"]) if row and row["result_json"] else {}
+            merged = {**existing, "pending_cleanup_hashes": remaining_hashes}
+            self._conn.execute(
+                "UPDATE requests SET result_json = ?, source_cleanup_next_attempt_at = ? WHERE id = ?",
+                (json.dumps(merged), next_attempt_at, request_id),
             )
             self._conn.commit()
 
