@@ -61,6 +61,8 @@ services:
       GIT_SSH_KEY_PATH: "/run/secrets/deploy_key"
       # Stage 11: this container's path to the mount below.
       TV_LIBRARY_ROOT: "/tv-library"
+      # Stage 11: this container's path to the movie-library mount below.
+      MOVIE_LIBRARY_ROOT: "/movie-library"
     volumes:
       # Deployed-copy source, live-reloaded by uvicorn --reload — confirmed
       # live during Stage 5 by editing this file directly on the NAS and
@@ -79,15 +81,17 @@ services:
       # above, survives container recreation and `git pull` alike.
       - /mnt/SSD/AppData/movie-downloader/data:/app/data
       # Stage 11: same underlying dataset qBittorrent's "tv" category
-      # (its own category setting, save path "/media/TV Shows" as of
-      # Stage 10) and Plex's TV library already live on — media_organizer.py's
-      # hardlink can't work at all if this isn't genuinely the same
-      # filesystem as qBittorrent's own download path, only a same-looking
-      # one. Real host-side path (and that same-filesystem check, a
-      # `stat`/device-id comparison) still needs a real NAS session with
-      # SSH access to confirm — see project.md's Stage 11 open decisions.
-      # Placeholder below, not yet applied to the live NAS.
-      - /mnt/REPLACE_WITH_REAL_TV_LIBRARY_HOST_PATH:/tv-library
+      # downloads into — media_organizer.py's hardlink can't work at all if
+      # this isn't genuinely the same filesystem as qBittorrent's own
+      # download path, only a same-looking one. Currently the SSD dataset
+      # qBittorrent's "tv" category save path already points at. When the
+      # 18TB HDD arrives and qBittorrent's category save path moves to it,
+      # this line (and MOVIE_LIBRARY_ROOT's below) just repoint at the new
+      # pool's path — same requirement, new filesystem.
+      - "/mnt/SSD/Media/TV Shows:/tv-library"
+      # Stage 11 (movies): same idea as the TV mount above, on the SSD
+      # dataset qBittorrent's "movies" category save path already points at.
+      - /mnt/SSD/Media/Movies:/movie-library
     expose:
       - "8000"
     restart: unless-stopped
