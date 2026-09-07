@@ -62,6 +62,26 @@ def aired_episode_numbers(episodes: list[dict], today: str | None = None) -> lis
     ]
 
 
+def season_is_complete(episodes: list[dict], today: str | None = None) -> bool:
+    """True once every episode TMDB knows about for this season already
+    has a past air_date — i.e. the season has finished its run, not just
+    "some episodes have aired so far". False for a season still actively
+    releasing new episodes (an unaired or entirely unscheduled entry still
+    remains), or one with no episodes listed at all (nothing to judge
+    either way).
+
+    Used by worker.py's check_show() (Stage 14.x) to decide whether a
+    season's still-unhandled aired episodes should be requested as a
+    single season pack instead of individual per-episode searches — an
+    older, fully-aired season is realistically far more likely to still
+    have a well-seeded pack release than well-seeded individual episode
+    releases, which tend to go cold once a show has moved on."""
+    if not episodes:
+        return False
+    today = today or date.today().isoformat()
+    return all(ep.get("air_date") and ep["air_date"] <= today for ep in episodes)
+
+
 def resolve_show(tmdb_id: int, client: TMDBClient) -> ShowIdentity:
     show = client.get_tv(tmdb_id)
 

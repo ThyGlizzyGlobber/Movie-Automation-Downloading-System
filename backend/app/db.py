@@ -286,6 +286,31 @@ class RequestStore:
         ).fetchone()
         return RequestRow._from_row(row) if row else None
 
+    def list_pack_requests_for_show(self, show_id: int, season_number: int | None) -> list[RequestRow]:
+        """Every 'pack' request ever made for this show at this exact scope
+        — one season (`season_number` an int) or the complete series
+        (`season_number=None`) — newest first. Used by worker.py's
+        check_show() (Stage 14.x) to decide whether a new automatic pack
+        attempt is warranted: none tried yet, one already succeeded or is
+        still in flight (don't duplicate), or a prior attempt failed and
+        the configured recheck cooldown/opt-in/max-attempts should gate a
+        retry — the same question `cancel_queued_requests_for_show` (a
+        manual bulk-download's own concern) never needed to ask, since
+        that path always fires immediately regardless of history."""
+        if season_number is None:
+            rows = self._conn.execute(
+                "SELECT * FROM requests WHERE show_id = ? AND media_type = 'pack' AND season_number IS NULL "
+                "ORDER BY id DESC",
+                (show_id,),
+            ).fetchall()
+        else:
+            rows = self._conn.execute(
+                "SELECT * FROM requests WHERE show_id = ? AND media_type = 'pack' AND season_number = ? "
+                "ORDER BY id DESC",
+                (show_id, season_number),
+            ).fetchall()
+        return [RequestRow._from_row(r) for r in rows]
+
     def list_requests(self, status: str | None = None) -> list[RequestRow]:
         if status:
             rows = self._conn.execute(
@@ -348,15 +373,56 @@ class RequestStore:
             self._conn.commit()
             return cur.rowcount
 
+    def cancel_queued_requests_for_show(self, show_id: int, season_number: int | None) -> int:
+        """A new bulk season/series download (Stage 13) makes a show's own
+        still-`queued` requests redundant wherever it actually covers them
+        — called from `POST /api/shows/{id}/bulk-download` right before the
+        new pack request is created, so the queue doesn't stay cluttered
+        with per-episode catch-up requests the bulk download is about to
+        superseded. `season_number=None` (series scope) cancels *every*
+        queued request for this show, regardless of season — a complete
+        series covers all of them. A season scope only cancels queued
+        requests for that exact season (episode rows in it, or an
+        already-queued pack for that same season) — a season-5 bulk
+        request must never touch an unrelated season-2 catch-up request
+        still sitting in the queue. Only `queued` rows are touched:
+        anything already `searching`/`downloading`/`complete` represents
+        real work already done or in flight, which a bulk action has no
+        business silently cancelling."""
+        now = _now()
+        with self._lock:
+            if season_number is None:
+                cur = self._conn.execute(
+                    "UPDATE requests SET status = 'cancelled', updated_at = ? "
+                    "WHERE show_id = ? AND status = 'queued'",
+                    (now, show_id),
+                )
+            else:
+                cur = self._conn.execute(
+                    "UPDATE requests SET status = 'cancelled', updated_at = ? "
+                    "WHERE show_id = ? AND status = 'queued' AND season_number = ?",
+                    (now, show_id, season_number),
+                )
+            self._conn.commit()
+            return cur.rowcount
+
     # -- shows (Stage 12 standing subscriptions) --
 
-    def create_show(self, tmdb_id: int, title: str) -> ShowRow:
+    def create_show(self, tmdb_id: int, title: str, status: str = "watching") -> ShowRow:
+        """`status` defaults to "watching" — a real, explicit subscribe.
+        `POST /api/shows/bulk-download` (Stage 14.x) passes "paused" when
+        it has to create a show row purely to anchor a one-off bulk
+        download that was requested before ever subscribing — a show
+        created that way must NOT start receiving the standing
+        per-episode catch-up/recheck (`_check_all_watching_shows` only
+        ever iterates `status == "watching"` rows), since the whole point
+        was "just this one download," not "start tracking new episodes."""
         now = _now()
         with self._lock:
             cur = self._conn.execute(
                 "INSERT INTO shows (tmdb_id, title, status, created_at, last_checked_at) "
-                "VALUES (?, ?, 'watching', ?, NULL)",
-                (tmdb_id, title, now),
+                "VALUES (?, ?, ?, ?, NULL)",
+                (tmdb_id, title, status, now),
             )
             self._conn.commit()
             row_id = cur.lastrowid

@@ -138,16 +138,19 @@ class NoOpWorker:
     def __init__(self):
         self.enqueued: list[int] = []
         self.checked_shows: list[int] = []
+        self.checked_shows_full_backfill: list[bool] = []
 
     def enqueue(self, request_id: int) -> None:
         self.enqueued.append(request_id)
 
-    def check_show(self, show) -> int:
+    def check_show(self, show, full_backfill: bool = False) -> int:
         """Stands in for the real catch-up check api.py's POST /api/shows
         triggers immediately after creating a subscription — records that
-        it was called rather than actually hitting TMDB (see test_worker.py
-        for the real check_show()/scheduler logic)."""
+        it was called (and with what `full_backfill` value) rather than
+        actually hitting TMDB (see test_worker.py for the real
+        check_show()/scheduler logic)."""
         self.checked_shows.append(show.id)
+        self.checked_shows_full_backfill.append(full_backfill)
         return 0
 
     async def start(self) -> None:
@@ -328,9 +331,25 @@ def test_cancel_fails_honestly_when_qbittorrent_already_removed_the_torrent(clie
     assert store.get_request(created["id"]).status == "complete"
 
 
-def test_cancel_rejects_a_status_with_no_torrent_yet(client_and_deps):
-    client, _, _, _, qbt, _ = client_and_deps
+def test_cancel_marks_queued_request_cancelled_without_touching_qbittorrent(client_and_deps):
+    client, store, _, _, qbt, _ = client_and_deps
     created = client.post("/api/requests", json={"tmdb_id": 693134}).json()  # starts "queued"
+
+    response = client.post(f"/api/requests/{created['id']}/cancel")
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "cancelled"
+    assert qbt.deleted == []
+    assert store.get_request(created["id"]).status == "cancelled"
+
+
+def test_cancel_rejects_searching_status(client_and_deps):
+    """"searching" is deliberately not cancellable — the pipeline is
+    actively running with no cancellation hook, unlike "queued" (nothing
+    started yet) or "downloading"/"complete" (a real torrent to delete)."""
+    client, store, _, _, qbt, _ = client_and_deps
+    created = client.post("/api/requests", json={"tmdb_id": 693134}).json()
+    store.update_status(created["id"], "searching")
 
     response = client.post(f"/api/requests/{created['id']}/cancel")
 
@@ -859,6 +878,11 @@ def test_create_show_subscribes_and_runs_immediate_catchup(client_and_deps):
     assert body["status"] == "watching"
     assert body["last_checked_at"] is None  # NoOpWorker.check_show doesn't touch it
     assert worker.checked_shows == [body["id"]]
+    # Stage 14.x: the immediate post-subscribe catch-up must be a full
+    # backfill (every season, not just the latest) — a show with nothing
+    # downloaded at all otherwise silently skipped everything before its
+    # current season.
+    assert worker.checked_shows_full_backfill == [True]
     assert store.get_show(body["id"]) is not None
 
 
@@ -964,7 +988,7 @@ def test_unsubscribe_show_404s_when_missing(client_and_deps):
 
 
 # ---------------------------------------------------------------------------
-# POST /api/shows/{id}/bulk-download — Stage 13 bulk acquisition
+# POST /api/tv/{tmdb_id}/bulk-download — Stage 13/14.x bulk acquisition
 # ---------------------------------------------------------------------------
 
 
@@ -972,7 +996,7 @@ def test_bulk_download_season_creates_a_pack_request_and_enqueues_it(client_and_
     client, store, _, worker, _, _ = client_and_deps
     show = store.create_show(tmdb_id=95350, title="Lanterns")
 
-    response = client.post(f"/api/shows/{show.id}/bulk-download", json={"scope": "season", "season_number": 1})
+    response = client.post(f"/api/tv/{show.tmdb_id}/bulk-download", json={"scope": "season", "season_number": 1})
 
     assert response.status_code == 201
     body = response.json()
@@ -988,7 +1012,7 @@ def test_bulk_download_series_creates_a_pack_request_with_no_season(client_and_d
     client, store, _, worker, _, _ = client_and_deps
     show = store.create_show(tmdb_id=95350, title="Lanterns")
 
-    response = client.post(f"/api/shows/{show.id}/bulk-download", json={"scope": "series"})
+    response = client.post(f"/api/tv/{show.tmdb_id}/bulk-download", json={"scope": "series"})
 
     assert response.status_code == 201
     body = response.json()
@@ -997,17 +1021,85 @@ def test_bulk_download_series_creates_a_pack_request_with_no_season(client_and_d
     assert worker.enqueued == [body["id"]]
 
 
-def test_bulk_download_404s_when_show_missing(client_and_deps):
-    client, _, _, _, _, _ = client_and_deps
-    response = client.post("/api/shows/999/bulk-download", json={"scope": "series"})
+def test_bulk_download_creates_a_paused_show_when_not_already_subscribed(client_and_deps):
+    """The whole point of Stage 14.x's tmdb_id-keyed route: a bulk download
+    must work before ever clicking "Add Show" — but the show it silently
+    creates to anchor the request must be "paused", never "watching", so
+    it doesn't also opt into the standing per-episode catch-up/recheck
+    that was never asked for."""
+    client, store, _, worker, _, _ = client_and_deps
+    assert store.get_show_by_tmdb_id(95350) is None
+
+    response = client.post("/api/tv/95350/bulk-download", json={"scope": "series"})
+
+    assert response.status_code == 201
+    show = store.get_show_by_tmdb_id(95350)
+    assert show is not None
+    assert show.status == "paused"
+    assert show.title == "Lanterns"  # from FakeTMDBClient.get_tv via resolve_show
+    assert worker.enqueued == [response.json()["id"]]
+
+
+def test_bulk_download_reuses_an_existing_watching_show_unchanged(client_and_deps):
+    client, store, _, _, _, _ = client_and_deps
+    show = store.create_show(tmdb_id=95350, title="Lanterns")
+
+    response = client.post(f"/api/tv/{show.tmdb_id}/bulk-download", json={"scope": "series"})
+
+    assert response.status_code == 201
+    assert response.json()["show_id"] == show.id
+    assert store.get_show(show.id).status == "watching"  # untouched, not reset to paused
+
+
+def test_bulk_download_404s_on_unknown_tmdb_id_when_no_show_exists(client_and_deps):
+    client, _, tmdb, _, _, _ = client_and_deps
+    tmdb._raise_on_get_tv = True
+    response = client.post("/api/tv/999999/bulk-download", json={"scope": "series"})
     assert response.status_code == 404
+
+
+def test_bulk_download_series_cancels_every_still_queued_request_for_the_show(client_and_deps):
+    """Subscribing (Stage 12) immediately queues catch-up requests for the
+    latest season; asking for the complete series afterward made those
+    redundant and, before this fix, left both running at once, flooding
+    Requests with soon-superseded rows."""
+    client, store, _, _, _, _ = client_and_deps
+    show = store.create_show(tmdb_id=95350, title="Lanterns")
+    ep1 = store.create_episode_request(tmdb_id=95350, show_id=show.id, title="Lanterns", season_number=3, episode_number=1)
+    ep2 = store.create_episode_request(tmdb_id=95350, show_id=show.id, title="Lanterns", season_number=3, episode_number=2)
+    already_downloading = store.create_episode_request(
+        tmdb_id=95350, show_id=show.id, title="Lanterns", season_number=3, episode_number=3
+    )
+    store.update_status(already_downloading.id, "downloading", result={"torrent_hash": "aaaa"})
+
+    response = client.post(f"/api/tv/{show.tmdb_id}/bulk-download", json={"scope": "series"})
+
+    assert response.status_code == 201
+    assert store.get_request(ep1.id).status == "cancelled"
+    assert store.get_request(ep2.id).status == "cancelled"
+    # Already in flight — a bulk action must never silently cancel real,
+    # already-started work.
+    assert store.get_request(already_downloading.id).status == "downloading"
+
+
+def test_bulk_download_season_only_cancels_queued_requests_for_that_season(client_and_deps):
+    client, store, _, _, _, _ = client_and_deps
+    show = store.create_show(tmdb_id=95350, title="Lanterns")
+    this_season = store.create_episode_request(tmdb_id=95350, show_id=show.id, title="Lanterns", season_number=5, episode_number=1)
+    other_season = store.create_episode_request(tmdb_id=95350, show_id=show.id, title="Lanterns", season_number=2, episode_number=1)
+
+    response = client.post(f"/api/tv/{show.tmdb_id}/bulk-download", json={"scope": "season", "season_number": 5})
+
+    assert response.status_code == 201
+    assert store.get_request(this_season.id).status == "cancelled"
+    assert store.get_request(other_season.id).status == "queued"  # unrelated season, left alone
 
 
 def test_bulk_download_rejects_unknown_scope(client_and_deps):
     client, store, _, _, _, _ = client_and_deps
     show = store.create_show(tmdb_id=95350, title="Lanterns")
 
-    response = client.post(f"/api/shows/{show.id}/bulk-download", json={"scope": "everything"})
+    response = client.post(f"/api/tv/{show.tmdb_id}/bulk-download", json={"scope": "everything"})
 
     assert response.status_code == 422
 
@@ -1016,7 +1108,7 @@ def test_bulk_download_rejects_season_scope_without_season_number(client_and_dep
     client, store, _, _, _, _ = client_and_deps
     show = store.create_show(tmdb_id=95350, title="Lanterns")
 
-    response = client.post(f"/api/shows/{show.id}/bulk-download", json={"scope": "season"})
+    response = client.post(f"/api/tv/{show.tmdb_id}/bulk-download", json={"scope": "season"})
 
     assert response.status_code == 422
 
@@ -1026,7 +1118,7 @@ def test_bulk_download_rejects_series_scope_with_a_season_number(client_and_deps
     show = store.create_show(tmdb_id=95350, title="Lanterns")
 
     response = client.post(
-        f"/api/shows/{show.id}/bulk-download", json={"scope": "series", "season_number": 1}
+        f"/api/tv/{show.tmdb_id}/bulk-download", json={"scope": "series", "season_number": 1}
     )
 
     assert response.status_code == 422
@@ -1039,7 +1131,7 @@ def test_bulk_download_is_independent_of_watching_status(client_and_deps):
     show = store.create_show(tmdb_id=95350, title="Lanterns")
     store.update_show_status(show.id, "paused")
 
-    response = client.post(f"/api/shows/{show.id}/bulk-download", json={"scope": "series"})
+    response = client.post(f"/api/tv/{show.tmdb_id}/bulk-download", json={"scope": "series"})
 
     assert response.status_code == 201
     assert worker.enqueued == [response.json()["id"]]

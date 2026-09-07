@@ -76,7 +76,7 @@ import logging
 from datetime import datetime, timedelta, timezone
 
 from app import config, plex
-from app.db import RequestStore, ShowEpisodeRow, ShowRow
+from app.db import NON_TERMINAL_STATUSES, RequestStore, ShowEpisodeRow, ShowRow
 from app.media_organizer import (
     MediaOrganizerError,
     find_existing_episode_file,
@@ -88,7 +88,7 @@ from app.pipeline import download, download_episode, download_pack, find_best_ep
 from app.pipeline_settings import resolve_pipeline_settings
 from app.qbt import QBTClient
 from app.tmdb import TMDBClient, TMDBError
-from app.tv_resolve import aired_episode_numbers, resolve_show
+from app.tv_resolve import ShowIdentity, aired_episode_numbers, resolve_show, season_is_complete
 from app.tv_settings import TVScheduleSettings, resolve_tv_settings
 
 logger = logging.getLogger("app.worker")
@@ -508,7 +508,157 @@ class Worker:
             except Exception:
                 logger.exception("show check crashed for show %d (%s)", show.id, show.title)
 
-    def check_show(self, show: ShowRow) -> int:
+    def _check_show_season(
+        self,
+        show: ShowRow,
+        identity: ShowIdentity,
+        season_number: int,
+        episodes: list[dict],
+        season_complete: bool,
+        pack_due: bool,
+    ) -> int:
+        """One season's worth of `check_show()`'s own diff-against-the-
+        ledger-then-download-or-mark-found logic, factored out so
+        `full_backfill` can run it once per season instead of duplicating
+        it. Returns the number of new *requests* actually created for
+        this season (a pack counts as one, regardless of how many
+        episodes it turns out to cover once organized).
+
+        Three outcomes once at least one aired episode is genuinely
+        unhandled (not on disk, not already in the ledger):
+        - `season_complete=False` (still airing) — per-episode requests,
+          same as always; packs don't exist yet for an incomplete season.
+        - `season_complete=True` and `pack_due=True` — a single season-pack
+          request covers the whole season instead of one search per
+          episode: an older, fully-aired season is realistically far more
+          likely to still have one well-seeded pack release than
+          well-seeded individual episodes, which tend to go cold once a
+          show has moved on.
+        - `season_complete=True` and `pack_due=False` (a pack was already
+          tried — succeeded, still in flight, or failed and not yet due
+          for a retry per `_should_attempt_pack()`) — nothing is created
+          this call. Deliberately *not* a per-episode fallback: silently
+          escalating to potentially many individual searches the moment a
+          single pack attempt doesn't pan out would defeat the point of
+          preferring packs for old content in the first place, and go
+          against the same opt-in-only philosophy Stage 12.x's per-episode
+          auto-recheck already established. The season stays alone until
+          it's eligible for a pack retry (opted in, cooldown elapsed) or
+          the user steps in manually (e.g. a fresh "Download this season"
+          click, which tries again immediately regardless of this gate)."""
+        aired = set(aired_episode_numbers(episodes))
+        unhandled = []
+        for episode_number in sorted(aired):
+            if self.store.has_show_episode(show.id, season_number, episode_number):
+                continue
+
+            existing_path = find_existing_episode_file(identity, season_number, episode_number)
+            if existing_path is not None:
+                request_row = self.store.create_episode_request(
+                    tmdb_id=show.tmdb_id,
+                    show_id=show.id,
+                    title=identity.title,
+                    season_number=season_number,
+                    episode_number=episode_number,
+                )
+                self.store.update_status(
+                    request_row.id,
+                    "complete",
+                    result={"note": "found already on disk, not downloaded by this app", "path": str(existing_path)},
+                )
+                self.store.add_show_episode(show.id, season_number, episode_number, request_row.id)
+                logger.info(
+                    "show check: show %d (%s) S%02dE%02d already on disk (%s) — not downloading",
+                    show.id,
+                    show.title,
+                    season_number,
+                    episode_number,
+                    existing_path,
+                )
+                continue
+
+            unhandled.append(episode_number)
+
+        if not unhandled:
+            return 0
+
+        if season_complete:
+            if not pack_due:
+                return 0
+            # Deliberately not added to show_episodes here — a pack row
+            # only earns ledger entries once it's actually organized (see
+            # _organize_and_complete_pack), same as a bulk-download
+            # request. `_should_attempt_pack()` is what stops a failed
+            # attempt from being silently re-tried every cycle.
+            request_row = self.store.create_pack_request(
+                tmdb_id=show.tmdb_id, show_id=show.id, title=identity.title, season_number=season_number
+            )
+            self.enqueue(request_row.id)
+            logger.info(
+                "show check: show %d (%s) season %d finished airing with %d unhandled episode(s) — "
+                "queuing a season pack instead of per-episode searches",
+                show.id,
+                show.title,
+                season_number,
+                len(unhandled),
+            )
+            return 1
+
+        created = 0
+        for episode_number in unhandled:
+            request_row = self.store.create_episode_request(
+                tmdb_id=show.tmdb_id,
+                show_id=show.id,
+                title=identity.title,
+                season_number=season_number,
+                episode_number=episode_number,
+            )
+            self.store.add_show_episode(show.id, season_number, episode_number, request_row.id)
+            self.enqueue(request_row.id)
+            created += 1
+
+        return created
+
+    _PACK_DONE_STATUSES = {"complete"}
+
+    def _should_attempt_pack(self, show: ShowRow, season_number: int | None, tv_settings: TVScheduleSettings) -> bool:
+        """Whether check_show() should (re-)attempt a pack for this show at
+        this exact scope (one season, or the complete series when
+        `season_number` is None) right now:
+
+        - Never tried before -> yes, always (the same "just try it once"
+          behavior a full backfill's first sweep always had).
+        - Already succeeded, or still actively in flight -> no, nothing to
+          do (a second concurrent/duplicate attempt would just race the
+          first one, or re-download something already complete).
+        - The most recent attempt failed -> only a *retry*, gated exactly
+          like Stage 12.x's existing per-episode auto-recheck: opt-in
+          (`episode_recheck_enabled`), capped
+          (`episode_recheck_max_attempts`, 0 = infinite), and cooled down
+          (`episode_recheck_interval_hours` since that attempt). Reusing
+          those settings rather than inventing pack-specific ones — "retry
+          something that didn't work" is the same household preference
+          either way. Without this gate, a persistently-unavailable pack
+          would otherwise get silently re-queued by *every* scheduled
+          recheck cycle forever, since (unlike a per-episode request,
+          which claims its ledger slot the moment it's created) a pack
+          only ever earns a `show_episodes` entry once it's actually
+          organized — nothing else would ever mark a failed attempt
+          "handled"."""
+        attempts = self.store.list_pack_requests_for_show(show.id, season_number)
+        if not attempts:
+            return True
+        latest = attempts[0]
+        if latest.status in NON_TERMINAL_STATUSES or latest.status in self._PACK_DONE_STATUSES:
+            return False
+        if not tv_settings.episode_recheck_enabled:
+            return False
+        if tv_settings.episode_recheck_max_attempts and len(attempts) >= tv_settings.episode_recheck_max_attempts:
+            return False
+        due_at = datetime.fromisoformat(latest.updated_at) + timedelta(hours=tv_settings.episode_recheck_interval_hours)
+        return datetime.now(timezone.utc) >= due_at
+
+    def check_show(self, show: ShowRow, full_backfill: bool = False) -> int:
         """Fetches the show's current latest season from TMDB, diffs it
         against the `show_episodes` dedup ledger, and creates + enqueues a
         normal episode request for every already-aired episode not yet
@@ -517,13 +667,52 @@ class Worker:
         per `tv_settings.TVScheduleSettings`) and api.py's `POST /api/shows`
         immediate post-subscribe catch-up —
         "add show mid-season" and "scheduled recheck" are one code path,
-        per the plan. Only the latest season is ever checked (re-read fresh
-        every call, so a new season is picked up automatically without any
-        extra state); an older season resuming after a long hiatus is a
-        named, accepted gap. Specials (season 0) are excluded for free —
+        per the plan. Specials (season 0) are excluded for free —
         `number_of_seasons` doesn't count them, so they're never fetched.
         Sync (TMDB + sqlite, no asyncio) — callers run it via
         `asyncio.to_thread` or from a FastAPI sync route's own threadpool.
+
+        `full_backfill=True` — used only by `POST /api/shows`'s immediate
+        post-subscribe call, never by the scheduled recheck — sweeps every
+        season from 1 through the current latest, not just the latest, so
+        a first-time subscribe to a show that's already several seasons in
+        doesn't silently skip everything before the current season. Every
+        subsequent scheduled recheck always passes the default `False` and
+        keeps checking only the latest season — sweeping every past season
+        again on every cycle forever would be repeated, pointless TMDB
+        work for seasons with nothing left to discover.
+
+        Two pack-preference decisions apply regardless of `full_backfill`,
+        both driven by real signals rather than "is this the latest
+        season":
+
+        1. If the show itself has already ended (TMDB `status` is `Ended`
+           or `Canceled`), a single complete-series pack is tried before
+           anything else — a finished show is realistically more likely to
+           exist as one combined release than as well-seeded individual
+           seasons, let alone individual episodes. When this fires, the
+           per-season sweep below is skipped entirely for this call (no
+           point racing a dozen per-season searches against one that
+           already covers all of them); if it doesn't pan out, the season
+           sweep on some later call is exactly that fallback.
+        2. Otherwise, each season checked is tested with
+           `tv_resolve.season_is_complete()`: a season that's already
+           finished airing gets a single season-pack request for whatever
+           it still hasn't handled (see `_check_show_season`'s
+           `prefer_pack`) instead of one per-episode search per missing
+           episode — an older, fully-aired season is far more likely to
+           still have a well-seeded pack than well-seeded individual
+           episodes. This applies to the *current* season too, the moment
+           it finishes airing (or the show ends) — including on an
+           ordinary scheduled recheck, not only a first-ever full backfill,
+           closing the gap that used to leave a since-finished season
+           stuck on per-episode searches forever.
+
+        Both decisions are guarded by `_should_attempt_pack()` — a pack is
+        only ever tried once for free; a failed attempt only gets retried
+        under the same opt-in/cooldown/max-attempts rule Stage 12.x's
+        per-episode auto-recheck already uses, so a persistently-
+        unavailable pack can't get silently re-queued every cycle forever.
 
         Before creating a *download* request for an episode not yet in the
         ledger, checks whether a file for it already exists somewhere under
@@ -539,52 +728,41 @@ class Worker:
             identity = resolve_show(show.tmdb_id, self.tmdb)
             show_data = self.tmdb.get_tv(show.tmdb_id)
             latest_season = show_data.get("number_of_seasons")
-            episodes = self.tmdb.get_tv_season(show.tmdb_id, latest_season) if latest_season else []
         except TMDBError:
             logger.exception("show check: couldn't fetch TMDB data for show %d (%s)", show.id, show.title)
             return 0
+        if not latest_season:
+            return 0
 
-        aired = set(aired_episode_numbers(episodes))
-        created = 0
-        for episode_number in sorted(aired):
-            if self.store.has_show_episode(show.id, latest_season, episode_number):
-                continue
+        tv_settings = resolve_tv_settings(self.store)
 
-            existing_path = find_existing_episode_file(identity, latest_season, episode_number)
-            if existing_path is not None:
-                request_row = self.store.create_episode_request(
-                    tmdb_id=show.tmdb_id,
-                    show_id=show.id,
-                    title=identity.title,
-                    season_number=latest_season,
-                    episode_number=episode_number,
-                )
-                self.store.update_status(
-                    request_row.id,
-                    "complete",
-                    result={"note": "found already on disk, not downloaded by this app", "path": str(existing_path)},
-                )
-                self.store.add_show_episode(show.id, latest_season, episode_number, request_row.id)
-                logger.info(
-                    "show check: show %d (%s) S%02dE%02d already on disk (%s) — not downloading",
-                    show.id,
-                    show.title,
-                    latest_season,
-                    episode_number,
-                    existing_path,
-                )
-                continue
-
-            request_row = self.store.create_episode_request(
-                tmdb_id=show.tmdb_id,
-                show_id=show.id,
-                title=identity.title,
-                season_number=latest_season,
-                episode_number=episode_number,
+        show_ended = show_data.get("status") in ("Ended", "Canceled")
+        if show_ended and self._should_attempt_pack(show, None, tv_settings):
+            request_row = self.store.create_pack_request(
+                tmdb_id=show.tmdb_id, show_id=show.id, title=identity.title, season_number=None
             )
-            self.store.add_show_episode(show.id, latest_season, episode_number, request_row.id)
             self.enqueue(request_row.id)
-            created += 1
+            logger.info(
+                "show check: show %d (%s) has ended — queuing a complete-series pack before any per-season fallback",
+                show.id,
+                show.title,
+            )
+            self.store.update_show_last_checked(show.id)
+            return 1
+
+        seasons_to_check = range(1, latest_season + 1) if full_backfill else [latest_season]
+        created = 0
+        for season_number in seasons_to_check:
+            try:
+                episodes = self.tmdb.get_tv_season(show.tmdb_id, season_number)
+            except TMDBError:
+                logger.exception(
+                    "show check: couldn't fetch season %d for show %d (%s)", season_number, show.id, show.title
+                )
+                continue
+            complete = season_is_complete(episodes)
+            pack_due = complete and self._should_attempt_pack(show, season_number, tv_settings)
+            created += self._check_show_season(show, identity, season_number, episodes, complete, pack_due)
 
         self.store.update_show_last_checked(show.id)
         return created

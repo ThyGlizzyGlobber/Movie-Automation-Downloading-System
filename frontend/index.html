@@ -88,9 +88,9 @@
   .inline-search:focus { outline: 2px solid var(--accent); }
 
   /* 130px (not just the tab bar's ~90px) so scrolled content on the
-     Requests view clears the floating .requests-fab above the tab bar.
-     max-width + centering keeps a desktop-width browser window from
-     stretching a single grid/detail column edge to edge. */
+     Requests view clears the floating .clear-requests-fab/.downloads-fab
+     above the tab bar. max-width + centering keeps a desktop-width
+     browser window from stretching a single grid/detail column edge to edge. */
   main {
     padding: 14px 14px calc(130px + var(--safe-bottom));
     min-height: 60vh;
@@ -221,32 +221,45 @@
   }
   @keyframes spin { to { transform: rotate(360deg); } }
 
-  /* Detail view */
-  .detail-backdrop {
-    width: calc(100% + 28px); margin: 0 -14px; height: 200px;
-    object-fit: cover; background: var(--bg-card); display: block;
+  /* Detail view — mirrors TMDB's own movie/show page: a full-bleed
+     backdrop hero with the poster and title/meta/score/action row
+     overlaid near its bottom edge (a dark gradient keeps the text
+     legible over any backdrop), Overview/crew/cast below in the normal
+     content column. */
+  .hero {
+    position: relative; width: calc(100% + 28px); margin: 0 -14px 18px;
+    background-color: var(--bg-card); background-size: cover; background-position: center top;
   }
-  .detail-head { display: flex; gap: 14px; margin-top: -50px; padding: 0 4px; }
-  .detail-poster {
-    width: 110px; height: 165px; border-radius: 10px; object-fit: cover;
-    box-shadow: 0 6px 18px rgba(0,0,0,0.5); background: var(--bg-card);
-    border: 2px solid var(--bg);
+  .hero::after {
+    content: ""; position: absolute; inset: 0;
+    background: linear-gradient(to top, var(--bg) 0%, rgba(15,17,21,0.88) 35%, rgba(15,17,21,0.45) 70%, rgba(15,17,21,0.1) 100%);
   }
-  .detail-info { flex: 1; padding-top: 54px; min-width: 0; }
-  .detail-info h1 { font-size: 20px; margin: 0 0 4px; line-height: 1.2; }
-  .detail-meta { color: var(--text-dim); font-size: 13px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .hero-content {
+    position: relative; z-index: 1; display: flex; gap: 16px; align-items: flex-end; flex-wrap: wrap;
+    min-height: 300px; padding: 24px 14px 20px;
+  }
+  .detail-poster-wrap {
+    position: relative; flex: 0 0 auto; border-radius: 10px; overflow: hidden;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.55);
+  }
+  .detail-poster { width: 130px; height: 195px; object-fit: cover; background: var(--bg-card); display: block; }
+  .detail-info { flex: 1; min-width: 220px; padding-bottom: 2px; }
+  .detail-info h1 { font-size: 21px; margin: 0 0 6px; line-height: 1.2; }
+  .detail-info h1 .hero-year { font-weight: 400; color: var(--text-dim); }
+  .detail-meta {
+    color: var(--text-dim); font-size: 13.5px; display: flex; align-items: center; gap: 8px;
+    flex-wrap: wrap; margin-bottom: 14px;
+  }
   .cert-badge {
     font-size: 11px; font-weight: 700; padding: 1px 6px; border: 1px solid var(--text-dim);
     border-radius: 4px; color: var(--text-dim); line-height: 1.4;
   }
   .detail-overview { margin-top: 8px; font-size: 15px; line-height: 1.5; color: #d7d9dd; }
-  .genre-pills { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
-  .genre-pill {
-    font-size: 12px; padding: 4px 10px; background: var(--bg-card);
-    border-radius: 999px; color: var(--text-dim);
-  }
 
-  .score-row { display: flex; align-items: center; gap: 10px; margin-top: 18px; }
+  /* The score ring + the primary action button share one row, same as
+     TMDB's User Score + Play Trailer row. */
+  .hero-actions { display: flex; align-items: center; gap: 18px; flex-wrap: wrap; }
+  .score-row { display: flex; align-items: center; gap: 10px; }
   .score-ring {
     width: 44px; height: 44px; border-radius: 50%; position: relative; flex: 0 0 auto;
     background: conic-gradient(var(--score-color, var(--status-complete)) calc(var(--score-pct, 0) * 1%), var(--bg-card) 0);
@@ -256,7 +269,7 @@
   .score-ring span { position: relative; font-size: 12px; font-weight: 700; }
   .score-label { font-size: 12.5px; color: var(--text-dim); font-weight: 600; }
 
-  .tagline { font-style: italic; color: var(--text-dim); margin-top: 18px; font-size: 14px; }
+  .tagline { font-style: italic; color: var(--text-dim); margin-top: 14px; font-size: 14px; }
   .section-heading { font-size: 15px; font-weight: 700; margin: 20px 0 10px; }
 
   .crew-row { display: flex; gap: 22px; margin-top: 18px; flex-wrap: wrap; }
@@ -275,15 +288,26 @@
   }
   .cast-card .cast-character { font-size: 11.5px; color: var(--text-dim); text-align: center; margin-top: 1px; }
 
+  /* The primary action button (Add to Plex / Add Show / Watching /
+     Paused) — a compact pill sitting next to the score ring, same slot
+     TMDB's own "Play Trailer" button occupies. */
   .add-btn {
-    width: 100%; margin-top: 22px; padding: 15px; font-size: 16.5px; font-weight: 600;
-    background: var(--accent); color: var(--accent-text); border: none; border-radius: 12px;
+    display: inline-flex; align-items: center; gap: 8px; white-space: nowrap;
+    padding: 12px 22px; font-size: 15px; font-weight: 700;
+    background: var(--accent); color: var(--accent-text); border: none; border-radius: 999px;
   }
   .add-btn:active { opacity: 0.85; }
   .add-btn[disabled] { background: var(--bg-card); color: var(--text-dim); }
   .add-confirm {
     margin-top: 14px; padding: 12px 14px; background: var(--bg-card);
     border-radius: 10px; font-size: 14px; display: flex; align-items: center; gap: 10px;
+  }
+
+  @media (min-width: 860px) {
+    .hero-content { min-height: 420px; padding: 40px 32px; gap: 28px; }
+    .detail-poster { width: 200px; height: 300px; }
+    .detail-info h1 { font-size: 32px; }
+    .add-btn { padding: 14px 28px; font-size: 16px; }
   }
 
   /* Show detail (Stage 14): subscribe state + bulk-download actions,
@@ -299,7 +323,6 @@
   .bulk-btn.primary { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
   .bulk-btn:active { opacity: 0.85; }
   .bulk-btn[disabled] { color: var(--text-dim); opacity: 0.6; }
-  .bulk-hint { color: var(--text-dim); font-size: 12.5px; margin-top: 6px; text-align: center; }
   .season-list { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; }
   .season-row {
     display: flex; align-items: center; justify-content: space-between; gap: 10px;
@@ -348,6 +371,24 @@
   .req-title:active { opacity: 0.7; }
   .req-sub { font-size: 12.5px; color: var(--text-dim); margin-top: 3px; }
   .req-actions { display: flex; align-items: center; gap: 10px; flex: 0 0 auto; }
+
+  /* Requests list grouping (Stage 14.x): a show's episode/pack requests
+     collapse into one "Lanterns"-style row with an expand arrow, instead
+     of one flat row per episode. Movies stay ungrouped. The header row
+     itself toggles on click (see the delegated handler, which skips the
+     toggle when the click actually landed on the <a> title so navigating
+     to the show still works); the arrow button is just a visual/keyboard
+     affordance for the same action. */
+  .req-group-header { cursor: pointer; }
+  .req-group-header:active { background: var(--bg-card); }
+  .req-group-toggle-btn {
+    flex: 0 0 auto; width: 22px; height: 22px; display: flex; align-items: center; justify-content: center;
+    background: none; border: none; color: var(--text-dim); font-size: 11px;
+  }
+  .req-group-children { padding-left: 30px; }
+  .req-child-row { padding: 10px 4px; }
+  .req-child-row .req-title { font-size: 14px; font-weight: 500; color: var(--text-dim); }
+
   .watch-pills { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
   .watch-link {
     font-size: 12.5px; font-weight: 600; padding: 5px 12px; border-radius: 999px;
@@ -369,10 +410,12 @@
   .toggle-show-btn:active { background: color-mix(in srgb, var(--accent) 18%, transparent); }
   .toggle-show-btn[disabled] { opacity: 0.5; }
 
-  /* Floating above the tab bar, bottom-right — not part of the scrolling
-     list, so it stays reachable regardless of scroll position. */
-  .requests-fab {
-    position: fixed; right: 14px; bottom: calc(76px + var(--safe-bottom)); z-index: 9;
+  /* Floating above the tab bar, bottom-left — not part of the scrolling
+     list, so it stays reachable regardless of scroll position. Bottom-left
+     specifically so it never collides with the global .downloads-fab,
+     which owns bottom-right on every page including this one. */
+  .clear-requests-fab {
+    position: fixed; left: 14px; bottom: calc(76px + var(--safe-bottom)); z-index: 9;
   }
   .split-btn {
     display: flex; align-items: stretch; background: var(--bg-card);
@@ -393,7 +436,7 @@
   }
 
   .retention-menu {
-    position: absolute; right: 0; bottom: calc(100% + 8px); min-width: 200px;
+    position: absolute; left: 0; bottom: calc(100% + 8px); min-width: 200px;
     background: var(--bg-elevated); border: 1px solid var(--border); border-radius: 12px;
     overflow: hidden; box-shadow: 0 8px 24px rgba(0,0,0,0.5);
   }
@@ -405,6 +448,32 @@
   .retention-option:last-child { border-bottom: none; }
   .retention-option:active { background: var(--bg-card); }
   .retention-option .check { color: var(--accent); font-weight: 700; }
+
+  /* Global "downloads" FAB (Stage 14.x) — replaces Requests as a top-level
+     nav item; present on every page (rendered outside #app so route
+     changes never touch it), bottom-right, badge-counted with the number
+     of currently non-terminal (queued/searching/downloading) requests.
+     Hidden on the Requests page itself via route()'s own toggle — no
+     point offering to navigate to where you already are. */
+  .downloads-fab {
+    position: fixed; right: 14px; bottom: calc(76px + var(--safe-bottom)); z-index: 9;
+    width: 52px; height: 52px; border-radius: 50%; border: none;
+    background: var(--accent); color: var(--accent-text);
+    display: flex; align-items: center; justify-content: center; font-size: 22px;
+    box-shadow: 0 4px 14px rgba(0,0,0,0.35);
+  }
+  .downloads-fab:active { opacity: 0.85; }
+  /* Same-specificity tie with the UA's [hidden]{display:none} as
+     .search-clear-btn above — without this, the class rule's own
+     display:flex wins and route()'s downloadsFab.hidden toggle becomes a
+     no-op. */
+  .downloads-fab[hidden] { display: none; }
+  .downloads-badge {
+    position: absolute; top: -4px; right: -4px; min-width: 20px; height: 20px; padding: 0 5px;
+    border-radius: 999px; background: var(--status-nospace); color: #fff;
+    font-size: 11.5px; font-weight: 700; display: flex; align-items: center; justify-content: center;
+    border: 2px solid var(--bg);
+  }
 
   /* Settings */
   .settings-btn {
@@ -489,7 +558,7 @@
     #tabbar { display: none; }
     .top-nav-links { display: flex; align-items: center; gap: 4px; flex: 0 0 auto; }
     main { padding-bottom: 40px; }
-    .requests-fab { bottom: 20px; }
+    .clear-requests-fab, .downloads-fab { bottom: 20px; }
   }
 </style>
 </head>
@@ -501,7 +570,6 @@
   <nav class="top-nav-links">
     <button class="top-nav-link" data-tab="movies">Movies</button>
     <button class="top-nav-link" data-tab="tv">TV Shows</button>
-    <button class="top-nav-link" data-tab="requests">Requests</button>
   </nav>
   <div class="search-input-wrap">
     <input id="searchInput" type="search" enterkeyhint="search" aria-label="Search movies and TV shows">
@@ -515,8 +583,16 @@
 <nav id="tabbar">
   <button class="tab" data-tab="movies"><span class="icon">&#127916;</span>Movies</button>
   <button class="tab" data-tab="tv"><span class="icon">&#128250;</span>TV Shows</button>
-  <button class="tab" data-tab="requests"><span class="icon">&#128229;</span>Requests</button>
 </nav>
+
+<!-- Global downloads FAB (Stage 14.x) — outside #app so route changes
+     never touch it; navigates to Requests, badge-counted with the active
+     (queued/searching/downloading) request count. Hidden while already
+     on the Requests page — see route(). -->
+<button id="downloadsFab" class="downloads-fab" aria-label="Requests">
+  &#11015;&#65039;
+  <span id="downloadsBadge" class="downloads-badge" hidden>0</span>
+</button>
 
 <script>
 (function () {
@@ -573,7 +649,7 @@
     "cancelled": { label: "Cancelled", cls: "status-queued" },
   };
   const NON_TERMINAL = new Set(["queued", "searching", "downloading"]);
-  const CANCELLABLE = new Set(["downloading", "complete"]);
+  const CANCELLABLE = new Set(["queued", "downloading", "complete"]);
 
   function statusMeta(status) {
     return STATUS_META[status] || { label: status, cls: "status-queued" };
@@ -654,7 +730,10 @@
   const pauseShow = (id) => api(`/api/shows/${id}/pause`, { method: "POST" });
   const resumeShow = (id) => api(`/api/shows/${id}/resume`, { method: "POST" });
   const deleteShow = (id) => api(`/api/shows/${id}`, { method: "DELETE" });
-  const bulkDownload = (id, body) => api(`/api/shows/${id}/bulk-download`, {
+  // Keyed by tmdb_id (not the local show id) — works whether or not the
+  // show has ever been subscribed; the backend creates a paused show
+  // record behind the scenes on first use if one doesn't exist yet.
+  const bulkDownload = (tmdbId, body) => api(`/api/tv/${tmdbId}/bulk-download`, {
     method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
   });
 
@@ -773,6 +852,12 @@
   const app = document.getElementById("app");
   const backBtn = document.getElementById("backBtn");
   let activePollTimer = null;
+  // Which show groups are expanded on the Requests page — a plain Set
+  // rather than per-row DOM state, since loadRequests() rebuilds the
+  // whole list's innerHTML on every 5s poll and would otherwise silently
+  // re-collapse anything the user had opened. Reset fresh each time
+  // renderRequests() itself is entered (a new visit to the page).
+  let requestsExpandedGroups = new Set();
 
   function stopPolling() {
     // setInterval (Requests list) and setTimeout (Settings' Plex-link
@@ -792,13 +877,31 @@
     });
   }
 
-  const SECTION_HASH = { movies: "#/movies", tv: "#/tv", requests: "#/requests" };
+  const SECTION_HASH = { movies: "#/movies", tv: "#/tv" };
   function navigate(hash) { window.location.hash = hash; }
   backBtn.addEventListener("click", () => window.history.back());
 
   document.querySelectorAll(".tab, .top-nav-link").forEach((t) => {
     t.addEventListener("click", () => navigate(SECTION_HASH[t.dataset.tab] || "#/movies"));
   });
+
+  // -- Global downloads FAB (Stage 14.x) — replaces Requests as a nav
+  //    item. Polls independently of the per-view activePollTimer (which
+  //    stopPolling() clears on every route change) so the badge count
+  //    stays live no matter which page is showing. --
+  const downloadsFab = document.getElementById("downloadsFab");
+  const downloadsBadge = document.getElementById("downloadsBadge");
+  downloadsFab.addEventListener("click", () => navigate("#/requests"));
+  async function refreshDownloadsBadge() {
+    try {
+      const rows = await listRequests();
+      const active = rows.filter((r) => NON_TERMINAL.has(r.status)).length;
+      downloadsBadge.textContent = active > 99 ? "99+" : String(active);
+      downloadsBadge.hidden = active === 0;
+    } catch (err) { /* a transient fetch failure just leaves the last-known count showing */ }
+  }
+  refreshDownloadsBadge();
+  setInterval(refreshDownloadsBadge, 5000);
 
   // Delegated once here (rather than re-attached on every view render)
   // since #app itself is never replaced, only its innerHTML — each
@@ -808,6 +911,18 @@
     const presetSwatch = e.target.closest(".accent-swatch:not(.custom-swatch)");
     if (presetSwatch) {
       await chooseAccentColor(presetSwatch.dataset.color);
+      return;
+    }
+
+    // Requests list group header: toggle expand/collapse, unless the
+    // click actually landed on the show-title link, which should navigate
+    // normally rather than also toggling the row it sits inside of.
+    const groupToggle = e.target.closest("[data-toggle-group]");
+    if (groupToggle && !e.target.closest("a")) {
+      const showId = Number(groupToggle.dataset.toggleGroup);
+      if (requestsExpandedGroups.has(showId)) requestsExpandedGroups.delete(showId);
+      else requestsExpandedGroups.add(showId);
+      await loadRequests();
       return;
     }
 
@@ -842,7 +957,10 @@
 
     const cancelBtn = e.target.closest(".cancel-btn");
     if (cancelBtn) {
-      if (!confirm("Delete this download and its files from qBittorrent? This can't be undone.")) return;
+      const confirmMsg = cancelBtn.dataset.status === "queued"
+        ? "Remove this request from the queue? This can't be undone."
+        : "Delete this download and its files from qBittorrent? This can't be undone.";
+      if (!confirm(confirmMsg)) return;
       cancelBtn.disabled = true;
       cancelBtn.textContent = "Cancelling…";
       try {
@@ -896,6 +1014,7 @@
   function route() {
     stopPolling();
     const hash = window.location.hash || "#/movies";
+    downloadsFab.hidden = hash.startsWith("#/requests");
     for (const r of routes) {
       const m = hash.match(r.re);
       if (m) { r.handler(m); return; }
@@ -1119,39 +1238,39 @@
 
   // -- Show detail (Stage 14) --
 
-  function subscribeAreaHtml(subscription) {
-    if (!subscription) return `<button class="add-btn" id="subscribeBtn">Add Show</button>`;
+  // Split from the unsubscribe link (below) so the primary button can sit
+  // in the hero's action row, TMDB-Play-Trailer-style, while Unsubscribe
+  // stays a small, separate affordance below the hero — there's no TMDB
+  // equivalent to mirror for that one, so it's kept deliberately minimal.
+  function subscribeButtonHtml(subscription) {
+    if (!subscription) return `<button class="add-btn" id="subscribeBtn">+ Add Show</button>`;
     if (subscription.status === "paused") {
-      return `
-        <button class="add-btn" id="resumeBtn">Paused — Tap to Resume</button>
-        <button class="unsubscribe-link" id="unsubBtn">Unsubscribe</button>
-      `;
+      return `<button class="add-btn" id="resumeBtn">Paused — Tap to Resume</button>`;
     }
-    return `
-      <button class="add-btn" id="pauseBtn">Watching &#10003;</button>
-      <button class="unsubscribe-link" id="unsubBtn">Unsubscribe</button>
-    `;
+    return `<button class="add-btn" id="pauseBtn">Watching &#10003;</button>`;
   }
 
-  // Bulk-download (Stage 13) only works once subscribed — the endpoint
-  // takes a local `shows.id`, not a bare tmdb_id — so it's surfaced as
-  // disabled-with-a-hint rather than silently auto-subscribing on click.
-  function bulkAreaHtml(subscription, isEndedOrCanceled, seasons) {
-    const disabled = !subscription;
-    const seriesBtn = `<button class="bulk-btn ${isEndedOrCanceled ? "primary" : ""}" id="bulkSeriesBtn" ${disabled ? "disabled" : ""}>Download complete series</button>`;
-    const hint = disabled ? `<div class="bulk-hint">Add this show to enable bulk downloads</div>` : "";
+  function unsubscribeLinkHtml(subscription) {
+    return subscription ? `<button class="unsubscribe-link" id="unsubBtn">Unsubscribe</button>` : "";
+  }
+
+  // Bulk-download (Stage 13/14.x) works whether or not the show is
+  // subscribed — the backend anchors a one-off download to a paused show
+  // record on first use if it needs to (see api.py's bulk_download_show),
+  // so there's nothing to gate here on subscription state any more.
+  function bulkAreaHtml(isEndedOrCanceled, seasons) {
+    const seriesBtn = `<button class="bulk-btn ${isEndedOrCanceled ? "primary" : ""}" id="bulkSeriesBtn">Download complete series</button>`;
     const seasonRows = seasons.length
       ? `<div class="season-list">${seasons.map((s) => `
           <div class="season-row">
             <span>${escapeHtml(s.name || `Season ${s.season_number}`)}</span>
-            <button class="season-btn" data-bulk-season="${s.season_number}" ${disabled ? "disabled" : ""}>Download</button>
+            <button class="season-btn" data-bulk-season="${s.season_number}">Download</button>
           </div>
         `).join("")}</div>`
       : "";
     return `
       <h2 class="section-heading">Bulk download</h2>
       ${seriesBtn}
-      ${hint}
       ${seasonRows}
       <div id="bulkResult"></div>
     `;
@@ -1169,35 +1288,49 @@
       document.title = `${show.name || show.original_name || ""} — The Family Downloader`;
       let subscription = shows.find((s) => s.tmdb_id === Number(id)) || null;
 
-      const genres = (show.genres || []).map((g) => `<span class="genre-pill">${escapeHtml(g.name)}</span>`).join("");
       const backdrop = backdropUrl(show.backdrop_path);
       const cast = show.credits?.cast;
       const crew = show.credits?.crew;
       const isEndedOrCanceled = show.status === "Ended" || show.status === "Canceled";
       const seasons = (show.seasons || []).filter((s) => s.season_number > 0);
+      const year = yearOf(show.first_air_date);
 
       app.innerHTML = `
-        ${backdrop ? `<img class="detail-backdrop" src="${backdrop}" alt="">` : ""}
-        <div class="detail-head" style="${backdrop ? "" : "margin-top:0"}">
-          <img class="detail-poster" src="${posterUrl(show.poster_path)}" alt="">
-          <div class="detail-info">
-            <h1>${escapeHtml(show.name || show.original_name)}</h1>
-            <div class="detail-meta">
-              ${show.status ? `<span class="cert-badge">${escapeHtml(show.status)}</span>` : ""}
-              <span>${escapeHtml(yearOf(show.first_air_date))}</span>
+        <div class="hero" style="${backdrop ? `background-image:url('${backdrop}')` : ""}">
+          <div class="hero-content">
+            <div class="detail-poster-wrap">
+              <img class="detail-poster" src="${posterUrl(show.poster_path)}" alt="">
+              ${show.on_plex ? `<div class="on-plex-badge">On Plex</div>` : ""}
+            </div>
+            <div class="detail-info">
+              <h1>${escapeHtml(show.name || show.original_name)}${year ? ` <span class="hero-year">(${year})</span>` : ""}</h1>
+              <div class="detail-meta">
+                ${show.status ? `<span class="cert-badge">${escapeHtml(show.status)}</span>` : ""}
+                <span>${escapeHtml(genreLine(show.genres))}</span>
+              </div>
+              <div class="hero-actions">
+                ${scoreRowHtml(show.vote_average)}
+                <div id="subscribeButtonArea">${subscribeButtonHtml(subscription)}</div>
+              </div>
+              ${show.tagline ? `<div class="tagline">${escapeHtml(show.tagline)}</div>` : ""}
             </div>
           </div>
         </div>
-        ${genres ? `<div class="genre-pills">${genres}</div>` : ""}
-        ${scoreRowHtml(show.vote_average)}
+        <div id="unsubscribeArea">${unsubscribeLinkHtml(subscription)}</div>
         <h2 class="section-heading">Overview</h2>
         <div class="detail-overview">${escapeHtml(show.overview) || "<em>No synopsis available.</em>"}</div>
         ${crewRowHtml(crew)}
-        ${show.on_plex ? `<div class="bulk-hint">Already on Plex</div>` : ""}
-        <div id="subscribeArea">${subscribeAreaHtml(subscription)}</div>
-        <div id="bulkArea">${bulkAreaHtml(subscription, isEndedOrCanceled, seasons)}</div>
+        <div id="bulkArea">${bulkAreaHtml(isEndedOrCanceled, seasons)}</div>
         ${castSectionHtml(cast)}
       `;
+
+      function refreshSubscribeAreas() {
+        document.getElementById("subscribeButtonArea").innerHTML = subscribeButtonHtml(subscription);
+        document.getElementById("unsubscribeArea").innerHTML = unsubscribeLinkHtml(subscription);
+        document.getElementById("bulkArea").innerHTML = bulkAreaHtml(isEndedOrCanceled, seasons);
+        wireSubscribeArea();
+        wireBulkArea();
+      }
 
       function wireSubscribeArea() {
         const addBtn = document.getElementById("subscribeBtn");
@@ -1206,13 +1339,10 @@
           addBtn.textContent = "Adding…";
           try {
             subscription = await createShow(Number(id));
-            document.getElementById("subscribeArea").innerHTML = subscribeAreaHtml(subscription);
-            document.getElementById("bulkArea").innerHTML = bulkAreaHtml(subscription, isEndedOrCanceled, seasons);
-            wireSubscribeArea();
-            wireBulkArea();
+            refreshSubscribeAreas();
           } catch (err) {
             addBtn.disabled = false;
-            addBtn.textContent = "Add Show";
+            addBtn.textContent = "+ Add Show";
             alert(`Couldn't add this show: ${err.message}`);
           }
         });
@@ -1220,24 +1350,19 @@
         if (pauseBtn) pauseBtn.addEventListener("click", async () => {
           if (!confirm("Pause this show? New episodes won't be grabbed until you resume.")) return;
           subscription = await pauseShow(subscription.id);
-          document.getElementById("subscribeArea").innerHTML = subscribeAreaHtml(subscription);
-          wireSubscribeArea();
+          refreshSubscribeAreas();
         });
         const resumeBtn = document.getElementById("resumeBtn");
         if (resumeBtn) resumeBtn.addEventListener("click", async () => {
           subscription = await resumeShow(subscription.id);
-          document.getElementById("subscribeArea").innerHTML = subscribeAreaHtml(subscription);
-          wireSubscribeArea();
+          refreshSubscribeAreas();
         });
         const unsubBtn = document.getElementById("unsubBtn");
         if (unsubBtn) unsubBtn.addEventListener("click", async () => {
           if (!confirm("Unsubscribe from this show? Its download history stays in Requests.")) return;
           await deleteShow(subscription.id);
           subscription = null;
-          document.getElementById("subscribeArea").innerHTML = subscribeAreaHtml(subscription);
-          document.getElementById("bulkArea").innerHTML = bulkAreaHtml(subscription, isEndedOrCanceled, seasons);
-          wireSubscribeArea();
-          wireBulkArea();
+          refreshSubscribeAreas();
         });
       }
 
@@ -1248,8 +1373,19 @@
           const originalText = btn.textContent;
           btn.textContent = "Adding…";
           try {
-            const req = await bulkDownload(subscription.id, body);
+            const req = await bulkDownload(Number(id), body);
             resultBox.innerHTML = bulkResultHtml(req);
+            // The backend may have just silently created a paused show
+            // record to anchor this download (no prior subscription) —
+            // re-check so the hero button/Unsubscribe link stop showing
+            // stale "not subscribed" state.
+            if (!subscription) {
+              const shows = await listShows();
+              subscription = shows.find((s) => s.tmdb_id === Number(id)) || null;
+              document.getElementById("subscribeButtonArea").innerHTML = subscribeButtonHtml(subscription);
+              document.getElementById("unsubscribeArea").innerHTML = unsubscribeLinkHtml(subscription);
+              wireSubscribeArea();
+            }
           } catch (err) {
             resultBox.innerHTML = `<div class="add-confirm">Couldn't add that: ${escapeHtml(err.message)}</div>`;
           } finally {
@@ -1313,6 +1449,15 @@
     return withCert ? withCert.certification : "";
   }
 
+  // "Drama, Mystery, and Sci-Fi & Fantasy" — TMDB's own genre-line style,
+  // shown inline in .detail-meta instead of a separate row of pill badges.
+  function genreLine(genres) {
+    const names = (genres || []).map((g) => g.name);
+    if (names.length <= 1) return names[0] || "";
+    if (names.length === 2) return `${names[0]} and ${names[1]}`;
+    return `${names.slice(0, -1).join(", ")}, and ${names[names.length - 1]}`;
+  }
+
   function scoreRowHtml(voteAverage) {
     if (!voteAverage) return "";
     const pct = Math.round(voteAverage * 10);
@@ -1366,35 +1511,39 @@
     try {
       const movie = await getMovie(id);
       document.title = `${movie.title || movie.original_title || ""} — The Family Downloader`;
-      const genres = (movie.genres || []).map((g) => `<span class="genre-pill">${escapeHtml(g.name)}</span>`).join("");
       const runtime = movie.runtime ? `${Math.floor(movie.runtime / 60)}h ${movie.runtime % 60}m` : "";
-      const meta = [yearOf(movie.release_date), runtime].filter(Boolean).join(" · ");
       const backdrop = backdropUrl(movie.backdrop_path);
       const certification = certificationOf(movie);
       const cast = movie.credits?.cast;
       const crew = movie.credits?.crew;
+      const year = yearOf(movie.release_date);
 
       app.innerHTML = `
-        ${backdrop ? `<img class="detail-backdrop" src="${backdrop}" alt="">` : ""}
-        <div class="detail-head" style="${backdrop ? "" : "margin-top:0"}">
-          <img class="detail-poster" src="${posterUrl(movie.poster_path)}" alt="">
-          <div class="detail-info">
-            <h1>${escapeHtml(movie.title || movie.original_title)}</h1>
-            <div class="detail-meta">
-              ${certification ? `<span class="cert-badge">${escapeHtml(certification)}</span>` : ""}
-              <span>${escapeHtml(meta)}</span>
+        <div class="hero" style="${backdrop ? `background-image:url('${backdrop}')` : ""}">
+          <div class="hero-content">
+            <div class="detail-poster-wrap">
+              <img class="detail-poster" src="${posterUrl(movie.poster_path)}" alt="">
+              ${movie.on_plex ? `<div class="on-plex-badge">On Plex</div>` : ""}
+            </div>
+            <div class="detail-info">
+              <h1>${escapeHtml(movie.title || movie.original_title)}${year ? ` <span class="hero-year">(${year})</span>` : ""}</h1>
+              <div class="detail-meta">
+                ${certification ? `<span class="cert-badge">${escapeHtml(certification)}</span>` : ""}
+                <span>${escapeHtml(genreLine(movie.genres))}</span>
+                ${runtime ? `<span>${escapeHtml(runtime)}</span>` : ""}
+              </div>
+              <div class="hero-actions">
+                ${scoreRowHtml(movie.vote_average)}
+                <button class="add-btn" id="addBtn">+ Add to Plex</button>
+              </div>
+              ${movie.tagline ? `<div class="tagline">${escapeHtml(movie.tagline)}</div>` : ""}
             </div>
           </div>
         </div>
-        ${genres ? `<div class="genre-pills">${genres}</div>` : ""}
-        ${scoreRowHtml(movie.vote_average)}
-        ${movie.tagline ? `<div class="tagline">${escapeHtml(movie.tagline)}</div>` : ""}
+        <div id="addResult"></div>
         <h2 class="section-heading">Overview</h2>
         <div class="detail-overview">${escapeHtml(movie.overview) || "<em>No synopsis available.</em>"}</div>
         ${crewRowHtml(crew)}
-        ${movie.on_plex ? `<div class="bulk-hint">Already on Plex</div>` : ""}
-        <button class="add-btn" id="addBtn">Add to Plex</button>
-        <div id="addResult"></div>
         ${castSectionHtml(cast)}
       `;
 
@@ -1420,7 +1569,7 @@
           }, 4000);
         } catch (err) {
           btn.disabled = false;
-          btn.textContent = "Add to Plex";
+          btn.textContent = "+ Add to Plex";
           resultBox.innerHTML = `<div class="add-confirm">Couldn't add that: ${escapeHtml(err.message)}</div>`;
         }
       });
@@ -1460,9 +1609,10 @@
 
   async function renderRequests() {
     setChrome({ title: "My Requests", showBack: false, activeTab: "requests" });
+    requestsExpandedGroups = new Set();
     app.innerHTML = `
       <div id="requestsList">${loadingHtml()}</div>
-      <div class="requests-fab">
+      <div class="clear-requests-fab">
         <div class="split-btn">
           <button id="clearRequestsBtn" class="split-btn-main">Clear My Requests</button>
           <div class="split-btn-divider"></div>
@@ -1490,10 +1640,9 @@
     });
   }
 
-  // A movie request's title/link is just its own title/tmdb_id; an
-  // episode or pack request's `title` is the *show's* title (set at
-  // creation — see db.py), so both link to the show detail page and get a
-  // label naming which episode/season/series this particular row was for.
+  // A standalone row's full label/link — used for movies (always
+  // standalone) and as a fallback for any episode/pack row that somehow
+  // has no show_id to group under.
   function requestLabelAndHref(r) {
     if (r.media_type === "episode") {
       return { label: `${r.title} S${pad2(r.season_number)}E${pad2(r.episode_number)}`, href: `#/tv/${r.tmdb_id}` };
@@ -1505,27 +1654,118 @@
     return { label: `${r.title}${r.release_year ? ` (${r.release_year})` : ""}`, href: `#/movies/${r.tmdb_id}` };
   }
 
+  // A child row's label omits the show title — that's already the group
+  // header above it — just "which episode/season this row was for".
+  function childLabelAndHref(r) {
+    if (r.media_type === "episode") {
+      return { label: `S${pad2(r.season_number)}E${pad2(r.episode_number)}`, href: `#/tv/${r.tmdb_id}` };
+    }
+    return { label: r.season_number != null ? `Season ${r.season_number}` : "Complete Series", href: `#/tv/${r.tmdb_id}` };
+  }
+
+  function requestRowHtml(r) {
+    const { label, href } = requestLabelAndHref(r);
+    return `
+      <div class="req-row">
+        <div class="req-main">
+          <a class="req-title" href="${href}">${escapeHtml(label)}</a>
+          <div class="req-sub">${new Date(r.created_at).toLocaleString([], { dateStyle: "medium", timeStyle: "short" })}</div>
+        </div>
+        <div class="req-actions">
+          ${statusPillHtml(r.status)}
+          ${CANCELLABLE.has(r.status) ? `<button class="cancel-btn" data-request-id="${r.id}" data-status="${r.status}">Cancel</button>` : ""}
+        </div>
+      </div>
+    `;
+  }
+
+  function requestChildRowHtml(r) {
+    const { label, href } = childLabelAndHref(r);
+    return `
+      <div class="req-row req-child-row">
+        <div class="req-main">
+          <a class="req-title" href="${href}">${escapeHtml(label)}</a>
+          <div class="req-sub">${new Date(r.created_at).toLocaleString([], { dateStyle: "medium", timeStyle: "short" })}</div>
+        </div>
+        <div class="req-actions">
+          ${statusPillHtml(r.status)}
+          ${CANCELLABLE.has(r.status) ? `<button class="cancel-btn" data-request-id="${r.id}" data-status="${r.status}">Cancel</button>` : ""}
+        </div>
+      </div>
+    `;
+  }
+
+  // Which single status best represents a whole group at a glance —
+  // anything still actively in motion (downloading/searching/queued)
+  // outranks a terminal one, so "one episode is still downloading" never
+  // gets hidden behind five other episodes that already finished.
+  const GROUP_STATUS_PRIORITY = [
+    "downloading", "searching", "queued",
+    "no qualifying results", "insufficient free space", "downloaded, not filed", "failed",
+    "complete", "cancelled",
+  ];
+  function dominantStatus(rows) {
+    for (const s of GROUP_STATUS_PRIORITY) {
+      if (rows.some((r) => r.status === s)) return s;
+    }
+    return rows[0].status;
+  }
+
+  function requestGroupHtml(group, expanded) {
+    const children = group.rows.slice().sort((a, b) => b.id - a.id).map(requestChildRowHtml).join("");
+    return `
+      <div class="req-group">
+        <div class="req-row req-group-header" data-toggle-group="${group.showId}">
+          <button class="req-group-toggle-btn" data-toggle-group="${group.showId}" aria-label="${expanded ? "Collapse" : "Expand"}">
+            ${expanded ? "▾" : "▸"}
+          </button>
+          <div class="req-main">
+            <a class="req-title" href="#/tv/${group.tmdbId}">${escapeHtml(group.title)}</a>
+            <div class="req-sub">${group.rows.length} item${group.rows.length === 1 ? "" : "s"}</div>
+          </div>
+          <div class="req-actions">${statusPillHtml(dominantStatus(group.rows))}</div>
+        </div>
+        <div class="req-group-children" ${expanded ? "" : "hidden"}>${children}</div>
+      </div>
+    `;
+  }
+
+  // Groups episode/pack rows by show — "Lanterns" appears once with an
+  // expandable list of its own requests underneath, instead of one flat
+  // row per episode cluttering the page. Movies are always standalone.
+  // Sorted by each item's most recent row id, so the merged list still
+  // reads newest-first overall, same as the plain (ungrouped) order did.
+  function groupRequestsForDisplay(rows) {
+    const groupsById = new Map();
+    const items = [];
+    for (const r of rows) {
+      if (r.media_type === "movie" || r.show_id == null) {
+        items.push({ type: "movie", repId: r.id, row: r });
+        continue;
+      }
+      let group = groupsById.get(r.show_id);
+      if (!group) {
+        group = { type: "group", showId: r.show_id, tmdbId: r.tmdb_id, title: r.title, rows: [], repId: r.id };
+        groupsById.set(r.show_id, group);
+        items.push(group);
+      }
+      group.rows.push(r);
+      group.repId = Math.max(group.repId, r.id);
+    }
+    return items.sort((a, b) => b.repId - a.repId);
+  }
+
   async function loadRequests() {
     const listEl = document.getElementById("requestsList");
     try {
       const rows = await listRequests();
-      listEl.innerHTML = !rows.length
-        ? emptyHtml("Nothing requested yet — find a movie or show and tap Add.")
-        : rows.map((r) => {
-            const { label, href } = requestLabelAndHref(r);
-            return `
-            <div class="req-row">
-              <div class="req-main">
-                <a class="req-title" href="${href}">${escapeHtml(label)}</a>
-                <div class="req-sub">${new Date(r.created_at).toLocaleString([], { dateStyle: "medium", timeStyle: "short" })}</div>
-              </div>
-              <div class="req-actions">
-                ${statusPillHtml(r.status)}
-                ${CANCELLABLE.has(r.status) ? `<button class="cancel-btn" data-request-id="${r.id}">Cancel</button>` : ""}
-              </div>
-            </div>
-          `;
-          }).join("");
+      if (!rows.length) {
+        listEl.innerHTML = emptyHtml("Nothing requested yet — find a movie or show and tap Add.");
+        return;
+      }
+      listEl.innerHTML = groupRequestsForDisplay(rows)
+        .map((item) => item.type === "movie" ? requestRowHtml(item.row) : requestGroupHtml(item, requestsExpandedGroups.has(item.showId)))
+        .join("");
     } catch (err) {
       listEl.innerHTML = errorHtml(err.message, "#/requests");
     }
@@ -1695,9 +1935,9 @@
         <div class="settings-field">
           <label class="settings-checkbox-label">
             <input type="checkbox" id="tvRecheckEnabled" ${s.episode_recheck_enabled ? "checked" : ""}>
-            Automatically recheck episodes
+            Automatically recheck episodes &amp; season packs
           </label>
-          <div class="settings-hint">Retries an episode that found nothing yet, and looks for a better release once one's already downloaded — replacing it if something better turns up.</div>
+          <div class="settings-hint">Retries an episode that found nothing yet, looks for a better release once one's already downloaded (replacing it if something better turns up), and retries a season/complete-series pack search that came up empty for an already-finished season or show.</div>
         </div>
         <div class="settings-field">
           <label for="tvRecheckInterval">Recheck every (hours)</label>

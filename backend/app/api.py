@@ -459,21 +459,33 @@ def clear_requests(store: RequestStore = Depends(get_store)) -> dict:
     return {"removed": store.purge_requests_older_than(days=0)}
 
 
-# A request can only be cancelled once it actually has a torrent in
-# qBittorrent to delete — "queued"/"searching" haven't added anything yet,
-# and every other status is already terminal.
-_CANCELLABLE_STATUSES = {"downloading", "complete"}
+# A "queued" request hasn't touched qBittorrent (or even started
+# resolving/searching) at all yet, so cancelling one is a plain status
+# flip — no torrent to delete. worker.py's `_run_one` already re-checks
+# `status == "queued"` the moment it's dequeued (guarding against a stale
+# queue entry across a restart), so a row cancelled while still sitting in
+# the in-memory queue is simply skipped when the worker gets to it,
+# no extra wiring needed here. "searching" is deliberately NOT
+# cancellable yet — the pipeline is actively running synchronously in a
+# worker thread with no cancellation hook, and cancelling the DB row out
+# from under it risks the pipeline's own completion overwriting
+# "cancelled" back to whatever it concluded once it finishes. A real,
+# named gap, same style as this project's other not-yet-solved ones.
+_TORRENT_CANCELLABLE_STATUSES = {"downloading", "complete"}
 
 
 @app.post("/api/requests/{request_id}/cancel")
 def cancel_request(
     request_id: int, store: RequestStore = Depends(get_store), qbt: QBTClient = Depends(get_qbt)
 ) -> RequestOut:
-    """Cancel from the app's own UI: deletes the torrent *and its
-    downloaded files* from qBittorrent (fail safe, not best guess — never
-    silently leave orphaned media on disk), then marks the request
-    "cancelled". The row itself stays — this is "download history", not a
-    queue, per the "hidden, never unrecoverable" principle.
+    """Cancel from the app's own UI. A "queued" request is just marked
+    "cancelled" directly (see the comment above `_TORRENT_CANCELLABLE_STATUSES`).
+    A "downloading"/"complete" request instead deletes the torrent *and
+    its downloaded files* from qBittorrent (fail safe, not best guess —
+    never silently leave orphaned media on disk), then marks it
+    "cancelled". Either way the row itself stays — this is "download
+    history", not a queue, per the "hidden, never unrecoverable"
+    principle.
 
     If qBittorrent no longer has the torrent at all — most commonly
     because "remove torrent after completion" already auto-removed it —
@@ -485,7 +497,13 @@ def cancel_request(
     row = store.get_request(request_id)
     if row is None:
         raise HTTPException(status_code=404, detail="request not found")
-    if row.status not in _CANCELLABLE_STATUSES:
+
+    if row.status == "queued":
+        store.update_status(request_id, "cancelled")
+        logger.info("request %d (%s) queued -> cancelled (via API)", request_id, row.title)
+        return RequestOut.from_row(store.get_request(request_id))
+
+    if row.status not in _TORRENT_CANCELLABLE_STATUSES:
         raise HTTPException(status_code=409, detail=f"cannot cancel a request in status {row.status!r}")
     torrent_hash = (row.result or {}).get("torrent_hash")
     if not torrent_hash:
@@ -506,9 +524,13 @@ def cancel_request(
 
 
 # -- Stage 12: standing show subscriptions. POST creates the subscription
-#    and immediately runs the same catch-up check the scheduler uses, so
-#    subscribing mid-season backfills every already-aired episode right
-#    away rather than waiting for the next background cycle. --
+#    and immediately runs a *full* backfill catch-up (Stage 14.x — every
+#    season from 1 through the current latest, not just the latest), so
+#    subscribing to a show with nothing downloaded at all grabs everything
+#    already aired, not only its newest season. Every subsequent scheduled
+#    recheck (worker.py's `_check_all_watching_shows`) keeps checking only
+#    the latest season, same as always — this full sweep only ever runs
+#    once, right here, at the moment of subscribing. --
 
 
 @app.post("/api/shows", status_code=201)
@@ -526,7 +548,7 @@ def create_show(
         raise HTTPException(status_code=404, detail=f"tmdb_id {body.tmdb_id} not found") from exc
 
     row = store.create_show(tmdb_id=body.tmdb_id, title=identity.title)
-    worker.check_show(row)
+    worker.check_show(row, full_backfill=True)
     return _show_out(store, store.get_show(row.id))
 
 
@@ -575,19 +597,50 @@ def unsubscribe_show(show_id: int, store: RequestStore = Depends(get_store)) -> 
 #    of whether it's still airing, per the plan's "independent, not
 #    mutually exclusive" call. Goes through the same requests table/worker
 #    queue as every other download (`media_type='pack'`), so it never races
-#    a queued movie/episode search — see worker.py's `_run_one`. --
+#    a queued movie/episode search — see worker.py's `_run_one`.
+#
+#    Stage 14.x: keyed by `tmdb_id`, not a local `shows.id` — bulk
+#    download is meant to work whether or not the show has ever been
+#    subscribed (e.g. "just grab me the one season already out, I don't
+#    want a standing subscription"). If no `shows` row exists yet, one is
+#    created here with status "paused" rather than "watching" — anchoring
+#    the request without opting the show into the standing per-episode
+#    catch-up/recheck, which only ever looks at "watching" rows. A show
+#    that's already subscribed (watching or paused) is used as-is; its
+#    status is never touched by this route. --
 
 
-@app.post("/api/shows/{show_id}/bulk-download", status_code=201)
+@app.post("/api/tv/{tmdb_id}/bulk-download", status_code=201)
 def bulk_download_show(
-    show_id: int,
+    tmdb_id: int,
     body: BulkDownloadRequest,
     store: RequestStore = Depends(get_store),
+    tmdb: TMDBClient = Depends(get_tmdb),
     worker: Worker = Depends(get_worker),
 ) -> RequestOut:
-    show = store.get_show(show_id)
+    show = store.get_show_by_tmdb_id(tmdb_id)
     if show is None:
-        raise HTTPException(status_code=404, detail="show not found")
+        try:
+            identity = resolve_show(tmdb_id, tmdb)
+        except TMDBError as exc:
+            raise HTTPException(status_code=404, detail=f"tmdb_id {tmdb_id} not found") from exc
+        show = store.create_show(tmdb_id=tmdb_id, title=identity.title, status="paused")
+
+    # A bulk download makes this show's own still-queued requests it
+    # covers redundant — series scope covers every season, a season scope
+    # only that same season — see db.py's cancel_queued_requests_for_show
+    # for exactly what's touched (queued only; never a request already
+    # searching/downloading/complete). Without this, subscribing to a show
+    # (which immediately queues catch-up requests for its latest season)
+    # and then asking for a bulk download of the same show left both
+    # running at once, flooding the requests list with soon-redundant rows.
+    cancelled = store.cancel_queued_requests_for_show(show.id, body.season_number)
+    if cancelled:
+        logger.info(
+            "show %d (%s): bulk-download (%s) cancelled %d still-queued request(s) it supersedes",
+            show.id, show.title, body.scope, cancelled,
+        )
+
     row = store.create_pack_request(
         tmdb_id=show.tmdb_id,
         show_id=show.id,

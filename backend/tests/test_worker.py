@@ -775,6 +775,343 @@ def test_check_show_returns_zero_and_leaves_last_checked_unset_on_tmdb_error(cap
     assert store.get_show(show.id).last_checked_at is None
 
 
+def test_check_show_default_only_checks_the_latest_season_even_with_multiple_seasons():
+    """The scheduled-recheck path (full_backfill's default, False) must
+    stay exactly as before this stage — only ever the latest season,
+    regardless of how many earlier seasons exist or whether they've ever
+    been checked. Season 3 (the latest) is kept still-airing here
+    specifically so this test isolates "only the latest season" from the
+    separate "prefer a pack once a season is complete" behavior, covered
+    by its own tests below."""
+    store = RequestStore(":memory:")
+    show = store.create_show(tmdb_id=95350, title="Lanterns")
+    tmdb = FakeTMDBClient(
+        show={**SHOW, "number_of_seasons": 3},
+        season_episodes={
+            1: [{"episode_number": 1, "air_date": "2020-01-01"}],
+            2: [{"episode_number": 1, "air_date": "2021-01-01"}],
+            3: [
+                {"episode_number": 1, "air_date": "2022-01-01"},
+                {"episode_number": 2, "air_date": "2099-01-01"},  # unaired -> still airing
+            ],
+        },
+    )
+    worker = Worker(store, tmdb, FakeQBTClient())
+
+    created = worker.check_show(show)
+
+    assert created == 1
+    requests = store.list_requests()
+    assert {(r.media_type, r.season_number, r.episode_number) for r in requests} == {("episode", 3, 1)}
+
+
+def test_check_show_full_backfill_sweeps_every_season_in_ascending_order():
+    """A first-time subscribe (api.py's POST /api/shows, full_backfill=True)
+    to a show with nothing downloaded at all must grab everything already
+    aired across every season, not just the newest — the gap this stage
+    fixed. Seasons 1-2 have already finished airing (every listed episode
+    has a past air_date), so each becomes a single season-pack request
+    rather than one-per-episode; season 3 still has an unaired episode, so
+    it stays per-episode as before. Enqueue order (and therefore the order
+    the single-worker queue processes them in) follows season, ascending."""
+    store = RequestStore(":memory:")
+    show = store.create_show(tmdb_id=95350, title="Lanterns")
+    tmdb = FakeTMDBClient(
+        show={**SHOW, "number_of_seasons": 3},
+        season_episodes={
+            1: [
+                {"episode_number": 1, "air_date": "2020-01-01"},
+                {"episode_number": 2, "air_date": "2020-01-08"},
+            ],
+            2: [{"episode_number": 1, "air_date": "2021-01-01"}],
+            3: [
+                {"episode_number": 1, "air_date": "2022-01-01"},
+                {"episode_number": 2, "air_date": "2099-01-01"},  # unaired -> season 3 not complete
+            ],
+        },
+    )
+    worker = Worker(store, tmdb, FakeQBTClient())
+
+    created = worker.check_show(show, full_backfill=True)
+
+    assert created == 3  # one pack (season 1) + one pack (season 2) + one episode (season 3 ep 1)
+    requests = sorted(store.list_requests(), key=lambda r: r.id)
+    assert [(r.media_type, r.season_number, r.episode_number) for r in requests] == [
+        ("pack", 1, None),
+        ("pack", 2, None),
+        ("episode", 3, 1),
+    ]
+    assert [worker.queue.get_nowait() for _ in range(3)] == [r.id for r in requests]
+
+
+def test_check_show_full_backfill_prefers_a_pack_for_a_finished_season():
+    """The exact scenario reported: a show not downloaded at all, with
+    older seasons unlikely to still have well-seeded individual episode
+    releases. A finished season with several unhandled aired episodes
+    becomes ONE pack request, not one per episode."""
+    store = RequestStore(":memory:")
+    show = store.create_show(tmdb_id=95350, title="Reacher")
+    tmdb = FakeTMDBClient(
+        show={**SHOW, "number_of_seasons": 2},
+        season_episodes={
+            1: [{"episode_number": n, "air_date": "2022-01-01"} for n in range(1, 9)],  # fully aired season
+            2: [
+                {"episode_number": 1, "air_date": "2023-01-01"},
+                {"episode_number": 2, "air_date": "2099-01-01"},  # unaired -> still airing
+            ],
+        },
+    )
+    worker = Worker(store, tmdb, FakeQBTClient())
+
+    created = worker.check_show(show, full_backfill=True)
+
+    assert created == 2  # one pack for season 1, one episode request for season 2's aired episode
+    requests = {r.media_type: r for r in store.list_requests()}
+    assert requests["pack"].season_number == 1
+    assert requests["episode"].season_number == 2 and requests["episode"].episode_number == 1
+
+
+def test_check_show_prefers_a_pack_for_a_finished_latest_season_even_without_full_backfill():
+    """The retroactive gap this stage closed: a show subscribed while
+    still airing, whose current season later finishes, must start getting
+    pack-preference for that season on the very next *ordinary* scheduled
+    recheck — not only at a first-ever full backfill. season_is_complete()
+    is evaluated per-season, not "is this a full backfill", so this falls
+    out of the same mechanism full_backfill already used."""
+    store = RequestStore(":memory:")
+    show = store.create_show(tmdb_id=95350, title="Lanterns")
+    tmdb = FakeTMDBClient(
+        show={**SHOW, "number_of_seasons": 1},
+        season_episodes={
+            1: [{"episode_number": 1, "air_date": "2020-01-01"}, {"episode_number": 2, "air_date": "2020-01-08"}]
+        },
+    )
+    worker = Worker(store, tmdb, FakeQBTClient())
+
+    created = worker.check_show(show)  # full_backfill defaults to False, same as a real scheduled recheck
+
+    assert created == 1
+    [request_row] = store.list_requests()
+    assert request_row.media_type == "pack"
+    assert request_row.season_number == 1
+
+
+def test_check_show_ended_show_queues_one_complete_series_pack_and_skips_the_season_sweep():
+    """A show whose TMDB `status` is Ended/Canceled tries one complete-
+    series pack before ever touching per-season logic — and, crucially,
+    *instead* of it this call, not in addition to it: racing a series-wide
+    search against several per-season ones for the same content would just
+    waste bandwidth on whichever one loses."""
+    store = RequestStore(":memory:")
+    show = store.create_show(tmdb_id=95350, title="Lanterns")
+    tmdb = FakeTMDBClient(
+        show={**SHOW, "number_of_seasons": 3, "status": "Ended"},
+        season_episodes={
+            1: [{"episode_number": 1, "air_date": "2020-01-01"}],
+            2: [{"episode_number": 1, "air_date": "2021-01-01"}],
+            3: [{"episode_number": 1, "air_date": "2022-01-01"}],
+        },
+    )
+    worker = Worker(store, tmdb, FakeQBTClient())
+
+    created = worker.check_show(show, full_backfill=True)
+
+    assert created == 1
+    [request_row] = store.list_requests()
+    assert request_row.media_type == "pack"
+    assert request_row.season_number is None  # series scope, not any one season
+    assert worker.queue.qsize() == 1
+
+
+def test_check_show_canceled_status_also_triggers_a_complete_series_pack():
+    store = RequestStore(":memory:")
+    show = store.create_show(tmdb_id=95350, title="Lanterns")
+    tmdb = FakeTMDBClient(
+        show={**SHOW, "status": "Canceled"}, season_episodes={1: [{"episode_number": 1, "air_date": "2020-01-01"}]}
+    )
+    worker = Worker(store, tmdb, FakeQBTClient())
+
+    created = worker.check_show(show)
+
+    assert created == 1
+    assert store.list_requests()[0].media_type == "pack"
+
+
+# ---------------------------------------------------------------------------
+# _should_attempt_pack — the retry gate a pack attempt (season or complete-
+# series scope) has to clear, reusing Stage 12.x's episode-recheck settings
+# ---------------------------------------------------------------------------
+
+
+def _settings(**overrides) -> TVScheduleSettings:
+    base = dict(
+        show_check_interval_hours=6.0,
+        episode_recheck_enabled=False,
+        episode_recheck_interval_hours=24.0,
+        episode_recheck_max_attempts=0,
+    )
+    base.update(overrides)
+    return TVScheduleSettings(**base)
+
+
+def test_should_attempt_pack_true_when_never_tried():
+    store = RequestStore(":memory:")
+    show = store.create_show(tmdb_id=95350, title="Lanterns")
+    worker = Worker(store, FakeTMDBClient(), FakeQBTClient())
+
+    assert worker._should_attempt_pack(show, 1, _settings()) is True
+
+
+def test_should_attempt_pack_false_when_already_complete():
+    store = RequestStore(":memory:")
+    show = store.create_show(tmdb_id=95350, title="Lanterns")
+    row = store.create_pack_request(tmdb_id=95350, show_id=show.id, title="Lanterns", season_number=1)
+    store.update_status(row.id, "complete")
+    worker = Worker(store, FakeTMDBClient(), FakeQBTClient())
+
+    assert worker._should_attempt_pack(show, 1, _settings(episode_recheck_enabled=True)) is False
+
+
+def test_should_attempt_pack_false_when_still_in_flight():
+    store = RequestStore(":memory:")
+    show = store.create_show(tmdb_id=95350, title="Lanterns")
+    store.create_pack_request(tmdb_id=95350, show_id=show.id, title="Lanterns", season_number=1)  # starts "queued"
+    worker = Worker(store, FakeTMDBClient(), FakeQBTClient())
+
+    assert worker._should_attempt_pack(show, 1, _settings(episode_recheck_enabled=True)) is False
+
+
+def test_should_attempt_pack_false_after_failure_when_recheck_disabled():
+    store = RequestStore(":memory:")
+    show = store.create_show(tmdb_id=95350, title="Lanterns")
+    row = store.create_pack_request(tmdb_id=95350, show_id=show.id, title="Lanterns", season_number=1)
+    store.update_status(row.id, "no qualifying results")
+    worker = Worker(store, FakeTMDBClient(), FakeQBTClient())
+
+    assert worker._should_attempt_pack(show, 1, _settings(episode_recheck_enabled=False)) is False
+
+
+def test_should_attempt_pack_false_after_failure_when_cooldown_not_yet_elapsed():
+    store = RequestStore(":memory:")
+    show = store.create_show(tmdb_id=95350, title="Lanterns")
+    row = store.create_pack_request(tmdb_id=95350, show_id=show.id, title="Lanterns", season_number=1)
+    store.update_status(row.id, "failed")
+    worker = Worker(store, FakeTMDBClient(), FakeQBTClient())
+
+    settings = _settings(episode_recheck_enabled=True, episode_recheck_interval_hours=24.0)
+    assert worker._should_attempt_pack(show, 1, settings) is False
+
+
+def test_should_attempt_pack_true_after_failure_once_cooldown_has_elapsed():
+    store = RequestStore(":memory:")
+    show = store.create_show(tmdb_id=95350, title="Lanterns")
+    row = store.create_pack_request(tmdb_id=95350, show_id=show.id, title="Lanterns", season_number=1)
+    store.update_status(row.id, "failed")
+    old = (datetime.now(timezone.utc) - timedelta(hours=48)).isoformat()
+    store._conn.execute("UPDATE requests SET updated_at = ? WHERE id = ?", (old, row.id))
+    store._conn.commit()
+    worker = Worker(store, FakeTMDBClient(), FakeQBTClient())
+
+    settings = _settings(episode_recheck_enabled=True, episode_recheck_interval_hours=24.0)
+    assert worker._should_attempt_pack(show, 1, settings) is True
+
+
+def test_should_attempt_pack_false_once_max_attempts_reached():
+    store = RequestStore(":memory:")
+    show = store.create_show(tmdb_id=95350, title="Lanterns")
+    for _ in range(2):
+        row = store.create_pack_request(tmdb_id=95350, show_id=show.id, title="Lanterns", season_number=1)
+        store.update_status(row.id, "failed")
+        old = (datetime.now(timezone.utc) - timedelta(hours=48)).isoformat()
+        store._conn.execute("UPDATE requests SET updated_at = ? WHERE id = ?", (old, row.id))
+        store._conn.commit()
+    worker = Worker(store, FakeTMDBClient(), FakeQBTClient())
+
+    settings = _settings(episode_recheck_enabled=True, episode_recheck_interval_hours=1.0, episode_recheck_max_attempts=2)
+    assert worker._should_attempt_pack(show, 1, settings) is False
+
+
+def test_should_attempt_pack_zero_max_attempts_means_infinite_retries():
+    store = RequestStore(":memory:")
+    show = store.create_show(tmdb_id=95350, title="Lanterns")
+    for _ in range(5):
+        row = store.create_pack_request(tmdb_id=95350, show_id=show.id, title="Lanterns", season_number=1)
+        store.update_status(row.id, "failed")
+        old = (datetime.now(timezone.utc) - timedelta(hours=48)).isoformat()
+        store._conn.execute("UPDATE requests SET updated_at = ? WHERE id = ?", (old, row.id))
+        store._conn.commit()
+    worker = Worker(store, FakeTMDBClient(), FakeQBTClient())
+
+    settings = _settings(episode_recheck_enabled=True, episode_recheck_interval_hours=1.0, episode_recheck_max_attempts=0)
+    assert worker._should_attempt_pack(show, 1, settings) is True
+
+
+def test_should_attempt_pack_series_scope_is_independent_of_season_scope():
+    """season_number=None (complete series) and season_number=1 track
+    completely separate attempt histories — a failed season-1 pack must
+    never block a fresh complete-series attempt, or vice versa."""
+    store = RequestStore(":memory:")
+    show = store.create_show(tmdb_id=95350, title="Lanterns")
+    row = store.create_pack_request(tmdb_id=95350, show_id=show.id, title="Lanterns", season_number=1)
+    store.update_status(row.id, "complete")
+    worker = Worker(store, FakeTMDBClient(), FakeQBTClient())
+
+    assert worker._should_attempt_pack(show, None, _settings()) is True
+
+
+def test_check_show_does_not_spam_a_failed_pack_when_recheck_is_disabled():
+    """The exact regression this whole gating mechanism exists to prevent:
+    calling check_show() again for a show whose only season is finished
+    and whose one pack attempt already failed must not queue a second one
+    while auto-recheck is off (the default)."""
+    store = RequestStore(":memory:")
+    show = store.create_show(tmdb_id=95350, title="Lanterns")
+    tmdb = FakeTMDBClient(
+        show={**SHOW, "number_of_seasons": 1},
+        season_episodes={1: [{"episode_number": 1, "air_date": "2020-01-01"}]},
+    )
+    worker = Worker(store, tmdb, FakeQBTClient())
+
+    first = worker.check_show(show)
+    assert first == 1
+    [pack_row] = store.list_requests()
+    store.update_status(pack_row.id, "no qualifying results")  # simulate the pack search coming back empty
+
+    second = worker.check_show(show)
+
+    assert second == 0
+    assert len(store.list_requests()) == 1  # no second pack queued
+
+
+def test_check_show_full_backfill_respects_disk_and_ledger_per_season(tmp_path, monkeypatch):
+    """The same "already on disk" / "already in the ledger" skip logic
+    check_show() always had must still apply independently within each
+    season a full backfill sweeps, not just the latest."""
+    monkeypatch.setattr(config, "TV_LIBRARY_ROOT", tmp_path)
+    (tmp_path / "Lanterns.S01E01.2160p.WEB-DL.mkv").write_bytes(b"data")
+
+    store = RequestStore(":memory:")
+    show = store.create_show(tmdb_id=95350, title="Lanterns")
+    store.add_show_episode(show.id, 2, 1, request_id=1)  # already handled, e.g. a prior partial backfill
+    tmdb = FakeTMDBClient(
+        show={**SHOW, "number_of_seasons": 2},
+        season_episodes={
+            1: [{"episode_number": 1, "air_date": "2020-01-01"}],
+            2: [{"episode_number": 1, "air_date": "2021-01-01"}],
+        },
+    )
+    qbt = FakeQBTClient()
+    worker = Worker(store, tmdb, qbt)
+
+    created = worker.check_show(show, full_backfill=True)
+
+    assert created == 0  # S01E01 found on disk, S02E01 already in the ledger
+    assert qbt.added == []
+    [request_row] = store.list_requests()
+    assert (request_row.season_number, request_row.episode_number) == (1, 1)
+    assert request_row.status == "complete"
+
+
 def test_check_all_watching_shows_only_checks_watching_shows():
     store = RequestStore(":memory:")
     watching = store.create_show(tmdb_id=1, title="A")

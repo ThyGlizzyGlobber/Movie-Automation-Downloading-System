@@ -1,5 +1,12 @@
 from app.tmdb import TMDBClient
-from app.tv_resolve import aired_episode_numbers, episode_query, resolve_show, season_pack_queries, series_pack_query
+from app.tv_resolve import (
+    aired_episode_numbers,
+    episode_query,
+    resolve_show,
+    season_is_complete,
+    season_pack_queries,
+    series_pack_query,
+)
 
 
 def test_episode_query_builds_s_e_token():
@@ -131,3 +138,33 @@ def test_aired_episode_numbers_boundary_is_inclusive():
 def test_aired_episode_numbers_ignores_entries_with_no_episode_number():
     episodes = [{"episode_number": None, "air_date": "2026-08-16"}]
     assert aired_episode_numbers(episodes, today="2026-09-07") == []
+
+
+def test_season_is_complete_true_when_every_episode_has_already_aired():
+    episodes = [
+        {"episode_number": 1, "air_date": "2026-08-16"},
+        {"episode_number": 2, "air_date": "2026-08-23"},
+    ]
+    assert season_is_complete(episodes, today="2026-09-07") is True
+
+
+def test_season_is_complete_false_with_an_unaired_episode():
+    episodes = [
+        {"episode_number": 1, "air_date": "2026-08-16"},
+        {"episode_number": 2, "air_date": "2099-01-01"},
+    ]
+    assert season_is_complete(episodes, today="2026-09-07") is False
+
+
+def test_season_is_complete_false_with_an_entirely_unscheduled_episode():
+    episodes = [{"episode_number": 1, "air_date": "2026-08-16"}, {"episode_number": 2, "air_date": None}]
+    assert season_is_complete(episodes, today="2026-09-07") is False
+
+
+def test_season_is_complete_boundary_is_inclusive():
+    episodes = [{"episode_number": 1, "air_date": "2026-09-07"}]
+    assert season_is_complete(episodes, today="2026-09-07") is True
+
+
+def test_season_is_complete_false_for_an_empty_season():
+    assert season_is_complete([], today="2026-09-07") is False

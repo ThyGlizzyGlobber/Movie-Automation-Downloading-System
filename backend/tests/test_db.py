@@ -224,6 +224,16 @@ def test_create_show_starts_watching_with_no_last_checked():
     assert row.last_checked_at is None
 
 
+def test_create_show_accepts_an_explicit_paused_status():
+    """Used by bulk-download (Stage 14.x) when it has to create a show
+    purely to anchor a one-off request — must not default to "watching"
+    and start receiving the standing per-episode catch-up/recheck."""
+    store = _store()
+    row = store.create_show(tmdb_id=95350, title="Lanterns", status="paused")
+
+    assert row.status == "paused"
+
+
 def test_get_show_by_tmdb_id_missing_returns_none():
     store = _store()
     assert store.get_show_by_tmdb_id(999) is None
@@ -301,6 +311,69 @@ def test_get_latest_request_for_show_returns_most_recent():
 
     assert latest.id == newest.id
     assert latest.episode_number == 2
+
+
+def test_cancel_queued_requests_for_show_series_scope_cancels_every_queued_row():
+    store = _store()
+    show = store.create_show(tmdb_id=1, title="A")
+    ep = store.create_episode_request(tmdb_id=1, show_id=show.id, title="A", season_number=3, episode_number=1)
+    pack = store.create_pack_request(tmdb_id=1, show_id=show.id, title="A", season_number=5)
+    downloading = store.create_episode_request(tmdb_id=1, show_id=show.id, title="A", season_number=1, episode_number=1)
+    store.update_status(downloading.id, "downloading", result={"torrent_hash": "aaaa"})
+
+    count = store.cancel_queued_requests_for_show(show.id, season_number=None)
+
+    assert count == 2
+    assert store.get_request(ep.id).status == "cancelled"
+    assert store.get_request(pack.id).status == "cancelled"
+    assert store.get_request(downloading.id).status == "downloading"  # untouched
+
+
+def test_cancel_queued_requests_for_show_season_scope_only_touches_that_season():
+    store = _store()
+    show = store.create_show(tmdb_id=1, title="A")
+    this_season = store.create_episode_request(tmdb_id=1, show_id=show.id, title="A", season_number=5, episode_number=1)
+    other_season = store.create_episode_request(tmdb_id=1, show_id=show.id, title="A", season_number=2, episode_number=1)
+
+    count = store.cancel_queued_requests_for_show(show.id, season_number=5)
+
+    assert count == 1
+    assert store.get_request(this_season.id).status == "cancelled"
+    assert store.get_request(other_season.id).status == "queued"
+
+
+def test_cancel_queued_requests_for_show_does_not_touch_other_shows():
+    store = _store()
+    show_a = store.create_show(tmdb_id=1, title="A")
+    show_b = store.create_show(tmdb_id=2, title="B")
+    req_a = store.create_episode_request(tmdb_id=1, show_id=show_a.id, title="A", season_number=1, episode_number=1)
+    req_b = store.create_episode_request(tmdb_id=2, show_id=show_b.id, title="B", season_number=1, episode_number=1)
+
+    store.cancel_queued_requests_for_show(show_a.id, season_number=None)
+
+    assert store.get_request(req_a.id).status == "cancelled"
+    assert store.get_request(req_b.id).status == "queued"
+
+
+def test_list_pack_requests_for_show_filters_by_exact_scope_newest_first():
+    store = _store()
+    show = store.create_show(tmdb_id=1, title="A")
+    season1_old = store.create_pack_request(tmdb_id=1, show_id=show.id, title="A", season_number=1)
+    season1_new = store.create_pack_request(tmdb_id=1, show_id=show.id, title="A", season_number=1)
+    store.create_pack_request(tmdb_id=1, show_id=show.id, title="A", season_number=2)  # different season
+    series = store.create_pack_request(tmdb_id=1, show_id=show.id, title="A", season_number=None)
+
+    season1_attempts = store.list_pack_requests_for_show(show.id, season_number=1)
+    series_attempts = store.list_pack_requests_for_show(show.id, season_number=None)
+
+    assert [r.id for r in season1_attempts] == [season1_new.id, season1_old.id]  # newest first
+    assert [r.id for r in series_attempts] == [series.id]
+
+
+def test_list_pack_requests_for_show_empty_when_none_tried():
+    store = _store()
+    show = store.create_show(tmdb_id=1, title="A")
+    assert store.list_pack_requests_for_show(show.id, season_number=1) == []
 
 
 def test_has_show_episode_false_until_added():
