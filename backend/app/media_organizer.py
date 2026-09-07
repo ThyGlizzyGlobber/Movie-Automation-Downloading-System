@@ -21,7 +21,7 @@ import logging
 import os
 import re
 import shutil
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 from app import config
 from app.normalize import has_token, tokenize
@@ -49,12 +49,44 @@ def _sanitize(name: str) -> str:
     return _WS_RE.sub(" ", _FS_UNSAFE_RE.sub("", name)).strip()
 
 
-def select_video_file(qbt: QBTClient, torrent_hash: str) -> Path:
+def translate_qbit_save_path(save_path: str, qbit_root: str | None, local_root: Path) -> Path:
+    """qBittorrent reports `save_path` in its own container's filesystem
+    namespace, not this backend's — the two run as separate containers,
+    each bind-mounting the exact same underlying host directory under a
+    path of their own choosing (see config.py's QBIT_TV_SAVE_PATH /
+    TV_LIBRARY_ROOT). Rewrites `save_path`'s qBittorrent-side prefix
+    (`qbit_root`) to the equivalent path this container can actually open
+    (`local_root`).
+
+    Falls back to `save_path` completely unmodified when `qbit_root` isn't
+    configured (matches every environment that doesn't run two containers
+    against one shared mount — tests, this workstation, a single-container
+    deployment) or when `save_path` doesn't actually start with it (an
+    unexpected save_path shouldn't be silently mangled into a nonsense
+    local path — "fail safe, not best guess": let the caller hit a clean
+    file-not-found instead of a wrong guess)."""
+    if not qbit_root:
+        return Path(save_path)
+    try:
+        relative = PurePosixPath(save_path).relative_to(PurePosixPath(qbit_root))
+    except ValueError:
+        return Path(save_path)
+    return local_root / Path(*relative.parts)
+
+
+def select_video_file(
+    qbt: QBTClient, torrent_hash: str, qbit_root: str | None = None, local_root: Path | None = None
+) -> Path:
     """The largest file with a known video extension in a completed
     torrent, skipping anything whose name carries a whole "sample" token.
     Raises `MediaOrganizerError` if the torrent is gone or nothing
     qualifies — "fail safe, not best guess": never guess at a non-video
-    file just because it happens to be present."""
+    file just because it happens to be present.
+
+    `qbit_root`/`local_root` translate qBittorrent's own reported
+    `save_path` into this container's filesystem namespace (see
+    `translate_qbit_save_path`); omitted, the raw `save_path` is used
+    as-is, matching every caller that doesn't need translation."""
     info = qbt.torrent_info(torrent_hash)
     if info is None:
         raise MediaOrganizerError(f"torrent {torrent_hash!r} not found in qBittorrent")
@@ -75,7 +107,8 @@ def select_video_file(qbt: QBTClient, torrent_hash: str) -> Path:
         )
 
     winner = max(candidates, key=lambda f: f.get("size", 0))
-    return Path(save_path) / winner["name"]
+    base = translate_qbit_save_path(save_path, qbit_root, local_root) if local_root is not None else Path(save_path)
+    return base / winner["name"]
 
 
 def find_existing_episode_file(show_identity: ShowIdentity, season: int, episode: int) -> Path | None:
@@ -214,6 +247,7 @@ def organize_pack(show_identity: ShowIdentity, torrent_hash: str, qbt: QBTClient
     if not save_path:
         raise MediaOrganizerError(f"torrent {torrent_hash!r} has no save_path")
 
+    base = translate_qbit_save_path(save_path, config.QBIT_TV_SAVE_PATH, config.TV_LIBRARY_ROOT)
     files = qbt.torrent_files(torrent_hash)
     placed: list[tuple[int, int, Path]] = []
     for f in files:
@@ -226,7 +260,7 @@ def organize_pack(show_identity: ShowIdentity, torrent_hash: str, qbt: QBTClient
             logger.info("organize_pack: skipping %r — no recognizable episode token", name)
             continue
         season, episode = identity_pair
-        source_path = Path(save_path) / name
+        source_path = base / name
         target = build_episode_path(show_identity, season, episode, source_path.suffix)
         target.parent.mkdir(parents=True, exist_ok=True)
         _link_or_copy(source_path, target)

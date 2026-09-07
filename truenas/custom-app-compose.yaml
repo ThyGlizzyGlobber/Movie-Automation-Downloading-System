@@ -63,6 +63,23 @@ services:
       TV_LIBRARY_ROOT: "/tv-library"
       # Stage 11: this container's path to the movie-library mount below.
       MOVIE_LIBRARY_ROOT: "/movie-library"
+      # Post-Stage-13 fix: qBittorrent runs as its own separate container
+      # with its own bind mount of this exact same host directory, under
+      # its OWN path — not "/tv-library". media_organizer.py needs this to
+      # translate qBittorrent's self-reported save_path into this
+      # container's namespace before it can hardlink/copy from it; without
+      # it, every organize attempt silently fails with FileNotFoundError
+      # (real value confirmed live: project.md's Stage 11 decision log,
+      # the user set qBittorrent's "tv" category save path to this exact
+      # string on the real box).
+      QBIT_TV_SAVE_PATH: "/media/TV Shows"
+      # Same idea for movies — inferred from the same qBittorrent category
+      # config (movies' own category save path, which "tv" defaulted to
+      # before being split out), not independently re-confirmed this
+      # session; movies aren't auto-organized by the worker today (only
+      # the manual `organize-movie` CLI command uses this), so a wrong
+      # value here has no live blast radius yet.
+      QBIT_MOVIE_SAVE_PATH: "/media/Movies"
     volumes:
       # Deployed-copy source, live-reloaded by uvicorn --reload — confirmed
       # live during Stage 5 by editing this file directly on the NAS and

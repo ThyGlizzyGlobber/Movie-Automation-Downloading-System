@@ -505,6 +505,76 @@ def test_check_downloading_marks_episode_downloaded_not_filed_when_organize_fail
     assert reloaded.error_message is not None
 
 
+def test_check_downloading_translates_qbit_container_path_before_organizing(tmp_path, monkeypatch):
+    """The real bug this reproduces: qBittorrent and this backend run as
+    separate containers, each bind-mounting the identical host folder
+    under a different internal path. Without translation, the hardlink
+    step tries to read a source path that doesn't exist in this
+    container's own filesystem and fails. QBIT_TV_SAVE_PATH configured
+    correctly should make organizing succeed even though qBittorrent's
+    own reported save_path never matches TV_LIBRARY_ROOT as a plain
+    string."""
+    library_root = tmp_path / "library"
+    monkeypatch.setattr(config, "TV_LIBRARY_ROOT", library_root)
+    monkeypatch.setattr(config, "QBIT_TV_SAVE_PATH", "/media/TV Shows")
+    real_source_dir = library_root / "Lanterns S01E01"
+    real_source_dir.mkdir(parents=True)
+    (real_source_dir / "Lanterns.S01E01.mkv").write_bytes(b"data")
+
+    store = RequestStore(":memory:")
+    show = store.create_show(tmdb_id=95350, title="Lanterns")
+    row = store.create_episode_request(
+        tmdb_id=95350, show_id=show.id, title="Lanterns", season_number=1, episode_number=1
+    )
+    store.update_status(row.id, "downloading", result={"torrent_hash": "aaaa"})
+    qbt = FakeQBTClient(
+        torrent_states={"aaaa": {"progress": 1.0, "save_path": "/media/TV Shows/Lanterns S01E01"}},
+        torrent_files={"aaaa": [{"name": "Lanterns.S01E01.mkv", "size": 4}]},
+    )
+    worker = Worker(store, FakeTMDBClient(), qbt)
+
+    asyncio.run(worker._check_downloading())
+
+    reloaded = store.get_request(row.id)
+    assert reloaded.status == "complete"
+    target = library_root / "Lanterns (2026) {tmdb-95350}" / "Season 01" / "Lanterns - s01e01.mkv"
+    assert target.exists()
+
+
+def test_check_downloading_marks_episode_downloaded_not_filed_when_source_path_does_not_exist(
+    tmp_path, monkeypatch
+):
+    """Regression test for the real live bug: a source path that doesn't
+    exist in this container's own filesystem (the untranslated-path
+    mismatch, or any other missing-file case) must not leave the request
+    stuck at "downloading" forever — the hardlink/copy step raises a raw
+    OSError, not a MediaOrganizerError, and that used to propagate
+    uncaught out of _organize_and_complete_episode, silently retried
+    every poll cycle with the row never advancing."""
+    monkeypatch.setattr(config, "TV_LIBRARY_ROOT", tmp_path / "library")
+    # QBIT_TV_SAVE_PATH deliberately left unset (or non-matching), so the
+    # reported save_path is used as-is — and doesn't exist on disk here,
+    # exactly like the real NAS's qBittorrent-container-only path.
+
+    store = RequestStore(":memory:")
+    show = store.create_show(tmdb_id=95350, title="Lanterns")
+    row = store.create_episode_request(
+        tmdb_id=95350, show_id=show.id, title="Lanterns", season_number=1, episode_number=1
+    )
+    store.update_status(row.id, "downloading", result={"torrent_hash": "aaaa"})
+    qbt = FakeQBTClient(
+        torrent_states={"aaaa": {"progress": 1.0, "save_path": "/media/TV Shows/Lanterns S01E01"}},
+        torrent_files={"aaaa": [{"name": "Lanterns.S01E01.mkv", "size": 4}]},
+    )
+    worker = Worker(store, FakeTMDBClient(), qbt)
+
+    asyncio.run(worker._check_downloading())
+
+    reloaded = store.get_request(row.id)
+    assert reloaded.status == "downloaded, not filed"
+    assert reloaded.error_message is not None
+
+
 def test_check_downloading_marks_episode_cancelled_when_gone_without_asking_plex(monkeypatch):
     """Unlike a movie row, an episode disappearance never consults Plex —
     `PlexClient.has_movie` only supports a movie-shaped lookup."""
@@ -661,6 +731,30 @@ def test_check_downloading_marks_pack_downloaded_not_filed_when_organize_fails(t
     row = store.create_pack_request(tmdb_id=95350, show_id=show.id, title="Lanterns", season_number=1)
     store.update_status(row.id, "downloading", result={"torrent_hash": "cccc"})
     qbt = FakeQBTClient(torrent_states={"cccc": {"progress": 1.0}})  # no save_path -> MediaOrganizerError
+    worker = Worker(store, FakeTMDBClient(), qbt)
+
+    asyncio.run(worker._check_downloading())
+
+    reloaded = store.get_request(row.id)
+    assert reloaded.status == "downloaded, not filed"
+    assert reloaded.error_message is not None
+
+
+def test_check_downloading_marks_pack_downloaded_not_filed_when_source_path_does_not_exist(tmp_path, monkeypatch):
+    """Same regression as the episode-level test above, for a pack row:
+    a source path that doesn't exist in this container's own filesystem
+    (the real qBittorrent-container-path mismatch, unconfigured here)
+    raises a raw OSError from organize_pack's hardlink/copy step — must
+    land on "downloaded, not filed", not stay stuck at "downloading"."""
+    monkeypatch.setattr(config, "TV_LIBRARY_ROOT", tmp_path / "library")
+    store = RequestStore(":memory:")
+    show = store.create_show(tmdb_id=95350, title="Lanterns")
+    row = store.create_pack_request(tmdb_id=95350, show_id=show.id, title="Lanterns", season_number=1)
+    store.update_status(row.id, "downloading", result={"torrent_hash": "cccc"})
+    qbt = FakeQBTClient(
+        torrent_states={"cccc": {"progress": 1.0, "save_path": "/media/TV Shows/Lanterns S01"}},
+        torrent_files={"cccc": [{"name": "Lanterns.S01E01.mkv", "size": 3}]},
+    )
     worker = Worker(store, FakeTMDBClient(), qbt)
 
     asyncio.run(worker._check_downloading())

@@ -341,11 +341,13 @@ class Worker:
         label = _request_label(row)
         try:
             identity = await asyncio.to_thread(resolve_show, row.tmdb_id, self.tmdb)
-            source_path = await asyncio.to_thread(select_video_file, self.qbt, torrent_hash)
+            source_path = await asyncio.to_thread(
+                select_video_file, self.qbt, torrent_hash, config.QBIT_TV_SAVE_PATH, config.TV_LIBRARY_ROOT
+            )
             target_path = await asyncio.to_thread(
                 organize_episode, identity, row.season_number, row.episode_number, source_path
             )
-        except (MediaOrganizerError, TMDBError) as exc:
+        except (MediaOrganizerError, TMDBError, OSError) as exc:
             logger.warning("request %d (%s) downloading -> downloaded, not filed (%s)", row.id, label, exc)
             await asyncio.to_thread(
                 self.store.update_status, row.id, "downloaded, not filed", error_message=str(exc)
@@ -395,7 +397,7 @@ class Worker:
         try:
             identity = await asyncio.to_thread(resolve_show, row.tmdb_id, self.tmdb)
             placed = await asyncio.to_thread(organize_pack, identity, torrent_hash, self.qbt)
-        except (MediaOrganizerError, TMDBError) as exc:
+        except (MediaOrganizerError, TMDBError, OSError) as exc:
             logger.warning("pack request %d (%s) downloading -> downloaded, not filed (%s)", row.id, label, exc)
             await asyncio.to_thread(self.store.update_status, row.id, "downloaded, not filed", error_message=str(exc))
             return

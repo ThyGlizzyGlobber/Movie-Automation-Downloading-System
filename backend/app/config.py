@@ -169,6 +169,19 @@ DEPLOY_TIMEOUT_SECONDS = int(os.environ.get("DEPLOY_TIMEOUT_SECONDS", "60"))
 # a plainly-fake path since nothing local exercises this without the mount.
 TV_LIBRARY_ROOT = Path(os.environ.get("TV_LIBRARY_ROOT", "/tv-library"))
 
+# qBittorrent's OWN path to that exact same underlying folder. This app and
+# qBittorrent run as separate containers, each with their own bind mount of
+# the same host directory under a name of their own choosing — qBittorrent
+# reports `save_path` in its own container's namespace (e.g. "/media/TV
+# Shows"), which is a completely different string from this container's
+# own TV_LIBRARY_ROOT ("/tv-library") for the identical bytes on disk.
+# media_organizer.py needs both: this to recognize/strip qBittorrent's
+# prefix, TV_LIBRARY_ROOT to rebuild the equivalent path this container can
+# actually open. Unset by default — translation is then a no-op, matching
+# every environment (tests, this workstation) that doesn't run two
+# containers pointed at one shared mount.
+QBIT_TV_SAVE_PATH = os.environ.get("QBIT_TV_SAVE_PATH")
+
 # Extensions media_organizer.select_video_file() will consider an episode's
 # real video file. Anything else in a torrent (.nfo, .srt, .txt) is
 # ignored outright, not just deprioritized.
@@ -226,3 +239,8 @@ SOURCE_CLEANUP_DELAY_SECONDS = int(os.environ.get("SOURCE_CLEANUP_DELAY_SECONDS"
 # movie sits in to a Plex-recognized `<Title> (<year>) {tmdb-<id>}` shape,
 # never the file itself, per the user's explicit ask.
 MOVIE_LIBRARY_ROOT = Path(os.environ.get("MOVIE_LIBRARY_ROOT", "/movie-library"))
+
+# qBittorrent's own path to that same movie dataset — same two-container
+# path-namespace mismatch QBIT_TV_SAVE_PATH exists for, mirrored here for
+# movies. Unset by default for the same reason.
+QBIT_MOVIE_SAVE_PATH = os.environ.get("QBIT_MOVIE_SAVE_PATH")

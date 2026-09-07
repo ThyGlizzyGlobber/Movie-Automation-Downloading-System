@@ -1,6 +1,7 @@
 import argparse
 import sys
 
+from app import config
 from app.config import QBIT_HOST, QBIT_PASSWORD, QBIT_PORT, QBIT_USERNAME, TMDB_API_KEY
 from app.media_organizer import MediaOrganizerError, organize_episode, organize_movie, organize_pack, select_video_file
 from app.pipeline import download, download_episode, download_pack
@@ -164,7 +165,7 @@ def cmd_organize_episode(args: argparse.Namespace) -> int:
     identity = resolve_show(args.tmdb_id, tmdb_client)
 
     try:
-        source_path = select_video_file(qbt, args.torrent_hash)
+        source_path = select_video_file(qbt, args.torrent_hash, config.QBIT_TV_SAVE_PATH, config.TV_LIBRARY_ROOT)
         target_path = organize_episode(identity, args.season, args.episode, source_path)
     except MediaOrganizerError as exc:
         print(f"status:   downloaded, not filed ({exc})")
@@ -187,7 +188,9 @@ def cmd_organize_movie(args: argparse.Namespace) -> int:
     identity = resolve(args.tmdb_id, tmdb_client)
 
     try:
-        source_path = select_video_file(qbt, args.torrent_hash)
+        source_path = select_video_file(
+            qbt, args.torrent_hash, config.QBIT_MOVIE_SAVE_PATH, config.MOVIE_LIBRARY_ROOT
+        )
         target_path = organize_movie(identity, source_path)
     except MediaOrganizerError as exc:
         print(f"status:   downloaded, not filed ({exc})")

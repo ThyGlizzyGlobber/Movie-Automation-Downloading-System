@@ -1,5 +1,6 @@
 import errno
 import os
+from pathlib import Path
 
 import pytest
 
@@ -13,6 +14,7 @@ from app.media_organizer import (
     organize_movie,
     organize_pack,
     select_video_file,
+    translate_qbit_save_path,
 )
 from app.resolve import MediaIdentity
 from app.tv_resolve import ShowIdentity
@@ -130,6 +132,70 @@ def test_select_video_file_raises_when_nothing_qualifies():
     qbt = FakeQBTClient("/downloads", [{"name": "Lanterns.S01E01.nfo", "size": 1000}])
     with pytest.raises(MediaOrganizerError):
         select_video_file(qbt, "abc123")
+
+
+def test_select_video_file_translates_qbit_container_path_when_configured():
+    """The real bug: qBittorrent and this backend run as separate
+    containers, each with their own bind mount of the identical host
+    directory under a different internal path. qBittorrent's own
+    `save_path` ("/media/TV Shows/...") means nothing inside this
+    container unless translated into this container's own mount
+    ("/tv-library/...")."""
+    qbt = FakeQBTClient(
+        "/media/TV Shows/Lanterns S01E01",
+        [{"name": "Lanterns.S01E01.mkv", "size": 8_000_000_000}],
+    )
+    result = select_video_file(qbt, "abc123", "/media/TV Shows", Path("/tv-library"))
+    assert str(result) == "/tv-library/Lanterns S01E01/Lanterns.S01E01.mkv"
+
+
+def test_select_video_file_leaves_save_path_untouched_when_qbit_root_unset():
+    """No QBIT_TV_SAVE_PATH configured -> no translation, same as every
+    environment that doesn't run two containers against one shared mount
+    (tests, this workstation, a single-container deployment)."""
+    qbt = FakeQBTClient(
+        "/downloads/lanterns",
+        [{"name": "Lanterns.S01E01.mkv", "size": 8_000_000_000}],
+    )
+    result = select_video_file(qbt, "abc123", None, Path("/tv-library"))
+    assert str(result) == "/downloads/lanterns/Lanterns.S01E01.mkv"
+
+
+def test_select_video_file_leaves_save_path_untouched_when_it_does_not_match_qbit_root():
+    """An unexpected save_path (doesn't start with the configured
+    qbit_root) is left alone rather than silently mangled into a wrong
+    local path — fail safe, not best guess."""
+    qbt = FakeQBTClient(
+        "/some/other/path/lanterns",
+        [{"name": "Lanterns.S01E01.mkv", "size": 8_000_000_000}],
+    )
+    result = select_video_file(qbt, "abc123", "/media/TV Shows", Path("/tv-library"))
+    assert str(result) == "/some/other/path/lanterns/Lanterns.S01E01.mkv"
+
+
+# ---------------------------------------------------------------------------
+# translate_qbit_save_path
+# ---------------------------------------------------------------------------
+
+
+def test_translate_qbit_save_path_rewrites_matching_prefix():
+    result = translate_qbit_save_path("/media/TV Shows/Lanterns S01", "/media/TV Shows", Path("/tv-library"))
+    assert result == Path("/tv-library/Lanterns S01")
+
+
+def test_translate_qbit_save_path_rewrites_exact_root():
+    result = translate_qbit_save_path("/media/TV Shows", "/media/TV Shows", Path("/tv-library"))
+    assert result == Path("/tv-library")
+
+
+def test_translate_qbit_save_path_returns_unmodified_when_root_unset():
+    result = translate_qbit_save_path("/media/TV Shows/Lanterns S01", None, Path("/tv-library"))
+    assert result == Path("/media/TV Shows/Lanterns S01")
+
+
+def test_translate_qbit_save_path_returns_unmodified_when_prefix_does_not_match():
+    result = translate_qbit_save_path("/media/Movies/Dune", "/media/TV Shows", Path("/tv-library"))
+    assert result == Path("/media/Movies/Dune")
 
 
 # ---------------------------------------------------------------------------
@@ -446,6 +512,34 @@ def test_organize_pack_raises_when_nothing_recognizable(tmp_path, monkeypatch):
     )
     with pytest.raises(MediaOrganizerError):
         organize_pack(LANTERNS, "abc123", qbt)
+
+
+def test_organize_pack_translates_qbit_container_path_when_configured(tmp_path, monkeypatch):
+    """Real deployment shape: qBittorrent's raw download and this
+    backend's TV_LIBRARY_ROOT are bind-mounts of the identical host
+    folder, each container naming it differently. The real bytes live
+    under TV_LIBRARY_ROOT (this process's own view); qBittorrent reports
+    a completely different-looking `save_path` string for that same
+    folder — organize_pack reads config.QBIT_TV_SAVE_PATH/TV_LIBRARY_ROOT
+    directly since a pack is always TV-only content."""
+    library_root = tmp_path / "library"
+    monkeypatch.setattr(config, "TV_LIBRARY_ROOT", library_root)
+    monkeypatch.setattr(config, "QBIT_TV_SAVE_PATH", "/media/TV Shows")
+    real_downloads = library_root / "Lanterns S01 COMPLETE"
+    real_downloads.mkdir(parents=True)
+    (real_downloads / "Lanterns.S01E01.mkv").write_bytes(b"ep1")
+    # qBittorrent's own reported save_path for this exact folder — a
+    # different string than `real_downloads` above, to prove translation
+    # (not a filesystem coincidence) is what makes this resolve.
+    qbt = FakeQBTClient(
+        "/media/TV Shows/Lanterns S01 COMPLETE",
+        [{"name": "Lanterns.S01E01.mkv", "size": 3}],
+    )
+
+    placed = organize_pack(LANTERNS, "abc123", qbt)
+
+    assert len(placed) == 1
+    assert placed[0][2].read_bytes() == b"ep1"
 
 
 def test_organize_pack_handles_subfolder_relative_names(tmp_path, monkeypatch):
