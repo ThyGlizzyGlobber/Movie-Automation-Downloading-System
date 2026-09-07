@@ -133,6 +133,18 @@ def test_has_movie_false_when_no_results():
     assert client.has_movie("http://server", "tok", "Some Movie", None) is False
 
 
+def test_has_movie_matches_a_plex_title_carrying_a_franchise_prefix():
+    """The real bug this covers: Plex's own scraped title was "Star Wars:
+    The Mandalorian and Grogu" while TMDB's plain title is "The
+    Mandalorian and Grogu" — an exact-string match would miss this
+    entirely."""
+    metadata = {"MediaContainer": {"Metadata": [{"title": "Star Wars: The Mandalorian and Grogu", "year": 2026}]}}
+    session = FakeSession(get_responses=[FakeResponse(json_data=metadata)])
+    client = PlexClient("client-1", session=session)
+
+    assert client.has_movie("http://server", "tok", "The Mandalorian and Grogu", 2026) is True
+
+
 # ---------------------------------------------------------------------------
 # library_index / plex_library_lookup — Stage 14's batched, cached "On
 # Plex" badge lookup (one bulk fetch per grid render instead of N).
@@ -207,6 +219,28 @@ def test_plex_library_lookup_year_tolerance_and_no_year_given(monkeypatch):
 
     assert matcher("Lanterns", 2027) is True  # within YEAR_TOLERANCE
     assert matcher("Lanterns", None) is True  # title matched, no year to check further
+
+
+def test_plex_library_lookup_matches_a_franchise_prefixed_title(monkeypatch):
+    """Same real bug as test_has_movie_matches_a_plex_title_carrying_a_
+    franchise_prefix, through the batched/cached lookup path — the index
+    is keyed by Plex's own (prefixed) normalized title, and a plain TMDB
+    title has to still resolve against it via the fuzzy fallback."""
+    store = RequestStore(":memory:")
+    store.update_settings(
+        {"plex_client_id": "client-1", "plex_server_url": "http://server-e", "plex_server_token": "tok"}
+    )
+    monkeypatch.setattr(
+        PlexClient,
+        "library_index",
+        lambda self, url, token, media_type: {"star wars the mandalorian and grogu": [2026]},
+    )
+
+    matcher = plex_library_lookup(store, "movie")
+
+    assert matcher("The Mandalorian and Grogu", 2026) is True
+    assert matcher("The Mandalorian and Grogu", 2010) is False  # outside year tolerance
+    assert matcher("Grogu", None) is True  # single-word match allowed, at the user's explicit request
 
 
 def test_plex_library_lookup_fails_safe_on_plex_error(monkeypatch):

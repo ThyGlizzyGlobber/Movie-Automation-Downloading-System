@@ -1,4 +1,4 @@
-from app.normalize import has_token, normalize_text, token_overlap, tokenize
+from app.normalize import has_token, normalize_text, titles_match, token_overlap, tokenize
 
 
 def test_normalize_text_lowercases_and_strips_punctuation():
@@ -34,3 +34,35 @@ def test_has_token_case_and_punctuation_insensitive():
 
 def test_token_overlap():
     assert token_overlap("Dune Part Two", "dune.part.two.2024.2160p") == {"dune", "part", "two"}
+
+
+def test_titles_match_exact():
+    assert titles_match("the mandalorian and grogu", "the mandalorian and grogu") is True
+
+
+def test_titles_match_franchise_prefix():
+    """The real case this exists for: Plex's own scraped title carries a
+    franchise prefix TMDB's plain title doesn't."""
+    assert titles_match("star wars the mandalorian and grogu", "the mandalorian and grogu") is True
+    assert titles_match("the mandalorian and grogu", "star wars the mandalorian and grogu") is True
+
+
+def test_titles_match_subtitle_suffix():
+    assert titles_match("the mandalorian and grogu extended cut", "the mandalorian and grogu") is True
+
+
+def test_titles_match_allows_single_word_match():
+    """At the user's explicit request: a one-word title/alias on the
+    shorter side is allowed to match — a deliberately accepted
+    false-positive tradeoff over ever missing a real match."""
+    assert titles_match("grogu", "the mandalorian and grogu") is True
+
+
+def test_titles_match_rejects_unrelated_titles():
+    assert titles_match("dune part two", "the mandalorian and grogu") is False
+
+
+def test_titles_match_rejects_partial_middle_overlap():
+    """Shared words in the middle, not at a whole prefix/suffix boundary,
+    must not match — this is containment, not fuzzy overlap."""
+    assert titles_match("the mandalorian returns and grogu", "the mandalorian and grogu") is False

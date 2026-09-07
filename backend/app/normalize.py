@@ -42,6 +42,30 @@ def token_overlap(a: str, b: str) -> set[str]:
     return set(tokenize(a)) & set(tokenize(b))
 
 
+def titles_match(a: str, b: str) -> bool:
+    """True if two *already-normalized* (`normalize_text`-passed) titles
+    are the same, or one is a whole-word prefix/suffix of the other.
+    Exists for Plex library matching: a real, recurring mismatch is one
+    source (typically Plex's own scraped/matched title) carrying a
+    franchise prefix or subtitle TMDB's own title doesn't have — "Star
+    Wars: The Mandalorian and Grogu" in Plex vs. TMDB's plain "The
+    Mandalorian and Grogu" — which an exact-string match misses entirely.
+    Requires the shorter side to have at least one word (an empty string
+    never matches anything, including another empty string via this
+    path — that's the `a == b` branch's job). At the user's explicit
+    request, this deliberately allows a single-word match too (e.g. a
+    one-word title/alias on one side) — a real, accepted false-positive
+    risk for a generic one-word title that happens to be a prefix/suffix
+    of an unrelated longer one, traded for never missing a real match."""
+    if a == b:
+        return True
+    words_a, words_b = a.split(), b.split()
+    shorter, longer = (words_a, words_b) if len(words_a) <= len(words_b) else (words_b, words_a)
+    if len(shorter) < 1:
+        return False
+    return longer[: len(shorter)] == shorter or longer[-len(shorter) :] == shorter
+
+
 # -- Title-variant generation. Shared by resolve.py (movies) and
 #    tv_resolve.py (shows) — a title's subtitle/original-title/year
 #    shape doesn't depend on what kind of thing it is. --

@@ -19,7 +19,7 @@ from urllib.parse import urlencode
 import requests
 
 from app.cache import TTLCache
-from app.normalize import normalize_text
+from app.normalize import normalize_text, titles_match
 
 PLEX_TV_BASE = "https://plex.tv"
 PRODUCT_NAME = "The Family Downloader"
@@ -130,7 +130,7 @@ class PlexClient:
         items = response.json().get("MediaContainer", {}).get("Metadata", []) or []
         target = normalize_text(title)
         for item in items:
-            if normalize_text(item.get("title", "")) != target:
+            if not titles_match(normalize_text(item.get("title", "")), target):
                 continue
             if year and item.get("year") and abs(item["year"] - year) > YEAR_TOLERANCE:
                 continue
@@ -198,7 +198,16 @@ def plex_library_lookup(store, media_type: str) -> Callable[[str, int | None], b
         _library_index_cache.set(cache_key, index)
 
     def matcher(title: str, year: int | None) -> bool:
-        years = index.get(normalize_text(title))
+        target = normalize_text(title)
+        years = index.get(target)  # exact hit — O(1), the common case
+        if years is None:
+            # Fuzzy fallback (see titles_match): a franchise-prefixed Plex
+            # title ("Star Wars: The Mandalorian and Grogu") wouldn't be an
+            # exact key match against TMDB's plain title. O(library size),
+            # only reached once no exact key exists, and only ever run
+            # once per ~2 minutes per (server, media_type) thanks to the
+            # cache above.
+            years = [y for key, ys in index.items() if titles_match(target, key) for y in ys] or None
         if years is None:
             return False
         if year is None:
