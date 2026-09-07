@@ -18,9 +18,15 @@ from app.score import (
     passes_viability_gate,
     rank_candidates,
 )
-from app.pack_score import passes_season_pack_gate, passes_series_pack_gate
+from app.pack_score import passes_season_pack_gate, passes_season_range_pack_gate, passes_series_pack_gate
 from app.tmdb import TMDBClient
-from app.tv_resolve import ShowIdentity, episode_query, season_pack_queries, series_pack_query
+from app.tv_resolve import (
+    ShowIdentity,
+    episode_query,
+    season_pack_queries,
+    season_range_pack_queries,
+    series_pack_query,
+)
 from app.tv_score import passes_episode_relevance_gate
 
 
@@ -60,8 +66,9 @@ class PackDownloadResult:
 
     status: str  # same vocabulary as DownloadResult/EpisodeDownloadResult
     identity: ShowIdentity
-    scope: str  # "season" | "series"
-    season: int | None = None
+    scope: str  # "season" | "season_range" | "series"
+    season: int | None = None  # the range's start, when scope == "season_range"
+    season_range_end: int | None = None  # only set when scope == "season_range"
     variant_used: str | None = None
     query_used: str | None = None
     winner: dict | None = None
@@ -392,22 +399,27 @@ def download_pack(
     qbt: QBTClient,
     settings: PipelineSettings | None = None,
     season: int | None = None,
+    season_range_end: int | None = None,
 ) -> PackDownloadResult:
-    """Stage 13: search/score/add for a whole-season or complete-series
-    pack, as an explicit, user-triggered alternative to the per-episode
-    pipeline above — never used automatically. Reuses `_rank_and_add`
-    unchanged, same as `download_episode`; only the search/relevance side
-    (a pack-shaped gate instead of an episode-identity one, pack-shaped
-    query strings instead of an episode query) differs.
+    """Stage 13 (+ Stage 14.x's season-range scope): search/score/add for a
+    whole-season, multi-season-range, or complete-series pack. Reuses
+    `_rank_and_add` unchanged, same as `download_episode`; only the
+    search/relevance side (a pack-shaped gate instead of an episode-
+    identity one, pack-shaped query strings instead of an episode query)
+    differs.
 
-    `scope` is `"season"` (requires `season`) or `"series"`. Takes an
-    already-resolved `ShowIdentity` rather than a tmdb_id + TMDB client,
-    same reasoning as `download_episode`: a bulk-download request is
-    always issued against a show the caller has already resolved."""
-    if scope not in ("season", "series"):
-        raise ValueError(f"scope must be 'season' or 'series', got {scope!r}")
+    `scope` is `"season"` (requires `season`), `"season_range"` (requires
+    both `season` as the range's start and `season_range_end` as its
+    inclusive end), or `"series"`. Takes an already-resolved `ShowIdentity`
+    rather than a tmdb_id + TMDB client, same reasoning as
+    `download_episode`: a bulk-download request is always issued against a
+    show the caller has already resolved."""
+    if scope not in ("season", "season_range", "series"):
+        raise ValueError(f"scope must be 'season', 'season_range', or 'series', got {scope!r}")
     if scope == "season" and season is None:
         raise ValueError("season is required when scope == 'season'")
+    if scope == "season_range" and (season is None or season_range_end is None):
+        raise ValueError("season and season_range_end are both required when scope == 'season_range'")
 
     settings = settings or PipelineSettings.from_config()
     existing_hashes = qbt.existing_torrent_hashes()
@@ -421,6 +433,11 @@ def download_pack(
 
             def gate(file_name: str, _season=season) -> bool:
                 return passes_season_pack_gate(file_name, identity, _season, settings)
+        elif scope == "season_range":
+            queries = season_range_pack_queries(variant, season, season_range_end)
+
+            def gate(file_name: str, _start=season, _end=season_range_end) -> bool:
+                return passes_season_range_pack_gate(file_name, identity, _start, _end, settings)
         else:
             queries = [series_pack_query(variant)]
 
@@ -442,6 +459,7 @@ def download_pack(
                 identity=identity,
                 scope=scope,
                 season=season,
+                season_range_end=season_range_end,
                 variant_used=variant,
                 query_used=query_used,
                 winner=attempt.winner,
@@ -455,6 +473,7 @@ def download_pack(
             identity=identity,
             scope=scope,
             season=season,
+            season_range_end=season_range_end,
             variant_used=variant,
             query_used=query_used,
             winner=attempt.winner,
@@ -467,4 +486,4 @@ def download_pack(
         return last_failed_attempt
 
     status = "insufficient free space" if any_candidates else "no qualifying results"
-    return PackDownloadResult(status=status, identity=identity, scope=scope, season=season)
+    return PackDownloadResult(status=status, identity=identity, scope=scope, season=season, season_range_end=season_range_end)

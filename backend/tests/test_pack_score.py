@@ -2,8 +2,11 @@ from app import config
 from app.pack_score import (
     has_any_episode_token,
     has_complete_series_marker,
+    has_season_range_marker,
     has_season_token,
+    parse_season_range,
     passes_season_pack_gate,
+    passes_season_range_pack_gate,
     passes_series_pack_gate,
 )
 from app.pipeline_settings import PipelineSettings
@@ -104,6 +107,83 @@ def test_passes_series_pack_gate_rejects_below_default_floor():
 
 def test_passes_series_pack_gate_rejects_hdcam():
     assert passes_series_pack_gate("Lanterns.Complete.Series.2160p.HDCAM.mkv", LANTERNS) is False
+
+
+# ---------------------------------------------------------------------------
+# Season-range gate (Stage 14.x) — an explicit multi-season bundle marker
+# ("S01-S03", "Seasons 1-3"), distinct from both the single-season and
+# complete-series shapes above.
+# ---------------------------------------------------------------------------
+
+
+def test_passes_season_range_pack_gate_accepts_dashed_season_tokens():
+    assert passes_season_range_pack_gate("Lanterns.S01-S03.2160p.WEB-DL.mkv", LANTERNS, 1, 3) is True
+
+
+def test_passes_season_range_pack_gate_accepts_seasons_phrase():
+    assert passes_season_range_pack_gate("Lanterns Seasons 1-3 2160p WEB-DL", LANTERNS, 1, 3) is True
+
+
+def test_passes_season_range_pack_gate_accepts_a_wider_real_release():
+    # A real release bundling more than what's strictly needed (tagged
+    # S01-S04 when only seasons 1-3 were unhandled) still satisfies the
+    # request — organize_pack only ever files what it actually finds.
+    assert passes_season_range_pack_gate("Lanterns.S01-S04.2160p.WEB-DL.mkv", LANTERNS, 1, 3) is True
+
+
+def test_passes_season_range_pack_gate_rejects_a_narrower_range():
+    assert passes_season_range_pack_gate("Lanterns.S02-S03.2160p.WEB-DL.mkv", LANTERNS, 1, 3) is False
+
+
+def test_passes_season_range_pack_gate_rejects_a_lone_season():
+    assert passes_season_range_pack_gate("Lanterns.S01.2160p.WEB-DL.mkv", LANTERNS, 1, 3) is False
+
+
+def test_passes_season_range_pack_gate_rejects_an_episode_shaped_result():
+    # A range marker alone isn't enough if the same filename also names a
+    # specific episode — that's a single-episode release, not a pack, even
+    # if it happens to mention a season range somewhere in its own title.
+    assert passes_season_range_pack_gate("Lanterns.S01-S03.S01E04.2160p.WEB-DL.mkv", LANTERNS, 1, 3) is False
+
+
+def test_passes_season_range_pack_gate_rejects_wrong_show():
+    assert passes_season_range_pack_gate("Some.Other.Show.S01-S03.2160p.WEB-DL.mkv", LANTERNS, 1, 3) is False
+
+
+def test_passes_season_range_pack_gate_rejects_below_default_floor():
+    assert passes_season_range_pack_gate("Lanterns.S01-S03.1080p.WEB-DL.mkv", LANTERNS, 1, 3) is False
+
+
+def test_passes_season_range_pack_gate_rejects_hdcam():
+    assert passes_season_range_pack_gate("Lanterns.S01-S03.2160p.HDCAM.mkv", LANTERNS, 1, 3) is False
+
+
+def test_parse_season_range_dashed_tokens():
+    assert parse_season_range(["lanterns", "s01", "s03", "2160p"]) == (1, 3)
+
+
+def test_parse_season_range_seasons_phrase():
+    assert parse_season_range(["lanterns", "seasons", "1", "3", "2160p"]) == (1, 3)
+
+
+def test_parse_season_range_none_for_a_lone_season():
+    assert parse_season_range(["lanterns", "s01", "2160p"]) is None
+
+
+def test_parse_season_range_none_when_start_not_less_than_end():
+    assert parse_season_range(["lanterns", "s03", "s01", "2160p"]) is None
+
+
+def test_parse_season_range_none_for_unrelated_numbers():
+    assert parse_season_range(["lanterns", "2024", "2160p"]) is None
+
+
+def test_has_season_range_marker_true_when_claimed_range_covers_request():
+    assert has_season_range_marker(["lanterns", "s01", "s04"], 1, 3) is True
+
+
+def test_has_season_range_marker_false_when_claimed_range_is_narrower():
+    assert has_season_range_marker(["lanterns", "s02", "s03"], 1, 3) is False
 
 
 # ---------------------------------------------------------------------------

@@ -42,6 +42,11 @@ class RequestRow:
     show_id: int | None = None
     season_number: int | None = None
     episode_number: int | None = None
+    # Stage 14.x: only ever set on a 'pack' row, alongside season_number as
+    # the range's start — season_number set with this left NULL still means
+    # "one season" (Stage 13's original shape), unchanged; both set means
+    # "seasons season_number through season_range_end inclusive".
+    season_range_end: int | None = None
 
     @classmethod
     def _from_row(cls, row: sqlite3.Row) -> "RequestRow":
@@ -60,6 +65,7 @@ class RequestRow:
             show_id=row["show_id"],
             season_number=row["season_number"],
             episode_number=row["episode_number"],
+            season_range_end=row["season_range_end"],
         )
 
 
@@ -154,6 +160,7 @@ class RequestStore:
             self._ensure_column("requests", "show_id", "show_id INTEGER")
             self._ensure_column("requests", "season_number", "season_number INTEGER")
             self._ensure_column("requests", "episode_number", "episode_number INTEGER")
+            self._ensure_column("requests", "season_range_end", "season_range_end INTEGER")
 
             # Stage 12: the standing subscription. One row per subscribed
             # show — a UNIQUE tmdb_id stops two subscriptions to the same
@@ -250,14 +257,17 @@ class RequestStore:
         return self.get_request(row_id)
 
     def create_pack_request(
-        self, tmdb_id: int, show_id: int, title: str, season_number: int | None
+        self, tmdb_id: int, show_id: int, title: str, season_number: int | None, season_range_end: int | None = None
     ) -> RequestRow:
-        """Stage 13: the tracking row for one bulk season/complete-series
-        pack search+add attempt — reuses the `requests` table/statuses/
-        watcher a third way (`media_type='pack'`), same "reuse, don't
-        duplicate" call `create_episode_request` already made for Stage 12.
-        `season_number` set means "season N"; left NULL means "complete
-        series" — no separate `scope` column, since the two are always
+        """Stage 13 (+ Stage 14.x's season-range scope): the tracking row
+        for one bulk season/season-range/complete-series pack search+add
+        attempt — reuses the `requests` table/statuses/watcher a third way
+        (`media_type='pack'`), same "reuse, don't duplicate" call
+        `create_episode_request` already made for Stage 12. `season_number`
+        set with `season_range_end` left `None` means "season N" (Stage
+        13's original shape); both set means "seasons `season_number`
+        through `season_range_end` inclusive"; both `None` means "complete
+        series" — no separate `scope` column, since all three are already
         distinguishable this way. `episode_number` is always NULL: a pack
         row is never about one specific episode, only once it's organized
         does each actual episode found inside it get its own normal
@@ -266,9 +276,9 @@ class RequestStore:
         with self._lock:
             cur = self._conn.execute(
                 "INSERT INTO requests (query, tmdb_id, title, release_year, status, media_type, "
-                "show_id, season_number, episode_number, created_at, updated_at) "
-                "VALUES (NULL, ?, ?, NULL, 'queued', 'pack', ?, ?, NULL, ?, ?)",
-                (tmdb_id, title, show_id, season_number, now, now),
+                "show_id, season_number, episode_number, season_range_end, created_at, updated_at) "
+                "VALUES (NULL, ?, ?, NULL, 'queued', 'pack', ?, ?, NULL, ?, ?, ?)",
+                (tmdb_id, title, show_id, season_number, season_range_end, now, now),
             )
             self._conn.commit()
             row_id = cur.lastrowid
@@ -286,10 +296,17 @@ class RequestStore:
         ).fetchone()
         return RequestRow._from_row(row) if row else None
 
-    def list_pack_requests_for_show(self, show_id: int, season_number: int | None) -> list[RequestRow]:
-        """Every 'pack' request ever made for this show at this exact scope
-        — one season (`season_number` an int) or the complete series
-        (`season_number=None`) — newest first. Used by worker.py's
+    def list_pack_requests_for_show(
+        self, show_id: int, season_number: int | None, season_range_end: int | None = None
+    ) -> list[RequestRow]:
+        """Every 'pack' request ever made for this show at this *exact*
+        scope — one season, a specific season range (`season_number` as
+        its start, `season_range_end` as its end), or the complete series
+        (both `None`) — newest first. A season-range attempt and a
+        single-season attempt starting at the same season track
+        completely independent histories, matched on both columns via
+        `IS`, which is NULL-safe (`x IS NULL` is true when `x` is NULL,
+        unlike `x = NULL`, which is never true in SQL). Used by worker.py's
         check_show() (Stage 14.x) to decide whether a new automatic pack
         attempt is warranted: none tried yet, one already succeeded or is
         still in flight (don't duplicate), or a prior attempt failed and
@@ -297,18 +314,11 @@ class RequestStore:
         retry — the same question `cancel_queued_requests_for_show` (a
         manual bulk-download's own concern) never needed to ask, since
         that path always fires immediately regardless of history."""
-        if season_number is None:
-            rows = self._conn.execute(
-                "SELECT * FROM requests WHERE show_id = ? AND media_type = 'pack' AND season_number IS NULL "
-                "ORDER BY id DESC",
-                (show_id,),
-            ).fetchall()
-        else:
-            rows = self._conn.execute(
-                "SELECT * FROM requests WHERE show_id = ? AND media_type = 'pack' AND season_number = ? "
-                "ORDER BY id DESC",
-                (show_id, season_number),
-            ).fetchall()
+        rows = self._conn.execute(
+            "SELECT * FROM requests WHERE show_id = ? AND media_type = 'pack' "
+            "AND season_number IS ? AND season_range_end IS ? ORDER BY id DESC",
+            (show_id, season_number, season_range_end),
+        ).fetchall()
         return [RequestRow._from_row(r) for r in rows]
 
     def list_requests(self, status: str | None = None) -> list[RequestRow]:

@@ -150,6 +150,7 @@ class RequestOut(BaseModel):
     show_id: int | None
     season_number: int | None
     episode_number: int | None
+    season_range_end: int | None
 
     @classmethod
     def from_row(cls, row: RequestRow) -> "RequestOut":

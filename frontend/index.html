@@ -1207,9 +1207,7 @@
   // there's no history (just subscribed, catch-up still queued).
   function latestRequestPillHtml(req) {
     if (!req) return `<span class="status-pill status-queued"><span class="status-dot status-queued"></span>Not checked yet</span>`;
-    const label = req.media_type === "episode"
-      ? `S${pad2(req.season_number)}E${pad2(req.episode_number)}`
-      : req.season_number != null ? `Season ${req.season_number}` : "Complete Series";
+    const label = req.media_type === "episode" ? `S${pad2(req.season_number)}E${pad2(req.episode_number)}` : packScopeLabel(req);
     const m = statusMeta(req.status);
     return `<span class="status-pill ${m.cls}"><span class="status-dot ${m.cls}"></span>${label} — ${m.label}</span>`;
   }
@@ -1640,6 +1638,14 @@
     });
   }
 
+  // A pack row's scope, as a short label — "Season N", "Season N-M"
+  // (Stage 14.x's range packs), or "Complete Series".
+  function packScopeLabel(r) {
+    if (r.season_number == null) return "Complete Series";
+    if (r.season_range_end != null) return `Season ${r.season_number}-${r.season_range_end}`;
+    return `Season ${r.season_number}`;
+  }
+
   // A standalone row's full label/link — used for movies (always
   // standalone) and as a fallback for any episode/pack row that somehow
   // has no show_id to group under.
@@ -1648,8 +1654,7 @@
       return { label: `${r.title} S${pad2(r.season_number)}E${pad2(r.episode_number)}`, href: `#/tv/${r.tmdb_id}` };
     }
     if (r.media_type === "pack") {
-      const scope = r.season_number != null ? `Season ${r.season_number}` : "Complete Series";
-      return { label: `${r.title} — ${scope}`, href: `#/tv/${r.tmdb_id}` };
+      return { label: `${r.title} — ${packScopeLabel(r)}`, href: `#/tv/${r.tmdb_id}` };
     }
     return { label: `${r.title}${r.release_year ? ` (${r.release_year})` : ""}`, href: `#/movies/${r.tmdb_id}` };
   }
@@ -1660,7 +1665,7 @@
     if (r.media_type === "episode") {
       return { label: `S${pad2(r.season_number)}E${pad2(r.episode_number)}`, href: `#/tv/${r.tmdb_id}` };
     }
-    return { label: r.season_number != null ? `Season ${r.season_number}` : "Complete Series", href: `#/tv/${r.tmdb_id}` };
+    return { label: packScopeLabel(r), href: `#/tv/${r.tmdb_id}` };
   }
 
   function requestRowHtml(r) {

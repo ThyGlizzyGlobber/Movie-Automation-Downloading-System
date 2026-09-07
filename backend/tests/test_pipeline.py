@@ -790,6 +790,55 @@ def test_download_pack_rejects_unknown_scope():
         download_pack(LANTERNS, "everything", FakeQBTClient())
 
 
+def test_download_pack_season_range_adds_winner_from_first_query_that_has_candidates():
+    qbt = FakeQBTClient(
+        results_by_variant={"Lanterns S01-S03": [_pack_result(fileName="Lanterns.S01-S03.2160p.WEB-DL.mkv")]}
+    )
+
+    result = download_pack(LANTERNS, "season_range", qbt, season=1, season_range_end=3)
+
+    assert result.status == "added"
+    assert result.scope == "season_range"
+    assert result.season == 1
+    assert result.season_range_end == 3
+    assert result.query_used == "Lanterns S01-S03"
+    assert qbt.added == [("magnet:?xt=urn:btih:AAAA", "tv")]
+
+
+def test_download_pack_season_range_falls_back_to_second_query_shape():
+    qbt = FakeQBTClient(
+        results_by_variant={
+            "Lanterns S01-S03": [],
+            "Lanterns Seasons 1-3": [_pack_result(fileName="Lanterns.Seasons.1-3.2160p.WEB-DL.mkv")],
+        }
+    )
+
+    result = download_pack(LANTERNS, "season_range", qbt, season=1, season_range_end=3)
+
+    assert result.status == "added"
+    assert result.query_used == "Lanterns Seasons 1-3"
+
+
+def test_download_pack_season_range_rejects_a_narrower_real_result():
+    qbt = FakeQBTClient(
+        results_by_variant={
+            "Lanterns S01-S03": [_pack_result(fileName="Lanterns.S02-S03.2160p.WEB-DL.mkv")],
+            "Lanterns Seasons 1-3": [],
+        }
+    )
+
+    result = download_pack(LANTERNS, "season_range", qbt, season=1, season_range_end=3)
+
+    assert result.status == "no qualifying results"
+
+
+def test_download_pack_season_range_requires_both_season_and_end():
+    with pytest.raises(ValueError):
+        download_pack(LANTERNS, "season_range", FakeQBTClient(), season=1)
+    with pytest.raises(ValueError):
+        download_pack(LANTERNS, "season_range", FakeQBTClient(), season_range_end=3)
+
+
 def test_download_pack_series_adds_winner_on_complete_series_marker():
     qbt = FakeQBTClient(
         results_by_variant={"Lanterns complete series": [_pack_result(fileName="Lanterns.Complete.Series.2160p.mkv")]}

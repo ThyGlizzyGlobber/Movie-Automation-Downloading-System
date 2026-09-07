@@ -5,6 +5,7 @@ from app.tv_resolve import (
     resolve_show,
     season_is_complete,
     season_pack_queries,
+    season_range_pack_queries,
     series_pack_query,
 )
 
@@ -118,6 +119,14 @@ def test_season_pack_queries_double_digit_season():
 
 def test_series_pack_query_builds_complete_series_suffix():
     assert series_pack_query("Lanterns") == "Lanterns complete series"
+
+
+def test_season_range_pack_queries_returns_two_shapes_zero_padded():
+    assert season_range_pack_queries("Lanterns", 1, 3) == ["Lanterns S01-S03", "Lanterns Seasons 1-3"]
+
+
+def test_season_range_pack_queries_double_digit_seasons():
+    assert season_range_pack_queries("Lanterns", 10, 12) == ["Lanterns S10-S12", "Lanterns Seasons 10-12"]
 
 
 def test_aired_episode_numbers_excludes_unaired_and_missing_air_dates():

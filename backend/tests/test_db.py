@@ -376,6 +376,32 @@ def test_list_pack_requests_for_show_empty_when_none_tried():
     assert store.list_pack_requests_for_show(show.id, season_number=1) == []
 
 
+def test_create_pack_request_season_range_scope():
+    store = _store()
+    show = store.create_show(tmdb_id=1, title="A")
+    row = store.create_pack_request(tmdb_id=1, show_id=show.id, title="A", season_number=1, season_range_end=3)
+
+    assert row.season_number == 1
+    assert row.season_range_end == 3
+    assert row.episode_number is None
+
+
+def test_list_pack_requests_for_show_range_scope_is_independent_of_single_season_and_series():
+    """A range starting at season 1 (season_number=1, season_range_end=3),
+    a single-season-1 attempt (season_number=1, season_range_end=None),
+    and a complete-series attempt (both None) must track three completely
+    separate histories, even though two of them share season_number=1."""
+    store = _store()
+    show = store.create_show(tmdb_id=1, title="A")
+    range_row = store.create_pack_request(tmdb_id=1, show_id=show.id, title="A", season_number=1, season_range_end=3)
+    season_row = store.create_pack_request(tmdb_id=1, show_id=show.id, title="A", season_number=1)
+    series_row = store.create_pack_request(tmdb_id=1, show_id=show.id, title="A", season_number=None)
+
+    assert [r.id for r in store.list_pack_requests_for_show(show.id, 1, season_range_end=3)] == [range_row.id]
+    assert [r.id for r in store.list_pack_requests_for_show(show.id, 1)] == [season_row.id]
+    assert [r.id for r in store.list_pack_requests_for_show(show.id, None)] == [series_row.id]
+
+
 def test_has_show_episode_false_until_added():
     store = _store()
     show = store.create_show(tmdb_id=1, title="A")

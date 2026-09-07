@@ -48,6 +48,17 @@ def series_pack_query(title_variant: str) -> str:
     return f"{title_variant} complete series"
 
 
+def season_range_pack_queries(title_variant: str, start: int, end: int) -> list[str]:
+    """Stage 14.x: query shapes for a release bundling seasons `start`
+    through `end` inclusive (`start < end`) — e.g. a "Reacher S01-S03"
+    torrent covering every season aired so far while a later season is
+    still airing. Mirrors `season_pack_queries`'s "try a couple of
+    real-world naming conventions" approach, extended to a range; the
+    real filtering happens in `pack_score.py`'s pass-one gate, same as
+    every other pack query here."""
+    return [f"{title_variant} S{start:02d}-S{end:02d}", f"{title_variant} Seasons {start}-{end}"]
+
+
 def aired_episode_numbers(episodes: list[dict], today: str | None = None) -> list[int]:
     """Episode numbers from a TMDB season's episode list that have already
     aired (a known air_date not in the future) — shared by worker.py's

@@ -100,13 +100,18 @@ _DIRECT_TERMINAL_STATUSES = {"no qualifying results", "insufficient free space"}
 
 def _request_label(row) -> str:
     """Log-friendly identifier — "{Show} S01E04" for an episode row,
-    "{Show} Season 01"/"{Show} complete series" for a Stage 13 bulk-pack
-    row, otherwise just the title, matching Stage 14's planned requests-
-    list label change."""
+    "{Show} Season 01"/"{Show} Seasons 01-03"/"{Show} complete series" for
+    a Stage 13/14.x bulk-pack row, otherwise just the title, matching
+    Stage 14's planned requests-list label change."""
     if row.media_type == "episode" and row.season_number is not None and row.episode_number is not None:
         return f"{row.title} S{row.season_number:02d}E{row.episode_number:02d}"
     if row.media_type == "pack":
-        scope = f"Season {row.season_number:02d}" if row.season_number is not None else "complete series"
+        if row.season_range_end is not None:
+            scope = f"Seasons {row.season_number:02d}-{row.season_range_end:02d}"
+        elif row.season_number is not None:
+            scope = f"Season {row.season_number:02d}"
+        else:
+            scope = "complete series"
         return f"{row.title} {scope}"
     return row.title
 
@@ -220,9 +225,14 @@ class Worker:
                 )
             elif row.media_type == "pack":
                 identity = await asyncio.to_thread(resolve_show, row.tmdb_id, self.tmdb)
-                scope = "season" if row.season_number is not None else "series"
+                if row.season_range_end is not None:
+                    scope = "season_range"
+                elif row.season_number is not None:
+                    scope = "season"
+                else:
+                    scope = "series"
                 result = await asyncio.to_thread(
-                    download_pack, identity, scope, self.qbt, settings, row.season_number
+                    download_pack, identity, scope, self.qbt, settings, row.season_number, row.season_range_end
                 )
             else:
                 result = await asyncio.to_thread(download, row.tmdb_id, self.tmdb, self.qbt, settings)
@@ -508,44 +518,18 @@ class Worker:
             except Exception:
                 logger.exception("show check crashed for show %d (%s)", show.id, show.title)
 
-    def _check_show_season(
-        self,
-        show: ShowRow,
-        identity: ShowIdentity,
-        season_number: int,
-        episodes: list[dict],
-        season_complete: bool,
-        pack_due: bool,
-    ) -> int:
-        """One season's worth of `check_show()`'s own diff-against-the-
-        ledger-then-download-or-mark-found logic, factored out so
-        `full_backfill` can run it once per season instead of duplicating
-        it. Returns the number of new *requests* actually created for
-        this season (a pack counts as one, regardless of how many
-        episodes it turns out to cover once organized).
-
-        Three outcomes once at least one aired episode is genuinely
-        unhandled (not on disk, not already in the ledger):
-        - `season_complete=False` (still airing) — per-episode requests,
-          same as always; packs don't exist yet for an incomplete season.
-        - `season_complete=True` and `pack_due=True` — a single season-pack
-          request covers the whole season instead of one search per
-          episode: an older, fully-aired season is realistically far more
-          likely to still have one well-seeded pack release than
-          well-seeded individual episodes, which tend to go cold once a
-          show has moved on.
-        - `season_complete=True` and `pack_due=False` (a pack was already
-          tried — succeeded, still in flight, or failed and not yet due
-          for a retry per `_should_attempt_pack()`) — nothing is created
-          this call. Deliberately *not* a per-episode fallback: silently
-          escalating to potentially many individual searches the moment a
-          single pack attempt doesn't pan out would defeat the point of
-          preferring packs for old content in the first place, and go
-          against the same opt-in-only philosophy Stage 12.x's per-episode
-          auto-recheck already established. The season stays alone until
-          it's eligible for a pack retry (opted in, cooldown elapsed) or
-          the user steps in manually (e.g. a fresh "Download this season"
-          click, which tries again immediately regardless of this gate)."""
+    def _unhandled_episodes_for_season(
+        self, show: ShowRow, identity: ShowIdentity, season_number: int, episodes: list[dict]
+    ) -> list[int]:
+        """Which of this season's already-aired episodes are genuinely
+        still unhandled — not already in the `show_episodes` ledger, and
+        not already sitting on disk (`find_existing_episode_file`; a match
+        there is marked `complete` directly, as a side effect of this call,
+        so a first-time subscribe to a show with episodes already on disk
+        never re-searches-and-re-adds them). Factored out of
+        `_check_show_season` so `check_show()`'s season-range detection
+        (Stage 14.x) can reuse the exact same disk/ledger check when
+        deciding how far a bundled range extends, without duplicating it."""
         aired = set(aired_episode_numbers(episodes))
         unhandled = []
         for episode_number in sorted(aired):
@@ -579,6 +563,47 @@ class Worker:
 
             unhandled.append(episode_number)
 
+        return unhandled
+
+    def _check_show_season(
+        self,
+        show: ShowRow,
+        identity: ShowIdentity,
+        season_number: int,
+        episodes: list[dict],
+        season_complete: bool,
+        pack_due: bool,
+    ) -> int:
+        """One season's worth of `check_show()`'s own diff-then-download-
+        or-mark-found logic, factored out so `full_backfill` can run it
+        once per season instead of duplicating it. Returns the number of
+        new *requests* actually created for this season (a pack counts as
+        one, regardless of how many episodes it turns out to cover once
+        organized).
+
+        Three outcomes once at least one aired episode is genuinely
+        unhandled (`_unhandled_episodes_for_season`):
+        - `season_complete=False` (still airing) — per-episode requests,
+          same as always; packs don't exist yet for an incomplete season.
+        - `season_complete=True` and `pack_due=True` — a single season-pack
+          request covers the whole season instead of one search per
+          episode: an older, fully-aired season is realistically far more
+          likely to still have one well-seeded pack release than
+          well-seeded individual episodes, which tend to go cold once a
+          show has moved on.
+        - `season_complete=True` and `pack_due=False` (a pack was already
+          tried — succeeded, still in flight, or failed and not yet due
+          for a retry per `_should_attempt_pack()`) — nothing is created
+          this call. Deliberately *not* a per-episode fallback: silently
+          escalating to potentially many individual searches the moment a
+          single pack attempt doesn't pan out would defeat the point of
+          preferring packs for old content in the first place, and go
+          against the same opt-in-only philosophy Stage 12.x's per-episode
+          auto-recheck already established. The season stays alone until
+          it's eligible for a pack retry (opted in, cooldown elapsed) or
+          the user steps in manually (e.g. a fresh "Download this season"
+          click, which tries again immediately regardless of this gate)."""
+        unhandled = self._unhandled_episodes_for_season(show, identity, season_number, episodes)
         if not unhandled:
             return 0
 
@@ -621,10 +646,16 @@ class Worker:
 
     _PACK_DONE_STATUSES = {"complete"}
 
-    def _should_attempt_pack(self, show: ShowRow, season_number: int | None, tv_settings: TVScheduleSettings) -> bool:
+    def _should_attempt_pack(
+        self,
+        show: ShowRow,
+        season_number: int | None,
+        tv_settings: TVScheduleSettings,
+        season_range_end: int | None = None,
+    ) -> bool:
         """Whether check_show() should (re-)attempt a pack for this show at
-        this exact scope (one season, or the complete series when
-        `season_number` is None) right now:
+        this exact scope (one season, a season range, or the complete
+        series when `season_number` is None) right now:
 
         - Never tried before -> yes, always (the same "just try it once"
           behavior a full backfill's first sweep always had).
@@ -645,7 +676,7 @@ class Worker:
           only ever earns a `show_episodes` entry once it's actually
           organized — nothing else would ever mark a failed attempt
           "handled"."""
-        attempts = self.store.list_pack_requests_for_show(show.id, season_number)
+        attempts = self.store.list_pack_requests_for_show(show.id, season_number, season_range_end)
         if not attempts:
             return True
         latest = attempts[0]
@@ -657,6 +688,52 @@ class Worker:
             return False
         due_at = datetime.fromisoformat(latest.updated_at) + timedelta(hours=tv_settings.episode_recheck_interval_hours)
         return datetime.now(timezone.utc) >= due_at
+
+    def _detect_complete_unhandled_prefix(self, show: ShowRow, identity: ShowIdentity, latest_season: int) -> int:
+        """How many seasons, starting from season 1, are both fully aired
+        and still genuinely unhandled — the contiguous run a single real
+        "S01-S0N"-style bundle would realistically cover. Walks seasons 1,
+        2, 3... and stops at the first one that's either still airing
+        (`season_is_complete` false) or already fully handled some other
+        way (real range releases bundle from season 1, so a season 1
+        that's already handled makes bundling pointless to even try).
+        Returns 0 if season 1 itself doesn't qualify, or 1 if only season 1
+        does — `check_show()` only acts on this when it's >= 2, since a
+        single season is `_check_show_season`'s own case, not a range.
+
+        Deliberately only ever called from `full_backfill` — unlike the
+        show-ended complete-series check and the per-season pack
+        preference (both driven by data already being fetched for other
+        reasons on every call), detecting a range prefix needs fetching
+        every season *before* the current one specifically to look for
+        this, which would undo the ordinary scheduled recheck's whole
+        "only ever touch the latest season" efficiency goal if it ran on
+        every cycle. A range that only becomes detectable after the
+        initial subscribe (e.g. season 2 finishes later) is a real,
+        accepted gap symmetrical to this project's other "only checked
+        once, at subscribe" ones — `_check_show_season`'s own per-season
+        pack preference still catches each such season individually on
+        the very next recheck, just one torrent at a time instead of
+        bundled.
+
+        Calling `_unhandled_episodes_for_season` here has the same
+        find-on-disk/ledger side effects it always has, regardless of
+        whether a range pack ends up firing — an episode genuinely on disk
+        gets marked complete either way, and the fallback per-season sweep
+        below simply sees it as already handled if a range pack isn't
+        ultimately attempted."""
+        prefix_end = 0
+        for season_number in range(1, latest_season):
+            try:
+                episodes = self.tmdb.get_tv_season(show.tmdb_id, season_number)
+            except TMDBError:
+                break
+            if not season_is_complete(episodes):
+                break
+            if not self._unhandled_episodes_for_season(show, identity, season_number, episodes):
+                break
+            prefix_end = season_number
+        return prefix_end
 
     def check_show(self, show: ShowRow, full_backfill: bool = False) -> int:
         """Fetches the show's current latest season from TMDB, diffs it
@@ -682,37 +759,51 @@ class Worker:
         again on every cycle forever would be repeated, pointless TMDB
         work for seasons with nothing left to discover.
 
-        Two pack-preference decisions apply regardless of `full_backfill`,
-        both driven by real signals rather than "is this the latest
-        season":
+        Three pack-preference tiers apply, each driven by a real signal
+        rather than "is this the latest season" — every real torrent for
+        old/finished content is far more likely to exist as a pack than as
+        well-seeded individual episodes, and the more of the show one pack
+        covers, the fewer separate downloads/searches it takes to get it:
 
         1. If the show itself has already ended (TMDB `status` is `Ended`
            or `Canceled`), a single complete-series pack is tried before
-           anything else — a finished show is realistically more likely to
-           exist as one combined release than as well-seeded individual
-           seasons, let alone individual episodes. When this fires, the
-           per-season sweep below is skipped entirely for this call (no
-           point racing a dozen per-season searches against one that
-           already covers all of them); if it doesn't pan out, the season
-           sweep on some later call is exactly that fallback.
-        2. Otherwise, each season checked is tested with
+           anything else. When this fires, everything below is skipped
+           entirely for this call (no point racing a dozen per-season/
+           range searches against one that already covers all of them);
+           if it doesn't pan out, tier 2/3 on some later call is exactly
+           that fallback.
+        2. Otherwise, on a `full_backfill` sweep specifically,
+           `_detect_complete_unhandled_prefix()` looks for a genuine
+           multi-season *range* — every season from 1 up to (but not
+           including) the current one that's both finished airing and
+           still genuinely unhandled. Two or more such seasons get one
+           bundled range-pack request ("Reacher S01-S03" while season 4
+           still airs) instead of several separate season packs; the
+           per-season sweep below then only covers whatever the range
+           didn't (season `prefix_end + 1` onward). Deliberately
+           full-backfill-only — see that method's own docstring for why
+           detecting a range on every ordinary recheck cycle would be too
+           expensive to be worth it, and what still catches the same
+           content anyway if this tier is skipped.
+        3. Each season the sweep still reaches (every season for a full
+           backfill that didn't consume a whole prefix via tier 2, or just
+           the latest season for an ordinary recheck) is tested with
            `tv_resolve.season_is_complete()`: a season that's already
            finished airing gets a single season-pack request for whatever
            it still hasn't handled (see `_check_show_season`'s
-           `prefer_pack`) instead of one per-episode search per missing
-           episode — an older, fully-aired season is far more likely to
-           still have a well-seeded pack than well-seeded individual
-           episodes. This applies to the *current* season too, the moment
-           it finishes airing (or the show ends) — including on an
-           ordinary scheduled recheck, not only a first-ever full backfill,
-           closing the gap that used to leave a since-finished season
-           stuck on per-episode searches forever.
+           `pack_due`) instead of one per-episode search per missing
+           episode. This tier applies to the *current* season too, the
+           moment it finishes airing — including on an ordinary scheduled
+           recheck, not only a first-ever full backfill, closing the gap
+           that used to leave a since-finished season stuck on per-episode
+           searches forever.
 
-        Both decisions are guarded by `_should_attempt_pack()` — a pack is
-        only ever tried once for free; a failed attempt only gets retried
-        under the same opt-in/cooldown/max-attempts rule Stage 12.x's
-        per-episode auto-recheck already uses, so a persistently-
-        unavailable pack can't get silently re-queued every cycle forever.
+        All three tiers are guarded by `_should_attempt_pack()` — a pack
+        is only ever tried once for free at each exact scope; a failed
+        attempt only gets retried under the same opt-in/cooldown/max-
+        attempts rule Stage 12.x's per-episode auto-recheck already uses,
+        so a persistently-unavailable pack can't get silently re-queued
+        every cycle forever.
 
         Before creating a *download* request for an episode not yet in the
         ledger, checks whether a file for it already exists somewhere under
@@ -752,6 +843,31 @@ class Worker:
 
         seasons_to_check = range(1, latest_season + 1) if full_backfill else [latest_season]
         created = 0
+
+        # Stage 14.x: a genuine multi-season *range* pack ("Reacher
+        # S01-S03" while a later season still airs) — tried only on a
+        # full backfill (see _detect_complete_unhandled_prefix's own note
+        # on why this never runs on an ordinary recheck), and only when
+        # there are at least two seasons in it; a single season is
+        # _check_show_season's own single-season-pack case, not a range.
+        if full_backfill and not show_ended and latest_season > 1:
+            prefix_end = self._detect_complete_unhandled_prefix(show, identity, latest_season)
+            if prefix_end >= 2 and self._should_attempt_pack(show, 1, tv_settings, season_range_end=prefix_end):
+                request_row = self.store.create_pack_request(
+                    tmdb_id=show.tmdb_id, show_id=show.id, title=identity.title,
+                    season_number=1, season_range_end=prefix_end,
+                )
+                self.enqueue(request_row.id)
+                logger.info(
+                    "show check: show %d (%s) seasons 1-%d have finished airing with unhandled episodes — "
+                    "queuing one season-range pack instead of per-season searches",
+                    show.id,
+                    show.title,
+                    prefix_end,
+                )
+                created += 1
+                seasons_to_check = range(prefix_end + 1, latest_season + 1)
+
         for season_number in seasons_to_check:
             try:
                 episodes = self.tmdb.get_tv_season(show.tmdb_id, season_number)

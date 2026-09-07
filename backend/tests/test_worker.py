@@ -9,6 +9,7 @@ from app import config
 from app.db import RequestStore, ShowEpisodeRow
 from app.qbt import QBTError
 from app.tv_settings import TVScheduleSettings
+from app.tv_resolve import resolve_show
 from app.worker import Worker
 
 
@@ -805,15 +806,15 @@ def test_check_show_default_only_checks_the_latest_season_even_with_multiple_sea
     assert {(r.media_type, r.season_number, r.episode_number) for r in requests} == {("episode", 3, 1)}
 
 
-def test_check_show_full_backfill_sweeps_every_season_in_ascending_order():
+def test_check_show_full_backfill_bundles_a_complete_unhandled_prefix_into_one_range_pack():
     """A first-time subscribe (api.py's POST /api/shows, full_backfill=True)
     to a show with nothing downloaded at all must grab everything already
     aired across every season, not just the newest — the gap this stage
-    fixed. Seasons 1-2 have already finished airing (every listed episode
-    has a past air_date), so each becomes a single season-pack request
-    rather than one-per-episode; season 3 still has an unaired episode, so
-    it stays per-episode as before. Enqueue order (and therefore the order
-    the single-worker queue processes them in) follows season, ascending."""
+    fixed. Seasons 1-2 have both finished airing and are both unhandled, so
+    they bundle into one season-range pack rather than one search per
+    season; season 3 still has an unaired episode, so it stays per-episode
+    as before. Enqueue order (and therefore the order the single-worker
+    queue processes them in) follows season, ascending."""
     store = RequestStore(":memory:")
     show = store.create_show(tmdb_id=95350, title="Lanterns")
     tmdb = FakeTMDBClient(
@@ -834,14 +835,40 @@ def test_check_show_full_backfill_sweeps_every_season_in_ascending_order():
 
     created = worker.check_show(show, full_backfill=True)
 
-    assert created == 3  # one pack (season 1) + one pack (season 2) + one episode (season 3 ep 1)
+    assert created == 2  # one range pack (seasons 1-2) + one episode (season 3 ep 1)
     requests = sorted(store.list_requests(), key=lambda r: r.id)
-    assert [(r.media_type, r.season_number, r.episode_number) for r in requests] == [
-        ("pack", 1, None),
-        ("pack", 2, None),
-        ("episode", 3, 1),
+    assert [(r.media_type, r.season_number, r.season_range_end, r.episode_number) for r in requests] == [
+        ("pack", 1, 2, None),
+        ("episode", 3, None, 1),
     ]
-    assert [worker.queue.get_nowait() for _ in range(3)] == [r.id for r in requests]
+    assert [worker.queue.get_nowait() for _ in range(2)] == [r.id for r in requests]
+
+
+def test_check_show_full_backfill_uses_separate_season_packs_when_no_genuine_range_exists():
+    """Season 1 is still airing (not complete), so there's no contiguous
+    complete-from-1 prefix to bundle — season 2, once it's individually
+    reached by the ordinary per-season sweep, still gets its own
+    single-season pack exactly as before this range-pack tier existed."""
+    store = RequestStore(":memory:")
+    show = store.create_show(tmdb_id=95350, title="Lanterns")
+    tmdb = FakeTMDBClient(
+        show={**SHOW, "number_of_seasons": 2},
+        season_episodes={
+            1: [
+                {"episode_number": 1, "air_date": "2020-01-01"},
+                {"episode_number": 2, "air_date": "2099-01-01"},  # unaired -> season 1 not complete
+            ],
+            2: [{"episode_number": 1, "air_date": "2021-01-01"}],  # the "latest" season, also finished
+        },
+    )
+    worker = Worker(store, tmdb, FakeQBTClient())
+
+    created = worker.check_show(show, full_backfill=True)
+
+    assert created == 2  # one episode (season 1 ep 1) + one single-season pack (season 2)
+    requests = {r.media_type: r for r in store.list_requests()}
+    assert requests["episode"].season_number == 1 and requests["episode"].episode_number == 1
+    assert requests["pack"].season_number == 2 and requests["pack"].season_range_end is None
 
 
 def test_check_show_full_backfill_prefers_a_pack_for_a_finished_season():
@@ -1057,6 +1084,69 @@ def test_should_attempt_pack_series_scope_is_independent_of_season_scope():
     worker = Worker(store, FakeTMDBClient(), FakeQBTClient())
 
     assert worker._should_attempt_pack(show, None, _settings()) is True
+
+
+def test_should_attempt_pack_range_scope_is_independent_of_single_season_scope():
+    """A season-range attempt starting at season 1 and a plain single-
+    season-1 attempt must track independent histories too, even though
+    they share season_number=1 — only season_range_end distinguishes them."""
+    store = RequestStore(":memory:")
+    show = store.create_show(tmdb_id=95350, title="Lanterns")
+    row = store.create_pack_request(tmdb_id=95350, show_id=show.id, title="Lanterns", season_number=1)
+    store.update_status(row.id, "complete")
+    worker = Worker(store, FakeTMDBClient(), FakeQBTClient())
+
+    assert worker._should_attempt_pack(show, 1, _settings(), season_range_end=3) is True
+
+
+# ---------------------------------------------------------------------------
+# _detect_complete_unhandled_prefix — Stage 14.x's season-range detection
+# ---------------------------------------------------------------------------
+
+
+def test_detect_complete_unhandled_prefix_stops_at_first_still_airing_season():
+    store = RequestStore(":memory:")
+    show = store.create_show(tmdb_id=95350, title="Reacher")
+    tmdb = FakeTMDBClient(
+        season_episodes={
+            1: [{"episode_number": 1, "air_date": "2022-01-01"}],
+            2: [{"episode_number": 1, "air_date": "2023-01-01"}],
+            3: [
+                {"episode_number": 1, "air_date": "2024-01-01"},
+                {"episode_number": 2, "air_date": "2099-01-01"},  # unaired -> season 3 not complete
+            ],
+        }
+    )
+    worker = Worker(store, tmdb, FakeQBTClient())
+    identity = resolve_show(95350, tmdb)
+
+    assert worker._detect_complete_unhandled_prefix(show, identity, latest_season=4) == 2
+
+
+def test_detect_complete_unhandled_prefix_zero_when_season_one_already_handled():
+    """A range should bundle from season 1 — if season 1 is already
+    handled some other way, there's no point trying to bundle it into a
+    range, so the prefix walk stops immediately."""
+    store = RequestStore(":memory:")
+    show = store.create_show(tmdb_id=95350, title="Reacher")
+    store.add_show_episode(show.id, 1, 1, request_id=1)
+    tmdb = FakeTMDBClient(season_episodes={1: [{"episode_number": 1, "air_date": "2022-01-01"}]})
+    worker = Worker(store, tmdb, FakeQBTClient())
+    identity = resolve_show(95350, tmdb)
+
+    assert worker._detect_complete_unhandled_prefix(show, identity, latest_season=2) == 0
+
+
+def test_detect_complete_unhandled_prefix_zero_when_season_one_still_airing():
+    store = RequestStore(":memory:")
+    show = store.create_show(tmdb_id=95350, title="Reacher")
+    tmdb = FakeTMDBClient(
+        season_episodes={1: [{"episode_number": 1, "air_date": "2099-01-01"}]}  # unaired
+    )
+    worker = Worker(store, tmdb, FakeQBTClient())
+    identity = resolve_show(95350, tmdb)
+
+    assert worker._detect_complete_unhandled_prefix(show, identity, latest_season=2) == 0
 
 
 def test_check_show_does_not_spam_a_failed_pack_when_recheck_is_disabled():
