@@ -2,25 +2,50 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<title>The Family Downloader</title>
+<title>Smithflix</title>
+<!-- Sets data-theme before first paint, so a saved light-mode preference
+     doesn't flash dark first — the full theme apply (meta theme-color,
+     toggle icon) happens later in the main script once the rest of the
+     DOM exists. -->
+<script>try{document.documentElement.dataset.theme=localStorage.getItem("smithflix-theme")==="light"?"light":"dark"}catch(e){}</script>
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1">
-<meta name="theme-color" content="#0f1115">
+<meta name="theme-color" content="#123b36">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="apple-mobile-web-app-title" content="Downloader">
+<meta name="apple-mobile-web-app-title" content="Smithflix">
 <link rel="manifest" href="/manifest.json">
 <link rel="apple-touch-icon" href="/apple-touch-icon.png">
-<link rel="icon" href="/icon-192.png">
+<link rel="icon" type="image/svg+xml" href="/brand-icon.svg">
+<link rel="icon" type="image/png" sizes="512x512" href="/icon-512.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@600;700;800&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@48,700,1,0" rel="stylesheet">
 <style>
+  /* Smithflix brand palette — see brand_identity/smithflix-brand/
+     BRAND-IMPLEMENTATION.md. Dark is the default theme (teal surfaces,
+     cream text); :root[data-theme="light"] below overrides the same
+     tokens for the manual light-mode toggle. Coral is the one fixed
+     accent across both themes — reserved for actions/selection, never
+     recolored per-household (the old customizable-accent-color setting
+     was removed for exactly this reason: one consistent brand color). */
   :root {
-    --bg: #0f1115;
-    --bg-elevated: #181b21;
-    --bg-card: #20242c;
-    --text: #f2f3f5;
-    --text-dim: #9aa0ac;
-    --accent: #1e88e5;
+    --smithflix-cream: #f6efe3;
+    --smithflix-teal: #123b36;
+    --smithflix-coral: #ff6b4a;
+    --smithflix-mustard: #f4b942;
+
+    --font-display: 'Baloo 2', sans-serif;
+    --font-body: 'Inter', -apple-system, BlinkMacSystemFont, "Helvetica Neue", Arial, sans-serif;
+
+    --bg: #0d2b27;
+    --bg-elevated: #123b36;
+    --bg-card: #17453f;
+    --text: #f6efe3;
+    --text-dim: #a9c1bc;
+    --accent: var(--smithflix-coral);
     --accent-text: #ffffff;
-    --border: #2a2e37;
+    --border: #285650;
     --status-queued: #6b7280;
     --status-searching: #3b82f6;
     --status-downloading: #a855f7;
@@ -31,11 +56,41 @@
     --safe-top: env(safe-area-inset-top, 0px);
     --safe-bottom: env(safe-area-inset-bottom, 0px);
   }
+  :root[data-theme="light"] {
+    --bg: #f6efe3;
+    --bg-elevated: #efe5d2;
+    --bg-card: #e8dcc4;
+    --text: #123b36;
+    --text-dim: #5c7570;
+    --border: #ddceac;
+  }
   * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+
+  /* Every icon in the app is Material Symbols Rounded at one fixed style
+     (filled, weight 700, grade 0, optical size 48 — set on the element
+     itself as a fallback/override in case the URL-baked @48,700,1,0
+     defaults from the <link> in <head> don't apply for any reason).
+     Google's own standard boilerplate for using the variable font as an
+     icon set; font-size controls the rendered size per placement below,
+     independent of the opsz axis. color inherits from the parent, same
+     as the SVG icons this replaces (fill: currentColor). */
+  .material-symbols-rounded {
+    font-family: 'Material Symbols Rounded';
+    font-weight: normal;
+    font-style: normal;
+    line-height: 1;
+    letter-spacing: normal;
+    text-transform: none;
+    display: inline-block;
+    white-space: nowrap;
+    word-wrap: normal;
+    direction: ltr;
+    font-variation-settings: 'FILL' 1, 'wght' 700, 'GRAD' 0, 'opsz' 48;
+  }
   html, body {
     margin: 0; padding: 0; height: 100%;
     background: var(--bg); color: var(--text);
-    font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue", Arial, sans-serif;
+    font-family: var(--font-body);
     overscroll-behavior-y: none;
   }
   a { color: inherit; text-decoration: none; }
@@ -45,20 +100,28 @@
     position: sticky; top: 0; z-index: 10;
     display: flex; align-items: center; gap: 10px;
     padding: calc(10px + var(--safe-top)) 14px 10px;
-    background: rgba(15,17,21,0.92);
+    background: color-mix(in srgb, var(--bg) 92%, transparent);
     backdrop-filter: blur(10px);
     border-bottom: 1px solid var(--border);
   }
-  #backBtn, #settingsToggle {
+  #backBtn, #settingsToggle, #themeToggle {
     flex: 0 0 auto; background: none; border: none; color: var(--text);
     font-size: 20px; padding: 6px 8px; border-radius: 8px; line-height: 1;
     display: flex; align-items: center; justify-content: center;
   }
-  #backBtn:active, #settingsToggle:active { background: var(--bg-card); }
-  #settingsToggle svg { width: 20px; height: 20px; fill: currentColor; }
-  /* Same slot the old page-title text sat in — right after the (contextual)
-     back button — just a static mark now rather than dynamic per-page text. */
-  #topbarLogo { flex: 0 0 auto; width: 30px; height: 30px; border-radius: 8px; display: block; }
+  #backBtn:active, #settingsToggle:active, #themeToggle:active { background: var(--bg-card); }
+  #topbarLogo {
+    flex: 0 0 auto; display: flex; align-items: center; min-width: 0;
+  }
+  /* Real text, not an image — "smith" tracks the current theme's text
+     color, "flix" stays the fixed brand coral, so switching theme just
+     recolors it like everything else instead of needing a separate
+     light/dark SVG swap. */
+  #topbarLogo .brand-wordmark {
+    font-family: var(--font-display); font-weight: 800; font-size: 26px; line-height: 1;
+  }
+  #topbarLogo .brand-word-smith { color: var(--text); }
+  #topbarLogo .brand-word-flix { color: var(--smithflix-coral); }
   /* Always in the top bar (not a toggleable row) — flex:1 + min-width:0
      so it scales with whatever space backBtn/settingsToggle leave behind,
      rather than forcing the bar to overflow. */
@@ -123,11 +186,15 @@
     text-transform: uppercase; letter-spacing: 0.04em;
     margin: 0 0 10px 2px;
   }
-  section.row .row-title-arrow { font-size: 17px; line-height: 1; font-weight: 700; }
+  section.row .row-title-arrow { font-size: 21px; line-height: 1; font-weight: 700; }
   section.row .row-title:active { opacity: 0.7; }
 
   .hscroll {
-    display: flex; gap: 10px; overflow-x: auto; padding-bottom: 4px;
+    /* overflow-x:auto forces overflow-y to compute as auto too (CSS spec —
+       explicitly setting overflow-y:visible here wouldn't override that),
+       which clips the top of a poster's hover scale-up below. Top padding
+       gives the scaled card room inside the box instead. */
+    display: flex; gap: 10px; overflow-x: auto; padding: 8px 0 4px;
     scroll-snap-type: x proximity; -webkit-overflow-scrolling: touch;
   }
   .hscroll::-webkit-scrollbar { display: none; }
@@ -240,7 +307,11 @@
   }
   .hero::after {
     content: ""; position: absolute; inset: 0;
-    background: linear-gradient(to top, var(--bg) 0%, rgba(15,17,21,0.88) 35%, rgba(15,17,21,0.45) 70%, rgba(15,17,21,0.1) 100%);
+    background: linear-gradient(to top,
+      var(--bg) 0%,
+      color-mix(in srgb, var(--bg) 88%, transparent) 35%,
+      color-mix(in srgb, var(--bg) 45%, transparent) 70%,
+      color-mix(in srgb, var(--bg) 10%, transparent) 100%);
   }
   .hero-content {
     position: relative; z-index: 1; display: flex; gap: 16px; align-items: flex-end; flex-wrap: wrap;
@@ -262,7 +333,7 @@
     font-size: 11px; font-weight: 700; padding: 1px 6px; border: 1px solid var(--text-dim);
     border-radius: 4px; color: var(--text-dim); line-height: 1.4;
   }
-  .detail-overview { margin-top: 8px; font-size: 15px; line-height: 1.5; color: #d7d9dd; }
+  .detail-overview { margin-top: 8px; font-size: 15px; line-height: 1.5; color: var(--text-dim); }
 
   /* The score ring + the primary action button share one row, same as
      TMDB's User Score + Play Trailer row. */
@@ -481,7 +552,7 @@
     display: flex; align-items: center; justify-content: center;
     box-shadow: 0 4px 14px rgba(0,0,0,0.35);
   }
-  .downloads-fab svg { width: 28px; height: 28px; fill: currentColor; }
+  .downloads-fab .material-symbols-rounded { font-size: 28px; }
   .downloads-fab:active { opacity: 0.85; }
   /* Same-specificity tie with the UA's [hidden]{display:none} as
      .search-clear-btn above — without this, the class rule's own
@@ -528,27 +599,6 @@
   .settings-hint { color: var(--text-dim); font-size: 12.5px; margin-top: 6px; line-height: 1.4; }
   .settings-save-error { color: var(--status-nospace); font-size: 13px; margin-top: 12px; }
 
-  .accent-swatches { display: flex; flex-wrap: wrap; gap: 14px; margin-top: 4px; }
-  .accent-swatch {
-    width: 40px; height: 40px; border-radius: 50%; border: 2px solid transparent;
-    position: relative; padding: 0; flex: 0 0 auto;
-  }
-  .accent-swatch.selected { border-color: var(--text); }
-  .accent-swatch.selected::after {
-    content: "\2713"; position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
-    color: #fff; font-size: 16px; font-weight: 700; text-shadow: 0 1px 3px rgba(0,0,0,0.7);
-  }
-  .custom-swatch {
-    background: conic-gradient(red, yellow, lime, cyan, blue, magenta, red);
-    overflow: hidden; display: flex; align-items: center; justify-content: center;
-  }
-  .custom-swatch input[type="color"] {
-    opacity: 0; width: 200%; height: 200%; border: none; padding: 0; background: none;
-  }
-  .reset-accent-btn {
-    display: block; margin-top: 14px; background: none; border: none; color: var(--text-dim);
-    font-size: 13px; text-decoration: underline; padding: 0;
-  }
   .about-footer {
     text-align: center; color: var(--text-dim); font-size: 12px; margin: 28px 0 12px;
   }
@@ -556,7 +606,7 @@
   /* Bottom nav */
   #tabbar {
     position: fixed; left: 0; right: 0; bottom: 0; z-index: 10;
-    display: flex; background: rgba(15,17,21,0.94); backdrop-filter: blur(10px);
+    display: flex; background: color-mix(in srgb, var(--bg) 94%, transparent); backdrop-filter: blur(10px);
     border-top: 1px solid var(--border);
     padding: 6px 0 calc(6px + var(--safe-bottom));
   }
@@ -565,7 +615,7 @@
     padding: 6px 0; color: var(--text-dim); font-size: 11px; background: none; border: none;
   }
   .tab .icon { display: flex; }
-  .tab .icon svg { width: 22px; height: 22px; fill: currentColor; }
+  .tab .icon .material-symbols-rounded { font-size: 22px; }
   .tab.active { color: var(--accent); }
 
   /* Desktop nav: a top horizontal bar (Netflix-style) replaces the bottom
@@ -587,7 +637,9 @@
 
 <div id="topbar">
   <button id="backBtn" style="display:none" aria-label="Back">&larr;</button>
-  <img id="topbarLogo" src="/icon-192.png" alt="The Family Downloader">
+  <a id="topbarLogo" href="#/home" aria-label="Smithflix home">
+    <span class="brand-wordmark"><span class="brand-word-smith">smith</span><span class="brand-word-flix">flix</span></span>
+  </a>
   <nav class="top-nav-links">
     <button class="top-nav-link" data-tab="home">Home</button>
     <button class="top-nav-link" data-tab="movies">Movies</button>
@@ -598,7 +650,10 @@
     <button id="searchClearBtn" class="search-clear-btn" aria-label="Clear search" hidden>&#10005;</button>
   </div>
   <button id="settingsToggle" aria-label="Settings">
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" aria-hidden="true"><path d="M19.14,12.94c0.04-0.3,0.06-0.61,0.06-0.94c0-0.32-0.02-0.64-0.07-0.94l2.03-1.58c0.18-0.14,0.23-0.41,0.12-0.61 l-1.92-3.32c-0.12-0.22-0.37-0.29-0.59-0.22l-2.39,0.96c-0.5-0.38-1.03-0.7-1.62-0.94L14.4,2.81c-0.04-0.24-0.24-0.41-0.48-0.41 h-3.84c-0.24,0-0.43,0.17-0.47,0.41L9.25,5.35C8.66,5.59,8.12,5.92,7.63,6.29L5.24,5.33c-0.22-0.08-0.47,0-0.59,0.22L2.74,8.87 C2.62,9.08,2.66,9.34,2.86,9.48l2.03,1.58C4.84,11.36,4.8,11.69,4.8,12s0.02,0.64,0.07,0.94l-2.03,1.58 c-0.18,0.14-0.23,0.41-0.12,0.61l1.92,3.32c0.12,0.22,0.37,0.29,0.59,0.22l2.39-0.96c0.5,0.38,1.03,0.7,1.62,0.94l0.36,2.54 c0.05,0.24,0.24,0.41,0.48,0.41h3.84c0.24,0,0.44-0.17,0.47-0.41l0.36-2.54c0.59-0.24,1.13-0.56,1.62-0.94l2.39,0.96 c0.22,0.08,0.47,0,0.59-0.22l1.92-3.32c0.12-0.22,0.07-0.47-0.12-0.61L19.14,12.94z M12,15.6c-1.98,0-3.6-1.62-3.6-3.6 s1.62-3.6,3.6-3.6s3.6,1.62,3.6,3.6S13.98,15.6,12,15.6z"/></svg>
+    <span class="material-symbols-rounded">settings</span>
+  </button>
+  <button id="themeToggle" aria-label="Switch to light mode">
+    <span class="material-symbols-rounded" id="themeToggleIcon">dark_mode</span>
   </button>
 </div>
 
@@ -606,13 +661,13 @@
 
 <nav id="tabbar">
   <button class="tab" data-tab="home">
-    <span class="icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" aria-hidden="true"><path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z"/></svg></span>Home
+    <span class="icon"><span class="material-symbols-rounded">home</span></span>Home
   </button>
   <button class="tab" data-tab="movies">
-    <span class="icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" aria-hidden="true"><path d="M18 4l2 4h-3l-2-4h-2l2 4h-3l-2-4H8l2 4H7L5 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V4h-4z"/></svg></span>Movies
+    <span class="icon"><span class="material-symbols-rounded">movie</span></span>Movies
   </button>
   <button class="tab" data-tab="tv">
-    <span class="icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 3H3c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h5v2h8v-2h5c1.1 0 1.99-.9 1.99-2L23 5c0-1.1-.9-2-2-2zm0 14H3V5h18v12z"/></svg></span>TV Shows
+    <span class="icon"><span class="material-symbols-rounded">tv</span></span>TV Shows
   </button>
 </nav>
 
@@ -621,15 +676,38 @@
      (queued/searching/downloading) request count. Hidden while already
      on the Requests page — see route(). -->
 <button id="downloadsFab" class="downloads-fab" aria-label="Requests">
-  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 -960 960 960" aria-hidden="true">
-    <path d="M480-320 280-520l56-58 104 104v-326h80v326l104-104 56 58-200 200ZM240-160v-160h80v80h320v-80h80v160H240Z"/>
-  </svg>
+  <span class="material-symbols-rounded">download</span>
   <span id="downloadsBadge" class="downloads-badge" hidden>0</span>
 </button>
 
 <script>
 (function () {
   "use strict";
+
+  // -- Theme (dark/light) -- data-theme itself is already set on <html>
+  // by the tiny inline script in <head> (before first paint); this fills
+  // in everything that needs the rest of the DOM — the toggle button's
+  // own icon/label and the PWA theme-color meta tag. The logo wordmark
+  // is plain text colored via CSS vars, so it needs no JS handling here.
+  const THEME_KEY = "smithflix-theme";
+  function getTheme() {
+    try { return localStorage.getItem(THEME_KEY) === "light" ? "light" : "dark"; } catch (e) { return "dark"; }
+  }
+  function applyTheme(theme) {
+    document.documentElement.dataset.theme = theme;
+    const meta = document.querySelector('meta[name="theme-color"]');
+    if (meta) meta.setAttribute("content", theme === "light" ? "#f6efe3" : "#123b36");
+    const icon = document.getElementById("themeToggleIcon");
+    if (icon) icon.textContent = theme === "light" ? "light_mode" : "dark_mode";
+    const btn = document.getElementById("themeToggle");
+    if (btn) btn.setAttribute("aria-label", theme === "light" ? "Switch to dark mode" : "Switch to light mode");
+  }
+  function toggleTheme() {
+    const next = getTheme() === "light" ? "dark" : "light";
+    try { localStorage.setItem(THEME_KEY, next); } catch (e) { /* private browsing, etc. — just won't persist */ }
+    applyTheme(next);
+  }
+  applyTheme(getTheme());
 
   const IMG_BASE = "https://image.tmdb.org/t/p/";
   const POSTER_SIZE = "w342";
@@ -638,7 +716,7 @@
     "data:image/svg+xml;utf8," +
     encodeURIComponent(
       '<svg xmlns="http://www.w3.org/2000/svg" width="200" height="300">' +
-      '<rect width="100%" height="100%" fill="#20242c"/></svg>'
+      '<rect width="100%" height="100%" fill="#17453f"/></svg>'
     );
 
   // Curated set of major providers for the home-row chips — TMDB's full
@@ -740,22 +818,6 @@
     ));
   }
 
-  // -- Accent color (Settings > Appearance) --
-
-  const DEFAULT_ACCENT = "#1e88e5";
-
-  function contrastingTextColor(hex) {
-    const n = parseInt(hex.replace("#", ""), 16);
-    const r = (n >> 16) & 255, g = (n >> 8) & 255, b = n & 255;
-    const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
-    return luminance > 0.6 ? "#0f1115" : "#ffffff";
-  }
-  function applyAccentColor(hex) {
-    const color = hex || DEFAULT_ACCENT;
-    document.documentElement.style.setProperty("--accent", color);
-    document.documentElement.style.setProperty("--accent-text", contrastingTextColor(color));
-  }
-
   // -- API --
 
   async function api(path, opts) {
@@ -819,10 +881,6 @@
   const startPlexLink = () => api(`/api/plex/link`, { method: "POST" });
   const getPlexStatus = () => api(`/api/plex/status`);
   const unlinkPlex = () => api(`/api/plex/unlink`, { method: "POST" });
-  const getAppearance = () => api(`/api/settings/appearance`);
-  const setAppearance = (accentColor) => api(`/api/settings/appearance`, {
-    method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ accent_color: accentColor }),
-  });
   const getPipelineSettings = () => api(`/api/settings/pipeline`);
   const setPipelineSettings = (body) => api(`/api/settings/pipeline`, {
     method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
@@ -875,7 +933,7 @@
       .map((it) => posterCard(it, typeof mediaType === "function" ? mediaType(it) : mediaType))
       .join("");
     const heading = expandHref
-      ? `<a class="row-title" href="${expandHref}">${escapeHtml(title)}<span class="row-title-arrow">›</span></a>`
+      ? `<a class="row-title" href="${expandHref}">${escapeHtml(title)}<span class="row-title-arrow">→</span></a>`
       : `<h2>${escapeHtml(title)}</h2>`;
     return `<section class="row">${heading}<div class="hscroll">${cards}</div></section>`;
   }
@@ -966,7 +1024,7 @@
   // row), so there's no on-screen title left to set — `title` still
   // updates the browser tab/PWA title instead.
   function setChrome({ title, showBack, activeTab }) {
-    document.title = title ? `${title} — The Family Downloader` : "The Family Downloader";
+    document.title = title ? `${title} — Smithflix` : "Smithflix";
     backBtn.style.display = showBack ? "" : "none";
     document.querySelectorAll(".tab, .top-nav-link").forEach((t) => {
       t.classList.toggle("active", t.dataset.tab === activeTab);
@@ -1004,12 +1062,6 @@
   // selector below only ever exists on one particular view, so this is a
   // no-op everywhere else.
   app.addEventListener("click", async (e) => {
-    const presetSwatch = e.target.closest(".accent-swatch:not(.custom-swatch)");
-    if (presetSwatch) {
-      await chooseAccentColor(presetSwatch.dataset.color);
-      return;
-    }
-
     // Requests list group header: toggle expand/collapse, unless the
     // click actually landed on the show-title link, which should navigate
     // normally rather than also toggling the row it sits inside of.
@@ -1212,7 +1264,7 @@
       // Each named genre does a movie call + a TV call, interleaved into
       // one mixed row rather than split into two half-width rows — reads
       // as a single Netflix-style row.
-      const genreRowsHtml = HOME_GENRES.map((g) => {
+      const genreRows = HOME_GENRES.map((g) => {
         const movieItems = tagMediaType(byKey[`gm-${g.movieId}`].results || [], "movie");
         const tvItems = tagMediaType(byKey[`gt-${g.tvId}`].results || [], "tv");
         const merged = [];
@@ -1221,16 +1273,30 @@
           if (tvItems[i]) merged.push(tvItems[i]);
         }
         return rowHtml(g.label, merged, (it) => it.__mediaType);
-      }).join("");
+      });
+
+      // Unlike the TV page (where the two Watching rows are always
+      // pinned to the top), Home scatters them at a random point among
+      // the other rows on every load — closer to how Netflix's own
+      // "Continue Watching" surfaces among other rows rather than always
+      // being the very first thing on the page. Kept as one adjacent
+      // pair (not split apart) so the two stay visually associated.
+      const contentRows = [
+        rowHtml("Trending Now", mixedTrending, (it) => it.__mediaType),
+        rowHtml("Popular Movies", byKey.moviePopular.results || [], "movie", "#/movies/popular"),
+        rowHtml("Popular TV Shows", byKey.tvPopular.results || [], "tv", "#/tv/popular"),
+        rowHtml("New Releases", byKey.comingSoon.results || [], "movie", "#/movies/coming-soon"),
+        ...genreRows,
+      ].filter(Boolean);
+
+      const watchingBlock = watchingRowsHtml(byKey.watchingShows || []);
+      if (watchingBlock) {
+        contentRows.splice(Math.floor(Math.random() * (contentRows.length + 1)), 0, watchingBlock);
+      }
 
       app.innerHTML = `
         ${homeHeroHtml(heroItem, heroIsTv ? "tv" : "movie")}
-        ${watchingRowsHtml(byKey.watchingShows || [])}
-        ${rowHtml("Trending Now", mixedTrending, (it) => it.__mediaType)}
-        ${rowHtml("Popular Movies", byKey.moviePopular.results || [], "movie", "#/movies/popular")}
-        ${rowHtml("Popular TV Shows", byKey.tvPopular.results || [], "tv", "#/tv/popular")}
-        ${rowHtml("New Releases", byKey.comingSoon.results || [], "movie", "#/movies/coming-soon")}
-        ${genreRowsHtml}
+        ${contentRows.join("")}
         <section class="row">
           <h2>Browse a Service</h2>
           <div class="provider-row">${providerChipsHtml("#/movies/provider")}</div>
@@ -1597,7 +1663,7 @@
     app.innerHTML = loadingHtml();
     try {
       const [show, shows] = await Promise.all([getTvShow(id), listShows()]);
-      document.title = `${show.name || show.original_name || ""} — The Family Downloader`;
+      document.title = `${show.name || show.original_name || ""} — Smithflix`;
       let subscription = shows.find((s) => s.tmdb_id === Number(id)) || null;
 
       const backdrop = backdropUrl(show.backdrop_path);
@@ -1822,7 +1888,7 @@
     app.innerHTML = loadingHtml();
     try {
       const movie = await getMovie(id);
-      document.title = `${movie.title || movie.original_title || ""} — The Family Downloader`;
+      document.title = `${movie.title || movie.original_title || ""} — Smithflix`;
       const runtime = movie.runtime ? `${Math.floor(movie.runtime / 60)}h ${movie.runtime % 60}m` : "";
       const backdrop = backdropUrl(movie.backdrop_path);
       const certification = certificationOf(movie);
@@ -2102,35 +2168,9 @@
     }
   }
 
-  const ACCENT_PRESETS = [
-    { name: "Blue", color: "#1e88e5" },
-    { name: "Red", color: "#e53935" },
-    { name: "Orange", color: "#fb8c00" },
-    { name: "Yellow", color: "#fdd835" },
-    { name: "Green", color: "#43a047" },
-    { name: "Teal", color: "#00897b" },
-    { name: "Purple", color: "#8e24aa" },
-    { name: "Pink", color: "#d81b60" },
-  ];
-
-  function accentSwatchesHtml(current) {
-    const currentColor = (current || DEFAULT_ACCENT).toLowerCase();
-    const presetColors = new Set(ACCENT_PRESETS.map((p) => p.color.toLowerCase()));
-    const isCustom = !presetColors.has(currentColor);
-    const presets = ACCENT_PRESETS.map((p) => `
-      <button class="accent-swatch ${p.color.toLowerCase() === currentColor ? "selected" : ""}"
-              data-color="${p.color}" style="background:${p.color}" aria-label="${p.name}"></button>
-    `).join("");
-    return `${presets}
-      <label class="accent-swatch custom-swatch ${isCustom ? "selected" : ""}" aria-label="Custom color" style="${isCustom ? `background:${currentColor}` : ""}">
-        <input type="color" id="accentCustomInput" value="${isCustom ? currentColor : DEFAULT_ACCENT}">
-      </label>`;
-  }
-
   async function renderSettings() {
     setChrome({ title: "Settings", showBack: true, activeTab: null });
     app.innerHTML = `
-      <section class="row" id="appearanceSection">${loadingHtml()}</section>
       <section class="row" id="pipelineSection">${loadingHtml()}</section>
       <section class="row" id="tvScheduleSection">${loadingHtml()}</section>
       <section class="row" id="plexSection">${loadingHtml()}</section>
@@ -2138,10 +2178,9 @@
         <h2>Update</h2>
         <button class="settings-btn" id="deployBtn">Check for updates</button>
       </section>
-      <div class="about-footer">The Family Downloader</div>
+      <div class="about-footer">Smithflix</div>
     `;
     await Promise.all([
-      renderAppearanceSection(),
       renderPipelineSection(),
       renderTvScheduleSection(),
       refreshPlexSettings(),
@@ -2335,35 +2374,6 @@
     }
   }
 
-  async function renderAppearanceSection() {
-    const section = document.getElementById("appearanceSection");
-    try {
-      const appearance = await getAppearance();
-      section.innerHTML = `
-        <h2>Appearance</h2>
-        <div class="accent-swatches">${accentSwatchesHtml(appearance.accent_color)}</div>
-        ${appearance.accent_color ? `<button class="reset-accent-btn" id="resetAccentBtn">Reset to default</button>` : ""}
-      `;
-      document.getElementById("accentCustomInput").addEventListener("input", async (e) => {
-        await chooseAccentColor(e.target.value);
-      });
-      const resetBtn = document.getElementById("resetAccentBtn");
-      if (resetBtn) resetBtn.addEventListener("click", () => chooseAccentColor(null));
-    } catch (err) {
-      section.innerHTML = `<h2>Appearance</h2><div class="plex-error">${escapeHtml(err.message)}</div>`;
-    }
-  }
-
-  async function chooseAccentColor(color) {
-    applyAccentColor(color);
-    try {
-      await setAppearance(color);
-    } catch (err) {
-      alert(`Couldn't save color: ${err.message}`);
-    }
-    await renderAppearanceSection();
-  }
-
   async function refreshPlexSettings() {
     const section = document.getElementById("plexSection");
     try {
@@ -2470,11 +2480,7 @@
   })();
 
   document.getElementById("settingsToggle").addEventListener("click", () => navigate("#/settings"));
-
-  // Applied independently of route() — a shared, household-wide choice
-  // (like Plex/retention), not per-device, so every view should reflect
-  // it as soon as it's fetched rather than waiting on the Settings page.
-  getAppearance().then((a) => applyAccentColor(a.accent_color)).catch(() => {});
+  document.getElementById("themeToggle").addEventListener("click", toggleTheme);
 
   route();
 })();

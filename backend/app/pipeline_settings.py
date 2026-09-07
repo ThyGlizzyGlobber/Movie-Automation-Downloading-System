@@ -59,8 +59,8 @@ def is_valid_min_resolution(value: str) -> bool:
 def settings_from_raw(saved: dict) -> PipelineSettings:
     """Overlays a raw settings-table dict on top of config.py's defaults —
     a key that's absent or null falls back to the default, the same
-    convention every other Settings-panel field already uses (accent_color,
-    request_retention_days). Takes a plain dict rather than a store so
+    convention every other Settings-panel field already uses
+    (request_retention_days). Takes a plain dict rather than a store so
     api.py can validate a *prospective* merge (current row + an incoming
     PUT's patch) before actually writing it — see api.py's
     `set_pipeline_settings` for why that matters (a lone min_size_gb edit

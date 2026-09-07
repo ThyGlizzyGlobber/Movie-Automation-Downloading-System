@@ -413,41 +413,6 @@ def test_set_retention_persists_and_reads_back(client_and_deps):
     assert client.get("/api/settings/retention").json() == {"days": 90}
 
 
-def test_get_appearance_defaults_to_none(client_and_deps):
-    client, _, _, _, _, _ = client_and_deps
-    response = client.get("/api/settings/appearance")
-
-    assert response.status_code == 200
-    assert response.json() == {"accent_color": None}
-
-
-def test_set_appearance_persists_and_reads_back(client_and_deps):
-    client, store, _, _, _, _ = client_and_deps
-    response = client.put("/api/settings/appearance", json={"accent_color": "#8e24aa"})
-
-    assert response.status_code == 200
-    assert response.json() == {"accent_color": "#8e24aa"}
-    assert store.get_settings()["accent_color"] == "#8e24aa"
-    assert client.get("/api/settings/appearance").json() == {"accent_color": "#8e24aa"}
-
-
-def test_set_appearance_rejects_a_non_hex_color(client_and_deps):
-    client, _, _, _, _, _ = client_and_deps
-    response = client.put("/api/settings/appearance", json={"accent_color": "blue"})
-
-    assert response.status_code == 422
-
-
-def test_set_appearance_null_resets_to_default(client_and_deps):
-    client, store, _, _, _, _ = client_and_deps
-    client.put("/api/settings/appearance", json={"accent_color": "#8e24aa"})
-
-    response = client.put("/api/settings/appearance", json={"accent_color": None})
-
-    assert response.status_code == 200
-    assert store.get_settings()["accent_color"] is None
-
-
 def test_get_pipeline_settings_defaults_match_config(client_and_deps):
     from app import config
 
@@ -526,8 +491,8 @@ def test_set_pipeline_settings_rejects_blank_category(client_and_deps):
 
 def test_set_pipeline_settings_rejects_a_partial_edit_that_would_invert_the_effective_range(client_and_deps):
     """The frontend always PUTs the full form state (a null field means
-    "reset to default", same convention as AppearanceSettings/
-    RetentionSettings), but the endpoint itself doesn't assume that — an
+    "reset to default", same convention as RetentionSettings), but the
+    endpoint itself doesn't assume that — an
     omitted field reverts to config.py's default, and this must be
     rejected if that reversion would invert the *effective* range, not
     just checked against whatever the request happened to mention."""

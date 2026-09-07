@@ -91,14 +91,10 @@ class RetentionSettings(BaseModel):
     days: int | None = None  # None/0 = keep forever
 
 
-class AppearanceSettings(BaseModel):
-    accent_color: str | None = Field(default=None, pattern=r"^#[0-9a-fA-F]{6}$")  # None = default blue
-
-
 class PipelineSettingsIn(BaseModel):
     """Same "always send the full desired state, null = reset to the
-    config.py default" convention as AppearanceSettings/RetentionSettings
-    above — no partial-patch merging to worry about. Sanity validation
+    config.py default" convention as RetentionSettings above — no
+    partial-patch merging to worry about. Sanity validation
     (Stage 7's second open decision) catches an edit that would otherwise
     silently degrade every future request to "no qualifying results"."""
 
@@ -693,20 +689,6 @@ def get_retention(store: RequestStore = Depends(get_store)) -> dict:
 def set_retention(body: RetentionSettings, store: RequestStore = Depends(get_store)) -> dict:
     store.update_settings({"request_retention_days": body.days})
     return {"days": body.days}
-
-
-@app.get("/api/settings/appearance")
-def get_appearance(store: RequestStore = Depends(get_store)) -> dict:
-    return {"accent_color": store.get_settings().get("accent_color")}
-
-
-@app.put("/api/settings/appearance")
-def set_appearance(body: AppearanceSettings, store: RequestStore = Depends(get_store)) -> dict:
-    # Shared, not per-device — same "no family profiles, one shared panel"
-    # rule as every other setting; whoever picks a color, the whole
-    # household sees it.
-    store.update_settings({"accent_color": body.accent_color})
-    return {"accent_color": body.accent_color}
 
 
 # -- Stage 7: the pipeline preferences a household is actually likely to
