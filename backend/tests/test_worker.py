@@ -1,6 +1,7 @@
 import asyncio
 import re
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
 import pytest
 
@@ -26,6 +27,19 @@ def _fast_hash_capture(monkeypatch):
     sleeps in pipeline.download()'s torrent-hash capture retry loop."""
     monkeypatch.setattr(config, "HASH_CAPTURE_ATTEMPTS", 1)
     monkeypatch.setattr(config, "HASH_CAPTURE_INTERVAL_SECONDS", 0)
+    # Stage 13.x's post-organize source cleanup sleeps for this before
+    # acting — zero it out so tests that drain `worker._cleanup_tasks`
+    # don't actually wait a real minute.
+    monkeypatch.setattr(config, "SOURCE_CLEANUP_DELAY_SECONDS", 0)
+
+
+async def _drain_cleanup_tasks(worker: Worker) -> None:
+    """Awaits every fire-and-forget source-cleanup task the call under
+    test scheduled — `asyncio.run()` on its own would cancel them mid-
+    flight instead of letting them finish, since nothing else awaits a
+    task created via `asyncio.create_task`."""
+    for task in list(worker._cleanup_tasks):
+        await task
 
 MOVIE = {
     "title": "Dune: Part Two",
@@ -515,6 +529,165 @@ def test_check_downloading_marks_episode_cancelled_when_gone_without_asking_plex
 
 
 # ---------------------------------------------------------------------------
+# _run_one / _check_downloading — Stage 13 bulk pack requests
+# ---------------------------------------------------------------------------
+
+
+def _pack_result(**overrides):
+    base = {
+        "engineName": "piratebay",
+        "fileName": "Lanterns.S01.2160p.WEB-DL.mkv",
+        "fileUrl": "magnet:?xt=urn:btih:CCCC",
+        "fileSize": 40_000_000_000,
+        "nbSeeders": 100,
+    }
+    base.update(overrides)
+    return base
+
+
+def test_run_one_downloads_a_season_pack_request():
+    store = RequestStore(":memory:")
+    show = store.create_show(tmdb_id=95350, title="Lanterns")
+    row = store.create_pack_request(tmdb_id=95350, show_id=show.id, title="Lanterns", season_number=1)
+    qbt = FakeQBTClient(results_by_variant={"Lanterns Season 01": [_pack_result()]})
+    worker = Worker(store, FakeTMDBClient(), qbt)
+
+    asyncio.run(worker._run_one(row.id))
+
+    reloaded = store.get_request(row.id)
+    assert reloaded.status == "downloading"
+    assert reloaded.result["torrent_hash"] == "cccc"
+
+
+def test_run_one_downloads_a_complete_series_request():
+    store = RequestStore(":memory:")
+    show = store.create_show(tmdb_id=95350, title="Lanterns")
+    row = store.create_pack_request(tmdb_id=95350, show_id=show.id, title="Lanterns", season_number=None)
+    qbt = FakeQBTClient(
+        results_by_variant={
+            "Lanterns complete series": [_pack_result(fileName="Lanterns.Complete.Series.2160p.mkv")]
+        }
+    )
+    worker = Worker(store, FakeTMDBClient(), qbt)
+
+    asyncio.run(worker._run_one(row.id))
+
+    assert store.get_request(row.id).status == "downloading"
+
+
+def test_run_one_marks_pack_no_qualifying_results():
+    store = RequestStore(":memory:")
+    show = store.create_show(tmdb_id=95350, title="Lanterns")
+    row = store.create_pack_request(tmdb_id=95350, show_id=show.id, title="Lanterns", season_number=1)
+    worker = Worker(store, FakeTMDBClient(), FakeQBTClient())
+
+    asyncio.run(worker._run_one(row.id))
+
+    assert store.get_request(row.id).status == "no qualifying results"
+
+
+def test_check_downloading_organizes_pack_and_fans_out_episode_rows(tmp_path, monkeypatch):
+    monkeypatch.setattr(config, "TV_LIBRARY_ROOT", tmp_path / "library")
+    downloads = tmp_path / "downloads"
+    downloads.mkdir(parents=True)
+    (downloads / "Lanterns.S01E01.mkv").write_bytes(b"ep1")
+    (downloads / "Lanterns.S01E02.mkv").write_bytes(b"ep2")
+
+    store = RequestStore(":memory:")
+    show = store.create_show(tmdb_id=95350, title="Lanterns")
+    row = store.create_pack_request(tmdb_id=95350, show_id=show.id, title="Lanterns", season_number=1)
+    store.update_status(row.id, "downloading", result={"torrent_hash": "cccc"})
+    qbt = FakeQBTClient(
+        torrent_states={"cccc": {"progress": 1.0, "save_path": str(downloads)}},
+        torrent_files={
+            "cccc": [
+                {"name": "Lanterns.S01E01.mkv", "size": 3},
+                {"name": "Lanterns.S01E02.mkv", "size": 3},
+            ]
+        },
+    )
+    worker = Worker(store, FakeTMDBClient(), qbt)
+
+    asyncio.run(worker._check_downloading())
+
+    reloaded = store.get_request(row.id)
+    assert reloaded.status == "complete"
+    episode_rows = [r for r in store.list_requests() if r.media_type == "episode"]
+    assert len(episode_rows) == 2
+    assert {(r.season_number, r.episode_number) for r in episode_rows} == {(1, 1), (1, 2)}
+    assert all(r.status == "complete" for r in episode_rows)
+    assert store.has_show_episode(show.id, 1, 1)
+    assert store.has_show_episode(show.id, 1, 2)
+
+
+def test_check_downloading_pack_skips_episode_already_in_ledger(tmp_path, monkeypatch):
+    """A pack overlapping an episode the per-episode scheduler already
+    handled must not create a duplicate audit trail for the same episode —
+    the ledger, not the pack's own file list, is the source of truth for
+    "already handled"."""
+    monkeypatch.setattr(config, "TV_LIBRARY_ROOT", tmp_path / "library")
+    downloads = tmp_path / "downloads"
+    downloads.mkdir(parents=True)
+    (downloads / "Lanterns.S01E01.mkv").write_bytes(b"ep1")
+
+    store = RequestStore(":memory:")
+    show = store.create_show(tmdb_id=95350, title="Lanterns")
+    existing = store.create_episode_request(
+        tmdb_id=95350, show_id=show.id, title="Lanterns", season_number=1, episode_number=1
+    )
+    store.update_status(existing.id, "complete")
+    store.add_show_episode(show.id, 1, 1, existing.id)
+
+    row = store.create_pack_request(tmdb_id=95350, show_id=show.id, title="Lanterns", season_number=1)
+    store.update_status(row.id, "downloading", result={"torrent_hash": "cccc"})
+    qbt = FakeQBTClient(
+        torrent_states={"cccc": {"progress": 1.0, "save_path": str(downloads)}},
+        torrent_files={"cccc": [{"name": "Lanterns.S01E01.mkv", "size": 3}]},
+    )
+    worker = Worker(store, FakeTMDBClient(), qbt)
+
+    asyncio.run(worker._check_downloading())
+
+    episode_rows = [r for r in store.list_requests() if r.media_type == "episode"]
+    assert len(episode_rows) == 1  # no duplicate created
+    assert store.get_request(row.id).status == "complete"
+
+
+def test_check_downloading_marks_pack_downloaded_not_filed_when_organize_fails(tmp_path, monkeypatch):
+    monkeypatch.setattr(config, "TV_LIBRARY_ROOT", tmp_path / "library")
+    store = RequestStore(":memory:")
+    show = store.create_show(tmdb_id=95350, title="Lanterns")
+    row = store.create_pack_request(tmdb_id=95350, show_id=show.id, title="Lanterns", season_number=1)
+    store.update_status(row.id, "downloading", result={"torrent_hash": "cccc"})
+    qbt = FakeQBTClient(torrent_states={"cccc": {"progress": 1.0}})  # no save_path -> MediaOrganizerError
+    worker = Worker(store, FakeTMDBClient(), qbt)
+
+    asyncio.run(worker._check_downloading())
+
+    reloaded = store.get_request(row.id)
+    assert reloaded.status == "downloaded, not filed"
+    assert reloaded.error_message is not None
+
+
+def test_check_downloading_marks_pack_cancelled_when_gone_without_asking_plex(monkeypatch):
+    store = RequestStore(":memory:")
+    show = store.create_show(tmdb_id=95350, title="Lanterns")
+    row = store.create_pack_request(tmdb_id=95350, show_id=show.id, title="Lanterns", season_number=1)
+    store.update_status(row.id, "downloading", result={"torrent_hash": "cccc"})
+    qbt = FakeQBTClient(torrent_states={})
+
+    def _boom(*args, **kwargs):
+        raise AssertionError("plex.has_in_library should not be called for pack rows")
+
+    monkeypatch.setattr("app.worker.plex.has_in_library", _boom)
+    worker = Worker(store, FakeTMDBClient(), qbt)
+
+    asyncio.run(worker._check_downloading())
+
+    assert store.get_request(row.id).status == "cancelled"
+
+
+# ---------------------------------------------------------------------------
 # check_show / _check_all_watching_shows — Stage 12 subscription scheduler
 # ---------------------------------------------------------------------------
 
@@ -890,6 +1063,11 @@ def test_organize_and_complete_episode_cleans_up_superseded_torrent(tmp_path, mo
 
 
 def test_organize_and_complete_episode_skips_cleanup_when_superseded_torrent_already_gone(tmp_path, monkeypatch):
+    """The *superseded* ("aaaa") torrent is already gone, so its cleanup
+    must not attempt a delete — unrelated to (and not to be confused
+    with) Stage 13.x's separate post-organize source cleanup of the
+    *current* ("bbbb") torrent, which is expected to still happen once
+    drained below."""
     monkeypatch.setattr(config, "TV_LIBRARY_ROOT", tmp_path)
     source = tmp_path / "episode.mkv"
     source.write_bytes(b"data")
@@ -906,10 +1084,14 @@ def test_organize_and_complete_episode_skips_cleanup_when_superseded_torrent_alr
     )
     worker = Worker(store, FakeTMDBClient(), qbt)
 
-    asyncio.run(worker._check_downloading())
+    async def _run():
+        await worker._check_downloading()
+        await _drain_cleanup_tasks(worker)
+
+    asyncio.run(_run())
 
     assert store.get_request(row.id).status == "complete"
-    assert qbt.deleted == []
+    assert ("aaaa", True) not in qbt.deleted
 
 
 def test_organize_and_complete_episode_still_completes_if_cleanup_of_old_torrent_fails(tmp_path, monkeypatch):
@@ -940,3 +1122,117 @@ def test_organize_and_complete_episode_still_completes_if_cleanup_of_old_torrent
     asyncio.run(worker._check_downloading())
 
     assert store.get_request(row.id).status == "complete"  # cleanup failure doesn't undo this
+
+
+# ---------------------------------------------------------------------------
+# Stage 13.x: post-organize source cleanup — at the user's explicit
+# request, the *current* torrent (not just a superseded one) gets removed
+# from qBittorrent a short delay after its file(s) are organized, once a
+# final check confirms the organized copy is genuinely still in place.
+# ---------------------------------------------------------------------------
+
+
+def test_check_downloading_schedules_source_cleanup_after_organizing_episode(tmp_path, monkeypatch):
+    monkeypatch.setattr(config, "TV_LIBRARY_ROOT", tmp_path)
+    source = tmp_path / "downloads" / "Lanterns.S01E01.mkv"
+    source.parent.mkdir(parents=True)
+    source.write_bytes(b"data")
+
+    store = RequestStore(":memory:")
+    show = store.create_show(tmdb_id=95350, title="Lanterns")
+    row = store.create_episode_request(
+        tmdb_id=95350, show_id=show.id, title="Lanterns", season_number=1, episode_number=1
+    )
+    store.update_status(row.id, "downloading", result={"torrent_hash": "aaaa"})
+    qbt = FakeQBTClient(
+        torrent_states={"aaaa": {"progress": 1.0, "save_path": str(source.parent)}},
+        torrent_files={"aaaa": [{"name": source.name, "size": 4}]},
+    )
+    worker = Worker(store, FakeTMDBClient(), qbt)
+
+    async def _run():
+        await worker._check_downloading()
+        await _drain_cleanup_tasks(worker)
+
+    asyncio.run(_run())
+
+    assert store.get_request(row.id).status == "complete"
+    assert ("aaaa", True) in qbt.deleted
+
+
+def test_source_cleanup_skips_when_organized_copy_is_missing(monkeypatch):
+    """A safety abort, not expected in practice: if the organized copy has
+    somehow vanished by the time the delay elapses, the original must not
+    be deleted — losing both would be unrecoverable."""
+    store = RequestStore(":memory:")
+    qbt = FakeQBTClient(torrent_states={"aaaa": {"progress": 1.0}})
+    worker = Worker(store, FakeTMDBClient(), qbt)
+
+    asyncio.run(worker._cleanup_source_after_delay("aaaa", "Lanterns S01E01", [Path("/does/not/exist.mkv")]))
+
+    assert qbt.deleted == []
+
+
+def test_source_cleanup_noop_when_torrent_already_gone(tmp_path):
+    """The torrent might already be gone by the time the delay elapses
+    (e.g. the household's own seeding-time limit beat this to it) — a
+    clean no-op, not an error."""
+    target = tmp_path / "organized.mkv"
+    target.write_bytes(b"data")
+    store = RequestStore(":memory:")
+    qbt = FakeQBTClient(torrent_states={})  # "aaaa" already gone
+    worker = Worker(store, FakeTMDBClient(), qbt)
+
+    asyncio.run(worker._cleanup_source_after_delay("aaaa", "Lanterns S01E01", [target]))
+
+    assert qbt.deleted == []
+
+
+def test_source_cleanup_failure_is_logged_not_raised(tmp_path, caplog):
+    target = tmp_path / "organized.mkv"
+    target.write_bytes(b"data")
+
+    class BoomOnDeleteQBTClient(FakeQBTClient):
+        def delete_torrent(self, torrent_hash, delete_files=True):
+            raise RuntimeError("qbittorrent unreachable")
+
+    store = RequestStore(":memory:")
+    qbt = BoomOnDeleteQBTClient(torrent_states={"aaaa": {"progress": 1.0}})
+    worker = Worker(store, FakeTMDBClient(), qbt)
+
+    with caplog.at_level("ERROR", logger="app.worker"):
+        asyncio.run(worker._cleanup_source_after_delay("aaaa", "Lanterns S01E01", [target]))
+
+    assert "source cleanup failed" in caplog.text
+
+
+def test_check_downloading_schedules_source_cleanup_after_organizing_pack(tmp_path, monkeypatch):
+    monkeypatch.setattr(config, "TV_LIBRARY_ROOT", tmp_path / "library")
+    downloads = tmp_path / "downloads"
+    downloads.mkdir(parents=True)
+    (downloads / "Lanterns.S01E01.mkv").write_bytes(b"ep1")
+    (downloads / "Lanterns.S01E02.mkv").write_bytes(b"ep2")
+
+    store = RequestStore(":memory:")
+    show = store.create_show(tmdb_id=95350, title="Lanterns")
+    row = store.create_pack_request(tmdb_id=95350, show_id=show.id, title="Lanterns", season_number=1)
+    store.update_status(row.id, "downloading", result={"torrent_hash": "cccc"})
+    qbt = FakeQBTClient(
+        torrent_states={"cccc": {"progress": 1.0, "save_path": str(downloads)}},
+        torrent_files={
+            "cccc": [
+                {"name": "Lanterns.S01E01.mkv", "size": 3},
+                {"name": "Lanterns.S01E02.mkv", "size": 3},
+            ]
+        },
+    )
+    worker = Worker(store, FakeTMDBClient(), qbt)
+
+    async def _run():
+        await worker._check_downloading()
+        await _drain_cleanup_tasks(worker)
+
+    asyncio.run(_run())
+
+    assert store.get_request(row.id).status == "complete"
+    assert ("cccc", True) in qbt.deleted

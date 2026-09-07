@@ -4,6 +4,7 @@ search queries — the Stage 1 equivalent for TV. Family disambiguates
 separate problem, same split as movies' resolve.py/score.py."""
 
 from dataclasses import dataclass, field
+from datetime import date
 
 from app.normalize import generate_variants
 from app.tmdb import TMDBClient
@@ -30,6 +31,35 @@ class ShowIdentity:
 
 def episode_query(title_variant: str, season: int, episode: int) -> str:
     return f"{title_variant} {EPISODE_TOKEN_FORMAT.format(season=season, episode=episode)}"
+
+
+def season_pack_queries(title_variant: str, season: int) -> list[str]:
+    """Stage 13: two query shapes tried for one season-pack search, mirroring
+    real indexer conventions for a whole-season release ("Show Season 01" vs
+    "Show S01 COMPLETE") — a plain S01-only query would also match every
+    single-episode release for the season, which is exactly what the
+    per-episode pipeline already handles; a pack search wants a query that
+    at least *suggests* the pack shape, even though the real filtering still
+    happens in pack_score.py's pass-one gate, not here."""
+    return [f"{title_variant} Season {season:02d}", f"{title_variant} S{season:02d} COMPLETE"]
+
+
+def series_pack_query(title_variant: str) -> str:
+    return f"{title_variant} complete series"
+
+
+def aired_episode_numbers(episodes: list[dict], today: str | None = None) -> list[int]:
+    """Episode numbers from a TMDB season's episode list that have already
+    aired (a known air_date not in the future) — shared by worker.py's
+    check_show() (Stage 12) and pipeline.py's download_pack() (Stage 13),
+    which both need to turn a raw TMDB season listing into "which episodes
+    should actually exist by now"."""
+    today = today or date.today().isoformat()
+    return [
+        ep["episode_number"]
+        for ep in episodes
+        if ep.get("episode_number") is not None and ep.get("air_date") and ep["air_date"] <= today
+    ]
 
 
 def resolve_show(tmdb_id: int, client: TMDBClient) -> ShowIdentity:

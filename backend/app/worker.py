@@ -73,16 +73,22 @@ never delete-then-hope-the-replacement-works.
 
 import asyncio
 import logging
-from datetime import date, datetime, timedelta, timezone
+from datetime import datetime, timedelta, timezone
 
 from app import config, plex
 from app.db import RequestStore, ShowEpisodeRow, ShowRow
-from app.media_organizer import MediaOrganizerError, find_existing_episode_file, organize_episode, select_video_file
-from app.pipeline import download, download_episode, find_best_episode_candidate
+from app.media_organizer import (
+    MediaOrganizerError,
+    find_existing_episode_file,
+    organize_episode,
+    organize_pack,
+    select_video_file,
+)
+from app.pipeline import download, download_episode, download_pack, find_best_episode_candidate
 from app.pipeline_settings import resolve_pipeline_settings
 from app.qbt import QBTClient
 from app.tmdb import TMDBClient, TMDBError
-from app.tv_resolve import resolve_show
+from app.tv_resolve import aired_episode_numbers, resolve_show
 from app.tv_settings import TVScheduleSettings, resolve_tv_settings
 
 logger = logging.getLogger("app.worker")
@@ -94,10 +100,14 @@ _DIRECT_TERMINAL_STATUSES = {"no qualifying results", "insufficient free space"}
 
 def _request_label(row) -> str:
     """Log-friendly identifier — "{Show} S01E04" for an episode row,
-    otherwise just the title, matching Stage 14's planned requests-list
-    label change."""
+    "{Show} Season 01"/"{Show} complete series" for a Stage 13 bulk-pack
+    row, otherwise just the title, matching Stage 14's planned requests-
+    list label change."""
     if row.media_type == "episode" and row.season_number is not None and row.episode_number is not None:
         return f"{row.title} S{row.season_number:02d}E{row.episode_number:02d}"
+    if row.media_type == "pack":
+        scope = f"Season {row.season_number:02d}" if row.season_number is not None else "complete series"
+        return f"{row.title} {scope}"
     return row.title
 
 
@@ -121,6 +131,13 @@ def _result_summary(result) -> dict:
         "candidates_considered": result.candidates_considered,
         "torrent_hash": result.torrent_hash,
     }
+    # Stage 13: PackDownloadResult carries a couple of fields the movie/
+    # episode results don't (which literal query string actually matched) —
+    # getattr-with-default keeps this one summary builder shared rather
+    # than forking a pack-specific copy just for two extra keys.
+    query_used = getattr(result, "query_used", None)
+    if query_used is not None:
+        summary["query_used"] = query_used
     if result.winner is not None:
         summary["winner"] = {
             "fileName": result.winner.get("fileName"),
@@ -150,6 +167,10 @@ class Worker:
         self.queue: asyncio.Queue[int] = asyncio.Queue()
         self._pipeline_lock = asyncio.Lock()
         self._tasks: list[asyncio.Task] = []
+        # Fire-and-forget delayed source-cleanup tasks (Stage 13.x) — kept
+        # in a set purely so nothing garbage-collects them mid-sleep; each
+        # discards itself on completion via add_done_callback below.
+        self._cleanup_tasks: set[asyncio.Task] = set()
 
     def enqueue(self, request_id: int) -> None:
         self.queue.put_nowait(request_id)
@@ -196,6 +217,12 @@ class Worker:
                 identity = await asyncio.to_thread(resolve_show, row.tmdb_id, self.tmdb)
                 result = await asyncio.to_thread(
                     download_episode, identity, row.season_number, row.episode_number, self.qbt, settings
+                )
+            elif row.media_type == "pack":
+                identity = await asyncio.to_thread(resolve_show, row.tmdb_id, self.tmdb)
+                scope = "season" if row.season_number is not None else "series"
+                result = await asyncio.to_thread(
+                    download_pack, identity, scope, self.qbt, settings, row.season_number
                 )
             else:
                 result = await asyncio.to_thread(download, row.tmdb_id, self.tmdb, self.qbt, settings)
@@ -254,14 +281,14 @@ class Worker:
                 continue  # couldn't be captured at add time — known gap, nothing to poll
             info = await asyncio.to_thread(self.qbt.torrent_info, torrent_hash)
             if info is None:
-                if row.media_type == "episode":
+                if row.media_type in ("episode", "pack"):
                     # plex.has_in_library only supports a movie lookup
                     # (PlexClient.has_movie is type=1 only) — a TV
                     # equivalent is a real, documented gap, same style as
                     # this project's other named-not-solved gaps, so an
-                    # episode's disappearance is reported as an unconfirmed
-                    # removal rather than guessing at a check that doesn't
-                    # fit the data.
+                    # episode's (or a pack's) disappearance is reported as
+                    # an unconfirmed removal rather than guessing at a
+                    # check that doesn't fit the data.
                     message = "Removed from qBittorrent outside this app"
                     logger.info("request %d (%s) downloading -> cancelled (%s)", row.id, _request_label(row), message)
                     await asyncio.to_thread(self.store.update_status, row.id, "cancelled", error_message=message)
@@ -287,6 +314,8 @@ class Worker:
             elif info.get("progress", 0) >= 1:
                 if row.media_type == "episode":
                     await self._organize_and_complete_episode(row)
+                elif row.media_type == "pack":
+                    await self._organize_and_complete_pack(row)
                 else:
                     logger.info("request %d (%s) downloading -> complete", row.id, row.title)
                     await asyncio.to_thread(self.store.update_status, row.id, "complete")
@@ -314,6 +343,7 @@ class Worker:
             return
         logger.info("request %d (%s) downloading -> complete (organized to %s)", row.id, label, target_path)
         await asyncio.to_thread(self.store.update_status, row.id, "complete")
+        self._schedule_source_cleanup(torrent_hash, label, [target_path])
 
         # Stage 12.x's quality-upgrade recheck: the new file is safely in
         # place at the same deterministic library path (organize_episode()
@@ -333,6 +363,115 @@ class Worker:
                     logger.info("request %d (%s) upgrade complete — removed superseded torrent %s", row.id, label, old_hash)
             except Exception:
                 logger.exception("request %d (%s) upgrade: couldn't clean up superseded torrent %s", row.id, label, old_hash)
+
+    async def _organize_and_complete_pack(self, row) -> None:
+        """Stage 13's fan-out point: a bulk season/complete-series pack row
+        only earns "complete" once `organize_pack()` has actually placed
+        its files — and only *then*, once the pack's real contents are
+        known, does each episode it actually contains get its own normal
+        `requests` row + `show_episodes` ledger marker. This deliberately
+        differs from the plan text's literal "fan-out on add" phrasing:
+        fanning out here, after organizing, rather than immediately after
+        the torrent is added, is what lets a partially-matching pack
+        (fewer episodes than TMDB says the season/series actually has)
+        "accept what's actually there" — Stage 13's own open decision —
+        without ever inventing a row for an episode the pack turns out not
+        to contain. A `MediaOrganizerError` (torrent gone, or literally
+        nothing recognizable inside it) lands the pack row itself on
+        "downloaded, not filed", same vocabulary as a single-episode
+        organize failure."""
+        torrent_hash = (row.result or {}).get("torrent_hash")
+        label = _request_label(row)
+        try:
+            identity = await asyncio.to_thread(resolve_show, row.tmdb_id, self.tmdb)
+            placed = await asyncio.to_thread(organize_pack, identity, torrent_hash, self.qbt)
+        except (MediaOrganizerError, TMDBError) as exc:
+            logger.warning("pack request %d (%s) downloading -> downloaded, not filed (%s)", row.id, label, exc)
+            await asyncio.to_thread(self.store.update_status, row.id, "downloaded, not filed", error_message=str(exc))
+            return
+
+        organized = 0
+        for season, episode, target_path in placed:
+            if await asyncio.to_thread(self.store.has_show_episode, row.show_id, season, episode):
+                # Already tracked — e.g. the per-episode scheduler (Stage
+                # 12) or an earlier pack already organized this exact
+                # episode. Leave its existing requests/ledger row alone
+                # rather than creating a duplicate audit trail for the
+                # same file.
+                continue
+            ep_row = await asyncio.to_thread(
+                self.store.create_episode_request, row.tmdb_id, row.show_id, identity.title, season, episode
+            )
+            await asyncio.to_thread(
+                self.store.update_status,
+                ep_row.id,
+                "complete",
+                result={
+                    "note": f"organized from bulk download ({label})",
+                    "path": str(target_path),
+                    "torrent_hash": torrent_hash,
+                },
+            )
+            await asyncio.to_thread(self.store.add_show_episode, row.show_id, season, episode, ep_row.id)
+            organized += 1
+
+        logger.info(
+            "pack request %d (%s) downloading -> complete (organized %d of %d file(s))",
+            row.id,
+            label,
+            organized,
+            len(placed),
+        )
+        await asyncio.to_thread(self.store.update_status, row.id, "complete")
+        self._schedule_source_cleanup(torrent_hash, label, [p for _, _, p in placed])
+
+    def _schedule_source_cleanup(self, torrent_hash: str, label: str, target_paths: list) -> None:
+        """Fires off `_cleanup_source_after_delay` without blocking the
+        caller — organizing a request is done the moment its file(s) are
+        placed; removing the now-redundant original is a lower-priority
+        follow-up, not something worth holding up "complete" for."""
+        task = asyncio.create_task(self._cleanup_source_after_delay(torrent_hash, label, target_paths))
+        self._cleanup_tasks.add(task)
+        task.add_done_callback(self._cleanup_tasks.discard)
+
+    async def _cleanup_source_after_delay(self, torrent_hash: str, label: str, target_paths: list) -> None:
+        """Stage 13.x, at the user's explicit request: once a torrent's
+        file(s) have been organized into Plex's library layout, remove the
+        original torrent — qBittorrent queue entry *and* its own
+        downloaded copy — after `config.SOURCE_CLEANUP_DELAY_SECONDS`,
+        once a final re-check confirms every organized copy is genuinely
+        still there. Safe by construction, not just by intent: a hardlinked
+        organized copy shares the exact same underlying bytes as the
+        torrent's own file (deleting one link never touches the data the
+        other still points at), and the copy-fallback case already made a
+        fully independent copy at organize time — either way, nothing
+        unique is ever lost. Deletes via `qbt.delete_torrent()` rather than
+        removing files itself, so qBittorrent — which already knows
+        exactly which paths belong to this specific torrent — decides what
+        "this torrent's files" means, never a path this code guesses at.
+
+        A real, deliberate tradeoff, not a free lunch: this stops the
+        torrent seeding earlier than the household's own qBittorrent-side
+        seeding-time limit would have. Best-effort — if an organized copy
+        has gone missing by the time the delay elapses, or qBittorrent has
+        already removed the torrent itself, this skips cleanly rather than
+        deleting anything or raising."""
+        await asyncio.sleep(config.SOURCE_CLEANUP_DELAY_SECONDS)
+        try:
+            still_present = [await asyncio.to_thread(p.exists) for p in target_paths]
+            if not all(still_present):
+                logger.warning(
+                    "source cleanup for torrent %s (%s) skipped — an organized copy is missing, not touching the original",
+                    torrent_hash,
+                    label,
+                )
+                return
+            if await asyncio.to_thread(self.qbt.torrent_info, torrent_hash) is None:
+                return  # already gone (this app's own doing, or otherwise) — nothing left to clean up
+            await asyncio.to_thread(self.qbt.delete_torrent, torrent_hash, delete_files=True)
+            logger.info("source cleanup: removed original torrent %s (%s) after organizing", torrent_hash, label)
+        except Exception:
+            logger.exception("source cleanup failed for torrent %s (%s)", torrent_hash, label)
 
     async def _watch_retention(self) -> None:
         while True:
@@ -405,13 +544,9 @@ class Worker:
             logger.exception("show check: couldn't fetch TMDB data for show %d (%s)", show.id, show.title)
             return 0
 
-        today = date.today().isoformat()
+        aired = set(aired_episode_numbers(episodes))
         created = 0
-        for ep in episodes:
-            episode_number = ep.get("episode_number")
-            air_date = ep.get("air_date")
-            if episode_number is None or not air_date or air_date > today:
-                continue  # unaired, or TMDB has no air date on record yet
+        for episode_number in sorted(aired):
             if self.store.has_show_episode(show.id, latest_season, episode_number):
                 continue
 

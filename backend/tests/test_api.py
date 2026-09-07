@@ -852,6 +852,88 @@ def test_unsubscribe_show_404s_when_missing(client_and_deps):
     assert response.status_code == 404
 
 
+# ---------------------------------------------------------------------------
+# POST /api/shows/{id}/bulk-download — Stage 13 bulk acquisition
+# ---------------------------------------------------------------------------
+
+
+def test_bulk_download_season_creates_a_pack_request_and_enqueues_it(client_and_deps):
+    client, store, _, worker, _, _ = client_and_deps
+    show = store.create_show(tmdb_id=95350, title="Lanterns")
+
+    response = client.post(f"/api/shows/{show.id}/bulk-download", json={"scope": "season", "season_number": 1})
+
+    assert response.status_code == 201
+    body = response.json()
+    assert body["media_type"] == "pack"
+    assert body["show_id"] == show.id
+    assert body["season_number"] == 1
+    assert body["episode_number"] is None
+    assert body["status"] == "queued"
+    assert worker.enqueued == [body["id"]]
+
+
+def test_bulk_download_series_creates_a_pack_request_with_no_season(client_and_deps):
+    client, store, _, worker, _, _ = client_and_deps
+    show = store.create_show(tmdb_id=95350, title="Lanterns")
+
+    response = client.post(f"/api/shows/{show.id}/bulk-download", json={"scope": "series"})
+
+    assert response.status_code == 201
+    body = response.json()
+    assert body["media_type"] == "pack"
+    assert body["season_number"] is None
+    assert worker.enqueued == [body["id"]]
+
+
+def test_bulk_download_404s_when_show_missing(client_and_deps):
+    client, _, _, _, _, _ = client_and_deps
+    response = client.post("/api/shows/999/bulk-download", json={"scope": "series"})
+    assert response.status_code == 404
+
+
+def test_bulk_download_rejects_unknown_scope(client_and_deps):
+    client, store, _, _, _, _ = client_and_deps
+    show = store.create_show(tmdb_id=95350, title="Lanterns")
+
+    response = client.post(f"/api/shows/{show.id}/bulk-download", json={"scope": "everything"})
+
+    assert response.status_code == 422
+
+
+def test_bulk_download_rejects_season_scope_without_season_number(client_and_deps):
+    client, store, _, _, _, _ = client_and_deps
+    show = store.create_show(tmdb_id=95350, title="Lanterns")
+
+    response = client.post(f"/api/shows/{show.id}/bulk-download", json={"scope": "season"})
+
+    assert response.status_code == 422
+
+
+def test_bulk_download_rejects_series_scope_with_a_season_number(client_and_deps):
+    client, store, _, _, _, _ = client_and_deps
+    show = store.create_show(tmdb_id=95350, title="Lanterns")
+
+    response = client.post(
+        f"/api/shows/{show.id}/bulk-download", json={"scope": "series", "season_number": 1}
+    )
+
+    assert response.status_code == 422
+
+
+def test_bulk_download_is_independent_of_watching_status(client_and_deps):
+    """Usable regardless of paused/watching — bulk acquisition and the
+    standing subscription are independent, not mutually exclusive."""
+    client, store, _, worker, _, _ = client_and_deps
+    show = store.create_show(tmdb_id=95350, title="Lanterns")
+    store.update_show_status(show.id, "paused")
+
+    response = client.post(f"/api/shows/{show.id}/bulk-download", json={"scope": "series"})
+
+    assert response.status_code == 201
+    assert worker.enqueued == [response.json()["id"]]
+
+
 def test_list_requests_exposes_episode_fields(client_and_deps):
     client, store, _, _, _, _ = client_and_deps
     show = store.create_show(tmdb_id=1, title="A")

@@ -3,7 +3,7 @@ import re
 import pytest
 
 from app import config
-from app.pipeline import download, download_episode, find_best_episode_candidate
+from app.pipeline import download, download_episode, download_pack, find_best_episode_candidate
 from app.pipeline_settings import PipelineSettings
 from app.qbt import QBTError
 from app.tv_resolve import ShowIdentity
@@ -672,3 +672,174 @@ def test_find_best_episode_candidate_falls_back_across_variants():
 
     assert result is not None
     assert result[0]["fileName"] == "Le.Show.S01E04.2160p.WEB-DL.mkv"
+
+
+# ---------------------------------------------------------------------------
+# Stage 13: download_pack() — season/complete-series bulk acquisition.
+# Reuses _rank_and_add unchanged; only the search/relevance side (a pack
+# gate instead of an episode-identity one, pack query strings instead of an
+# episode query) differs from download_episode() above.
+# ---------------------------------------------------------------------------
+
+
+def _pack_result(**overrides):
+    base = {
+        "engineName": "piratebay",
+        "fileName": "Lanterns.S01.2160p.WEB-DL.mkv",
+        "fileUrl": "magnet:?xt=urn:btih:AAAA",
+        "fileSize": 40_000_000_000,
+        "nbSeeders": 100,
+    }
+    base.update(overrides)
+    return base
+
+
+def test_download_pack_season_adds_winner_from_first_query_that_has_candidates():
+    qbt = FakeQBTClient(results_by_variant={"Lanterns Season 01": [_pack_result()]})
+
+    result = download_pack(LANTERNS, "season", qbt, season=1)
+
+    assert result.status == "added"
+    assert result.scope == "season"
+    assert result.season == 1
+    assert result.variant_used == "Lanterns"
+    assert result.query_used == "Lanterns Season 01"
+    assert qbt.added == [("magnet:?xt=urn:btih:AAAA", "tv")]
+    assert qbt.ensured_categories == ["tv"]
+
+
+def test_download_pack_season_falls_back_to_second_query_shape():
+    qbt = FakeQBTClient(
+        results_by_variant={
+            "Lanterns Season 01": [],
+            "Lanterns S01 COMPLETE": [_pack_result(fileName="Lanterns.S01.COMPLETE.2160p.WEB-DL.mkv")],
+        }
+    )
+
+    result = download_pack(LANTERNS, "season", qbt, season=1)
+
+    assert result.status == "added"
+    assert result.query_used == "Lanterns S01 COMPLETE"
+    assert qbt.searched_variants == ["Lanterns Season 01", "Lanterns S01 COMPLETE"]
+
+
+def test_download_pack_season_searches_unscoped_but_adds_under_tv_category():
+    qbt = FakeQBTClient(results_by_variant={"Lanterns Season 01": [_pack_result()]})
+
+    download_pack(LANTERNS, "season", qbt, season=1)
+
+    assert qbt.searched_categories == ["all"]
+
+
+def test_download_pack_season_rejects_a_real_single_episode_result():
+    qbt = FakeQBTClient(
+        results_by_variant={
+            "Lanterns Season 01": [_pack_result(fileName="Lanterns.S01E04.2160p.WEB-DL.mkv")],
+            "Lanterns S01 COMPLETE": [],
+        }
+    )
+
+    result = download_pack(LANTERNS, "season", qbt, season=1)
+
+    assert result.status == "no qualifying results"
+    assert qbt.added == []
+
+
+def test_download_pack_season_no_qualifying_results_when_search_comes_up_empty():
+    qbt = FakeQBTClient(results_by_variant={})
+
+    result = download_pack(LANTERNS, "season", qbt, season=1)
+
+    assert result.status == "no qualifying results"
+
+
+def test_download_pack_season_insufficient_free_space_when_only_candidate_too_large():
+    qbt = FakeQBTClient(
+        results_by_variant={"Lanterns Season 01": [_pack_result(fileSize=90_000_000_000)]},
+        free_space_bytes=10_000_000_000,
+    )
+
+    result = download_pack(LANTERNS, "season", qbt, season=1)
+
+    assert result.status == "insufficient free space"
+
+
+def test_download_pack_season_falls_back_across_title_variants():
+    identity = ShowIdentity(tmdb_id=1, title="Show", original_title="Le Show", variants=["Show", "Le Show"])
+    qbt = FakeQBTClient(
+        results_by_variant={
+            "Show Season 01": [],
+            "Show S01 COMPLETE": [],
+            "Le Show Season 01": [_pack_result(fileName="Le.Show.S01.2160p.WEB-DL.mkv")],
+        }
+    )
+
+    result = download_pack(identity, "season", qbt, season=1)
+
+    assert result.status == "added"
+    assert result.variant_used == "Le Show"
+
+
+def test_download_pack_season_requires_season_number():
+    with pytest.raises(ValueError):
+        download_pack(LANTERNS, "season", FakeQBTClient())
+
+
+def test_download_pack_rejects_unknown_scope():
+    with pytest.raises(ValueError):
+        download_pack(LANTERNS, "everything", FakeQBTClient())
+
+
+def test_download_pack_series_adds_winner_on_complete_series_marker():
+    qbt = FakeQBTClient(
+        results_by_variant={"Lanterns complete series": [_pack_result(fileName="Lanterns.Complete.Series.2160p.mkv")]}
+    )
+
+    result = download_pack(LANTERNS, "series", qbt)
+
+    assert result.status == "added"
+    assert result.scope == "series"
+    assert result.season is None
+    assert result.query_used == "Lanterns complete series"
+    assert qbt.added == [("magnet:?xt=urn:btih:AAAA", "tv")]
+
+
+def test_download_pack_series_rejects_a_lone_season_pack():
+    qbt = FakeQBTClient(results_by_variant={"Lanterns complete series": [_pack_result()]})  # no series marker
+
+    result = download_pack(LANTERNS, "series", qbt)
+
+    assert result.status == "no qualifying results"
+
+
+def test_download_pack_captures_hash_of_newly_added_torrent():
+    qbt = FakeQBTClient(
+        results_by_variant={
+            "Lanterns complete series": [
+                _pack_result(fileName="Lanterns.Complete.Series.2160p.mkv", fileUrl="magnet:?xt=urn:btih:EEEE")
+            ]
+        }
+    )
+
+    result = download_pack(LANTERNS, "series", qbt)
+
+    assert result.status == "added"
+    assert result.torrent_hash == "eeee"
+
+
+def test_download_pack_falls_back_to_next_candidate_when_add_fails():
+    bad = _pack_result(fileUrl="magnet:?xt=urn:btih:AAAA")
+    good = _pack_result(fileUrl="magnet:?xt=urn:btih:BBBB", fileSize=30_000_000_000, nbSeeders=50)
+
+    class PartlyRejectingQBTClient(FakeQBTClient):
+        def add_torrent(self, file_url, category):
+            if file_url == "magnet:?xt=urn:btih:AAAA":
+                raise QBTError("qBittorrent rejected the add ('Fails.')")
+            super().add_torrent(file_url, category)
+
+    qbt = PartlyRejectingQBTClient(results_by_variant={"Lanterns Season 01": [bad, good]})
+
+    result = download_pack(LANTERNS, "season", qbt, season=1)
+
+    assert result.status == "added"
+    assert result.torrent_hash == "bbbb"

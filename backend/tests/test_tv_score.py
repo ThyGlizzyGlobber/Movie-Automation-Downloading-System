@@ -1,7 +1,8 @@
 from app import config
+from app.normalize import tokenize
 from app.pipeline_settings import PipelineSettings
 from app.tv_resolve import ShowIdentity
-from app.tv_score import passes_episode_relevance_gate
+from app.tv_score import extract_episode_identity, passes_episode_relevance_gate
 
 LANTERNS = ShowIdentity(
     tmdb_id=95350,
@@ -99,3 +100,34 @@ def test_passes_episode_relevance_gate_with_explicit_settings_language_blocklist
         )
         is False
     )
+
+
+# ---------------------------------------------------------------------------
+# extract_episode_identity — Stage 13's organize_pack uses this to discover
+# which episode a pack's individual file represents, from the file's own
+# name (unlike has_episode_token, which checks one already-known episode).
+# ---------------------------------------------------------------------------
+
+
+def test_extract_episode_identity_contiguous_token():
+    assert extract_episode_identity(tokenize("Lanterns.S01E04.2160p.mkv")) == (1, 4)
+
+
+def test_extract_episode_identity_dotted_token():
+    assert extract_episode_identity(tokenize("Lanterns.S01.E04.2160p.mkv")) == (1, 4)
+
+
+def test_extract_episode_identity_spaced_token():
+    assert extract_episode_identity(tokenize("Lanterns S01 E04 2160p")) == (1, 4)
+
+
+def test_extract_episode_identity_double_digit_season_and_episode():
+    assert extract_episode_identity(tokenize("Lanterns.S12E34.2160p.mkv")) == (12, 34)
+
+
+def test_extract_episode_identity_none_for_season_only():
+    assert extract_episode_identity(tokenize("Lanterns.S01.COMPLETE.2160p.mkv")) is None
+
+
+def test_extract_episode_identity_none_when_absent():
+    assert extract_episode_identity(tokenize("Lanterns.NFO")) is None

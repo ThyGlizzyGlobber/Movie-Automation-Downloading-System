@@ -160,6 +160,31 @@ class SubscribeShowRequest(BaseModel):
     tmdb_id: int
 
 
+class BulkDownloadRequest(BaseModel):
+    """Stage 13: `{"scope": "series"}` or `{"scope": "season", "season_number": N}`.
+    Deliberately its own request, distinct from `SubscribeShowRequest` — a
+    bulk download is a one-shot user action, independent of (not a
+    replacement for) the standing per-episode subscription."""
+
+    scope: str
+    season_number: int | None = None
+
+    @field_validator("scope")
+    @classmethod
+    def _known_scope(cls, v: str) -> str:
+        if v not in ("season", "series"):
+            raise ValueError("scope must be 'season' or 'series'")
+        return v
+
+    @model_validator(mode="after")
+    def _season_number_matches_scope(self) -> "BulkDownloadRequest":
+        if self.scope == "season" and self.season_number is None:
+            raise ValueError("season_number is required when scope is 'season'")
+        if self.scope == "series" and self.season_number is not None:
+            raise ValueError("season_number must not be set when scope is 'series'")
+        return self
+
+
 class ShowOut(BaseModel):
     id: int
     tmdb_id: int
@@ -402,6 +427,35 @@ def unsubscribe_show(show_id: int, store: RequestStore = Depends(get_store)) -> 
     if not store.delete_show(show_id):
         raise HTTPException(status_code=404, detail="show not found")
     return {"deleted": True}
+
+
+# -- Stage 13: whole-season / complete-series bulk acquisition. A plain,
+#    explicit user action distinct from subscribe/pause/resume above —
+#    usable regardless of a show's watching/paused status, and regardless
+#    of whether it's still airing, per the plan's "independent, not
+#    mutually exclusive" call. Goes through the same requests table/worker
+#    queue as every other download (`media_type='pack'`), so it never races
+#    a queued movie/episode search — see worker.py's `_run_one`. --
+
+
+@app.post("/api/shows/{show_id}/bulk-download", status_code=201)
+def bulk_download_show(
+    show_id: int,
+    body: BulkDownloadRequest,
+    store: RequestStore = Depends(get_store),
+    worker: Worker = Depends(get_worker),
+) -> RequestOut:
+    show = store.get_show(show_id)
+    if show is None:
+        raise HTTPException(status_code=404, detail="show not found")
+    row = store.create_pack_request(
+        tmdb_id=show.tmdb_id,
+        show_id=show.id,
+        title=show.title,
+        season_number=body.season_number,
+    )
+    worker.enqueue(row.id)
+    return RequestOut.from_row(row)
 
 
 @app.get("/api/settings/retention")

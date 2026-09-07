@@ -11,6 +11,7 @@ from app.media_organizer import (
     find_existing_episode_file,
     organize_episode,
     organize_movie,
+    organize_pack,
     select_video_file,
 )
 from app.resolve import MediaIdentity
@@ -356,3 +357,104 @@ def test_organize_movie_is_idempotent_when_rerun(tmp_path, monkeypatch):
     target = organize_movie(DUNE, source)
 
     assert target.read_bytes() == b"second"
+
+
+# ---------------------------------------------------------------------------
+# organize_pack — Stage 13: many files, one per recognizable episode, out
+# of a single completed season/complete-series pack torrent.
+# ---------------------------------------------------------------------------
+
+
+def test_organize_pack_places_every_recognizable_episode_file(tmp_path, monkeypatch):
+    monkeypatch.setattr(config, "TV_LIBRARY_ROOT", tmp_path / "library")
+    downloads = tmp_path / "downloads" / "Lanterns S01 COMPLETE"
+    downloads.mkdir(parents=True)
+    (downloads / "Lanterns.S01E01.2160p.mkv").write_bytes(b"ep1")
+    (downloads / "Lanterns.S01E02.2160p.mkv").write_bytes(b"ep2")
+    qbt = FakeQBTClient(
+        str(downloads),
+        [
+            {"name": "Lanterns.S01E01.2160p.mkv", "size": 3},
+            {"name": "Lanterns.S01E02.2160p.mkv", "size": 3},
+        ],
+    )
+
+    placed = organize_pack(LANTERNS, "abc123", qbt)
+
+    assert sorted((season, episode) for season, episode, _ in placed) == [(1, 1), (1, 2)]
+    for season, episode, target_path in placed:
+        assert target_path == config.TV_LIBRARY_ROOT / "Lanterns (2026) {tmdb-95350}" / "Season 01" / f"Lanterns - s01e{episode:02d}.mkv"
+        assert target_path.exists()
+
+
+def test_organize_pack_skips_files_with_no_recognizable_episode_token(tmp_path, monkeypatch):
+    monkeypatch.setattr(config, "TV_LIBRARY_ROOT", tmp_path / "library")
+    downloads = tmp_path / "downloads"
+    downloads.mkdir(parents=True)
+    (downloads / "Lanterns.S01E01.2160p.mkv").write_bytes(b"ep1")
+    (downloads / "Lanterns.S01.COMPLETE.nfo").write_bytes(b"nfo")
+    (downloads / "extras.mkv").write_bytes(b"extra")  # a video file, but no episode token at all
+    qbt = FakeQBTClient(
+        str(downloads),
+        [
+            {"name": "Lanterns.S01E01.2160p.mkv", "size": 3},
+            {"name": "Lanterns.S01.COMPLETE.nfo", "size": 3},
+            {"name": "extras.mkv", "size": 5},
+        ],
+    )
+
+    placed = organize_pack(LANTERNS, "abc123", qbt)
+
+    assert len(placed) == 1
+    assert placed[0][0:2] == (1, 1)
+
+
+def test_organize_pack_skips_sample_files(tmp_path, monkeypatch):
+    monkeypatch.setattr(config, "TV_LIBRARY_ROOT", tmp_path / "library")
+    downloads = tmp_path / "downloads"
+    downloads.mkdir(parents=True)
+    (downloads / "Lanterns.S01E01.mkv").write_bytes(b"real")
+    (downloads / "Lanterns.S01E01.Sample.mkv").write_bytes(b"sample")
+    qbt = FakeQBTClient(
+        str(downloads),
+        [
+            {"name": "Lanterns.S01E01.mkv", "size": 4},
+            {"name": "Lanterns.S01E01.Sample.mkv", "size": 999},
+        ],
+    )
+
+    placed = organize_pack(LANTERNS, "abc123", qbt)
+
+    assert len(placed) == 1
+    assert placed[0][2].read_bytes() == b"real"
+
+
+def test_organize_pack_raises_when_torrent_not_found():
+    qbt = FakeQBTClient("/downloads", [], info=False)
+    with pytest.raises(MediaOrganizerError):
+        organize_pack(LANTERNS, "abc123", qbt)
+
+
+def test_organize_pack_raises_when_nothing_recognizable(tmp_path, monkeypatch):
+    monkeypatch.setattr(config, "TV_LIBRARY_ROOT", tmp_path / "library")
+    qbt = FakeQBTClient(
+        str(tmp_path),
+        [
+            {"name": "Lanterns.S01.COMPLETE.nfo", "size": 3},
+            {"name": "readme.txt", "size": 3},
+        ],
+    )
+    with pytest.raises(MediaOrganizerError):
+        organize_pack(LANTERNS, "abc123", qbt)
+
+
+def test_organize_pack_handles_subfolder_relative_names(tmp_path, monkeypatch):
+    monkeypatch.setattr(config, "TV_LIBRARY_ROOT", tmp_path / "library")
+    downloads = tmp_path / "downloads"
+    (downloads / "Lanterns S01").mkdir(parents=True)
+    (downloads / "Lanterns S01" / "Lanterns.S01E03.mkv").write_bytes(b"ep3")
+    qbt = FakeQBTClient(str(downloads), [{"name": "Lanterns S01/Lanterns.S01E03.mkv", "size": 3}])
+
+    placed = organize_pack(LANTERNS, "abc123", qbt)
+
+    assert placed == [(1, 3, config.TV_LIBRARY_ROOT / "Lanterns (2026) {tmdb-95350}" / "Season 01" / "Lanterns - s01e03.mkv")]

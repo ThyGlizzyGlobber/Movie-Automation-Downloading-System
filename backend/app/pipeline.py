@@ -18,8 +18,9 @@ from app.score import (
     passes_viability_gate,
     rank_candidates,
 )
+from app.pack_score import passes_season_pack_gate, passes_series_pack_gate
 from app.tmdb import TMDBClient
-from app.tv_resolve import ShowIdentity, episode_query
+from app.tv_resolve import ShowIdentity, episode_query, season_pack_queries, series_pack_query
 from app.tv_score import passes_episode_relevance_gate
 
 
@@ -42,6 +43,27 @@ class EpisodeDownloadResult:
     season: int
     episode: int
     variant_used: str | None = None
+    winner: dict | None = None
+    score: Score | None = None
+    candidates_considered: int = 0
+    torrent_hash: str | None = None
+    error: str | None = None
+
+
+@dataclass
+class PackDownloadResult:
+    """Stage 13: one season- or complete-series-pack add attempt. Unlike
+    `EpisodeDownloadResult`, this carries no single `season`/`episode` —
+    which episodes a pack actually turns out to contain is only knowable
+    once its file list is inspected post-download (`media_organizer.
+    organize_pack`), not at search/add time."""
+
+    status: str  # same vocabulary as DownloadResult/EpisodeDownloadResult
+    identity: ShowIdentity
+    scope: str  # "season" | "series"
+    season: int | None = None
+    variant_used: str | None = None
+    query_used: str | None = None
     winner: dict | None = None
     score: Score | None = None
     candidates_considered: int = 0
@@ -337,3 +359,112 @@ def download_episode(
 
     status = "insufficient free space" if any_candidates else "no qualifying results"
     return EpisodeDownloadResult(status=status, identity=identity, season=season, episode=episode)
+
+
+def _search_pack_queries(
+    qbt: QBTClient,
+    queries: list[str],
+    gate,
+    existing_hashes: set[str],
+    settings: PipelineSettings,
+) -> tuple[str | None, list[dict]]:
+    """Tries each query string in turn (first non-empty result set wins) —
+    a season pack gets two real-world query shapes tried per variant
+    (`tv_resolve.season_pack_queries`); a series pack just the one
+    (`series_pack_query`). Same trust/gate/viability/dedup/exclude
+    pipeline as every other search helper here, parameterized on which
+    pack gate (`gate`) applies."""
+    for query in queries:
+        raw_results = qbt.search(query, category="all")
+        trustworthy = [r for r in raw_results if is_trustworthy(r)]
+        relevant = [r for r in trustworthy if gate(r.get("fileName", ""))]
+        viable = [r for r in relevant if passes_viability_gate(r, settings)]
+        deduped = dedup_candidates(viable)
+        candidates = exclude_existing(deduped, existing_hashes)
+        if candidates:
+            return query, candidates
+    return None, []
+
+
+def download_pack(
+    identity: ShowIdentity,
+    scope: str,
+    qbt: QBTClient,
+    settings: PipelineSettings | None = None,
+    season: int | None = None,
+) -> PackDownloadResult:
+    """Stage 13: search/score/add for a whole-season or complete-series
+    pack, as an explicit, user-triggered alternative to the per-episode
+    pipeline above — never used automatically. Reuses `_rank_and_add`
+    unchanged, same as `download_episode`; only the search/relevance side
+    (a pack-shaped gate instead of an episode-identity one, pack-shaped
+    query strings instead of an episode query) differs.
+
+    `scope` is `"season"` (requires `season`) or `"series"`. Takes an
+    already-resolved `ShowIdentity` rather than a tmdb_id + TMDB client,
+    same reasoning as `download_episode`: a bulk-download request is
+    always issued against a show the caller has already resolved."""
+    if scope not in ("season", "series"):
+        raise ValueError(f"scope must be 'season' or 'series', got {scope!r}")
+    if scope == "season" and season is None:
+        raise ValueError("season is required when scope == 'season'")
+
+    settings = settings or PipelineSettings.from_config()
+    existing_hashes = qbt.existing_torrent_hashes()
+    free_space_bytes = qbt.free_space_bytes()
+    any_candidates = False
+    last_failed_attempt: PackDownloadResult | None = None
+
+    for variant in identity.variants:
+        if scope == "season":
+            queries = season_pack_queries(variant, season)
+
+            def gate(file_name: str, _season=season) -> bool:
+                return passes_season_pack_gate(file_name, identity, _season, settings)
+        else:
+            queries = [series_pack_query(variant)]
+
+            def gate(file_name: str) -> bool:
+                return passes_series_pack_gate(file_name, identity, settings)
+
+        query_used, candidates = _search_pack_queries(qbt, queries, gate, existing_hashes, settings)
+        if not candidates:
+            continue
+        any_candidates = True
+
+        fitting, attempt = _rank_and_add(qbt, candidates, free_space_bytes, config.TV_CATEGORY, existing_hashes)
+        if not fitting or attempt is None:
+            continue
+
+        if attempt.succeeded:
+            return PackDownloadResult(
+                status="added",
+                identity=identity,
+                scope=scope,
+                season=season,
+                variant_used=variant,
+                query_used=query_used,
+                winner=attempt.winner,
+                score=attempt.score,
+                candidates_considered=len(candidates),
+                torrent_hash=attempt.torrent_hash,
+            )
+
+        last_failed_attempt = PackDownloadResult(
+            status="add failed",
+            identity=identity,
+            scope=scope,
+            season=season,
+            variant_used=variant,
+            query_used=query_used,
+            winner=attempt.winner,
+            score=attempt.score,
+            candidates_considered=len(candidates),
+            error=attempt.error,
+        )
+
+    if last_failed_attempt is not None:
+        return last_failed_attempt
+
+    status = "insufficient free space" if any_candidates else "no qualifying results"
+    return PackDownloadResult(status=status, identity=identity, scope=scope, season=season)

@@ -29,7 +29,7 @@ from app.qbt import QBTClient
 from app.resolve import MediaIdentity
 from app.score import matches_any_variant
 from app.tv_resolve import ShowIdentity
-from app.tv_score import has_episode_token
+from app.tv_score import extract_episode_identity, has_episode_token
 
 logger = logging.getLogger("app.media_organizer")
 
@@ -179,6 +179,64 @@ def organize_episode(show_identity: ShowIdentity, season: int, episode: int, sou
     target.parent.mkdir(parents=True, exist_ok=True)
     _link_or_copy(source_path, target)
     return target
+
+
+def organize_pack(show_identity: ShowIdentity, torrent_hash: str, qbt: QBTClient) -> list[tuple[int, int, Path]]:
+    """Stage 13: places every individually SxxEyy-identifiable file out of a
+    completed season/complete-series pack torrent — an extension of
+    `organize_episode`'s own per-file placement (`build_episode_path` +
+    hardlink-or-copy), reused here unchanged for each file rather than
+    reimplemented, per the plan's "reuse, don't duplicate" call. The only
+    genuinely new logic is per-file: which (season, episode) a given file
+    represents (`tv_score.extract_episode_identity`, read from the file's
+    own name, not from a single fixed request the way `organize_episode`
+    is told its season/episode).
+
+    A file with no recognizable episode token — a sample, .nfo, subtitle
+    sidecar, or any other unmatched extra — is skipped and logged, never
+    treated as an error: a pack's real content is "however many episodes
+    it actually turns out to carry," not a fixed count this function
+    checks against (Stage 13's "accept what's actually there" resolution
+    of its own "partial pack" open decision). Raises `MediaOrganizerError`
+    only if the torrent itself is gone, or literally nothing in it is
+    recognizable as an episode — the caller-side result maps that onto
+    the request's own `"downloaded, not filed"` status, same as
+    `organize_episode`.
+
+    Returns one `(season, episode, target_path)` tuple per file actually
+    placed; the caller (worker.py) is what maps this back onto per-episode
+    `requests` rows and Stage 12's `show_episodes` dedup ledger — this
+    function only ever touches the filesystem, never the database."""
+    info = qbt.torrent_info(torrent_hash)
+    if info is None:
+        raise MediaOrganizerError(f"torrent {torrent_hash!r} not found in qBittorrent")
+    save_path = info.get("save_path")
+    if not save_path:
+        raise MediaOrganizerError(f"torrent {torrent_hash!r} has no save_path")
+
+    files = qbt.torrent_files(torrent_hash)
+    placed: list[tuple[int, int, Path]] = []
+    for f in files:
+        name = f["name"]
+        path = Path(name)
+        if path.suffix.lower() not in config.VIDEO_EXTENSIONS or has_token(path.stem, "sample"):
+            continue
+        identity_pair = extract_episode_identity(tokenize(path.stem))
+        if identity_pair is None:
+            logger.info("organize_pack: skipping %r — no recognizable episode token", name)
+            continue
+        season, episode = identity_pair
+        source_path = Path(save_path) / name
+        target = build_episode_path(show_identity, season, episode, source_path.suffix)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        _link_or_copy(source_path, target)
+        placed.append((season, episode, target))
+
+    if not placed:
+        raise MediaOrganizerError(
+            f"no recognizable episode files found among {len(files)} file(s) in torrent {torrent_hash!r}"
+        )
+    return placed
 
 
 def organize_movie(identity: MediaIdentity, source_path: Path) -> Path:

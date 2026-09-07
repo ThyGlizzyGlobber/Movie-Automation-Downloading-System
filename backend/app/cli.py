@@ -2,8 +2,8 @@ import argparse
 import sys
 
 from app.config import QBIT_HOST, QBIT_PASSWORD, QBIT_PORT, QBIT_USERNAME, TMDB_API_KEY
-from app.media_organizer import MediaOrganizerError, organize_episode, organize_movie, select_video_file
-from app.pipeline import download, download_episode
+from app.media_organizer import MediaOrganizerError, organize_episode, organize_movie, organize_pack, select_video_file
+from app.pipeline import download, download_episode, download_pack
 from app.qbt import QBTClient
 from app.resolve import resolve
 from app.tmdb import TMDBClient
@@ -96,6 +96,62 @@ def cmd_download_episode(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_bulk_download(args: argparse.Namespace) -> int:
+    """Manual dev entry point for Stage 13's pack pipeline, same reasoning
+    as cmd_download_episode: exercises download_pack() directly against
+    real TMDB/qBittorrent without going through the API/worker queue,
+    useful for live validation ahead of (or independent of) exercising the
+    real `POST /api/shows/{id}/bulk-download` route."""
+    if args.scope == "season" and args.season is None:
+        print("error: --season is required when scope is 'season'")
+        return 2
+
+    tmdb_client = TMDBClient(TMDB_API_KEY)
+    qbt = QBTClient(QBIT_HOST, QBIT_PORT, QBIT_USERNAME, QBIT_PASSWORD)
+    identity = resolve_show(args.tmdb_id, tmdb_client)
+    result = download_pack(identity, args.scope, qbt, season=args.season)
+
+    print(f"tmdb_id:  {identity.tmdb_id}")
+    print(f"show:     {identity.title}")
+    print(f"scope:    {args.scope}" + (f" (season {args.season})" if args.season else ""))
+    print(f"status:   {result.status}")
+
+    if result.status != "added":
+        return 1
+
+    print(f"variant:  {result.variant_used!r}")
+    print(f"query:    {result.query_used!r}")
+    print(f"winner:   {result.winner['fileName']}")
+    print(f"engine:   {result.winner['engineName']}")
+    print(f"size:     {result.winner.get('fileSize', -1):,} bytes")
+    print(f"seeders:  {result.winner.get('nbSeeders', -1)}")
+    print(f"torrent hash: {result.torrent_hash}")
+    print(f"candidates considered: {result.candidates_considered}")
+    return 0
+
+
+def cmd_organize_pack(args: argparse.Namespace) -> int:
+    """Manual dev entry point for Stage 13's organize_pack(), mirroring
+    cmd_organize_episode: run against a real, already-completed pack
+    torrent's hash (add one first with `bulk-download`, wait for it to
+    finish in qBittorrent, then pass its hash here)."""
+    tmdb_client = TMDBClient(TMDB_API_KEY)
+    qbt = QBTClient(QBIT_HOST, QBIT_PORT, QBIT_USERNAME, QBIT_PASSWORD)
+    identity = resolve_show(args.tmdb_id, tmdb_client)
+
+    try:
+        placed = organize_pack(identity, args.torrent_hash, qbt)
+    except MediaOrganizerError as exc:
+        print(f"status:   downloaded, not filed ({exc})")
+        return 1
+
+    print(f"show:     {identity.title}")
+    print(f"organized {len(placed)} episode(s):")
+    for season, episode, target_path in placed:
+        print(f"  S{season:02d}E{episode:02d} -> {target_path}")
+    return 0
+
+
 def cmd_organize_episode(args: argparse.Namespace) -> int:
     """Manual dev entry point for Stage 11's organizer, mirroring how
     Stage 10's download-episode shipped CLI-only ahead of any worker/API
@@ -168,6 +224,21 @@ def main(argv: list[str] | None = None) -> int:
     download_episode_parser.add_argument("season", type=int)
     download_episode_parser.add_argument("episode", type=int)
     download_episode_parser.set_defaults(func=cmd_download_episode)
+
+    bulk_download_parser = subparsers.add_parser(
+        "bulk-download", help="Run the season/complete-series pack search/match/score/add pipeline"
+    )
+    bulk_download_parser.add_argument("tmdb_id", type=int)
+    bulk_download_parser.add_argument("scope", choices=["season", "series"])
+    bulk_download_parser.add_argument("--season", type=int, default=None, help="Required when scope is 'season'")
+    bulk_download_parser.set_defaults(func=cmd_bulk_download)
+
+    organize_pack_parser = subparsers.add_parser(
+        "organize-pack", help="Place every recognizable episode file from a completed pack torrent"
+    )
+    organize_pack_parser.add_argument("tmdb_id", type=int)
+    organize_pack_parser.add_argument("torrent_hash", type=str)
+    organize_pack_parser.set_defaults(func=cmd_organize_pack)
 
     organize_episode_parser = subparsers.add_parser(
         "organize-episode", help="Place an already-completed episode torrent's file into Plex's library layout"

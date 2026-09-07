@@ -184,6 +184,37 @@ def test_create_episode_request_sets_episode_fields():
     assert row.release_year is None
 
 
+# ---------------------------------------------------------------------------
+# Stage 13 — pack requests (bulk season/complete-series acquisition)
+# ---------------------------------------------------------------------------
+
+
+def test_create_pack_request_for_a_season_sets_season_number_and_no_episode():
+    store = _store()
+    show = store.create_show(tmdb_id=95350, title="Lanterns")
+
+    row = store.create_pack_request(tmdb_id=95350, show_id=show.id, title="Lanterns", season_number=1)
+
+    assert row.media_type == "pack"
+    assert row.show_id == show.id
+    assert row.season_number == 1
+    assert row.episode_number is None
+    assert row.status == "queued"
+    assert row.query is None
+    assert row.release_year is None
+
+
+def test_create_pack_request_for_complete_series_leaves_season_number_none():
+    store = _store()
+    show = store.create_show(tmdb_id=95350, title="Lanterns")
+
+    row = store.create_pack_request(tmdb_id=95350, show_id=show.id, title="Lanterns", season_number=None)
+
+    assert row.media_type == "pack"
+    assert row.season_number is None
+    assert row.episode_number is None
+
+
 def test_create_show_starts_watching_with_no_last_checked():
     store = _store()
     row = store.create_show(tmdb_id=95350, title="Lanterns")

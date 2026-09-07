@@ -249,6 +249,31 @@ class RequestStore:
             row_id = cur.lastrowid
         return self.get_request(row_id)
 
+    def create_pack_request(
+        self, tmdb_id: int, show_id: int, title: str, season_number: int | None
+    ) -> RequestRow:
+        """Stage 13: the tracking row for one bulk season/complete-series
+        pack search+add attempt — reuses the `requests` table/statuses/
+        watcher a third way (`media_type='pack'`), same "reuse, don't
+        duplicate" call `create_episode_request` already made for Stage 12.
+        `season_number` set means "season N"; left NULL means "complete
+        series" — no separate `scope` column, since the two are always
+        distinguishable this way. `episode_number` is always NULL: a pack
+        row is never about one specific episode, only once it's organized
+        does each actual episode found inside it get its own normal
+        episode row (see worker.py's `_organize_and_complete_pack`)."""
+        now = _now()
+        with self._lock:
+            cur = self._conn.execute(
+                "INSERT INTO requests (query, tmdb_id, title, release_year, status, media_type, "
+                "show_id, season_number, episode_number, created_at, updated_at) "
+                "VALUES (NULL, ?, ?, NULL, 'queued', 'pack', ?, ?, NULL, ?, ?)",
+                (tmdb_id, title, show_id, season_number, now, now),
+            )
+            self._conn.commit()
+            row_id = cur.lastrowid
+        return self.get_request(row_id)
+
     def get_request(self, request_id: int) -> RequestRow | None:
         row = self._conn.execute("SELECT * FROM requests WHERE id = ?", (request_id,)).fetchone()
         return RequestRow._from_row(row) if row else None

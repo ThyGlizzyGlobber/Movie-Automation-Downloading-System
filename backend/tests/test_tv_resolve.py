@@ -1,5 +1,5 @@
 from app.tmdb import TMDBClient
-from app.tv_resolve import episode_query, resolve_show
+from app.tv_resolve import aired_episode_numbers, episode_query, resolve_show, season_pack_queries, series_pack_query
 
 
 def test_episode_query_builds_s_e_token():
@@ -93,3 +93,41 @@ def test_resolve_show_requests_credits_append():
 
     assert captured["path"] == "/tv/1"
     assert captured["params"] == {"append_to_response": "credits"}
+
+
+# ---------------------------------------------------------------------------
+# Stage 13: pack query builders + aired-episode filtering (shared with
+# worker.py's check_show).
+# ---------------------------------------------------------------------------
+
+
+def test_season_pack_queries_returns_two_shapes_zero_padded():
+    assert season_pack_queries("Lanterns", 1) == ["Lanterns Season 01", "Lanterns S01 COMPLETE"]
+
+
+def test_season_pack_queries_double_digit_season():
+    assert season_pack_queries("Lanterns", 12) == ["Lanterns Season 12", "Lanterns S12 COMPLETE"]
+
+
+def test_series_pack_query_builds_complete_series_suffix():
+    assert series_pack_query("Lanterns") == "Lanterns complete series"
+
+
+def test_aired_episode_numbers_excludes_unaired_and_missing_air_dates():
+    episodes = [
+        {"episode_number": 1, "air_date": "2026-08-16"},
+        {"episode_number": 2, "air_date": "2026-08-23"},
+        {"episode_number": 3, "air_date": "2099-01-01"},  # far future — unaired
+        {"episode_number": 4, "air_date": None},  # no air date on record yet
+    ]
+    assert aired_episode_numbers(episodes, today="2026-09-07") == [1, 2]
+
+
+def test_aired_episode_numbers_boundary_is_inclusive():
+    episodes = [{"episode_number": 1, "air_date": "2026-09-07"}]
+    assert aired_episode_numbers(episodes, today="2026-09-07") == [1]
+
+
+def test_aired_episode_numbers_ignores_entries_with_no_episode_number():
+    episodes = [{"episode_number": None, "air_date": "2026-08-16"}]
+    assert aired_episode_numbers(episodes, today="2026-09-07") == []

@@ -199,6 +199,25 @@ EPISODE_RECHECK_MAX_ATTEMPTS = 3  # 0 = keep rechecking indefinitely
 # the adjustable knob; this is just how finely that's measured).
 EPISODE_RECHECK_POLL_INTERVAL_SECONDS = int(os.environ.get("EPISODE_RECHECK_POLL_INTERVAL_SECONDS", "900"))
 
+# -- Stage 13.x: post-organize source cleanup. --
+
+# Once a completed torrent's file(s) have been hardlinked/copied into
+# Plex's library layout (organize_episode/organize_movie/organize_pack),
+# the worker also removes the *original* torrent — qBittorrent queue entry
+# and its own downloaded copy — after this grace delay, once a final
+# re-check confirms every organized copy is genuinely still in place. A
+# hardlinked organized copy shares the same underlying bytes as the
+# torrent's own file, so this never loses real data; the copy-fallback
+# case (hardlink unsupported — see media_organizer.py's `_link_or_copy`)
+# already made a fully independent copy at organize time, so the same
+# holds there too. This is a deliberate tradeoff against continuing to
+# seed that torrent, made at the user's explicit request to keep the
+# library free of duplicate raw-release folders rather than leaving both
+# copies sitting on disk indefinitely (this project's earlier default,
+# and still what Stage 11/12/13's own live validation sessions left
+# behind on the real NAS).
+SOURCE_CLEANUP_DELAY_SECONDS = int(os.environ.get("SOURCE_CLEANUP_DELAY_SECONDS", "60"))
+
 # This container's path to Plex's movie library root — same dataset
 # qBittorrent's "movies" category downloads into, for the same hardlink-
 # needs-one-filesystem reason as TV_LIBRARY_ROOT. Movies were never

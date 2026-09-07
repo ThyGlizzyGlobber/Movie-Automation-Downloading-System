@@ -56,7 +56,10 @@ def is_trustworthy(result: dict) -> bool:
 # ---------------------------------------------------------------------------
 
 
-def _contains_phrase(tokens: list[str], phrase: str) -> bool:
+def contains_phrase(tokens: list[str], phrase: str) -> bool:
+    """Public (Stage 13: reused by pack_score.py for "season N"/"complete
+    series" phrase matching — the same whole-token, order-preserving
+    substring-of-tokens check title-variant matching already relies on)."""
     phrase_tokens = tokenize(phrase)
     if not phrase_tokens:
         return False
@@ -69,7 +72,7 @@ def matches_any_variant(tokens: list[str], variants: list[str]) -> bool:
     title-variant list is matched the exact same way a movie's is, so this
     takes the plain variant list rather than a MediaIdentity, decoupling it
     from any one identity type)."""
-    return any(_contains_phrase(tokens, variant) for variant in variants)
+    return any(contains_phrase(tokens, variant) for variant in variants)
 
 
 def _year_within_tolerance(tokens: list[str], release_year: int | None) -> bool:
@@ -237,7 +240,7 @@ class Score:
 
 def _best_tier(tokens: list[str], tiers: tuple) -> int:
     for score, phrases in tiers:
-        if any(_contains_phrase(tokens, phrase) for phrase in phrases):
+        if any(contains_phrase(tokens, phrase) for phrase in phrases):
             return score
     return 0
 
