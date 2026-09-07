@@ -136,14 +136,16 @@
      transparency) keeps icon/text contrast readable regardless of what's
      in the backdrop image right behind them. */
   body.has-hero #topbar {
-    /* A moderate tint, not a near-opaque one — text-shadow below is now
-       doing real work as an independent line of defense (it doesn't rely
-       on the backdrop being dark at all), so this doesn't have to fully
-       carry legibility on its own against a bright hero the way it did
-       before that existed. */
+    /* A light tint, not a heavy one — text-shadow below is now doing real
+       work as an independent line of defense (it doesn't rely on the
+       backdrop being dark at all), so this doesn't have to carry
+       legibility on its own against a bright hero. More stops than a
+       plain two-color fade so it tapers off gradually rather than
+       reading as a hard-edged band. */
     background: linear-gradient(to bottom,
-      color-mix(in srgb, var(--bg) 70%, transparent) 0%,
-      color-mix(in srgb, var(--bg) 45%, transparent) 75%,
+      color-mix(in srgb, var(--bg) 38%, transparent) 0%,
+      color-mix(in srgb, var(--bg) 22%, transparent) 45%,
+      color-mix(in srgb, var(--bg) 8%, transparent) 75%,
       transparent 100%);
     backdrop-filter: none;
   }
@@ -182,13 +184,12 @@
      logo/nav-links group on a narrower window. */
   .search-input-wrap { position: relative; flex: 0 1 50vw; max-width: 640px; min-width: 0; margin-left: auto; }
   #searchInput {
-    width: 100%; background: var(--bg-card); border: 1px solid var(--border);
+    width: 100%; background: color-mix(in srgb, var(--bg-card) 65%, transparent);
+    border: 1px solid var(--border);
     color: var(--text); padding: 9px 36px 9px 16px; border-radius: 999px; font-size: 15.5px;
     -webkit-appearance: none; appearance: none;
-    /* A bit more visual definition/opacity against the now-lighter,
-       see-through header behind it — bg-card is already a flat, fully
-       opaque fill, so this is a shadow lifting it off that background
-       rather than an actual alpha change. */
+    /* A little visual definition against whatever's behind it — a hero
+       image on some pages, the plain header bar on others. */
     box-shadow: 0 2px 10px color-mix(in srgb, var(--bg) 65%, transparent);
   }
   #searchInput:focus { outline: 2px solid var(--accent); }
