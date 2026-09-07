@@ -1,0 +1,6 @@
+<svg viewBox="0 0 300 90" xmlns="http://www.w3.org/2000/svg">
+  <!-- Requires 'Baloo 2' (weight 800) loaded on the page. Falls back to sans-serif otherwise. -->
+  <text x="0" y="65" font-family="'Baloo 2', sans-serif" font-weight="800" font-size="58">
+    <tspan fill="#123b36">smith</tspan><tspan fill="#ff6b4a">flix</tspan>
+  </text>
+</svg>
