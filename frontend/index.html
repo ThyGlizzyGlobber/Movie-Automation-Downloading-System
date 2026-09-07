@@ -59,13 +59,18 @@
     --safe-top: env(safe-area-inset-top, 0px);
     --safe-bottom: env(safe-area-inset-bottom, 0px);
     --row-gap: 10px;
-    /* Poster card width scales continuously with viewport width (16vw)
+    /* Breathing room at the start/end of every row — where the first and
+       last poster sit — on top of main's own 14px edge padding, not a
+       replacement for it. Shared by .hscroll's own padding and the row
+       title's left margin below so the title lines up with the first
+       poster's new inset instead of sitting further left than it. */
+    --row-inset: 20px;
+    /* Poster card width scales continuously with viewport width (14vw)
        between a mobile floor and a desktop ceiling, rather than jumping
        between a handful of hand-picked breakpoint values — see .hscroll/
-       .grid below. 16vw lands on ~6 cards visible at the desktop
-       reference width this was tuned against (1728px, a 16" MacBook
-       Pro's browser window: 16vw there is ~276px, close to the ceiling). */
-    --poster-w: clamp(140px, 16vw, 275px);
+       .grid below. Scaled down slightly from an earlier 140/275px pass
+       per feedback that the cards were reading a touch too large. */
+    --poster-w: clamp(120px, 14vw, 240px);
   }
   :root[data-theme="light"] {
     --bg: #ece8e1;
@@ -112,10 +117,10 @@
   a { color: inherit; text-decoration: none; }
   button { font-family: inherit; }
 
-  /* Fixed (not sticky/in-flow) so a hero-topped page's own content can
-     start at the true viewport top and render underneath it. main's own
-     top padding (see .has-hero below) compensates for the space this no
-     longer occupies in normal flow. */
+  /* Fixed (not sticky/in-flow), floating above everything else — main's
+     own top padding compensates for the space this no longer occupies in
+     normal flow (see main's CSS), and .hero separately reaches its own
+     background up behind this via a negative margin (see .hero's CSS). */
   #topbar {
     position: fixed; top: 0; left: 0; right: 0; z-index: 10;
     display: flex; align-items: center; gap: 10px;
@@ -123,19 +128,31 @@
     background: color-mix(in srgb, var(--bg) 92%, transparent);
     backdrop-filter: blur(10px);
   }
-  /* Hero-topped pages (see .has-hero on main): the header becomes a true
-     see-through gradient scrim instead of a blurred bar, so the hero
-     image itself is genuinely visible underneath the logo/search/settings
-     row, not just color-matched to it. No blur — blurring would obscure
-     the hero art this is meant to reveal. The gradient (not flat
+  /* Hero-topped pages (see body.has-hero, set in setChrome): the header
+     becomes a true see-through gradient scrim instead of a blurred bar,
+     so the hero image itself is genuinely visible underneath the logo/
+     search/settings row, not just color-matched to it. No blur — blurring
+     would obscure the hero art this is meant to reveal. The gradient (not flat
      transparency) keeps icon/text contrast readable regardless of what's
      in the backdrop image right behind them. */
   body.has-hero #topbar {
+    /* A moderate tint, not a near-opaque one — text-shadow below is now
+       doing real work as an independent line of defense (it doesn't rely
+       on the backdrop being dark at all), so this doesn't have to fully
+       carry legibility on its own against a bright hero the way it did
+       before that existed. */
     background: linear-gradient(to bottom,
-      color-mix(in srgb, var(--bg) 55%, transparent) 0%,
-      color-mix(in srgb, var(--bg) 25%, transparent) 60%,
+      color-mix(in srgb, var(--bg) 70%, transparent) 0%,
+      color-mix(in srgb, var(--bg) 45%, transparent) 75%,
       transparent 100%);
     backdrop-filter: none;
+  }
+  body.has-hero #topbar #backBtn,
+  body.has-hero #topbar #topbarLogo,
+  body.has-hero #topbar .top-nav-link,
+  body.has-hero #topbar #settingsToggle,
+  body.has-hero #topbar #themeToggle {
+    text-shadow: 0 1px 6px color-mix(in srgb, var(--bg) 80%, transparent);
   }
   #backBtn, #settingsToggle, #themeToggle {
     flex: 0 0 auto; background: none; border: none; color: var(--text);
@@ -155,28 +172,42 @@
   }
   #topbarLogo .brand-word-smith { color: var(--text); }
   #topbarLogo .brand-word-flix { color: var(--smithflix-red); }
-  /* Always in the top bar (not a toggleable row) — flex:1 + min-width:0
-     so it scales with whatever space backBtn/settingsToggle leave behind,
-     rather than forcing the bar to overflow. */
-  .search-input-wrap { position: relative; flex: 1; min-width: 0; }
+  /* Always in the top bar (not a toggleable row) — half the viewport
+     width (capped so it doesn't become absurd on an ultra-wide monitor),
+     pinned to the right edge next to Settings/theme-toggle via
+     margin-left:auto (a centered version was tried and reverted — this
+     keeps the same width, just anchored right instead). flex-shrink is
+     left at its default (1), so it still narrows itself first rather
+     than overflowing if there isn't a full 50vw of room left after the
+     logo/nav-links group on a narrower window. */
+  .search-input-wrap { position: relative; flex: 0 1 50vw; max-width: 640px; min-width: 0; margin-left: auto; }
   #searchInput {
     width: 100%; background: var(--bg-card); border: 1px solid var(--border);
-    color: var(--text); padding: 9px 36px 9px 12px; border-radius: 10px; font-size: 15.5px;
+    color: var(--text); padding: 9px 36px 9px 16px; border-radius: 999px; font-size: 15.5px;
     -webkit-appearance: none; appearance: none;
+    /* A bit more visual definition/opacity against the now-lighter,
+       see-through header behind it — bg-card is already a flat, fully
+       opaque fill, so this is a shadow lifting it off that background
+       rather than an actual alpha change. */
+    box-shadow: 0 2px 10px color-mix(in srgb, var(--bg) 65%, transparent);
   }
   #searchInput:focus { outline: 2px solid var(--accent); }
   #searchInput::-webkit-search-cancel-button { display: none; }
-  .search-clear-btn {
+  /* Search (default) and clear (once there's text) share the same slot
+     on the right side of the pill — never both shown at once, toggled by
+     updateSearchClearBtn(). */
+  .search-icon-btn, .search-clear-btn {
     position: absolute; right: 4px; top: 50%; transform: translateY(-50%);
     width: 26px; height: 26px; border-radius: 50%; background: none; border: none;
-    color: var(--text-dim); font-size: 15px; line-height: 1;
-    display: flex; align-items: center; justify-content: center;
+    color: var(--text-dim); display: flex; align-items: center; justify-content: center;
   }
+  .search-icon-btn .material-symbols-rounded { font-size: 18px; }
+  .search-clear-btn { font-size: 15px; line-height: 1; }
   /* Same-specificity tie with the UA's [hidden]{display:none} — without
      this, source order lets the rule above win and the button shows even
      while hidden. */
-  .search-clear-btn[hidden] { display: none; }
-  .search-clear-btn:active { background: var(--bg-elevated); }
+  .search-icon-btn[hidden], .search-clear-btn[hidden] { display: none; }
+  .search-icon-btn:active, .search-clear-btn:active { background: var(--bg-elevated); }
 
   .inline-search {
     display: block; width: 100%; background: var(--bg-card); border: 1px solid var(--border);
@@ -196,13 +227,18 @@
   main {
     /* Top padding compensates for #topbar now being fixed/out-of-flow
        (--topbar-h is measured and kept in sync by JS — see
-       updateTopbarHeight()); a hero-topped page overrides this to 0 via
-       .has-hero so its hero starts at the true viewport top and renders
-       underneath the floating header instead of below it. */
+       updateTopbarHeight()). Applied unconditionally, including on
+       hero-topped pages: an earlier pass zeroed this out for .has-hero so
+       the hero could reach the true viewport top, but that also pulled
+       everything else at the top of main up with it — the loading
+       spinner shown before the hero itself has even rendered, most
+       visibly, ended up cramped directly under the floating header. Only
+       .hero's own background needs to reach behind the header, not
+       main's other content — see .hero's negative margin below, which
+       does that independently of this padding. */
     padding: calc(var(--topbar-h, 64px) + 14px) 14px calc(130px + var(--safe-bottom));
     min-height: 60vh;
   }
-  main.has-hero { padding-top: 0; }
 
   .top-nav-links { display: none; }
   .top-nav-link {
@@ -216,7 +252,7 @@
   section.row h2 {
     font-size: 15px; font-weight: 600; color: var(--text-dim);
     text-transform: uppercase; letter-spacing: 0.04em;
-    margin: 0 0 10px 2px;
+    margin: 0 0 10px var(--row-inset);
   }
   /* A row whose title expands to a dedicated full-list page (Prime-Video-
      style) — same type scale as the plain h2 above, but accent-colored
@@ -226,7 +262,7 @@
     display: inline-flex; align-items: center; gap: 4px;
     font-size: 15px; font-weight: 600; color: var(--accent);
     text-transform: uppercase; letter-spacing: 0.04em;
-    margin: 0 0 10px 2px;
+    margin: 0 0 10px var(--row-inset);
   }
   section.row .row-title-arrow { font-size: 21px; line-height: 1; font-weight: 700; }
   section.row .row-title:active { opacity: 0.7; }
@@ -235,9 +271,19 @@
     /* overflow-x:auto forces overflow-y to compute as auto too (CSS spec —
        explicitly setting overflow-y:visible here wouldn't override that),
        which clips the top of a poster's hover scale-up below. Top padding
-       gives the scaled card room inside the box instead. */
-    display: flex; gap: var(--row-gap); overflow-x: auto; padding: 8px 0 4px;
+       gives the scaled card room inside the box instead. Left/right
+       padding is the row's own breathing room (see --row-inset) — where
+       the first/last poster actually starts/ends, not just main's outer
+       14px edge padding. */
+    display: flex; gap: var(--row-gap); overflow-x: auto; padding: 8px var(--row-inset) 4px;
     scroll-snap-type: x proximity; -webkit-overflow-scrolling: touch;
+    /* Without this, scroll-snap-align:start on the first card fights the
+       padding above: "start" alignment is measured against the snapport
+       (scroll-padding, default 0), not the visual padding box, so the
+       browser auto-scrolls the row on load just far enough to erase the
+       left inset entirely. Matching scroll-padding to the visual padding
+       tells the snap logic the padded position *is* "start". */
+    scroll-padding-inline: var(--row-inset);
   }
 
   /* Desktop-only click-to-scroll arrows, overlaid on a row and only shown
@@ -261,6 +307,12 @@
   }
   @media (hover: hover) {
     .hscroll-wrap:hover .hscroll-arrow { opacity: 1; pointer-events: auto; }
+    /* At the true start of a row there's nothing behind it to scroll
+       back to — .at-start (toggled by a scroll listener, see the JS
+       delegated on #app) keeps the left arrow hidden there even on
+       hover, rather than showing a "go back" control with nowhere to go.
+       Higher specificity than the rule above so it wins while active. */
+    .hscroll-wrap.at-start:hover .hscroll-arrow-left { opacity: 0; pointer-events: none; }
   }
   .hscroll::-webkit-scrollbar { display: none; }
 
@@ -367,8 +419,19 @@
      overlaid near its bottom edge (a dark gradient keeps the text
      legible over any backdrop), Overview/crew/cast below in the normal
      content column. */
+  /* Negative top margin pulls just the hero's own box (and therefore its
+     background-image, which covers the full border-box) up to the true
+     viewport top, behind the fixed header — independent of main's own
+     top padding (which every other page, and this page's own loading
+     spinner before the hero renders, still gets normally, see main's
+     CSS). The matching padding-top pushes the hero's *content* back down
+     by that exact same amount, landing it right where main's padding
+     would have put it anyway — so the background reaches behind the
+     header without the title/button also cramming up underneath it. */
   .hero {
-    position: relative; width: calc(100% + 28px); margin: 0 -14px 18px;
+    position: relative; width: calc(100% + 28px);
+    margin: calc(-1 * (var(--topbar-h, 64px) + 14px)) -14px 18px;
+    padding-top: calc(var(--topbar-h, 64px) + 14px);
     background-color: var(--bg-card); background-size: cover; background-position: center top;
   }
   .hero::after {
@@ -713,6 +776,9 @@
   </nav>
   <div class="search-input-wrap">
     <input id="searchInput" type="search" enterkeyhint="search" aria-label="Search movies and TV shows">
+    <button id="searchIconBtn" class="search-icon-btn" aria-label="Search">
+      <span class="material-symbols-rounded">search</span>
+    </button>
     <button id="searchClearBtn" class="search-clear-btn" aria-label="Clear search" hidden>&#10005;</button>
   </div>
   <button id="settingsToggle" aria-label="Settings">
@@ -999,7 +1065,11 @@
   // scrolling row in the app (poster rows, the cast-photos row on detail
   // pages), so a new row type gets this for free just by using it.
   function hscrollHtml(innerHtml) {
-    return `<div class="hscroll-wrap">
+    // Starts with .at-start already applied — every row genuinely does
+    // start at scrollLeft 0 on first render, so there's no flash of a
+    // wrongly-visible left arrow before the scroll listener below has had
+    // a chance to run.
+    return `<div class="hscroll-wrap at-start">
       <div class="hscroll">${innerHtml}</div>
       <button class="hscroll-arrow hscroll-arrow-left" aria-label="Scroll left" data-scroll-dir="-1"><span class="material-symbols-rounded">chevron_left</span></button>
       <button class="hscroll-arrow hscroll-arrow-right" aria-label="Scroll right" data-scroll-dir="1"><span class="material-symbols-rounded">chevron_right</span></button>
@@ -1086,14 +1156,16 @@
     document.querySelectorAll(".tab, .top-nav-link").forEach((t) => {
       t.classList.toggle("active", t.dataset.tab === activeTab);
     });
-    app.classList.toggle("has-hero", !!hasHero);
+    // Only #topbar itself reads this now (the see-through gradient scrim
+    // vs. the plain blurred bar) — main's own padding is unconditional
+    // regardless of hasHero, see main's CSS.
     document.body.classList.toggle("has-hero", !!hasHero);
   }
 
   // #topbar is fixed (see its CSS) so it no longer reserves space in
-  // normal flow — main's own top padding stands in for that space instead
-  // (see main/.has-hero CSS), so it has to track the topbar's real
-  // rendered height rather than a guessed constant. Re-measured on resize
+  // normal flow — main's own top padding stands in for that space instead,
+  // so it has to track the topbar's real rendered height rather than a
+  // guessed constant. Re-measured on resize
   // and once fonts finish loading, since the wordmark/search input's
   // fallback-vs-loaded-font line height can shift it by a few px.
   const topbarEl = document.getElementById("topbar");
@@ -1130,6 +1202,18 @@
   refreshDownloadsBadge();
   setInterval(refreshDownloadsBadge, 5000);
 
+  // Keeps every row's .at-start class in sync with its own real scroll
+  // position (see .hscroll-arrow-left's CSS) — delegated on #app the same
+  // way the click handler below is, rather than wired per-row on every
+  // render. "scroll" doesn't bubble, but it does fire during the capture
+  // phase on ancestors, which is what the trailing `true` is for.
+  app.addEventListener("scroll", (e) => {
+    const track = e.target;
+    if (!track.classList || !track.classList.contains("hscroll")) return;
+    const wrap = track.closest(".hscroll-wrap");
+    if (wrap) wrap.classList.toggle("at-start", track.scrollLeft <= 2);
+  }, true);
+
   // Delegated once here (rather than re-attached on every view render)
   // since #app itself is never replaced, only its innerHTML — each
   // selector below only ever exists on one particular view, so this is a
@@ -1137,11 +1221,19 @@
   app.addEventListener("click", async (e) => {
     // Row scroll arrows (desktop hover-only, see .hscroll-arrow) — one
     // "page" of the row per click, matching the row's own current width
-    // rather than a small nudge.
+    // rather than a small nudge. Revolves once it's already at the end:
+    // rather than a right arrow that just goes dead, another click loops
+    // back to the start (the left arrow is what's hidden at the *other*
+    // end — see .at-start — so only this direction needs the wrap-around).
     const scrollArrow = e.target.closest(".hscroll-arrow");
     if (scrollArrow) {
       const track = scrollArrow.parentElement.querySelector(".hscroll");
-      if (track) track.scrollBy({ left: Number(scrollArrow.dataset.scrollDir) * track.clientWidth, behavior: "smooth" });
+      if (track) {
+        const dir = Number(scrollArrow.dataset.scrollDir);
+        const atEnd = track.scrollLeft >= track.scrollWidth - track.clientWidth - 2;
+        if (dir > 0 && atEnd) track.scrollTo({ left: 0, behavior: "smooth" });
+        else track.scrollBy({ left: dir * track.clientWidth, behavior: "smooth" });
+      }
       return;
     }
 
@@ -2512,12 +2604,17 @@
   // -- Search bar (permanently in the top bar) --
 
   const searchInput = document.getElementById("searchInput");
+  const searchIconBtn = document.getElementById("searchIconBtn");
   const searchClearBtn = document.getElementById("searchClearBtn");
   function submitSearch() {
     if (searchInput.value.trim()) navigate(`#/search/${encodeURIComponent(searchInput.value.trim())}`);
   }
+  // Search glass (empty field) and clear-x (once there's text) share one
+  // slot on the pill — exactly one of the two is ever shown.
   function updateSearchClearBtn() {
-    searchClearBtn.hidden = !searchInput.value;
+    const hasValue = !!searchInput.value;
+    searchClearBtn.hidden = !hasValue;
+    searchIconBtn.hidden = hasValue;
   }
   searchInput.addEventListener("keydown", (e) => { if (e.key === "Enter") submitSearch(); });
   // type="search" also fires a native "search" event on Enter/the clear-x —
@@ -2525,6 +2622,7 @@
   // handling of the field's built-in submit affordance).
   searchInput.addEventListener("search", submitSearch);
   searchInput.addEventListener("input", updateSearchClearBtn);
+  searchIconBtn.addEventListener("click", submitSearch);
   searchClearBtn.addEventListener("click", () => {
     searchInput.value = "";
     updateSearchClearBtn();
