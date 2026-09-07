@@ -257,11 +257,23 @@ def test_run_one_skips_row_not_in_queued_state():
 # ---------------------------------------------------------------------------
 
 
-def test_check_downloading_marks_complete_when_progress_reaches_one(caplog):
+def test_check_downloading_marks_complete_when_progress_reaches_one(tmp_path, monkeypatch, caplog):
+    """A movie row now also has to clear the organize step (see the
+    dedicated _organize_and_complete_movie tests below) — previously
+    reaching progress>=1 alone was enough, back when movies had no
+    automatic organize step at all."""
+    monkeypatch.setattr(config, "MOVIE_LIBRARY_ROOT", tmp_path / "library")
+    source = tmp_path / "downloads" / "Dune.Part.Two.2024.mkv"
+    source.parent.mkdir(parents=True)
+    source.write_bytes(b"data")
+
     store = RequestStore(":memory:")
     row = store.create_request(tmdb_id=693134, title="Dune: Part Two", release_year=2024, query=None)
     store.update_status(row.id, "downloading", result={"torrent_hash": "aaaa"})
-    qbt = FakeQBTClient(torrent_states={"aaaa": {"progress": 1.0}})
+    qbt = FakeQBTClient(
+        torrent_states={"aaaa": {"progress": 1.0, "save_path": str(source.parent)}},
+        torrent_files={"aaaa": [{"name": source.name, "size": 4}]},
+    )
     worker = Worker(store, FakeTMDBClient(), qbt)
 
     with caplog.at_level("INFO", logger="app.worker"):
@@ -538,6 +550,74 @@ def test_check_downloading_translates_qbit_container_path_before_organizing(tmp_
     reloaded = store.get_request(row.id)
     assert reloaded.status == "complete"
     target = library_root / "Lanterns (2026) {tmdb-95350}" / "Season 01" / "Lanterns - s01e01.mkv"
+    assert target.exists()
+
+
+def test_check_downloading_organizes_movie_and_marks_complete(tmp_path, monkeypatch):
+    """Movies previously had no automatic organize step at all —
+    organize_movie() was CLI-only. This is the movie equivalent of
+    test_check_downloading_organizes_episode_and_marks_complete above."""
+    monkeypatch.setattr(config, "MOVIE_LIBRARY_ROOT", tmp_path / "library")
+    source = tmp_path / "downloads" / "Dune.Part.Two.2024.mkv"
+    source.parent.mkdir(parents=True)
+    source.write_bytes(b"data")
+
+    store = RequestStore(":memory:")
+    row = store.create_request(tmdb_id=693134, title="Dune: Part Two", release_year=2024, query=None)
+    store.update_status(row.id, "downloading", result={"torrent_hash": "aaaa"})
+    qbt = FakeQBTClient(
+        torrent_states={"aaaa": {"progress": 1.0, "save_path": str(source.parent)}},
+        torrent_files={"aaaa": [{"name": source.name, "size": 4}]},
+    )
+    worker = Worker(store, FakeTMDBClient(), qbt)
+
+    asyncio.run(worker._check_downloading())
+
+    reloaded = store.get_request(row.id)
+    assert reloaded.status == "complete"
+    target = tmp_path / "library" / "Dune Part Two (2024) {tmdb-693134}" / "Dune.Part.Two.2024.mkv"
+    assert target.exists()
+
+
+def test_check_downloading_marks_movie_downloaded_not_filed_when_organize_fails(tmp_path, monkeypatch):
+    monkeypatch.setattr(config, "MOVIE_LIBRARY_ROOT", tmp_path / "library")
+    store = RequestStore(":memory:")
+    row = store.create_request(tmdb_id=693134, title="Dune: Part Two", release_year=2024, query=None)
+    store.update_status(row.id, "downloading", result={"torrent_hash": "aaaa"})
+    qbt = FakeQBTClient(torrent_states={"aaaa": {"progress": 1.0}})  # no save_path -> MediaOrganizerError
+    worker = Worker(store, FakeTMDBClient(), qbt)
+
+    asyncio.run(worker._check_downloading())
+
+    reloaded = store.get_request(row.id)
+    assert reloaded.status == "downloaded, not filed"
+    assert reloaded.error_message is not None
+
+
+def test_check_downloading_translates_qbit_container_path_before_organizing_movie(tmp_path, monkeypatch):
+    """Same real-world container-path mismatch as TV's — movies get their
+    own QBIT_MOVIE_SAVE_PATH/MOVIE_LIBRARY_ROOT translation."""
+    library_root = tmp_path / "library"
+    monkeypatch.setattr(config, "MOVIE_LIBRARY_ROOT", library_root)
+    monkeypatch.setattr(config, "QBIT_MOVIE_SAVE_PATH", "/media/Movies")
+    real_source_dir = library_root / "Dune Part Two"
+    real_source_dir.mkdir(parents=True)
+    (real_source_dir / "Dune.Part.Two.2024.mkv").write_bytes(b"data")
+
+    store = RequestStore(":memory:")
+    row = store.create_request(tmdb_id=693134, title="Dune: Part Two", release_year=2024, query=None)
+    store.update_status(row.id, "downloading", result={"torrent_hash": "aaaa"})
+    qbt = FakeQBTClient(
+        torrent_states={"aaaa": {"progress": 1.0, "save_path": "/media/Movies/Dune Part Two"}},
+        torrent_files={"aaaa": [{"name": "Dune.Part.Two.2024.mkv", "size": 4}]},
+    )
+    worker = Worker(store, FakeTMDBClient(), qbt)
+
+    asyncio.run(worker._check_downloading())
+
+    reloaded = store.get_request(row.id)
+    assert reloaded.status == "complete"
+    target = library_root / "Dune Part Two (2024) {tmdb-693134}" / "Dune.Part.Two.2024.mkv"
     assert target.exists()
 
 

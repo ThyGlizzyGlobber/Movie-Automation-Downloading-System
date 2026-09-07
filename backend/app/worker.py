@@ -69,6 +69,13 @@ replaces the file at the same deterministic path); only once that's
 confirmed does `_organize_and_complete_episode` clean up the old torrent
 it's replacing, via a `replaces_torrent_hash` marker on the new request —
 never delete-then-hope-the-replacement-works.
+
+A movie row gets the same organize-on-complete gate as an episode row
+(`_organize_and_complete_movie`, mirroring `_organize_and_complete_episode`
+exactly): `organize_movie()` has to actually rename the movie's folder
+into Plex's layout before the request earns "complete". Previously movies
+had no automatic organize step at all — `organize_movie()` was Stage
+11-era CLI-only tooling, never wired into this watch loop until now.
 """
 
 import asyncio
@@ -81,12 +88,14 @@ from app.media_organizer import (
     MediaOrganizerError,
     find_existing_episode_file,
     organize_episode,
+    organize_movie,
     organize_pack,
     select_video_file,
 )
 from app.pipeline import download, download_episode, download_pack, find_best_episode_candidate
 from app.pipeline_settings import resolve_pipeline_settings
 from app.qbt import QBTClient
+from app.resolve import resolve
 from app.tmdb import TMDBClient, TMDBError
 from app.tv_resolve import ShowIdentity, aired_episode_numbers, resolve_show, season_is_complete
 from app.tv_settings import TVScheduleSettings, resolve_tv_settings
@@ -326,6 +335,8 @@ class Worker:
                     await self._organize_and_complete_episode(row)
                 elif row.media_type == "pack":
                     await self._organize_and_complete_pack(row)
+                elif row.media_type == "movie":
+                    await self._organize_and_complete_movie(row)
                 else:
                     logger.info("request %d (%s) downloading -> complete", row.id, row.title)
                     await asyncio.to_thread(self.store.update_status, row.id, "complete")
@@ -375,6 +386,34 @@ class Worker:
                     logger.info("request %d (%s) upgrade complete — removed superseded torrent %s", row.id, label, old_hash)
             except Exception:
                 logger.exception("request %d (%s) upgrade: couldn't clean up superseded torrent %s", row.id, label, old_hash)
+
+    async def _organize_and_complete_movie(self, row) -> None:
+        """Movie equivalent of `_organize_and_complete_episode` — a movie
+        only earns "complete" once `organize_movie()` has actually renamed
+        its folder into Plex's `<Title> (<year>) {tmdb-<id>}` layout, not
+        merely once the torrent hits 100%. Previously movies had no
+        automatic organize step at all (`organize_movie()` was CLI-only,
+        Stage 11-era manual tooling); this wires it into the same
+        automatic watch loop TV episodes/packs already use, reusing the
+        exact same organize-then-cleanup shape rather than a parallel
+        one."""
+        torrent_hash = (row.result or {}).get("torrent_hash")
+        label = _request_label(row)
+        try:
+            identity = await asyncio.to_thread(resolve, row.tmdb_id, self.tmdb)
+            source_path = await asyncio.to_thread(
+                select_video_file, self.qbt, torrent_hash, config.QBIT_MOVIE_SAVE_PATH, config.MOVIE_LIBRARY_ROOT
+            )
+            target_path = await asyncio.to_thread(organize_movie, identity, source_path)
+        except (MediaOrganizerError, TMDBError, OSError) as exc:
+            logger.warning("request %d (%s) downloading -> downloaded, not filed (%s)", row.id, label, exc)
+            await asyncio.to_thread(
+                self.store.update_status, row.id, "downloaded, not filed", error_message=str(exc)
+            )
+            return
+        logger.info("request %d (%s) downloading -> complete (organized to %s)", row.id, label, target_path)
+        await asyncio.to_thread(self.store.update_status, row.id, "complete")
+        self._schedule_source_cleanup(torrent_hash, label, [target_path])
 
     async def _organize_and_complete_pack(self, row) -> None:
         """Stage 13's fan-out point: a bulk season/complete-series pack row
