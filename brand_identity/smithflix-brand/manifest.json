@@ -4,8 +4,8 @@
   "description": "The Smith family's home streaming server",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#123b36",
-  "theme_color": "#123b36",
+  "background_color": "#141312",
+  "theme_color": "#141312",
   "icons": [
     { "src": "/brand-icon.svg", "sizes": "any", "type": "image/svg+xml" },
     { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png" }

@@ -77,6 +77,29 @@ def _lacks_digital_release(release_dates_by_country: list[dict], region: str) ->
     return True
 
 
+def is_movie_coming_soon(movie: dict, release_dates_by_country: list[dict], region: str) -> bool:
+    """The single combined "is this movie Coming Soon" predicate — used
+    both to build the Coming Soon list itself and to flag one movie's own
+    detail page (disables its Add to Plex button there). Recent *and*
+    lacking a digital release, same two-part check as get_coming_soon: the
+    recency half is what keeps an old catalog title with no Digital/
+    Physical record on file (TMDB just never logged one) from reading as
+    "coming soon" forever."""
+    return _is_recent_release(movie) and _lacks_digital_release(release_dates_by_country, region)
+
+
+def is_tv_upcoming(show: dict) -> bool:
+    """The TV equivalent of a movie lacking a digital release: no episode
+    has aired yet. Unlike movies, this needs no extra per-title request —
+    `first_air_date` is already present on every TV discover/popular/
+    trending/genre/provider result, so this is a free, no-request check."""
+    first_air_date = show.get("first_air_date")
+    if not first_air_date:
+        return True
+    aired_at = datetime.fromisoformat(first_air_date).replace(tzinfo=timezone.utc)
+    return aired_at > datetime.now(timezone.utc)
+
+
 class TMDBClient:
     def __init__(self, api_key: str, session: requests.Session | None = None):
         if not api_key:
@@ -253,6 +276,56 @@ class TMDBClient:
         data = self._get(f"/tv/{tmdb_id}/watch/providers")
         return data.get("results", {})
 
+    # -- TV Coming Soon: the show equivalent of a movie's digital-release
+    #    gate. TV has no digital/physical release concept, so "not yet
+    #    available" here means "hasn't aired a first episode yet" — a
+    #    condition already visible on every plain discover/popular/
+    #    trending/genre/provider result via first_air_date, at zero extra
+    #    request cost (unlike the movie side's per-title release_dates
+    #    call). --
+
+    def get_available_tv_popular(self, page: int = 1) -> dict:
+        popular = self.get_tv_popular(page=page)
+        filtered = [show for show in popular.get("results", []) if not is_tv_upcoming(show)]
+        return {**popular, "results": filtered}
+
+    def get_available_tv_trending(self, time_window: str = "week", page: int = 1) -> dict:
+        trending = self.get_tv_trending(time_window=time_window, page=page)
+        filtered = [show for show in trending.get("results", []) if not is_tv_upcoming(show)]
+        return {**trending, "results": filtered}
+
+    def get_available_tv_by_genre(self, genre_id: int, region: str = "US", page: int = 1) -> dict:
+        discover = self.discover_tv_by_genre(genre_id, region=region, page=page)
+        filtered = [show for show in discover.get("results", []) if not is_tv_upcoming(show)]
+        return {**discover, "results": filtered}
+
+    def get_available_tv_by_provider(self, provider_id: int, region: str = "US", page: int = 1) -> dict:
+        discover = self.discover_tv_by_provider(provider_id, region=region, page=page)
+        filtered = [show for show in discover.get("results", []) if not is_tv_upcoming(show)]
+        return {**discover, "results": filtered}
+
+    @ttl_cache(POPULAR_DISCOVER_TTL_SECONDS)
+    def _discover_tv_upcoming(self, region: str = "US", page: int = 1) -> dict:
+        today = datetime.now(timezone.utc).date().isoformat()
+        return self._get(
+            "/discover/tv",
+            {
+                "first_air_date.gte": today,
+                "watch_region": region,
+                "page": page,
+                "sort_by": "first_air_date.asc",
+            },
+        )
+
+    def get_tv_coming_soon(self, region: str = "US", page: int = 1) -> dict:
+        """Shows with a first-air-date today or later — the TV Coming Soon
+        tab. is_tv_upcoming is applied on top of TMDB's own date filter
+        (rather than trusted alone) so a show sitting right on today's
+        boundary is judged by the same rule used everywhere else."""
+        discover = self._discover_tv_upcoming(region=region, page=page)
+        filtered = [show for show in discover.get("results", []) if is_tv_upcoming(show)]
+        return {**discover, "results": filtered}
+
     def search_tv_within_provider(self, query: str, provider_id: int, region: str = "US") -> dict:
         data = self.search_tv(query)
         filtered = [
@@ -272,9 +345,36 @@ class TMDBClient:
         so a filtered page can come back shorter than a raw one."""
         now_playing = self.get_now_playing(region=region, page=page)
         results = now_playing.get("results", [])
+        # `and`'s short-circuit is load-bearing here, not just style: it's
+        # what keeps get_release_dates() (a real request on a cache miss)
+        # from firing for every not-recent movie, not only the recent ones
+        # that actually need the check.
         filtered = [
             movie
             for movie in results
-            if _is_recent_release(movie) and _lacks_digital_release(self.get_release_dates(movie["id"]), region)
+            if _is_recent_release(movie) and is_movie_coming_soon(movie, self.get_release_dates(movie["id"]), region)
         ]
         return {**now_playing, "results": filtered}
+
+    def get_available_by_genre(self, genre_id: int, region: str = "US", page: int = 1) -> dict:
+        """Same digital-availability filter as get_available_popular/
+        get_available_trending, applied to a genre row — without this, a
+        genre row can surface a theatrical-only title Coming Soon is
+        already responsible for."""
+        discover = self.discover_by_genre(genre_id, region=region, page=page)
+        filtered = [
+            movie
+            for movie in discover.get("results", [])
+            if not _lacks_digital_release(self.get_release_dates(movie["id"]), region)
+        ]
+        return {**discover, "results": filtered}
+
+    def get_available_by_provider(self, provider_id: int, region: str = "US", page: int = 1) -> dict:
+        """Same digital-availability filter, applied to a provider row."""
+        discover = self.discover_by_provider(provider_id, region=region, page=page)
+        filtered = [
+            movie
+            for movie in discover.get("results", [])
+            if not _lacks_digital_release(self.get_release_dates(movie["id"]), region)
+        ]
+        return {**discover, "results": filtered}

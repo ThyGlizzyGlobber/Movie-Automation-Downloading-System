@@ -9,7 +9,7 @@
      DOM exists. -->
 <script>try{document.documentElement.dataset.theme=localStorage.getItem("smithflix-theme")==="light"?"light":"dark"}catch(e){}</script>
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1">
-<meta name="theme-color" content="#123b36">
+<meta name="theme-color" content="#141312">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Smithflix">
@@ -22,30 +22,33 @@
 <link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@600;700;800&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
 <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@48,700,1,0" rel="stylesheet">
 <style>
-  /* Smithflix brand palette — see brand_identity/smithflix-brand/
-     BRAND-IMPLEMENTATION.md. Dark is the default theme (teal surfaces,
-     cream text); :root[data-theme="light"] below overrides the same
-     tokens for the manual light-mode toggle. Coral is the one fixed
-     accent across both themes — reserved for actions/selection, never
-     recolored per-household (the old customizable-accent-color setting
-     was removed for exactly this reason: one consistent brand color). */
+  /* Smithflix brand palette — charcoal ground + a light red accent
+     (superseding the original teal/cream/coral kit in brand_identity/;
+     that folder is left as-is, this is a live in-app repaint, not yet
+     folded back into the reference kit). Dark is the default theme;
+     :root[data-theme="light"] below overrides the same tokens for the
+     manual light-mode toggle. Unlike the old teal identity, the accent
+     itself is *not* fully theme-invariant: the same light red loses
+     contrast against a pale ground, so light mode deepens it slightly
+     (see that block below) — everything else about "one fixed accent,
+     never recolored per-household" still holds. */
   :root {
-    --smithflix-cream: #f6efe3;
-    --smithflix-teal: #123b36;
-    --smithflix-coral: #ff6b4a;
-    --smithflix-mustard: #f4b942;
+    --smithflix-cream: #f3ede2;
+    --smithflix-charcoal: #141312;
+    --smithflix-charcoal-card: #201e1c;
+    --smithflix-red: #f0605f;
 
     --font-display: 'Baloo 2', sans-serif;
     --font-body: 'Inter', -apple-system, BlinkMacSystemFont, "Helvetica Neue", Arial, sans-serif;
 
-    --bg: #0d2b27;
-    --bg-elevated: #123b36;
-    --bg-card: #17453f;
-    --text: #f6efe3;
-    --text-dim: #a9c1bc;
-    --accent: var(--smithflix-coral);
-    --accent-text: #ffffff;
-    --border: #285650;
+    --bg: var(--smithflix-charcoal);
+    --bg-elevated: #1a1816;
+    --bg-card: var(--smithflix-charcoal-card);
+    --text: var(--smithflix-cream);
+    --text-dim: #a39a8b;
+    --accent: var(--smithflix-red);
+    --accent-text: #141312;
+    --border: #332f2b;
     --status-queued: #6b7280;
     --status-searching: #3b82f6;
     --status-downloading: #a855f7;
@@ -55,14 +58,27 @@
     --status-failed: #dc2626;
     --safe-top: env(safe-area-inset-top, 0px);
     --safe-bottom: env(safe-area-inset-bottom, 0px);
+    --row-gap: 10px;
+    /* Poster card width scales continuously with viewport width (16vw)
+       between a mobile floor and a desktop ceiling, rather than jumping
+       between a handful of hand-picked breakpoint values — see .hscroll/
+       .grid below. 16vw lands on ~6 cards visible at the desktop
+       reference width this was tuned against (1728px, a 16" MacBook
+       Pro's browser window: 16vw there is ~276px, close to the ceiling). */
+    --poster-w: clamp(140px, 16vw, 275px);
   }
   :root[data-theme="light"] {
-    --bg: #f6efe3;
-    --bg-elevated: #efe5d2;
-    --bg-card: #e8dcc4;
-    --text: #123b36;
-    --text-dim: #5c7570;
-    --border: #ddceac;
+    --bg: #ece8e1;
+    --bg-elevated: #f5f1ea;
+    --bg-card: #ffffff;
+    --text: #211f1c;
+    --text-dim: #736c60;
+    --border: #dcd5c8;
+    /* A very light charcoal ground (not plain white) needs a slightly
+       deeper, more saturated red than the dark theme's to hold the same
+       contrast — same red family, not a different color. */
+    --accent: #e14e4d;
+    --accent-text: #ffffff;
   }
   * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
 
@@ -96,13 +112,30 @@
   a { color: inherit; text-decoration: none; }
   button { font-family: inherit; }
 
+  /* Fixed (not sticky/in-flow) so a hero-topped page's own content can
+     start at the true viewport top and render underneath it. main's own
+     top padding (see .has-hero below) compensates for the space this no
+     longer occupies in normal flow. */
   #topbar {
-    position: sticky; top: 0; z-index: 10;
+    position: fixed; top: 0; left: 0; right: 0; z-index: 10;
     display: flex; align-items: center; gap: 10px;
     padding: calc(10px + var(--safe-top)) 14px 10px;
     background: color-mix(in srgb, var(--bg) 92%, transparent);
     backdrop-filter: blur(10px);
-    border-bottom: 1px solid var(--border);
+  }
+  /* Hero-topped pages (see .has-hero on main): the header becomes a true
+     see-through gradient scrim instead of a blurred bar, so the hero
+     image itself is genuinely visible underneath the logo/search/settings
+     row, not just color-matched to it. No blur — blurring would obscure
+     the hero art this is meant to reveal. The gradient (not flat
+     transparency) keeps icon/text contrast readable regardless of what's
+     in the backdrop image right behind them. */
+  body.has-hero #topbar {
+    background: linear-gradient(to bottom,
+      color-mix(in srgb, var(--bg) 55%, transparent) 0%,
+      color-mix(in srgb, var(--bg) 25%, transparent) 60%,
+      transparent 100%);
+    backdrop-filter: none;
   }
   #backBtn, #settingsToggle, #themeToggle {
     flex: 0 0 auto; background: none; border: none; color: var(--text);
@@ -121,7 +154,7 @@
     font-family: var(--font-display); font-weight: 800; font-size: 26px; line-height: 1;
   }
   #topbarLogo .brand-word-smith { color: var(--text); }
-  #topbarLogo .brand-word-flix { color: var(--smithflix-coral); }
+  #topbarLogo .brand-word-flix { color: var(--smithflix-red); }
   /* Always in the top bar (not a toggleable row) — flex:1 + min-width:0
      so it scales with whatever space backBtn/settingsToggle leave behind,
      rather than forcing the bar to overflow. */
@@ -154,13 +187,22 @@
 
   /* 130px (not just the tab bar's ~90px) so scrolled content on the
      Requests view clears the floating .clear-requests-fab/.downloads-fab
-     above the tab bar. max-width + centering keeps a desktop-width
-     browser window from stretching a single grid/detail column edge to edge. */
+     above the tab bar. No max-width — the row-based layout should fill
+     the real browser width edge to edge on desktop (Prime/Netflix-style),
+     not sit centered with visible gaps down the sides; an earlier
+     max-width:1600px cap (from before the curated-rows redesign, meant to
+     stop a single sparse grid from stretching too wide) was exactly that
+     gap the user was seeing. */
   main {
-    padding: 14px 14px calc(130px + var(--safe-bottom));
+    /* Top padding compensates for #topbar now being fixed/out-of-flow
+       (--topbar-h is measured and kept in sync by JS — see
+       updateTopbarHeight()); a hero-topped page overrides this to 0 via
+       .has-hero so its hero starts at the true viewport top and renders
+       underneath the floating header instead of below it. */
+    padding: calc(var(--topbar-h, 64px) + 14px) 14px calc(130px + var(--safe-bottom));
     min-height: 60vh;
-    max-width: 1600px; margin: 0 auto;
   }
+  main.has-hero { padding-top: 0; }
 
   .top-nav-links { display: none; }
   .top-nav-link {
@@ -194,14 +236,45 @@
        explicitly setting overflow-y:visible here wouldn't override that),
        which clips the top of a poster's hover scale-up below. Top padding
        gives the scaled card room inside the box instead. */
-    display: flex; gap: 10px; overflow-x: auto; padding: 8px 0 4px;
+    display: flex; gap: var(--row-gap); overflow-x: auto; padding: 8px 0 4px;
     scroll-snap-type: x proximity; -webkit-overflow-scrolling: touch;
+  }
+
+  /* Desktop-only click-to-scroll arrows, overlaid on a row and only shown
+     while that row is actually hovered (native touch-swipe already
+     covers mobile — these would just be dead visual clutter there, so
+     they're gated behind (hover:hover) rather than a viewport breakpoint,
+     since that's the real signal "does a mouse make sense here"). */
+  .hscroll-wrap { position: relative; }
+  .hscroll-arrow {
+    position: absolute; top: 0; bottom: 4px; width: 56px; z-index: 2;
+    display: flex; align-items: center; justify-content: center;
+    border: none; color: var(--text); padding: 0; cursor: pointer;
+    opacity: 0; pointer-events: none; transition: opacity 0.15s ease;
+  }
+  .hscroll-arrow .material-symbols-rounded { font-size: 34px; }
+  .hscroll-arrow-left {
+    left: 0; background: linear-gradient(to right, color-mix(in srgb, var(--bg) 75%, transparent), transparent);
+  }
+  .hscroll-arrow-right {
+    right: 0; background: linear-gradient(to left, color-mix(in srgb, var(--bg) 75%, transparent), transparent);
+  }
+  @media (hover: hover) {
+    .hscroll-wrap:hover .hscroll-arrow { opacity: 1; pointer-events: auto; }
   }
   .hscroll::-webkit-scrollbar { display: none; }
 
-  .poster-card {
-    display: block; flex: 0 0 auto; width: var(--poster-min, 112px); scroll-snap-align: start;
-  }
+  /* One shared card size (--poster-w, see :root), everywhere — bigger
+     than the old density-slider range, closer to Prime Video's own card
+     scale. Not a set of manual breakpoints: a row is a plain flex strip
+     of fixed-width cards, so how many happen to be visible before the
+     overflow starts is already a direct function of viewport width
+     (narrower window → fewer fit), and --poster-w's own `clamp(...,
+     16vw, ...)` scales the card size itself continuously with that same
+     width too, rather than a value that jumps at hand-picked widths — see
+     .grid below for the wrapping-grid equivalent of the same idea. */
+  .poster-card { display: block; scroll-snap-align: start; }
+  .hscroll .poster-card { flex: 0 0 var(--poster-w); }
   .poster-art { position: relative; border-radius: 10px; overflow: hidden; }
   .poster-card img {
     width: 100%; height: auto; aspect-ratio: 2 / 3; object-fit: cover; border-radius: 10px;
@@ -230,8 +303,16 @@
     }
   }
 
+  /* Same --poster-w as .hscroll, same continuous-not-tiered idea —
+     auto-fill's own column math (not a hand-picked breakpoint list)
+     decides how many columns of at least --poster-w fit the real
+     available width, shrinking that count by exactly one whenever the
+     window gets narrow enough to no longer fit the current count, at
+     whatever width that happens to be — and --poster-w's own vw-based
+     scaling on top of that means even the *width* of a given column
+     count keeps adjusting smoothly, not just the count itself. */
   .grid {
-    display: grid; grid-template-columns: repeat(auto-fill, minmax(var(--poster-min, 104px), 1fr));
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(var(--poster-w), 1fr));
     gap: 14px 10px;
   }
   .grid .poster-card { width: auto; }
@@ -257,22 +338,7 @@
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   }
 
-  .subnav {
-    display: flex; align-items: center; justify-content: space-between;
-    gap: 12px; margin-bottom: 22px;
-  }
-  .subnav h1 { font-size: 21px; margin: 0; }
-
-  /* Plex-style grid density slider, shown top-right on the same row as a
-     category page's own title. Controls --poster-min, so it affects
-     every .grid/.hscroll on the page (not just the current view). */
-  .grid-size { display: flex; align-items: center; gap: 6px; flex: 0 0 auto; }
-  .grid-size-icon { color: var(--text-dim); flex: 0 0 auto; line-height: 1; }
-  .grid-size-icon.small { font-size: 9px; }
-  .grid-size-icon.large { font-size: 16px; }
-  .grid-size input[type="range"] {
-    width: 78px; accent-color: var(--accent);
-  }
+  .page-title { font-size: 21px; margin: 0 0 22px; }
 
   /* Invisible trigger an IntersectionObserver watches to auto-load the
      next page as the user scrolls near it — see wireInfiniteGrid(). Its
@@ -696,7 +762,7 @@
   function applyTheme(theme) {
     document.documentElement.dataset.theme = theme;
     const meta = document.querySelector('meta[name="theme-color"]');
-    if (meta) meta.setAttribute("content", theme === "light" ? "#f6efe3" : "#123b36");
+    if (meta) meta.setAttribute("content", theme === "light" ? "#ece8e1" : "#141312");
     const icon = document.getElementById("themeToggleIcon");
     if (icon) icon.textContent = theme === "light" ? "light_mode" : "dark_mode";
     const btn = document.getElementById("themeToggle");
@@ -711,12 +777,19 @@
 
   const IMG_BASE = "https://image.tmdb.org/t/p/";
   const POSTER_SIZE = "w342";
-  const BACKDROP_SIZE = "w780";
+  // w1280 (not w780) — the hero/detail-page backdrop is now a full-bleed
+  // banner that can be 2000px+ wide on a real desktop window since main's
+  // max-width cap was removed; w780 stretched via background-size:cover
+  // looked visibly soft at that size. TMDB's own next size up is
+  // "original" (often 1920px+, sometimes much larger) — w1280 is the
+  // sharpest fixed size below that, without the bandwidth cost of
+  // "original" on a household NAS connection.
+  const BACKDROP_SIZE = "w1280";
   const PLACEHOLDER_POSTER =
     "data:image/svg+xml;utf8," +
     encodeURIComponent(
       '<svg xmlns="http://www.w3.org/2000/svg" width="200" height="300">' +
-      '<rect width="100%" height="100%" fill="#17453f"/></svg>'
+      '<rect width="100%" height="100%" fill="#201e1c"/></svg>'
     );
 
   // Curated set of major providers for the home-row chips — TMDB's full
@@ -847,6 +920,7 @@
   const getTvDiscoverTrending = (page) => api(`/api/tv/discover/trending?page=${page || 1}`);
   const getTvDiscoverByProvider = (id, page) => api(`/api/tv/discover/providers/${id}?page=${page || 1}`);
   const getTvDiscoverByGenre = (id, page) => api(`/api/tv/discover/genre/${id}?page=${page || 1}`);
+  const getTvComingSoon = (page) => api(`/api/tv/discover/coming-soon?page=${page || 1}`);
   const getTvShow = (id) => api(`/api/tv/${id}`);
   const postSearchTv = (query, providerId) => api(`/api/tv/search`, {
     method: "POST", headers: { "Content-Type": "application/json" },
@@ -919,13 +993,26 @@
     return items.map((it) => ({ ...it, __mediaType: mediaType }));
   }
 
+  // Wraps any .hscroll's inner content with the desktop-only hover
+  // click-to-scroll arrows (see .hscroll-wrap/.hscroll-arrow CSS and the
+  // delegated click handler below) — shared by every horizontally
+  // scrolling row in the app (poster rows, the cast-photos row on detail
+  // pages), so a new row type gets this for free just by using it.
+  function hscrollHtml(innerHtml) {
+    return `<div class="hscroll-wrap">
+      <div class="hscroll">${innerHtml}</div>
+      <button class="hscroll-arrow hscroll-arrow-left" aria-label="Scroll left" data-scroll-dir="-1"><span class="material-symbols-rounded">chevron_left</span></button>
+      <button class="hscroll-arrow hscroll-arrow-right" aria-label="Scroll right" data-scroll-dir="1"><span class="material-symbols-rounded">chevron_right</span></button>
+    </div>`;
+  }
+
   // Netflix/Prime-style horizontal row. Wraps posterCard output in the
   // existing section.row/.hscroll shells — mediaType is either a fixed
   // string ("movie"/"tv") for a same-type row, or a function (item) =>
   // "movie"|"tv" for a mixed row (used with tagMediaType'd items).
   // expandHref, when given, turns the title into a link to a dedicated
   // full-list page for that one category (Prime-Video-style "click a row
-  // title to see more") — a trailing chevron plus the accent color marks
+  // title to see more") — a trailing arrow plus the accent color marks
   // it as clickable, since a plain <h2> alone doesn't read as tappable.
   function rowHtml(title, items, mediaType, expandHref) {
     if (!items || !items.length) return "";
@@ -935,7 +1022,7 @@
     const heading = expandHref
       ? `<a class="row-title" href="${expandHref}">${escapeHtml(title)}<span class="row-title-arrow">→</span></a>`
       : `<h2>${escapeHtml(title)}</h2>`;
-    return `<section class="row">${heading}<div class="hscroll">${cards}</div></section>`;
+    return `<section class="row">${heading}${hscrollHtml(cards)}</section>`;
   }
 
   // Simplified hero for curated landing pages (Home, Movies, TV) — reuses
@@ -971,36 +1058,6 @@
   }
   function emptyHtml(msg) { return `<div class="empty">${escapeHtml(msg)}</div>`; }
 
-  // Plex-style grid density slider. Persisted per-device (localStorage),
-  // applied as a CSS var so it affects every .grid on the page, not just
-  // whichever view happens to render the slider control itself.
-  const GRID_SIZE_KEY = "gridPosterMinPx";
-  const GRID_SIZE_MIN = 80;
-  const GRID_SIZE_MAX = 170;
-  const GRID_SIZE_DEFAULT = 104;
-
-  function getGridSize() {
-    let stored = null;
-    try { stored = Number(localStorage.getItem(GRID_SIZE_KEY)); } catch (e) {}
-    return stored && stored >= GRID_SIZE_MIN && stored <= GRID_SIZE_MAX ? stored : GRID_SIZE_DEFAULT;
-  }
-  function setGridSize(px) {
-    document.documentElement.style.setProperty("--poster-min", px + "px");
-    try { localStorage.setItem(GRID_SIZE_KEY, String(px)); } catch (e) {}
-  }
-  function gridSizeHtml() {
-    return `<div class="grid-size" title="Grid size">
-      <span class="grid-size-icon small">▪</span>
-      <input type="range" id="gridSizeSlider" min="${GRID_SIZE_MIN}" max="${GRID_SIZE_MAX}" step="1" value="${getGridSize()}">
-      <span class="grid-size-icon large">▪</span>
-    </div>`;
-  }
-  function wireGridSizeSlider() {
-    const el = document.getElementById("gridSizeSlider");
-    if (el) el.addEventListener("input", () => setGridSize(Number(el.value)));
-  }
-  setGridSize(getGridSize());
-
   // -- Router --
 
   const app = document.getElementById("app");
@@ -1023,13 +1080,29 @@
   // The search bar lives permanently in the top bar now (not a toggled
   // row), so there's no on-screen title left to set — `title` still
   // updates the browser tab/PWA title instead.
-  function setChrome({ title, showBack, activeTab }) {
+  function setChrome({ title, showBack, activeTab, hasHero }) {
     document.title = title ? `${title} — Smithflix` : "Smithflix";
     backBtn.style.display = showBack ? "" : "none";
     document.querySelectorAll(".tab, .top-nav-link").forEach((t) => {
       t.classList.toggle("active", t.dataset.tab === activeTab);
     });
+    app.classList.toggle("has-hero", !!hasHero);
+    document.body.classList.toggle("has-hero", !!hasHero);
   }
+
+  // #topbar is fixed (see its CSS) so it no longer reserves space in
+  // normal flow — main's own top padding stands in for that space instead
+  // (see main/.has-hero CSS), so it has to track the topbar's real
+  // rendered height rather than a guessed constant. Re-measured on resize
+  // and once fonts finish loading, since the wordmark/search input's
+  // fallback-vs-loaded-font line height can shift it by a few px.
+  const topbarEl = document.getElementById("topbar");
+  function updateTopbarHeight() {
+    document.documentElement.style.setProperty("--topbar-h", `${topbarEl.offsetHeight}px`);
+  }
+  updateTopbarHeight();
+  window.addEventListener("resize", updateTopbarHeight);
+  if (document.fonts && document.fonts.ready) document.fonts.ready.then(updateTopbarHeight);
 
   const SECTION_HASH = { home: "#/home", movies: "#/movies", tv: "#/tv" };
   function navigate(hash) { window.location.hash = hash; }
@@ -1062,6 +1135,16 @@
   // selector below only ever exists on one particular view, so this is a
   // no-op everywhere else.
   app.addEventListener("click", async (e) => {
+    // Row scroll arrows (desktop hover-only, see .hscroll-arrow) — one
+    // "page" of the row per click, matching the row's own current width
+    // rather than a small nudge.
+    const scrollArrow = e.target.closest(".hscroll-arrow");
+    if (scrollArrow) {
+      const track = scrollArrow.parentElement.querySelector(".hscroll");
+      if (track) track.scrollBy({ left: Number(scrollArrow.dataset.scrollDir) * track.clientWidth, behavior: "smooth" });
+      return;
+    }
+
     // Requests list group header: toggle expand/collapse, unless the
     // click actually landed on the show-title link, which should navigate
     // normally rather than also toggling the row it sits inside of.
@@ -1156,6 +1239,7 @@
     { re: /^#\/tv$/, handler: renderTv },
     { re: /^#\/tv\/trending$/, handler: () => renderCategory("Trending TV Shows", getTvDiscoverTrending, "tv") },
     { re: /^#\/tv\/popular$/, handler: () => renderCategory("Popular TV Shows", getTvDiscoverPopular, "tv") },
+    { re: /^#\/tv\/coming-soon$/, handler: () => renderCategory("Coming Soon", getTvComingSoon, "tv") },
     { re: /^#\/tv\/genre\/(\d+)\/(.*)$/, handler: (m) => renderCategory(decodeURIComponent(m[2]), (p) => getTvDiscoverByGenre(m[1], p), "tv") },
     { re: /^#\/tv\/watching$/, handler: renderWatching },
     { re: /^#\/tv\/provider\/(\d+)\/(.*)$/, handler: (m) => renderProvider(m[1], decodeURIComponent(m[2]), "tv") },
@@ -1225,7 +1309,7 @@
   // (not instead of) the separate movie-only/TV-only Movies/TV pages
   // below. No subnav — straight into a hero banner + rows.
   async function renderHome() {
-    setChrome({ title: "", showBack: false, activeTab: "home" });
+    setChrome({ title: "", showBack: false, activeTab: "home", hasHero: true });
     app.innerHTML = loadingHtml();
 
     // One Promise.all resolves every row's data in parallel; a single
@@ -1321,11 +1405,10 @@
   }
 
   function gridColumnCount(gridEl) {
-    // .grid uses grid-template-columns: repeat(auto-fill, minmax(...)) —
-    // the browser resolves that into an actual per-viewport track list
-    // (varies with window width and the grid-size slider's --poster-min),
-    // which is exactly the "how many posters fit per row right now"
-    // this needs; reading it forces the layout pass that makes it accurate.
+    // .grid's column count is a fixed 2/5/9 per breakpoint (see its CSS) —
+    // reading the resolved grid-template-columns back out here (rather
+    // than hardcoding the same breakpoint logic a second time in JS) keeps
+    // this in sync with that CSS automatically if the breakpoints change.
     const tracks = getComputedStyle(gridEl).gridTemplateColumns.split(" ").filter(Boolean);
     return tracks.length || 1;
   }
@@ -1336,8 +1419,7 @@
   // request. Also front-loads enough pages up front to fill at least 4
   // full rows before ever waiting on scroll: TMDB always returns a fixed
   // 20 results per page regardless of how many columns actually fit, so
-  // one page is rarely "4 rows" on a wide desktop window or a small
-  // grid-size slider setting.
+  // one page is rarely "4 rows" on a wide desktop window.
   async function wireInfiniteGrid(gridId, sentinelId, fetchPage, mediaType, initialData) {
     const gridEl = document.getElementById(gridId);
     const sentinel = document.getElementById(sentinelId);
@@ -1397,7 +1479,7 @@
   // now the way to reach that one category's own full list (see
   // renderCategory()), Prime-Video-style.
   async function renderMovies() {
-    setChrome({ title: "", showBack: false, activeTab: "movies" });
+    setChrome({ title: "", showBack: false, activeTab: "movies", hasHero: true });
     app.innerHTML = loadingHtml();
     try {
       const jobs = [
@@ -1445,13 +1527,9 @@
     try {
       const data = await fetchPage(1);
       app.innerHTML = `
-        <div class="subnav">
-          <h1>${escapeHtml(title)}</h1>
-          ${gridSizeHtml()}
-        </div>
+        <h1 class="page-title">${escapeHtml(title)}</h1>
         ${gridSectionHtml("categoryGrid", "categoryMore", data, mediaType, "Nothing found.")}
       `;
-      wireGridSizeSlider();
       wireInfiniteGrid("categoryGrid", "categoryMore", fetchPage, mediaType, data);
     } catch (err) {
       app.innerHTML = errorHtml(err.message, backHash);
@@ -1510,14 +1588,14 @@
   // -- TV section (Stage 14) --
 
   // Curated, row-based TV Shows page — same treatment as Movies, TV-only.
-  // No "New Releases" row — there's no TV equivalent of getComingSoon.
   async function renderTv() {
-    setChrome({ title: "", showBack: false, activeTab: "tv" });
+    setChrome({ title: "", showBack: false, activeTab: "tv", hasHero: true });
     app.innerHTML = loadingHtml();
     try {
       const jobs = [
         { key: "trending", fn: () => getTvDiscoverTrending(1) },
         { key: "popular", fn: () => getTvDiscoverPopular(1) },
+        { key: "comingSoon", fn: () => getTvComingSoon(1) },
         { key: "watchingShows", fn: fetchEnrichedWatchingShows },
         ...TV_GENRES.map((g) => ({ key: `genre-${g.id}`, fn: () => getTvDiscoverByGenre(g.id, 1) })),
         ...ROW_PROVIDERS.map((p) => ({ key: `provider-${p.id}`, fn: () => getTvDiscoverByProvider(p.id, 1) })),
@@ -1531,6 +1609,7 @@
         ${watchingRowsHtml(byKey.watchingShows || [])}
         ${rowHtml("Trending TV Shows", byKey.trending.results || [], "tv", "#/tv/trending")}
         ${rowHtml("Popular", byKey.popular.results || [], "tv", "#/tv/popular")}
+        ${rowHtml("Coming Soon", byKey.comingSoon.results || [], "tv", "#/tv/coming-soon")}
         ${TV_GENRES.map((g) => rowHtml(
           g.label, byKey[`genre-${g.id}`].results || [], "tv",
           `#/tv/genre/${g.id}/${encodeURIComponent(g.label)}`
@@ -1620,8 +1699,12 @@
   // in the hero's action row, TMDB-Play-Trailer-style, while Unsubscribe
   // stays a small, separate affordance below the hero — there's no TMDB
   // equivalent to mirror for that one, so it's kept deliberately minimal.
-  function subscribeButtonHtml(subscription) {
-    if (!subscription) return `<button class="add-btn" id="subscribeBtn">+ Add Show</button>`;
+  function subscribeButtonHtml(subscription, isComingSoon) {
+    if (!subscription) {
+      return isComingSoon
+        ? `<button class="add-btn" id="subscribeBtn" disabled title="Not out digitally yet">+ Add Show</button>`
+        : `<button class="add-btn" id="subscribeBtn">+ Add Show</button>`;
+    }
     if (subscription.status === "paused") {
       return `<button class="add-btn" id="resumeBtn">Paused — Tap to Resume</button>`;
     }
@@ -1659,7 +1742,7 @@
   }
 
   async function renderShow(id) {
-    setChrome({ title: "", showBack: true, activeTab: "tv" });
+    setChrome({ title: "", showBack: true, activeTab: "tv", hasHero: true });
     app.innerHTML = loadingHtml();
     try {
       const [show, shows] = await Promise.all([getTvShow(id), listShows()]);
@@ -1688,7 +1771,7 @@
               </div>
               <div class="hero-actions">
                 ${scoreRowHtml(show.vote_average)}
-                <div id="subscribeButtonArea">${subscribeButtonHtml(subscription)}</div>
+                <div id="subscribeButtonArea">${subscribeButtonHtml(subscription, show.is_coming_soon)}</div>
               </div>
               ${show.tagline ? `<div class="tagline">${escapeHtml(show.tagline)}</div>` : ""}
             </div>
@@ -1703,7 +1786,7 @@
       `;
 
       function refreshSubscribeAreas() {
-        document.getElementById("subscribeButtonArea").innerHTML = subscribeButtonHtml(subscription);
+        document.getElementById("subscribeButtonArea").innerHTML = subscribeButtonHtml(subscription, show.is_coming_soon);
         document.getElementById("unsubscribeArea").innerHTML = unsubscribeLinkHtml(subscription);
         document.getElementById("bulkArea").innerHTML = bulkAreaHtml(isEndedOrCanceled, seasons);
         wireSubscribeArea();
@@ -1712,7 +1795,7 @@
 
       function wireSubscribeArea() {
         const addBtn = document.getElementById("subscribeBtn");
-        if (addBtn) addBtn.addEventListener("click", async () => {
+        if (addBtn && !addBtn.disabled) addBtn.addEventListener("click", async () => {
           addBtn.disabled = true;
           addBtn.textContent = "Adding…";
           try {
@@ -1760,7 +1843,7 @@
             if (!subscription) {
               const shows = await listShows();
               subscription = shows.find((s) => s.tmdb_id === Number(id)) || null;
-              document.getElementById("subscribeButtonArea").innerHTML = subscribeButtonHtml(subscription);
+              document.getElementById("subscribeButtonArea").innerHTML = subscribeButtonHtml(subscription, show.is_coming_soon);
               document.getElementById("unsubscribeArea").innerHTML = unsubscribeLinkHtml(subscription);
               wireSubscribeArea();
             }
@@ -1879,12 +1962,12 @@
       .join("");
     return `<section class="cast-section row">
       <h2 class="section-heading">Top Billed Cast</h2>
-      <div class="hscroll">${cards}</div>
+      ${hscrollHtml(cards)}
     </section>`;
   }
 
   async function renderMovie(id) {
-    setChrome({ title: "", showBack: true, activeTab: "movies" });
+    setChrome({ title: "", showBack: true, activeTab: "movies", hasHero: true });
     app.innerHTML = loadingHtml();
     try {
       const movie = await getMovie(id);
@@ -1912,7 +1995,9 @@
               </div>
               <div class="hero-actions">
                 ${scoreRowHtml(movie.vote_average)}
-                <button class="add-btn" id="addBtn">+ Add to Plex</button>
+                ${movie.is_coming_soon
+                  ? `<button class="add-btn" id="addBtn" disabled title="Not out digitally yet">+ Add to Plex</button>`
+                  : `<button class="add-btn" id="addBtn">+ Add to Plex</button>`}
               </div>
               ${movie.tagline ? `<div class="tagline">${escapeHtml(movie.tagline)}</div>` : ""}
             </div>
@@ -1925,7 +2010,10 @@
         ${castSectionHtml(cast)}
       `;
 
-      document.getElementById("addBtn").addEventListener("click", async (e) => {
+      // Coming Soon titles render the button disabled (see the markup
+      // above) — skip wiring a handler onto it entirely rather than
+      // relying only on the disabled attribute to block the click.
+      if (!movie.is_coming_soon) document.getElementById("addBtn").addEventListener("click", async (e) => {
         const btn = e.currentTarget;
         btn.disabled = true;
         btn.textContent = "Adding…";

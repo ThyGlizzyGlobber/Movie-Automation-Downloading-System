@@ -1,6 +1,13 @@
 from datetime import datetime, timedelta, timezone
 
-from app.tmdb import TMDBClient, _available_on_provider, _is_recent_release, _lacks_digital_release
+from app.tmdb import (
+    TMDBClient,
+    _available_on_provider,
+    _is_recent_release,
+    _lacks_digital_release,
+    is_movie_coming_soon,
+    is_tv_upcoming,
+)
 
 
 def test_is_recent_release_true_for_a_title_released_this_month():
@@ -190,6 +197,175 @@ def test_get_available_trending_excludes_theatrical_only_titles(monkeypatch):
     result = client.get_available_trending(time_window="week", region="US")
 
     assert [m["title"] for m in result["results"]] == ["Out On Digital"]
+
+
+def test_get_available_by_genre_excludes_theatrical_only_titles(monkeypatch):
+    client = TMDBClient(api_key="test-key")
+    discover_response = {
+        "page": 1,
+        "total_pages": 10,
+        "results": [
+            {"id": 1, "title": "Out On Digital"},
+            {"id": 2, "title": "Still In Theaters Only"},
+        ],
+    }
+    release_dates_by_id = {
+        1: {"results": [{"iso_3166_1": "US", "release_dates": [{"type": 4, "release_date": "2026-02-01T00:00:00.000Z"}]}]},
+        2: {"results": [{"iso_3166_1": "US", "release_dates": [{"type": 3, "release_date": "2026-08-15T00:00:00.000Z"}]}]},
+    }
+
+    def fake_get(path, params=None):
+        if path == "/discover/movie":
+            return discover_response
+        movie_id = int(path.split("/")[2])
+        return release_dates_by_id[movie_id]
+
+    monkeypatch.setattr(client, "_get", fake_get)
+
+    result = client.get_available_by_genre(28, region="US")
+
+    assert [m["title"] for m in result["results"]] == ["Out On Digital"]
+    assert result["total_pages"] == 10
+
+
+def test_get_available_by_provider_excludes_theatrical_only_titles(monkeypatch):
+    client = TMDBClient(api_key="test-key")
+    discover_response = {
+        "page": 1,
+        "total_pages": 10,
+        "results": [
+            {"id": 1, "title": "Out On Digital"},
+            {"id": 2, "title": "Still In Theaters Only"},
+        ],
+    }
+    release_dates_by_id = {
+        1: {"results": [{"iso_3166_1": "US", "release_dates": [{"type": 4, "release_date": "2026-02-01T00:00:00.000Z"}]}]},
+        2: {"results": [{"iso_3166_1": "US", "release_dates": [{"type": 3, "release_date": "2026-08-15T00:00:00.000Z"}]}]},
+    }
+
+    def fake_get(path, params=None):
+        if path == "/discover/movie":
+            return discover_response
+        movie_id = int(path.split("/")[2])
+        return release_dates_by_id[movie_id]
+
+    monkeypatch.setattr(client, "_get", fake_get)
+
+    result = client.get_available_by_provider(8, region="US")
+
+    assert [m["title"] for m in result["results"]] == ["Out On Digital"]
+
+
+def test_is_movie_coming_soon_true_for_recent_theatrical_only_release():
+    movie = {"release_date": (datetime.now(timezone.utc) - timedelta(days=10)).strftime("%Y-%m-%d")}
+    releases = [{"iso_3166_1": "US", "release_dates": [{"type": 3, "release_date": "2026-01-01T00:00:00.000Z"}]}]
+    assert is_movie_coming_soon(movie, releases, "US") is True
+
+
+def test_is_movie_coming_soon_false_once_digitally_released():
+    movie = {"release_date": (datetime.now(timezone.utc) - timedelta(days=10)).strftime("%Y-%m-%d")}
+    releases = [{"iso_3166_1": "US", "release_dates": [{"type": 4, "release_date": "2020-01-01T00:00:00.000Z"}]}]
+    assert is_movie_coming_soon(movie, releases, "US") is False
+
+
+def test_is_movie_coming_soon_false_for_an_old_title_with_no_digital_record():
+    # Same "Practical Magic" gap as get_coming_soon's own recency guard —
+    # an old title TMDB never logged a Digital/Physical entry for must not
+    # read as permanently Coming Soon.
+    movie = {"release_date": "1998-10-16"}
+    assert is_movie_coming_soon(movie, [], "US") is False
+
+
+def test_is_tv_upcoming_true_for_a_future_first_air_date():
+    future = (datetime.now(timezone.utc) + timedelta(days=30)).strftime("%Y-%m-%d")
+    assert is_tv_upcoming({"first_air_date": future}) is True
+
+
+def test_is_tv_upcoming_true_when_first_air_date_missing():
+    assert is_tv_upcoming({}) is True
+
+
+def test_is_tv_upcoming_false_once_a_show_has_aired():
+    past = (datetime.now(timezone.utc) - timedelta(days=30)).strftime("%Y-%m-%d")
+    assert is_tv_upcoming({"first_air_date": past}) is False
+
+
+def test_get_available_tv_popular_excludes_unaired_shows(monkeypatch):
+    client = TMDBClient(api_key="test-key")
+    future = (datetime.now(timezone.utc) + timedelta(days=30)).strftime("%Y-%m-%d")
+    past = (datetime.now(timezone.utc) - timedelta(days=30)).strftime("%Y-%m-%d")
+    popular_response = {
+        "page": 1,
+        "total_pages": 500,
+        "results": [
+            {"id": 1, "name": "Already Airing", "first_air_date": past},
+            {"id": 2, "name": "Not Yet Aired", "first_air_date": future},
+        ],
+    }
+
+    def fake_get(path, params=None):
+        assert path == "/tv/popular"
+        return popular_response
+
+    monkeypatch.setattr(client, "_get", fake_get)
+
+    result = client.get_available_tv_popular(page=1)
+
+    assert [s["name"] for s in result["results"]] == ["Already Airing"]
+
+
+def test_get_available_tv_by_genre_excludes_unaired_shows(monkeypatch):
+    client = TMDBClient(api_key="test-key")
+    future = (datetime.now(timezone.utc) + timedelta(days=30)).strftime("%Y-%m-%d")
+    past = (datetime.now(timezone.utc) - timedelta(days=30)).strftime("%Y-%m-%d")
+    discover_response = {
+        "page": 1,
+        "total_pages": 10,
+        "results": [
+            {"id": 1, "name": "Already Airing", "first_air_date": past},
+            {"id": 2, "name": "Not Yet Aired", "first_air_date": future},
+        ],
+    }
+
+    def fake_get(path, params=None):
+        assert path == "/discover/tv"
+        return discover_response
+
+    monkeypatch.setattr(client, "_get", fake_get)
+
+    result = client.get_available_tv_by_genre(35, region="US")
+
+    assert [s["name"] for s in result["results"]] == ["Already Airing"]
+
+
+def test_get_tv_coming_soon_keeps_only_unaired_shows(monkeypatch):
+    client = TMDBClient(api_key="test-key")
+    future = (datetime.now(timezone.utc) + timedelta(days=30)).strftime("%Y-%m-%d")
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    discover_response = {
+        "page": 1,
+        "total_pages": 3,
+        "results": [
+            {"id": 1, "name": "Airing Right On The Boundary", "first_air_date": today},
+            {"id": 2, "name": "Airing Later", "first_air_date": future},
+        ],
+    }
+    captured = {}
+
+    def fake_get(path, params=None):
+        captured["path"] = path
+        captured["params"] = params
+        return discover_response
+
+    monkeypatch.setattr(client, "_get", fake_get)
+
+    result = client.get_tv_coming_soon(region="US", page=1)
+
+    assert captured["path"] == "/discover/tv"
+    assert captured["params"]["first_air_date.gte"] == today
+    # "today" itself isn't strictly in the future, so is_tv_upcoming's own
+    # re-check (not just trusting TMDB's date filter) correctly drops it.
+    assert [s["name"] for s in result["results"]] == ["Airing Later"]
 
 
 def test_available_on_provider_matches_any_offer_kind():

@@ -24,7 +24,7 @@ from app.pipeline_settings import (
 from app.plex import PlexError, PlexLinker, plex_library_lookup
 from app.qbt import QBTClient
 from app.resolve import resolve
-from app.tmdb import TMDBClient, TMDBError
+from app.tmdb import TMDBClient, TMDBError, is_movie_coming_soon, is_tv_upcoming
 from app.tv_resolve import resolve_show
 from app.tv_settings import resolve_tv_settings
 from app.worker import Worker
@@ -303,8 +303,11 @@ def discover_by_provider(
     store: RequestStore = Depends(get_store),
     tmdb: TMDBClient = Depends(get_tmdb),
 ) -> dict:
+    # Digital-availability filtered — same reasoning as Discover Popular/
+    # Trending above: a provider row shouldn't surface a theatrical-only
+    # title Coming Soon already owns.
     try:
-        data = tmdb.discover_by_provider(provider_id, region=region, page=page)
+        data = tmdb.get_available_by_provider(provider_id, region=region, page=page)
     except TMDBError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
     data["results"] = _annotate_on_plex(data.get("results", []), "movie", store, title_key="title", date_key="release_date")
@@ -319,8 +322,10 @@ def discover_by_genre(
     store: RequestStore = Depends(get_store),
     tmdb: TMDBClient = Depends(get_tmdb),
 ) -> dict:
+    # Digital-availability filtered — same reasoning as Discover Popular/
+    # Trending above.
     try:
-        data = tmdb.discover_by_genre(genre_id, region=region, page=page)
+        data = tmdb.get_available_by_genre(genre_id, region=region, page=page)
     except TMDBError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
     data["results"] = _annotate_on_plex(data.get("results", []), "movie", store, title_key="title", date_key="release_date")
@@ -352,7 +357,16 @@ def get_movie_detail(
         raise HTTPException(status_code=404, detail=f"tmdb_id {tmdb_id} not found") from exc
     year_str = (movie.get("release_date") or "")[:4]
     year = int(year_str) if year_str.isdigit() else None
-    return {**movie, "on_plex": _on_plex_for(movie.get("title") or "", year, "movie", store)}
+    # get_movie's append_to_response=release_dates already fetched exactly
+    # the data is_movie_coming_soon needs — no second TMDB call. Coming
+    # Soon titles use this to grey out their own Add to Plex button.
+    release_dates = movie.get("release_dates", {}).get("results", [])
+    is_coming_soon = is_movie_coming_soon(movie, release_dates, region="US")
+    return {
+        **movie,
+        "on_plex": _on_plex_for(movie.get("title") or "", year, "movie", store),
+        "is_coming_soon": is_coming_soon,
+    }
 
 
 # -- Stage 14: TV browse surface — the show equivalent of the movie routes
@@ -364,8 +378,11 @@ def get_movie_detail(
 def tv_discover_popular(
     page: int = 1, store: RequestStore = Depends(get_store), tmdb: TMDBClient = Depends(get_tmdb)
 ) -> dict:
+    # Filtered to shows that have aired at least one episode — Coming Soon
+    # is the dedicated place for anything that hasn't, same rule as the
+    # movie side's digital-availability filter above.
     try:
-        data = tmdb.get_tv_popular(page=page)
+        data = tmdb.get_available_tv_popular(page=page)
     except TMDBError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
     data["results"] = _annotate_on_plex(data.get("results", []), "show", store, title_key="name", date_key="first_air_date")
@@ -377,7 +394,7 @@ def tv_discover_trending(
     time_window: str = "week", page: int = 1, store: RequestStore = Depends(get_store), tmdb: TMDBClient = Depends(get_tmdb)
 ) -> dict:
     try:
-        data = tmdb.get_tv_trending(time_window=time_window, page=page)
+        data = tmdb.get_available_tv_trending(time_window=time_window, page=page)
     except TMDBError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
     data["results"] = _annotate_on_plex(data.get("results", []), "show", store, title_key="name", date_key="first_air_date")
@@ -393,7 +410,7 @@ def tv_discover_by_provider(
     tmdb: TMDBClient = Depends(get_tmdb),
 ) -> dict:
     try:
-        data = tmdb.discover_tv_by_provider(provider_id, region=region, page=page)
+        data = tmdb.get_available_tv_by_provider(provider_id, region=region, page=page)
     except TMDBError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
     data["results"] = _annotate_on_plex(data.get("results", []), "show", store, title_key="name", date_key="first_air_date")
@@ -409,7 +426,19 @@ def tv_discover_by_genre(
     tmdb: TMDBClient = Depends(get_tmdb),
 ) -> dict:
     try:
-        data = tmdb.discover_tv_by_genre(genre_id, region=region, page=page)
+        data = tmdb.get_available_tv_by_genre(genre_id, region=region, page=page)
+    except TMDBError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    data["results"] = _annotate_on_plex(data.get("results", []), "show", store, title_key="name", date_key="first_air_date")
+    return data
+
+
+@app.get("/api/tv/discover/coming-soon")
+def tv_discover_coming_soon(
+    region: str = "US", page: int = 1, store: RequestStore = Depends(get_store), tmdb: TMDBClient = Depends(get_tmdb)
+) -> dict:
+    try:
+        data = tmdb.get_tv_coming_soon(region=region, page=page)
     except TMDBError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
     data["results"] = _annotate_on_plex(data.get("results", []), "show", store, title_key="name", date_key="first_air_date")
@@ -427,7 +456,11 @@ def get_tv_detail(tmdb_id: int, store: RequestStore = Depends(get_store), tmdb: 
         raise HTTPException(status_code=404, detail=f"tmdb_id {tmdb_id} not found") from exc
     year_str = (show.get("first_air_date") or "")[:4]
     year = int(year_str) if year_str.isdigit() else None
-    return {**show, "on_plex": _on_plex_for(show.get("name") or "", year, "show", store)}
+    return {
+        **show,
+        "on_plex": _on_plex_for(show.get("name") or "", year, "show", store),
+        "is_coming_soon": is_tv_upcoming(show),
+    }
 
 
 @app.post("/api/tv/search")

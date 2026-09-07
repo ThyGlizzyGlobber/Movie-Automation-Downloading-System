@@ -10,68 +10,96 @@ works in the site, update this file in the same pass.
 
 ## 1. Colors
 
-| Token                  | Hex       | Usage                                                   |
-|-------------------------|-----------|------------------------------------------------------------|
-| `--smithflix-cream`     | `#f6efe3` | Light-mode background base, cream text on dark surfaces  |
-| `--smithflix-teal`      | `#123b36` | Primary mark color, "smith" wordmark (light mode), dark-mode base |
-| `--smithflix-coral`     | `#ff6b4a` | Fixed accent — "flix" wordmark, buttons/links/active states, play/action cues |
-| `--smithflix-mustard`   | `#f4b942` | Secondary accent, defined but not currently used anywhere in the UI |
+**Repainted from the original teal/cream/coral identity to a charcoal-and-red
+one** — a deliberate, confirmed decision, not a draft. The direction was
+picked by building six live mockups (charcoal, indigo, ocean blue, espresso,
+forest, and the original teal, each rendered against the real header/hero/
+row layout) as a comparison artifact, narrowing in on charcoal as the
+ground, then comparing amber vs. two red variants for the accent. The user
+picked **Light Red**. The old teal/coral tokens below are gone, not kept
+alongside the new ones — don't treat this section's previous coral/teal
+values as still-live; they aren't.
 
-Coral is the app's **one fixed accent color across both themes** — it is
-not user-customizable. An earlier per-household accent-color picker
-(`/api/settings/appearance`, a Settings-panel color swatch feature) was
-**removed entirely** — frontend UI, JS, backend routes, and tests — so the
-brand color can't be overridden back to something off-brand. Do not
-rebuild that feature; if a future request wants per-household
-customization back, that's a deliberate new decision to make with the
-user, not something to silently restore.
+| Token                        | Hex       | Usage                                                   |
+|-------------------------------|-----------|------------------------------------------------------------|
+| `--smithflix-cream`           | `#f3ede2` | Dark-mode text color, "smith" wordmark (dark mode)        |
+| `--smithflix-charcoal`        | `#141312` | Dark-mode background base                                 |
+| `--smithflix-charcoal-card`   | `#201e1c` | Dark-mode card/elevated-surface base                       |
+| `--smithflix-red`             | `#f0605f` | Fixed accent (dark mode value) — "flix" wordmark (both themes), buttons/links/active states |
 
 CSS variables, exactly as they exist in `frontend/index.html`'s `:root`:
 
 ```css
 :root {
-  --smithflix-cream: #f6efe3;
-  --smithflix-teal: #123b36;
-  --smithflix-coral: #ff6b4a;
-  --smithflix-mustard: #f4b942;
+  --smithflix-cream: #f3ede2;
+  --smithflix-charcoal: #141312;
+  --smithflix-charcoal-card: #201e1c;
+  --smithflix-red: #f0605f;
 }
 ```
 
+The old per-household accent-color picker (`/api/settings/appearance`, a
+Settings-panel color swatch feature) was **removed entirely** — frontend
+UI, JS, backend routes, and tests — before this repaint, so the brand
+color can't be overridden back to something off-brand. Do not rebuild
+that feature; if a future request wants per-household customization back,
+that's a deliberate new decision to make with the user, not something to
+silently restore.
+
 ### Derived theme tokens
 
-The app has a real dark/light toggle (see §4). Both themes are built from
-the four brand colors above, but the site's own semantic tokens
-(`--bg`/`--text`/etc.) are **not** identical to the raw brand hexes —
-they're tuned surface/text variants for actual UI contrast. These are the
-real, current values:
+The app has a real dark/light toggle (see §4). These are the real, current
+values:
 
 ```css
 /* Dark (default) */
 :root {
-  --bg: #0d2b27;
-  --bg-elevated: #123b36;   /* == --smithflix-teal exactly */
-  --bg-card: #17453f;
-  --text: #f6efe3;          /* == --smithflix-cream */
-  --text-dim: #a9c1bc;
-  --accent: var(--smithflix-coral);
-  --accent-text: #ffffff;
-  --border: #285650;
+  --bg: var(--smithflix-charcoal);
+  --bg-elevated: #1a1816;
+  --bg-card: var(--smithflix-charcoal-card);
+  --text: var(--smithflix-cream);
+  --text-dim: #a39a8b;
+  --accent: var(--smithflix-red);
+  --accent-text: #141312;
+  --border: #332f2b;
 }
-/* Light — :root[data-theme="light"] overrides just these */
---bg: #f6efe3;               /* == --smithflix-cream */
---bg-elevated: #efe5d2;
---bg-card: #e8dcc4;
---text: #123b36;             /* == --smithflix-teal */
---text-dim: #5c7570;
---border: #ddceac;
+/* Light — :root[data-theme="light"] overrides these, including accent */
+--bg: #ece8e1;                /* a very light, warm charcoal-stone tone — not plain white */
+--bg-elevated: #f5f1ea;
+--bg-card: #ffffff;
+--text: #211f1c;
+--text-dim: #736c60;
+--border: #dcd5c8;
+--accent: #e14e4d;             /* deepened from the dark-mode #f0605f */
+--accent-text: #ffffff;        /* dark mode uses dark (#141312) accent-text instead */
 ```
 
-`--accent`/`--accent-text` are **not** redeclared for light mode — coral
-reads fine on both backgrounds, so it's set once in the base `:root` and
-inherited by both themes. Semantic status colors (queued/searching/
-downloading/complete/no-match/no-space/failed) are a separate, older
-convention and are deliberately **not** brand-recolored or theme-varied —
-don't fold them into this palette.
+**Real, deliberate asymmetry from the old identity — the accent is no
+longer fully theme-invariant.** The old coral read fine unchanged on both
+teal-dark and cream-light. The new light red doesn't: on the new pale
+`#ece8e1` ground it loses contrast, so light mode deepens it slightly to
+`#e14e4d` with white button text, while dark mode keeps the brighter
+`#f0605f` with dark (`#141312`) button text. If you're hunting for why
+`--accent`/`--accent-text` are redeclared inside the light-theme block
+when the old doc said they never were — this is why; that was true for
+coral, it isn't true for this red. The **logo wordmark's "flix" half**
+still follows the old precedent, though — it stays pinned to the one
+fixed dark-mode red (`--smithflix-red`, `#f0605f`) in *both* themes rather
+than switching with `--accent` (see §2) — a logo shouldn't recolor itself
+when the theme toggles, and `#f0605f` reads fine as small logo text on the
+new light ground too, just like coral did before it.
+
+Semantic status colors (queued/searching/downloading/complete/no-match/
+no-space/failed) are a separate, older convention and are deliberately
+**not** brand-recolored or theme-varied — don't fold them into this
+palette.
+
+**Known mismatch, not yet resolved:** the brand icon mark itself
+(`icons/favicon.svg`, used as both the favicon and the PWA icon — see §5)
+is still teal, left over from the original identity. It was deliberately
+**not** regenerated as part of this repaint — producing a new icon asset
+wasn't asked for and is out of scope for a CSS-only color change. If/when
+the icon itself gets updated to match, this note should come out.
 
 **Known trap, already fixed once — don't reintroduce it:** never hardcode
 a literal dark color (e.g. `rgba(15,17,21,0.9)`) for a background/gradient
@@ -79,6 +107,12 @@ that should track the current theme. Use `var(--bg)` directly, or
 `color-mix(in srgb, var(--bg) N%, transparent)` for a translucent version.
 Three spots in the CSS (topbar, tabbar, hero gradient) originally hardcoded
 dark-only literals and broke silently in light mode until caught and fixed.
+A second instance of the same trap surfaced during this repaint itself: a
+poster-placeholder `<img>` is a data-URI inline SVG (can't reference CSS
+vars at all), so its fill color has to be manually kept in sync with
+`--bg-card`'s dark-mode value by hand — currently `#201e1c`. If `--bg-card`
+changes again, grep `PLACEHOLDER_POSTER` in `frontend/index.html` and
+update its hardcoded `fill` too.
 
 ## 2. Typography
 
@@ -127,11 +161,13 @@ body text, set directly in the page's own CSS:
   font-family: var(--font-display); font-weight: 800; font-size: 26px; line-height: 1;
 }
 #topbarLogo .brand-word-smith { color: var(--text); }   /* tracks the active theme */
-#topbarLogo .brand-word-flix { color: var(--smithflix-coral); }  /* always coral */
+#topbarLogo .brand-word-flix { color: var(--smithflix-red); }  /* always this one red, both themes */
 ```
 
 This is deliberate: "smith" recolors automatically with the theme toggle
-(inherits `--text`), "flix" always stays coral. No JS is needed to swap
+(inherits `--text`), "flix" always stays the one fixed red — note this is
+`--smithflix-red` directly, **not** `--accent` (which now differs between
+themes, see §1's "Derived theme tokens" note on the accent asymmetry). No JS is needed to swap
 images on theme change — plain CSS variable inheritance handles it. The
 `wordmark-dark.svg`/`wordmark-light.svg` files that used to back an
 `<img>`-based version of this were removed from `frontend/` once the site
@@ -206,7 +242,7 @@ header.
 - The main script (at the bottom of the page, once the rest of the DOM
   exists) handles everything the head-script can't: the toggle button's
   own icon (`light_mode`/`dark_mode`, swapped) and label, and the
-  `<meta name="theme-color">` tag (`#123b36` dark / `#f6efe3` light).
+  `<meta name="theme-color">` tag (`#141312` dark / `#ece8e1` light).
 - The wordmark needs **no** JS handling on theme change — see §2, it's
   plain CSS variable inheritance.
 
@@ -265,7 +301,7 @@ runtime):
 <link rel="icon" type="image/png" sizes="512x512" href="/icon-512.png">
 <link rel="apple-touch-icon" href="/apple-touch-icon.png">
 <link rel="manifest" href="/manifest.json">
-<meta name="theme-color" content="#123b36">
+<meta name="theme-color" content="#141312">
 ```
 
 **Header logo:** plain text, not an image file at all — see §2. Don't

@@ -5,6 +5,7 @@ the real-TMDB/real-qBittorrent validation this doesn't cover."""
 
 import asyncio
 from contextlib import asynccontextmanager
+from datetime import datetime, timedelta, timezone
 
 import pytest
 from fastapi.testclient import TestClient
@@ -63,10 +64,10 @@ class FakeTMDBClient:
     def get_watch_providers(self, region="US"):
         return {"results": [{"provider_id": 8, "provider_name": "Netflix", "logo_path": "/netflix.png"}]}
 
-    def discover_by_provider(self, provider_id, region="US", page=1):
+    def get_available_by_provider(self, provider_id, region="US", page=1):
         return {"results": [MOVIE], "page": page, "total_pages": 10, "provider_id": provider_id}
 
-    def discover_by_genre(self, genre_id, region="US", page=1):
+    def get_available_by_genre(self, genre_id, region="US", page=1):
         return {"results": [MOVIE], "page": page, "total_pages": 10, "genre_id": genre_id}
 
     def get_coming_soon(self, region="US", page=1):
@@ -83,11 +84,14 @@ class FakeTMDBClient:
 
     # -- Stage 14: TV browse surface --
 
-    def get_tv_popular(self, page=1):
+    def get_available_tv_popular(self, page=1):
         return {"results": [SHOW], "page": page, "total_pages": 500}
 
-    def get_tv_trending(self, time_window="week", page=1):
+    def get_available_tv_trending(self, time_window="week", page=1):
         return {"results": [SHOW], "page": page}
+
+    def get_tv_coming_soon(self, region="US", page=1):
+        return {"results": [SHOW], "page": page, "total_pages": 3}
 
     def search_tv(self, query, year=None):
         return {"results": self._tv_search_results}
@@ -95,10 +99,10 @@ class FakeTMDBClient:
     def search_tv_within_provider(self, query, provider_id, region="US"):
         return {"results": self._tv_search_results, "provider_id": provider_id}
 
-    def discover_tv_by_provider(self, provider_id, region="US", page=1):
+    def get_available_tv_by_provider(self, provider_id, region="US", page=1):
         return {"results": [SHOW], "page": page, "total_pages": 10, "provider_id": provider_id}
 
-    def discover_tv_by_genre(self, genre_id, region="US", page=1):
+    def get_available_tv_by_genre(self, genre_id, region="US", page=1):
         return {"results": [SHOW], "page": page, "total_pages": 10, "genre_id": genre_id}
 
     def get_tv_season(self, tmdb_id, season_number):
@@ -684,7 +688,27 @@ def test_get_movie_detail_returns_full_movie(client_and_deps):
     response = client.get("/api/movies/693134")
 
     assert response.status_code == 200
-    assert response.json() == dict(MOVIE, on_plex=False)
+    # MOVIE's release_date (2024-03-01) is well outside the Coming Soon
+    # recency window, so is_coming_soon is deterministically False here
+    # regardless of no release_dates data being present on the fixture.
+    assert response.json() == dict(MOVIE, on_plex=False, is_coming_soon=False)
+
+
+def test_get_movie_detail_flags_is_coming_soon_for_a_theatrical_only_release(client_and_deps):
+    client, _, tmdb, _, _, _ = client_and_deps
+    recent = (datetime.now(timezone.utc) - timedelta(days=5)).strftime("%Y-%m-%d")
+    tmdb._movie = {
+        **MOVIE,
+        "release_date": recent,
+        "release_dates": {
+            "results": [{"iso_3166_1": "US", "release_dates": [{"type": 3, "release_date": f"{recent}T00:00:00.000Z"}]}]
+        },
+    }
+
+    response = client.get("/api/movies/693134")
+
+    assert response.status_code == 200
+    assert response.json()["is_coming_soon"] is True
 
 
 def test_get_movie_detail_404s_on_unknown_tmdb_id(client_and_deps):
@@ -694,6 +718,14 @@ def test_get_movie_detail_404s_on_unknown_tmdb_id(client_and_deps):
     response = client.get("/api/movies/999999")
 
     assert response.status_code == 404
+
+
+def test_tv_discover_coming_soon_passes_through_tmdb(client_and_deps):
+    client, _, _, _, _, _ = client_and_deps
+    response = client.get("/api/tv/discover/coming-soon", params={"page": 2})
+
+    assert response.status_code == 200
+    assert response.json()["results"] == [dict(SHOW, on_plex=False)]
 
 
 def test_tv_discover_popular_passes_through_tmdb(client_and_deps):
@@ -718,7 +750,20 @@ def test_get_tv_detail_returns_full_show(client_and_deps):
     response = client.get("/api/tv/95350")
 
     assert response.status_code == 200
-    assert response.json() == dict(SHOW, on_plex=False)
+    # SHOW's first_air_date (2026-01-01) is in the past, so is_coming_soon
+    # is deterministically False.
+    assert response.json() == dict(SHOW, on_plex=False, is_coming_soon=False)
+
+
+def test_get_tv_detail_flags_is_coming_soon_for_a_future_first_air_date(client_and_deps):
+    client, _, tmdb, _, _, _ = client_and_deps
+    future = (datetime.now(timezone.utc) + timedelta(days=30)).strftime("%Y-%m-%d")
+    tmdb.get_tv = lambda tmdb_id: {**SHOW, "id": tmdb_id, "first_air_date": future}
+
+    response = client.get("/api/tv/95350")
+
+    assert response.status_code == 200
+    assert response.json()["is_coming_soon"] is True
 
 
 def test_get_tv_detail_404s_on_unknown_tmdb_id(client_and_deps):
