@@ -186,10 +186,16 @@
      color — but that same dim tone is close enough to a light or
      mid-grey hero image's own tones that it can nearly disappear there
      regardless of shadow strength. Full-strength --text on hero pages
-     instead; the active link needs no hero-specific override at all —
-     its solid accent-pill background (.top-nav-link.active above) is
-     already readable against any hero image behind it. */
+     instead. The active link needs its own repeat here even though
+     .top-nav-link.active above already sets --accent: this selector's
+     #topbar id outweighs that plain two-class one, so without a same-
+     specificity override here the active link's red text would get
+     silently overridden back to the same neutral --text every inactive
+     link gets — its charcoal pill background is the only thing that'd
+     still look right. Every page a nav link actually points to (home,
+     movies, tv) is a hero page, so this isn't a rare edge case. */
   body.has-hero #topbar .top-nav-link { color: var(--text); }
+  body.has-hero #topbar .top-nav-link.active { color: var(--accent); }
   #backBtn, #settingsToggle, #themeToggle {
     flex: 0 0 auto; background: none; border: none; color: var(--text);
     font-size: 20px; padding: 6px 8px; border-radius: 8px; line-height: 1;
