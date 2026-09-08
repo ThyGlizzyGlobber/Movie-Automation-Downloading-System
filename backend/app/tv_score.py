@@ -15,7 +15,13 @@ import re
 
 from app.normalize import normalize_text, tokenize
 from app.pipeline_settings import PipelineSettings
-from app.score import matches_any_variant, passes_cam_filter, passes_language_filter, passes_resolution_floor
+from app.score import (
+    matches_any_variant,
+    passes_archive_filter,
+    passes_cam_filter,
+    passes_language_filter,
+    passes_resolution_floor,
+)
 from app.tv_resolve import ShowIdentity
 
 _SEASON_EPISODE_RE = re.compile(r"^s(\d{1,2})e(\d{1,3})$")
@@ -76,4 +82,5 @@ def passes_episode_relevance_gate(
         and passes_resolution_floor(tokens, settings.min_resolution)
         and passes_language_filter(tokens, settings.language_allowlist, settings.language_blocklist)
         and passes_cam_filter(tokens)
+        and passes_archive_filter(tokens)
     )

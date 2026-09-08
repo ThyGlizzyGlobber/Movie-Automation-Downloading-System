@@ -168,6 +168,23 @@ def test_passes_relevance_gate_still_accepts_a_legit_release():
 
 
 # ---------------------------------------------------------------------------
+# Archive-file exclusion
+# ---------------------------------------------------------------------------
+
+
+def test_passes_relevance_gate_rejects_zipx():
+    assert passes_relevance_gate("Dune.Part.Two.2024.2160p.REMUX.zipx", DUNE) is False
+
+
+def test_passes_relevance_gate_rejects_zip():
+    assert passes_relevance_gate("Dune.Part.Two.2024.2160p.REMUX.zip", DUNE) is False
+
+
+def test_passes_relevance_gate_rejects_rar():
+    assert passes_relevance_gate("Dune.Part.Two.2024.2160p.REMUX.rar", DUNE) is False
+
+
+# ---------------------------------------------------------------------------
 # Resolution floor — a setting, not a fixed gate. Lowering it is what
 # enables "fall back to 1080p if nothing at 4K qualifies."
 # ---------------------------------------------------------------------------
