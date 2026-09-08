@@ -124,7 +124,10 @@
   #topbar {
     position: fixed; top: 0; left: 0; right: 0; z-index: 10;
     display: flex; align-items: center; gap: 10px;
-    padding: calc(10px + var(--safe-top)) 14px 10px;
+    /* 32px left/right — same edge inset as the downloads FAB/storage
+       ring at the bottom of the screen, so the logo and those floating
+       buttons line up on the same vertical edge. */
+    padding: calc(10px + var(--safe-top)) 32px 10px;
     background: color-mix(in srgb, var(--bg) 92%, transparent);
     backdrop-filter: blur(10px);
   }
