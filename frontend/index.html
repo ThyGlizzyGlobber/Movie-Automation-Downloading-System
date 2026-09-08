@@ -185,11 +185,11 @@
      other page, where the background is always a flat, predictable app
      color — but that same dim tone is close enough to a light or
      mid-grey hero image's own tones that it can nearly disappear there
-     regardless of shadow strength. Full-strength --text for both states
-     on hero pages instead; --accent (matching the mobile tab bar's own
-     active-state color) is what marks the active one instead of dimness. */
+     regardless of shadow strength. Full-strength --text on hero pages
+     instead; the active link needs no hero-specific override at all —
+     its solid accent-pill background (.top-nav-link.active above) is
+     already readable against any hero image behind it. */
   body.has-hero #topbar .top-nav-link { color: var(--text); }
-  body.has-hero #topbar .top-nav-link.active { color: var(--accent); }
   #backBtn, #settingsToggle, #themeToggle {
     flex: 0 0 auto; background: none; border: none; color: var(--text);
     font-size: 20px; padding: 6px 8px; border-radius: 8px; line-height: 1;
@@ -277,11 +277,14 @@
 
   .top-nav-links { display: none; }
   .top-nav-link {
-    padding: 8px 14px; border-radius: 8px; font-size: 14.5px; font-weight: 600;
+    padding: 8px 14px; border-radius: 999px; font-size: 14.5px; font-weight: 600;
     color: var(--text-dim); background: none; border: none;
   }
   .top-nav-link:hover { color: var(--text); background: var(--bg-card); }
-  .top-nav-link.active { color: var(--text); }
+  /* Same pill language as .storage-indicator/.status-pill — a solid
+     accent fill (readable against any hero image behind it, so the
+     hero-specific override below no longer needs its own color trick). */
+  .top-nav-link.active { color: var(--accent-text); background: var(--accent); }
 
   section.row { margin-bottom: 26px; }
   section.row h2 {
@@ -729,8 +732,11 @@
      point offering to navigate to where you already are. */
   .downloads-fab {
     position: fixed; right: 32px; bottom: calc(84px + var(--safe-bottom)); z-index: 9;
-    width: 56px; height: 56px; border-radius: 50%; border: none;
-    background: var(--accent); color: var(--accent-text);
+    width: 56px; height: 56px; border-radius: 50%;
+    /* Same card/border look as .storage-indicator's pill — a circle,
+       not a pill, but the same visual language rather than a solid
+       accent fill. */
+    background: var(--bg-card); border: 1px solid var(--border); color: var(--text);
     display: flex; align-items: center; justify-content: center;
     box-shadow: 0 4px 14px rgba(0,0,0,0.35);
   }
