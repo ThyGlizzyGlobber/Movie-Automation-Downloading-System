@@ -127,15 +127,16 @@ def passes_cam_filter(tokens: list[str]) -> bool:
     return not any(normalize_text(blocked) in tokens for blocked in config.CAM_BLOCKLIST)
 
 
-def passes_archive_filter(tokens: list[str]) -> bool:
-    """Rejects a result whose name carries an archive-file marker (.zip,
-    .zipx, .rar, .7z) instead of a raw video file — same whole-token
-    blocklist check as `passes_cam_filter`, just against
-    config.ARCHIVE_BLOCKLIST. Doesn't (can't) catch an archive that omits
-    any such marker from its name; see config.py's ARCHIVE_BLOCKLIST
-    comment for the real-world case this closes. Public: reused unchanged
-    by tv_score.py and pack_score.py."""
-    return not any(normalize_text(blocked) in tokens for blocked in config.ARCHIVE_BLOCKLIST)
+def passes_non_video_filter(tokens: list[str]) -> bool:
+    """Rejects a result whose name carries an archive or executable
+    marker (.zip, .zipx, .rar, .7z, .exe, ...) instead of a raw video
+    file — same whole-token blocklist check as `passes_cam_filter`, just
+    against config.NON_VIDEO_BLOCKLIST. Doesn't (can't) catch a disguised
+    payload that omits any such marker from its name; see config.py's
+    NON_VIDEO_BLOCKLIST comment for the real-world cases (an unfileable
+    .zipx, then a fake-release .exe) this closes. Public: reused
+    unchanged by tv_score.py and pack_score.py."""
+    return not any(normalize_text(blocked) in tokens for blocked in config.NON_VIDEO_BLOCKLIST)
 
 
 def passes_relevance_gate(file_name: str, identity: MediaIdentity, settings: PipelineSettings | None = None) -> bool:
@@ -147,7 +148,7 @@ def passes_relevance_gate(file_name: str, identity: MediaIdentity, settings: Pip
         and passes_resolution_floor(tokens, settings.min_resolution)
         and passes_language_filter(tokens, settings.language_allowlist, settings.language_blocklist)
         and passes_cam_filter(tokens)
-        and passes_archive_filter(tokens)
+        and passes_non_video_filter(tokens)
     )
 
 

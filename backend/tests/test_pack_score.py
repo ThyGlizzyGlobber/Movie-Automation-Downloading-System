@@ -62,6 +62,10 @@ def test_passes_season_pack_gate_rejects_zipx():
     assert passes_season_pack_gate("Lanterns.S01.2160p.WEB-DL.zipx", LANTERNS, 1) is False
 
 
+def test_passes_season_pack_gate_rejects_exe():
+    assert passes_season_pack_gate("Lanterns.S01.2160p.WEB-DL.exe", LANTERNS, 1) is False
+
+
 def test_passes_season_pack_gate_with_explicit_settings_language_blocklist():
     blocklist_settings = PipelineSettings(
         category="movies",
@@ -117,6 +121,10 @@ def test_passes_series_pack_gate_rejects_zipx():
     assert passes_series_pack_gate("Lanterns.Complete.Series.2160p.WEB-DL.zipx", LANTERNS) is False
 
 
+def test_passes_series_pack_gate_rejects_exe():
+    assert passes_series_pack_gate("Lanterns.Complete.Series.2160p.WEB-DL.exe", LANTERNS) is False
+
+
 # ---------------------------------------------------------------------------
 # Season-range gate (Stage 14.x) — an explicit multi-season bundle marker
 # ("S01-S03", "Seasons 1-3"), distinct from both the single-season and
@@ -168,6 +176,10 @@ def test_passes_season_range_pack_gate_rejects_hdcam():
 
 def test_passes_season_range_pack_gate_rejects_zipx():
     assert passes_season_range_pack_gate("Lanterns.S01-S03.2160p.WEB-DL.zipx", LANTERNS, 1, 3) is False
+
+
+def test_passes_season_range_pack_gate_rejects_exe():
+    assert passes_season_range_pack_gate("Lanterns.S01-S03.2160p.WEB-DL.exe", LANTERNS, 1, 3) is False
 
 
 def test_parse_season_range_dashed_tokens():

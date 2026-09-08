@@ -83,19 +83,36 @@ CAM_BLOCKLIST: tuple[str, ...] = (
     "workprint",
 )
 
-# Archive/container-file markers — a release whose payload is actually a
-# compressed archive rather than a raw video file (confirmed live: a Ted
-# Lasso S04 search plugin returning a .zipx result, which then had no video
-# file for media_organizer.select_video_file() to find and organize, 2026-
-# 09-08). Rejected at the same pass-one relevance-gate stage as the cam
-# blocklist above — before the torrent is ever added — rather than only
-# discovered post-download, since select_video_file's own VIDEO_EXTENSIONS
-# check can't run until the torrent's file list actually exists.
-ARCHIVE_BLOCKLIST: tuple[str, ...] = (
+# Non-video payload markers — a release whose real payload is an archive
+# or, worse, an executable, rather than a raw video file. Confirmed live
+# twice on the same Ted Lasso S04 subscription (2026-09-08): first a
+# .zipx result with no video file for media_organizer.select_video_file()
+# to find and organize; then, after archives alone were blocked, a
+# "Ted.Lasso.S04E06.1080p.ATVP.WEB.H264-NTb.exe" result — a fake-release
+# executable, the classic disguised-malware-download shape, not merely an
+# organizing gap. Rejected at the same pass-one relevance-gate stage as
+# the cam blocklist above — before the torrent is ever added — rather
+# than only discovered post-download, since select_video_file's own
+# VIDEO_EXTENSIONS check can't run until the torrent's file list actually
+# exists, and by then the executable may already be sitting on disk.
+NON_VIDEO_BLOCKLIST: tuple[str, ...] = (
     "zip",
     "zipx",
     "rar",
     "7z",
+    "exe",
+    "msi",
+    "scr",
+    "bat",
+    "cmd",
+    "com",
+    "vbs",
+    "js",
+    "jar",
+    "apk",
+    "dmg",
+    "pkg",
+    "iso",
 )
 
 # Pass two (quality score): resolution > source > codec > seeder health >

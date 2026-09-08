@@ -89,6 +89,10 @@ def test_passes_episode_relevance_gate_rejects_zipx():
     assert passes_episode_relevance_gate("Lanterns.S01E04.2160p.WEB-DL.zipx", LANTERNS, 1, 4) is False
 
 
+def test_passes_episode_relevance_gate_rejects_exe():
+    assert passes_episode_relevance_gate("Lanterns.S01E04.2160p.WEB-DL.exe", LANTERNS, 1, 4) is False
+
+
 def test_passes_episode_relevance_gate_with_explicit_settings_language_blocklist():
     blocklist_settings = PipelineSettings(
         category="movies",

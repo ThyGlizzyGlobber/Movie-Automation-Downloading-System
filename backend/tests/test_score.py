@@ -184,6 +184,12 @@ def test_passes_relevance_gate_rejects_rar():
     assert passes_relevance_gate("Dune.Part.Two.2024.2160p.REMUX.rar", DUNE) is False
 
 
+def test_passes_relevance_gate_rejects_exe():
+    # Fake-release executable disguised as a video download — confirmed
+    # live (a "Ted.Lasso...H264-NTb.exe" result on a real subscription).
+    assert passes_relevance_gate("Dune.Part.Two.2024.2160p.REMUX.exe", DUNE) is False
+
+
 # ---------------------------------------------------------------------------
 # Resolution floor — a setting, not a fixed gate. Lowering it is what
 # enables "fall back to 1080p if nothing at 4K qualifies."

@@ -26,9 +26,9 @@ from app.pipeline_settings import PipelineSettings
 from app.score import (
     contains_phrase,
     matches_any_variant,
-    passes_archive_filter,
     passes_cam_filter,
     passes_language_filter,
+    passes_non_video_filter,
     passes_resolution_floor,
 )
 from app.tv_resolve import ShowIdentity
@@ -90,7 +90,7 @@ def passes_season_pack_gate(
         and passes_resolution_floor(tokens, settings.min_resolution)
         and passes_language_filter(tokens, settings.language_allowlist, settings.language_blocklist)
         and passes_cam_filter(tokens)
-        and passes_archive_filter(tokens)
+        and passes_non_video_filter(tokens)
     )
 
 
@@ -157,7 +157,7 @@ def passes_season_range_pack_gate(
         and passes_resolution_floor(tokens, settings.min_resolution)
         and passes_language_filter(tokens, settings.language_allowlist, settings.language_blocklist)
         and passes_cam_filter(tokens)
-        and passes_archive_filter(tokens)
+        and passes_non_video_filter(tokens)
     )
 
 
@@ -176,5 +176,5 @@ def passes_series_pack_gate(
         and passes_resolution_floor(tokens, settings.min_resolution)
         and passes_language_filter(tokens, settings.language_allowlist, settings.language_blocklist)
         and passes_cam_filter(tokens)
-        and passes_archive_filter(tokens)
+        and passes_non_video_filter(tokens)
     )
