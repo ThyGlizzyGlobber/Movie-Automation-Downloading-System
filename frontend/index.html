@@ -748,33 +748,35 @@
     border: 2px solid var(--bg);
   }
 
-  /* Global storage indicator — mirrors .downloads-fab's fixed floating
-     corner placement (bottom-left instead of right), present on every
-     page. An SVG stroke ring (round-capped, matching the site's own
-     rounded aesthetic — a conic-gradient wedge can't do a round cap) in
-     the brand accent color, same as .downloads-fab's own fill; the icon
-     and percentage sit stacked inside it, like the hero's .score-ring.
+  /* Global storage indicator — same fixed floating corner placement as
+     .downloads-fab (bottom-left instead of right), present on every
+     page. A pill rather than a circle (the site's own established
+     shape for a compact status readout — .status-pill, .watch-link,
+     .season-btn all use the same border-radius:999px language) — a
+     circle small enough to match the downloads FAB left too little room
+     for the percentage to read clearly. Icon, a small fill bar, and the
+     percentage (full-strength text color, not dimmed) sit in a row.
      Hidden entirely when /api/storage reports unavailable (no real
      mount — every local/test environment) rather than showing a broken
-     or zeroed-out ring. */
+     or zeroed-out readout. */
   .storage-indicator {
     position: fixed; left: 32px; bottom: calc(84px + var(--safe-bottom)); z-index: 9;
-  }
-  .storage-indicator[hidden] { display: none; }
-  .storage-ring {
-    width: 56px; height: 56px; border-radius: 50%; position: relative; flex: 0 0 auto;
-    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px;
+    display: flex; align-items: center; gap: 10px;
+    background: var(--bg-card); border: 1px solid var(--border); border-radius: 999px;
+    padding: 11px 18px 11px 14px;
     box-shadow: 0 4px 14px rgba(0,0,0,0.35);
   }
-  .storage-ring::before { content: ""; position: absolute; inset: 8px; border-radius: 50%; background: var(--bg); }
-  .storage-ring-svg { position: absolute; inset: 0; transform: rotate(-90deg); transform-origin: center; }
-  .storage-ring-track { fill: none; stroke: var(--bg-card); stroke-width: 4; }
-  .storage-ring-progress {
-    fill: none; stroke: var(--accent); stroke-width: 4; stroke-linecap: round;
-    transition: stroke-dashoffset 0.3s ease;
+  .storage-indicator[hidden] { display: none; }
+  .storage-indicator-icon { font-size: 20px; color: var(--text); flex: 0 0 auto; }
+  .storage-indicator-bar {
+    width: 48px; height: 6px; border-radius: 999px; background: var(--bg-elevated);
+    overflow: hidden; flex: 0 0 auto;
   }
-  .storage-ring-icon { position: relative; font-size: 15px; color: var(--text); line-height: 1; }
-  .storage-ring-pct { position: relative; font-size: 9px; font-weight: 700; color: var(--text-dim); line-height: 1; }
+  .storage-indicator-fill {
+    display: block; height: 100%; width: 0%; border-radius: 999px;
+    background: var(--accent); transition: width 0.3s ease;
+  }
+  .storage-indicator-pct { font-size: 14px; font-weight: 700; color: var(--text); white-space: nowrap; }
 
   /* Settings — a grid of self-contained cards (one per settings group),
      matching the card/border/radius language the rest of the site already
@@ -936,15 +938,9 @@
      it, same as the downloads FAB above. Hidden until the first
      successful /api/storage read (see refreshStorageIndicator()). -->
 <div id="storageIndicator" class="storage-indicator" hidden>
-  <div class="storage-ring">
-    <svg class="storage-ring-svg" viewBox="0 0 56 56">
-      <circle class="storage-ring-track" cx="28" cy="28" r="24"></circle>
-      <circle class="storage-ring-progress" id="storageRingProgress" cx="28" cy="28" r="24"
-        stroke-dasharray="150.80" stroke-dashoffset="150.80"></circle>
-    </svg>
-    <span class="material-symbols-rounded storage-ring-icon">hard_drive</span>
-    <span class="storage-ring-pct" id="storagePctLabel"></span>
-  </div>
+  <span class="material-symbols-rounded storage-indicator-icon">hard_drive</span>
+  <span class="storage-indicator-bar"><span class="storage-indicator-fill" id="storageBarFill"></span></span>
+  <span class="storage-indicator-pct" id="storagePctLabel"></span>
 </div>
 
 <script>
@@ -1360,23 +1356,19 @@
   //    polls on its own, much longer interval rather than reusing
   //    refreshDownloadsBadge's 5s one. Stays hidden entirely (not just
   //    zeroed) whenever /api/storage reports unavailable — no real mount
-  //    is the normal case for local dev, and a broken ring would be worse
-  //    than no ring at all. --
+  //    is the normal case for local dev, and a broken readout would be
+  //    worse than no readout at all. --
   const storageIndicator = document.getElementById("storageIndicator");
-  const storageRingProgress = document.getElementById("storageRingProgress");
+  const storageBarFill = document.getElementById("storageBarFill");
   const storagePctLabel = document.getElementById("storagePctLabel");
-  // Matches the ring markup's r="24" (2 * PI * 24) — stroke-dasharray is
-  // set once in the HTML itself; only the offset needs updating per pct.
-  const STORAGE_RING_CIRCUMFERENCE = 150.80;
   async function refreshStorageIndicator() {
     try {
       const s = await getStorage();
       if (!s.available) { storageIndicator.hidden = true; return; }
-      storageRingProgress.style.strokeDashoffset =
-        STORAGE_RING_CIRCUMFERENCE * (1 - s.used_percent / 100);
+      storageBarFill.style.width = `${Math.max(0, Math.min(100, s.used_percent))}%`;
       storagePctLabel.textContent = `${Math.round(s.used_percent)}%`;
       storageIndicator.hidden = false;
-    } catch (err) { /* a transient fetch failure just leaves the last-known ring showing */ }
+    } catch (err) { /* a transient fetch failure just leaves the last-known readout showing */ }
   }
   refreshStorageIndicator();
   setInterval(refreshStorageIndicator, 60000);
