@@ -1,10 +1,12 @@
 from app import config
 from app.pipeline_settings import PipelineSettings
 from app.resolve import MediaIdentity
+from app.normalize import tokenize
 from app.score import (
     dedup_candidates,
     exclude_existing,
     is_trustworthy,
+    passes_language_filter,
     passes_relevance_gate,
     passes_viability_gate,
     rank_candidates,
@@ -283,6 +285,55 @@ def test_passes_relevance_gate_with_explicit_settings_allowlist_excludes_unliste
     assert (
         passes_relevance_gate("Dune.Part.Two.2024.2160p.REMUX.ENGLISH.mkv", DUNE, allowlist_settings) is False
     )
+
+
+def test_passes_relevance_gate_with_explicit_settings_required_needs_every_language():
+    # AND semantics, distinct from allowlist's OR: a dual-audio release
+    # needs English *and* Spanish together, not just one of the two.
+    required_settings = PipelineSettings(
+        category="movies",
+        min_resolution="2160p",
+        min_size_gb=1,
+        max_size_gb=150,
+        language_allowlist=(),
+        language_blocklist=(),
+        language_required=("english", "spanish"),
+    )
+    assert (
+        passes_relevance_gate("Dune.Part.Two.2024.2160p.REMUX.ENGLISH.mkv", DUNE, required_settings) is False
+    )
+    assert (
+        passes_relevance_gate(
+            "Dune.Part.Two.2024.2160p.REMUX.ENGLISH.SPANISH.mkv", DUNE, required_settings
+        )
+        is True
+    )
+
+
+# ---------------------------------------------------------------------------
+# passes_language_filter directly — required (AND) is independent of, and
+# stricter than, allowlist (OR).
+# ---------------------------------------------------------------------------
+
+
+def test_passes_language_filter_required_rejects_when_only_one_of_several_present():
+    tokens = tokenize("Movie.2024.ENGLISH.mkv")
+    assert passes_language_filter(tokens, (), (), required=("english", "spanish")) is False
+
+
+def test_passes_language_filter_required_accepts_when_every_language_present():
+    tokens = tokenize("Movie.2024.ENGLISH.SPANISH.mkv")
+    assert passes_language_filter(tokens, (), (), required=("english", "spanish")) is True
+
+
+def test_passes_language_filter_required_still_respects_blocklist():
+    tokens = tokenize("Movie.2024.ENGLISH.SPANISH.CAM.mkv")
+    assert passes_language_filter(tokens, (), ("cam",), required=("english", "spanish")) is False
+
+
+def test_passes_language_filter_empty_required_is_a_no_op():
+    tokens = tokenize("Movie.2024.mkv")
+    assert passes_language_filter(tokens, (), (), required=()) is True
 
 
 def test_passes_viability_gate_with_explicit_settings_size_range():

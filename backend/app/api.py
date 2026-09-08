@@ -104,6 +104,7 @@ class PipelineSettingsIn(BaseModel):
     max_size_gb: float | None = Field(default=None, gt=0)
     language_allowlist: list[str] | None = None
     language_blocklist: list[str] | None = None
+    language_required: list[str] | None = None
 
     @field_validator("min_resolution")
     @classmethod
@@ -746,6 +747,7 @@ def set_pipeline_settings(body: PipelineSettingsIn, store: RequestStore = Depend
         "max_size_gb": body.max_size_gb,
         "language_allowlist": body.language_allowlist,
         "language_blocklist": body.language_blocklist,
+        "language_required": body.language_required,
     }
     # Validate the *effective* result of this patch, not just the two
     # fields in isolation — editing only min_size_gb while max_size_gb

@@ -431,6 +431,7 @@ def test_get_pipeline_settings_defaults_match_config(client_and_deps):
     assert body["max_size_gb"] == config.MAX_SIZE_GB
     assert body["language_allowlist"] == list(config.LANGUAGE_ALLOWLIST)
     assert body["language_blocklist"] == list(config.LANGUAGE_BLOCKLIST)
+    assert body["language_required"] == list(config.LANGUAGE_REQUIRED)
 
 
 def test_set_pipeline_settings_persists_and_reads_back(client_and_deps):
@@ -444,6 +445,7 @@ def test_set_pipeline_settings_persists_and_reads_back(client_and_deps):
             "max_size_gb": 80,
             "language_allowlist": ["english"],
             "language_blocklist": ["french"],
+            "language_required": ["english", "spanish"],
         },
     )
 
@@ -455,6 +457,7 @@ def test_set_pipeline_settings_persists_and_reads_back(client_and_deps):
         "max_size_gb": 80,
         "language_allowlist": ["english"],
         "language_blocklist": ["french"],
+        "language_required": ["english", "spanish"],
     }
     assert store.get_settings()["min_resolution"] == "1080p"
     assert client.get("/api/settings/pipeline").json()["category"] == "family-movies"

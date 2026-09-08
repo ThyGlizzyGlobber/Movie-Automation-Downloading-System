@@ -34,6 +34,7 @@ class PipelineSettings:
     max_size_gb: float
     language_allowlist: tuple[str, ...]
     language_blocklist: tuple[str, ...]
+    language_required: tuple[str, ...] = ()
 
     @classmethod
     def from_config(cls) -> "PipelineSettings":
@@ -48,6 +49,7 @@ class PipelineSettings:
             max_size_gb=config.MAX_SIZE_GB,
             language_allowlist=tuple(config.LANGUAGE_ALLOWLIST),
             language_blocklist=tuple(config.LANGUAGE_BLOCKLIST),
+            language_required=tuple(config.LANGUAGE_REQUIRED),
         )
 
 
@@ -81,6 +83,11 @@ def settings_from_raw(saved: dict) -> PipelineSettings:
             tuple(saved["language_blocklist"])
             if saved.get("language_blocklist") is not None
             else defaults.language_blocklist
+        ),
+        language_required=(
+            tuple(saved["language_required"])
+            if saved.get("language_required") is not None
+            else defaults.language_required
         ),
     )
 

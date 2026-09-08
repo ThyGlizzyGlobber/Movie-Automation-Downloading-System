@@ -88,7 +88,9 @@ def passes_season_pack_gate(
         and has_season_token(tokens, season)
         and not has_any_episode_token(tokens)
         and passes_resolution_floor(tokens, settings.min_resolution)
-        and passes_language_filter(tokens, settings.language_allowlist, settings.language_blocklist)
+        and passes_language_filter(
+            tokens, settings.language_allowlist, settings.language_blocklist, settings.language_required
+        )
         and passes_cam_filter(tokens)
         and passes_non_video_filter(tokens)
     )
@@ -155,7 +157,9 @@ def passes_season_range_pack_gate(
         and has_season_range_marker(tokens, start, end)
         and not has_any_episode_token(tokens)
         and passes_resolution_floor(tokens, settings.min_resolution)
-        and passes_language_filter(tokens, settings.language_allowlist, settings.language_blocklist)
+        and passes_language_filter(
+            tokens, settings.language_allowlist, settings.language_blocklist, settings.language_required
+        )
         and passes_cam_filter(tokens)
         and passes_non_video_filter(tokens)
     )
@@ -174,7 +178,9 @@ def passes_series_pack_gate(
         matches_any_variant(tokens, identity.variants)
         and has_complete_series_marker(tokens)
         and passes_resolution_floor(tokens, settings.min_resolution)
-        and passes_language_filter(tokens, settings.language_allowlist, settings.language_blocklist)
+        and passes_language_filter(
+            tokens, settings.language_allowlist, settings.language_blocklist, settings.language_required
+        )
         and passes_cam_filter(tokens)
         and passes_non_video_filter(tokens)
     )

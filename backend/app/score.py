@@ -109,10 +109,22 @@ def passes_resolution_floor(tokens: list[str], min_resolution: str) -> bool:
     return _resolution_score(tokens) >= _resolution_floor_tier(min_resolution)
 
 
-def passes_language_filter(tokens: list[str], allowlist: tuple[str, ...], blocklist: tuple[str, ...]) -> bool:
-    """Public: reused unchanged by tv_score.py (Stage 10) — a release's
-    language tags mean the same thing whether it's a movie or an episode."""
+def passes_language_filter(
+    tokens: list[str],
+    allowlist: tuple[str, ...],
+    blocklist: tuple[str, ...],
+    required: tuple[str, ...] = (),
+) -> bool:
+    """`allowlist` is OR semantics (at least one qualifies); `required` is
+    AND semantics (every language listed must be present — e.g. a dual-
+    audio release needs English *and* French together, not just one),
+    an independent, stricter requirement layered on top of it. Public:
+    reused unchanged by tv_score.py (Stage 10) and pack_score.py
+    (Stage 13) — a release's language tags mean the same thing whether
+    it's a movie, an episode, or a pack."""
     if any(normalize_text(blocked) in tokens for blocked in blocklist):
+        return False
+    if required and not all(normalize_text(req) in tokens for req in required):
         return False
     if allowlist:
         return any(normalize_text(allowed) in tokens for allowed in allowlist)
@@ -146,7 +158,9 @@ def passes_relevance_gate(file_name: str, identity: MediaIdentity, settings: Pip
         matches_any_variant(tokens, identity.variants)
         and _year_within_tolerance(tokens, identity.release_year)
         and passes_resolution_floor(tokens, settings.min_resolution)
-        and passes_language_filter(tokens, settings.language_allowlist, settings.language_blocklist)
+        and passes_language_filter(
+            tokens, settings.language_allowlist, settings.language_blocklist, settings.language_required
+        )
         and passes_cam_filter(tokens)
         and passes_non_video_filter(tokens)
     )

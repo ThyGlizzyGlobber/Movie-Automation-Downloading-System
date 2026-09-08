@@ -80,7 +80,9 @@ def passes_episode_relevance_gate(
         matches_any_variant(tokens, identity.variants)
         and has_episode_token(tokens, season, episode)
         and passes_resolution_floor(tokens, settings.min_resolution)
-        and passes_language_filter(tokens, settings.language_allowlist, settings.language_blocklist)
+        and passes_language_filter(
+            tokens, settings.language_allowlist, settings.language_blocklist, settings.language_required
+        )
         and passes_cam_filter(tokens)
         and passes_non_video_filter(tokens)
     )

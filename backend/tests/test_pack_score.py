@@ -78,6 +78,23 @@ def test_passes_season_pack_gate_with_explicit_settings_language_blocklist():
     assert passes_season_pack_gate("Lanterns.S01.2160p.WEB-DL.FRENCH.mkv", LANTERNS, 1, blocklist_settings) is False
 
 
+def test_passes_season_pack_gate_with_explicit_settings_language_required():
+    required_settings = PipelineSettings(
+        category="movies",
+        min_resolution="2160p",
+        min_size_gb=1,
+        max_size_gb=150,
+        language_allowlist=(),
+        language_blocklist=(),
+        language_required=("english", "spanish"),
+    )
+    assert passes_season_pack_gate("Lanterns.S01.2160p.WEB-DL.ENGLISH.mkv", LANTERNS, 1, required_settings) is False
+    assert (
+        passes_season_pack_gate("Lanterns.S01.2160p.WEB-DL.ENGLISH.SPANISH.mkv", LANTERNS, 1, required_settings)
+        is True
+    )
+
+
 def test_passes_season_pack_gate_lowering_floor_admits_1080p(monkeypatch):
     monkeypatch.setattr(config, "MIN_RESOLUTION", "1080p")
     assert passes_season_pack_gate("Lanterns.S01.1080p.WEB-DL.mkv", LANTERNS, 1) is True

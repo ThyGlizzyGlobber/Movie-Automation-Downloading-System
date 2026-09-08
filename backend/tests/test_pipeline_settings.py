@@ -16,6 +16,7 @@ def test_from_config_matches_config_defaults():
     assert settings.max_size_gb == config.MAX_SIZE_GB
     assert settings.language_allowlist == tuple(config.LANGUAGE_ALLOWLIST)
     assert settings.language_blocklist == tuple(config.LANGUAGE_BLOCKLIST)
+    assert settings.language_required == tuple(config.LANGUAGE_REQUIRED)
 
 
 def test_is_valid_min_resolution_accepts_known_tiers():
@@ -43,6 +44,7 @@ def test_resolve_pipeline_settings_overlays_saved_values():
             "max_size_gb": 80,
             "language_allowlist": ["english"],
             "language_blocklist": ["french"],
+            "language_required": ["english", "spanish"],
         }
     )
     settings = resolve_pipeline_settings(store)
@@ -52,6 +54,7 @@ def test_resolve_pipeline_settings_overlays_saved_values():
     assert settings.max_size_gb == 80
     assert settings.language_allowlist == ("english",)
     assert settings.language_blocklist == ("french",)
+    assert settings.language_required == ("english", "spanish")
 
 
 def test_resolve_pipeline_settings_null_field_falls_back_to_default():

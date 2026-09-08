@@ -745,18 +745,34 @@
     border: 2px solid var(--bg);
   }
 
-  /* Settings */
+  /* Settings — a grid of self-contained cards (one per settings group),
+     matching the card/border/radius language the rest of the site already
+     uses (.bulk-btn, .season-row, .retention-menu) instead of the bare
+     section.row carousel-label style these used before. Single column on
+     narrow viewports; two side by side once there's room to breathe. */
+  .settings-grid {
+    display: flex; flex-direction: column; gap: 16px; max-width: 960px; margin: 0 auto;
+  }
+  @media (min-width: 760px) {
+    .settings-grid { display: grid; grid-template-columns: 1fr 1fr; align-items: start; }
+  }
+  .settings-card {
+    background: var(--bg-card); border: 1px solid var(--border); border-radius: 14px;
+    padding: 18px 18px 20px;
+  }
+  .settings-card h2 { font-size: 16px; font-weight: 700; margin: 0 0 16px; color: var(--text); }
+
   .settings-btn {
     padding: 12px 20px; font-size: 15px; font-weight: 600; border-radius: 10px;
     background: var(--accent); color: var(--accent-text); border: none;
   }
   .settings-btn:active { opacity: 0.85; }
-  .settings-btn[disabled] { background: var(--bg-card); color: var(--text-dim); }
+  .settings-btn[disabled] { background: var(--bg-elevated); color: var(--text-dim); }
   .settings-btn.danger {
     background: transparent; color: var(--status-nospace); border: 1px solid var(--status-nospace);
   }
   .plex-connected { font-size: 15px; margin-bottom: 14px; }
-  .plex-hint { color: var(--text-dim); font-size: 14px; margin-bottom: 14px; line-height: 1.4; }
+  .plex-hint { color: var(--text-dim); font-size: 13px; margin-bottom: 14px; line-height: 1.4; }
   .plex-error { color: var(--status-nospace); font-size: 13px; margin-top: 10px; }
 
   .settings-field { margin-bottom: 16px; }
@@ -765,7 +781,7 @@
   }
   .settings-field input[type="text"], .settings-field input[type="number"], .settings-field select {
     width: 100%; padding: 10px 12px; font-size: 15px; box-sizing: border-box;
-    background: var(--bg-card); border: 1px solid var(--border); border-radius: 8px; color: var(--text);
+    background: var(--bg-elevated); border: 1px solid var(--border); border-radius: 8px; color: var(--text);
   }
   .settings-size-range { display: flex; align-items: center; gap: 10px; }
   .settings-size-range input { flex: 1; min-width: 0; }
@@ -777,6 +793,29 @@
   .settings-checkbox-label input[type="checkbox"] { width: 18px; height: 18px; flex-shrink: 0; }
   .settings-hint { color: var(--text-dim); font-size: 12.5px; margin-top: 6px; line-height: 1.4; }
   .settings-save-error { color: var(--status-nospace); font-size: 13px; margin-top: 12px; }
+
+  /* Language multi-select (a <details> dropdown of checkboxes — no typing
+     required, matching the site's existing dropdown pattern from
+     .retention-menu). Reused for allow/block/required language lists. */
+  .lang-select { position: relative; }
+  .lang-select-summary {
+    display: block; width: 100%; padding: 10px 12px; font-size: 14.5px; box-sizing: border-box;
+    background: var(--bg-elevated); border: 1px solid var(--border); border-radius: 8px; color: var(--text);
+    cursor: pointer; list-style: none; user-select: none;
+  }
+  .lang-select-summary::-webkit-details-marker { display: none; }
+  .lang-select-summary::after { content: "\25BE"; float: right; color: var(--text-dim); }
+  .lang-select[open] .lang-select-summary { border-color: var(--accent); }
+  .lang-select-panel {
+    margin-top: 6px; max-height: 210px; overflow-y: auto;
+    background: var(--bg-elevated); border: 1px solid var(--border); border-radius: 10px; padding: 4px;
+  }
+  .lang-select-option {
+    display: flex !important; align-items: center; gap: 10px; padding: 8px; font-size: 14px !important;
+    border-radius: 6px; cursor: pointer; color: var(--text) !important; margin-bottom: 0 !important;
+  }
+  .lang-select-option:active { background: var(--bg-card); }
+  .lang-select-option input[type="checkbox"] { width: 16px; height: 16px; flex-shrink: 0; }
 
   .about-footer {
     text-align: center; color: var(--text-dim); font-size: 12px; margin: 28px 0 12px;
@@ -2417,13 +2456,15 @@
   async function renderSettings() {
     setChrome({ title: "Settings", showBack: true, activeTab: null });
     app.innerHTML = `
-      <section class="row" id="pipelineSection">${loadingHtml()}</section>
-      <section class="row" id="tvScheduleSection">${loadingHtml()}</section>
-      <section class="row" id="plexSection">${loadingHtml()}</section>
-      <section class="row" id="updateSection">
-        <h2>Update</h2>
-        <button class="settings-btn" id="deployBtn">Check for updates</button>
-      </section>
+      <div class="settings-grid">
+        <section class="settings-card" id="pipelineSection">${loadingHtml()}</section>
+        <section class="settings-card" id="tvScheduleSection">${loadingHtml()}</section>
+        <section class="settings-card" id="plexSection">${loadingHtml()}</section>
+        <section class="settings-card" id="updateSection">
+          <h2>Update</h2>
+          <button class="settings-btn" id="deployBtn">Check for updates</button>
+        </section>
+      </div>
       <div class="about-footer">Smithflix</div>
     `;
     await Promise.all([
@@ -2435,10 +2476,10 @@
   }
 
   // -- Stage 7: pipeline preferences (resolution floor, size range,
-  //    language lists, qBittorrent category). Takes effect on the very
-  //    next request — no restart, no deploy. Whole-panel visibility is the
-  //    same accepted-risk call as everything else in Settings: anyone with
-  //    the frontend open on the LAN can edit these. --
+  //    language lists). Takes effect on the very next request — no
+  //    restart, no deploy. Whole-panel visibility is the same accepted-
+  //    risk call as everything else in Settings: anyone with the frontend
+  //    open on the LAN can edit these. --
 
   const RESOLUTION_OPTIONS = [
     { value: "2160p", label: "2160p / 4K" },
@@ -2447,14 +2488,68 @@
     { value: "480p", label: "480p" },
   ];
 
-  function splitCsv(value) {
-    return value.split(",").map((s) => s.trim()).filter(Boolean);
+  // Fixed list rather than free text — a release's language tag is
+  // matched literally (whole-word) against its filename, so picking from
+  // known real-world tags beats typing them out by hand every time.
+  const LANGUAGE_OPTIONS = [
+    "English", "Spanish", "French", "German", "Italian", "Portuguese",
+    "Dutch", "Russian", "Polish", "Swedish", "Norwegian", "Danish",
+    "Finnish", "Turkish", "Arabic", "Hindi", "Japanese", "Korean",
+    "Chinese", "Multi", "Dual Audio",
+  ];
+
+  function langSelectSummary(selected) {
+    if (selected.length === 0) return "Any";
+    if (selected.length <= 2) return selected.join(", ");
+    return `${selected.length} selected`;
   }
+
+  function languageMultiSelectHtml(id, selected) {
+    const selectedLower = new Set(selected.map((s) => s.toLowerCase()));
+    return `
+      <details class="lang-select" id="${id}">
+        <summary class="lang-select-summary">${escapeHtml(langSelectSummary(selected))}</summary>
+        <div class="lang-select-panel">
+          ${LANGUAGE_OPTIONS.map((opt) => `
+            <label class="lang-select-option">
+              <input type="checkbox" value="${opt}" ${selectedLower.has(opt.toLowerCase()) ? "checked" : ""}>
+              ${opt}
+            </label>
+          `).join("")}
+        </div>
+      </details>
+    `;
+  }
+
+  // Keeps the closed-state summary text in sync as boxes are (un)checked —
+  // otherwise it'd only reflect the value as of the last full render.
+  function wireLanguageMultiSelect(id) {
+    const el = document.getElementById(id);
+    const summaryEl = el.querySelector("summary");
+    el.querySelectorAll("input[type=checkbox]").forEach((box) => {
+      box.addEventListener("change", () => {
+        const chosen = Array.from(el.querySelectorAll("input[type=checkbox]:checked")).map((b) => b.value);
+        summaryEl.textContent = langSelectSummary(chosen);
+      });
+    });
+  }
+
+  function readLanguageMultiSelect(id) {
+    return Array.from(document.querySelectorAll(`#${id} input[type=checkbox]:checked`)).map((b) => b.value);
+  }
+
+  // Stashed on render, sent back unchanged on save — the qBittorrent
+  // category field isn't exposed in this UI (nothing here needs to touch
+  // it), but the settings endpoint's "always send the full desired
+  // state, null = reset to default" convention means simply omitting it
+  // would silently reset any previously-customized value on every save.
+  let pipelineCategory = null;
 
   async function renderPipelineSection() {
     const section = document.getElementById("pipelineSection");
     try {
       const s = await getPipelineSettings();
+      pipelineCategory = s.category;
       section.innerHTML = `
         <h2>Download preferences</h2>
         <div class="settings-field">
@@ -2462,7 +2557,7 @@
           <select id="pfMinResolution">
             ${RESOLUTION_OPTIONS.map((r) => `<option value="${r.value}" ${r.value === s.min_resolution ? "selected" : ""}>${r.label}</option>`).join("")}
           </select>
-          <div class="settings-hint">Lowering this lets a smaller release get picked when nothing at your usual quality qualifies — it's a floor, not a fixed target, so a better release still wins whenever one is found.</div>
+          <div class="settings-hint">A better release still wins when one's found — this is just a floor.</div>
         </div>
         <div class="settings-field">
           <label>Size range (GB)</label>
@@ -2474,19 +2569,23 @@
         </div>
         <div class="settings-field">
           <label for="pfAllowlist">Only allow these languages</label>
-          <input type="text" id="pfAllowlist" placeholder="Leave blank to allow any" value="${escapeHtml(s.language_allowlist.join(", "))}">
+          ${languageMultiSelectHtml("pfAllowlist", s.language_allowlist)}
+        </div>
+        <div class="settings-field">
+          <label for="pfRequired">Must include all of these languages</label>
+          ${languageMultiSelectHtml("pfRequired", s.language_required)}
+          <div class="settings-hint">For multi-audio releases, e.g. requiring English and Spanish together.</div>
         </div>
         <div class="settings-field">
           <label for="pfBlocklist">Never allow these languages</label>
-          <input type="text" id="pfBlocklist" placeholder="Leave blank to block none" value="${escapeHtml(s.language_blocklist.join(", "))}">
-        </div>
-        <div class="settings-field">
-          <label for="pfCategory">qBittorrent category</label>
-          <input type="text" id="pfCategory" value="${escapeHtml(s.category)}">
+          ${languageMultiSelectHtml("pfBlocklist", s.language_blocklist)}
         </div>
         <button class="settings-btn" id="pipelineSaveBtn">Save</button>
         <div class="settings-save-error" id="pipelineSaveError" hidden></div>
       `;
+      wireLanguageMultiSelect("pfAllowlist");
+      wireLanguageMultiSelect("pfRequired");
+      wireLanguageMultiSelect("pfBlocklist");
       document.getElementById("pipelineSaveBtn").addEventListener("click", savePipelineSettings);
     } catch (err) {
       section.innerHTML = `<h2>Download preferences</h2><div class="plex-error">${escapeHtml(err.message)}</div>`;
@@ -2507,12 +2606,13 @@
     }
 
     const body = {
-      category: document.getElementById("pfCategory").value.trim() || null,
+      category: pipelineCategory,
       min_resolution: document.getElementById("pfMinResolution").value,
       min_size_gb: minSize,
       max_size_gb: maxSize,
-      language_allowlist: splitCsv(document.getElementById("pfAllowlist").value),
-      language_blocklist: splitCsv(document.getElementById("pfBlocklist").value),
+      language_allowlist: readLanguageMultiSelect("pfAllowlist"),
+      language_blocklist: readLanguageMultiSelect("pfBlocklist"),
+      language_required: readLanguageMultiSelect("pfRequired"),
     };
 
     btn.disabled = true;
@@ -2546,19 +2646,18 @@
         <div class="settings-field">
           <label for="tvCheckInterval">Check subscribed shows every (hours)</label>
           <input type="number" id="tvCheckInterval" min="0.5" step="0.5" value="${s.show_check_interval_hours}">
-          <div class="settings-hint">How often to look for newly-aired episodes on shows you're watching.</div>
         </div>
         <div class="settings-field">
-          <label for="tvAirBuffer">Wait this long after an episode's air date before searching (hours)</label>
+          <label for="tvAirBuffer">Wait this long after air date before searching (hours)</label>
           <input type="number" id="tvAirBuffer" min="0" step="1" value="${s.episode_air_buffer_hours}">
-          <div class="settings-hint">TMDB only lists a release date, not a time, so without a buffer a same-day air date can trigger a search hours before the episode is actually out — a window where the only "results" tend to be fake or malicious. 0 searches the instant the date arrives.</div>
+          <div class="settings-hint">Avoids searching before a real release exists — 0 searches immediately.</div>
         </div>
         <div class="settings-field">
           <label class="settings-checkbox-label">
             <input type="checkbox" id="tvRecheckEnabled" ${s.episode_recheck_enabled ? "checked" : ""}>
             Automatically recheck episodes &amp; season packs
           </label>
-          <div class="settings-hint">Retries an episode that found nothing yet, looks for a better release once one's already downloaded (replacing it if something better turns up), and retries a season/complete-series pack search that came up empty for an already-finished season or show.</div>
+          <div class="settings-hint">Retries empty searches and upgrades to a better release when found.</div>
         </div>
         <div class="settings-field">
           <label for="tvRecheckInterval">Recheck every (hours)</label>
@@ -2636,7 +2735,7 @@
           <div class="plex-connected">Connected as <strong>${escapeHtml(status.username || "your account")}</strong>${status.server_name ? ` · ${escapeHtml(status.server_name)}` : ""}</div>
           <button class="settings-btn danger" id="plexUnlinkBtn">Disconnect</button>
         ` : `
-          <div class="plex-hint">Connect Plex so a completed download is recognized correctly, even if qBittorrent removes the torrent as soon as it finishes.</div>
+          <div class="plex-hint">Keeps completed downloads recognized even after qBittorrent clears them.</div>
           <button class="settings-btn" id="plexLinkBtn" ${status.pending ? "disabled" : ""}>${status.pending ? "Waiting for sign-in…" : "Sign in with Plex"}</button>
           ${status.error ? `<div class="plex-error">${escapeHtml(status.error)}</div>` : ""}
         `}

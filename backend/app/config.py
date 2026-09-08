@@ -56,8 +56,12 @@ RESOLUTION_TIERS = (
 MIN_RESOLUTION = "2160p"
 
 YEAR_TOLERANCE = 1
-LANGUAGE_ALLOWLIST: tuple[str, ...] = ()  # empty = no restriction
+LANGUAGE_ALLOWLIST: tuple[str, ...] = ()  # empty = no restriction, OR semantics (any one qualifies)
 LANGUAGE_BLOCKLIST: tuple[str, ...] = ()  # empty = nothing blocked
+# AND semantics, distinct from LANGUAGE_ALLOWLIST's OR — every language
+# listed must be present (e.g. a dual-audio release needs English *and*
+# French together, not just one or the other).
+LANGUAGE_REQUIRED: tuple[str, ...] = ()  # empty = nothing required
 
 # Cam/telesync/screener markers — always excluded, unlike the language
 # lists (which default open). A recent-release real-world test (Spider-Man:

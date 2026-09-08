@@ -110,6 +110,30 @@ def test_passes_episode_relevance_gate_with_explicit_settings_language_blocklist
     )
 
 
+def test_passes_episode_relevance_gate_with_explicit_settings_language_required():
+    required_settings = PipelineSettings(
+        category="movies",
+        min_resolution="2160p",
+        min_size_gb=1,
+        max_size_gb=150,
+        language_allowlist=(),
+        language_blocklist=(),
+        language_required=("english", "spanish"),
+    )
+    assert (
+        passes_episode_relevance_gate(
+            "Lanterns.S01E04.2160p.WEB-DL.ENGLISH.mkv", LANTERNS, 1, 4, required_settings
+        )
+        is False
+    )
+    assert (
+        passes_episode_relevance_gate(
+            "Lanterns.S01E04.2160p.WEB-DL.ENGLISH.SPANISH.mkv", LANTERNS, 1, 4, required_settings
+        )
+        is True
+    )
+
+
 # ---------------------------------------------------------------------------
 # extract_episode_identity — Stage 13's organize_pack uses this to discover
 # which episode a pack's individual file represents, from the file's own
