@@ -759,7 +759,7 @@
   }
   .storage-indicator[hidden] { display: none; }
   .storage-ring {
-    width: 52px; height: 52px; border-radius: 50%; position: relative; flex: 0 0 auto;
+    width: 56px; height: 56px; border-radius: 50%; position: relative; flex: 0 0 auto;
     display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px;
     box-shadow: 0 4px 14px rgba(0,0,0,0.35);
   }
@@ -934,10 +934,10 @@
      successful /api/storage read (see refreshStorageIndicator()). -->
 <div id="storageIndicator" class="storage-indicator" hidden>
   <div class="storage-ring">
-    <svg class="storage-ring-svg" viewBox="0 0 52 52">
-      <circle class="storage-ring-track" cx="26" cy="26" r="22"></circle>
-      <circle class="storage-ring-progress" id="storageRingProgress" cx="26" cy="26" r="22"
-        stroke-dasharray="138.23" stroke-dashoffset="138.23"></circle>
+    <svg class="storage-ring-svg" viewBox="0 0 56 56">
+      <circle class="storage-ring-track" cx="28" cy="28" r="24"></circle>
+      <circle class="storage-ring-progress" id="storageRingProgress" cx="28" cy="28" r="24"
+        stroke-dasharray="150.80" stroke-dashoffset="150.80"></circle>
     </svg>
     <span class="material-symbols-rounded storage-ring-icon">hard_drive</span>
     <span class="storage-ring-pct" id="storagePctLabel"></span>
@@ -1362,9 +1362,9 @@
   const storageIndicator = document.getElementById("storageIndicator");
   const storageRingProgress = document.getElementById("storageRingProgress");
   const storagePctLabel = document.getElementById("storagePctLabel");
-  // Matches the ring markup's r="22" (2 * PI * 22) — stroke-dasharray is
+  // Matches the ring markup's r="24" (2 * PI * 24) — stroke-dasharray is
   // set once in the HTML itself; only the offset needs updating per pct.
-  const STORAGE_RING_CIRCUMFERENCE = 138.23;
+  const STORAGE_RING_CIRCUMFERENCE = 150.80;
   async function refreshStorageIndicator() {
     try {
       const s = await getStorage();
