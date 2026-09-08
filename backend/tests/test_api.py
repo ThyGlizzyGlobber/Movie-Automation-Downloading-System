@@ -889,6 +889,41 @@ def test_health_reports_qbittorrent_unreachable_without_failing(client_and_deps)
     assert response.json() == {"status": "ok", "qbittorrent": False}
 
 
+# ---------------------------------------------------------------------------
+# /api/storage — always-200 disk-usage indicator, same fail-safe convention
+# as /api/health.
+# ---------------------------------------------------------------------------
+
+
+def test_get_storage_unavailable_when_library_root_is_not_a_real_mount(client_and_deps):
+    # TV_LIBRARY_ROOT defaults to a plainly-fake path in every environment
+    # that doesn't run the real NAS mount (see config.py) — exactly the
+    # "no real mount here" case this endpoint has to degrade gracefully for.
+    client, _, _, _, _, _ = client_and_deps
+
+    response = client.get("/api/storage")
+
+    assert response.status_code == 200
+    assert response.json() == {"available": False}
+
+
+def test_get_storage_reports_real_usage_when_the_path_exists(client_and_deps, monkeypatch, tmp_path):
+    from app import config
+
+    monkeypatch.setattr(config, "TV_LIBRARY_ROOT", tmp_path)
+    client, _, _, _, _, _ = client_and_deps
+
+    response = client.get("/api/storage")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["available"] is True
+    assert body["total_bytes"] > 0
+    assert 0 <= body["used_bytes"] <= body["total_bytes"]
+    assert 0 <= body["free_bytes"] <= body["total_bytes"]
+    assert 0 <= body["used_percent"] <= 100
+
+
 def test_admin_jobs_defaults_to_every_failure_shaped_status(client_and_deps):
     client, store, _, _, _, _ = client_and_deps
     failed = store.create_request(tmdb_id=1, title="Failed", release_year=2020, query=None)

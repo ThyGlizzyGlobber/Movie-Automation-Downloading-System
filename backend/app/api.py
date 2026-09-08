@@ -5,6 +5,7 @@ origin. TMDB key and qBittorrent credentials never reach the browser: every
 route here is either a thin TMDB proxy or reads/writes the local job store."""
 
 import logging
+import shutil
 from contextlib import asynccontextmanager
 from dataclasses import asdict
 
@@ -822,6 +823,42 @@ def health(qbt: QBTClient = Depends(get_qbt)) -> dict:
     guess," a flapping external dependency shouldn't take this app down
     with it."""
     return {"status": "ok", "qbittorrent": qbt.ping()}
+
+
+@app.get("/api/storage")
+def get_storage() -> dict:
+    """Backs the always-visible storage indicator in the frontend's global
+    chrome. Deliberately reads the filesystem directly (`shutil.disk_usage`
+    on TV_LIBRARY_ROOT) rather than qBittorrent's own API: qBittorrent's
+    `sync/maindata` only ever reports `free_space_on_disk`, never total
+    capacity (confirmed live against the real instance), so there's no way
+    to derive a used-percentage from qBittorrent alone. TV_LIBRARY_ROOT is
+    the same underlying dataset qBittorrent itself downloads into (see
+    media_organizer.py's translate_qbit_save_path comment), so this is
+    still genuinely "the same disk qBittorrent is filling up" — just read
+    from the one place that actually knows its total size. Movie and TV
+    libraries currently share that one dataset too (see truenas/custom-
+    app-compose.yaml's own note); if/when they're ever split onto separate
+    physical disks this would need to report both, a named gap for later.
+
+    Always 200, same "fail safe, not build-breaking" convention as
+    /api/health — a workstation/test environment with no real mount at
+    TV_LIBRARY_ROOT (or any other transient stat failure) degrades to
+    `available: false` rather than an error toast on every single page
+    load, since this backs a persistent global UI element, not a page a
+    user navigated to on purpose."""
+    try:
+        usage = shutil.disk_usage(config.TV_LIBRARY_ROOT)
+    except OSError:
+        return {"available": False}
+    used_percent = round((usage.used / usage.total) * 100, 1) if usage.total else 0.0
+    return {
+        "available": True,
+        "total_bytes": usage.total,
+        "used_bytes": usage.used,
+        "free_bytes": usage.free,
+        "used_percent": used_percent,
+    }
 
 
 # -- Stage 8: raw JSON view of failure-shaped jobs, gated the same way as
