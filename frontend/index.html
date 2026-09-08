@@ -148,14 +148,45 @@
       color-mix(in srgb, var(--bg) 8%, transparent) 75%,
       transparent 100%);
     backdrop-filter: none;
+    transition: background 0.2s ease;
+  }
+  /* The transparency above is specifically for reading over the hero
+     image — once the page has scrolled far enough that the header is no
+     longer floating over the hero at all (.scrolled, toggled in JS by
+     comparing .hero's own position to the header's height), it's just
+     floating over ordinary rows instead, so it fades in to a flatter,
+     more legible fill. Moderate, not the near-opaque non-hero-page
+     treatment — a plain flat tint rather than a gradient, since there's
+     no hero art left to fade in from at this point. */
+  body.has-hero.scrolled #topbar {
+    background: color-mix(in srgb, var(--bg) 78%, transparent);
+    backdrop-filter: blur(8px);
   }
   body.has-hero #topbar #backBtn,
   body.has-hero #topbar #topbarLogo,
   body.has-hero #topbar .top-nav-link,
   body.has-hero #topbar #settingsToggle,
   body.has-hero #topbar #themeToggle {
-    text-shadow: 0 1px 6px color-mix(in srgb, var(--bg) 80%, transparent);
+    /* A tight near-solid shadow right against the glyph, plus a softer
+       wider one — a single soft blur (the original approach) reads fine
+       against a plain dark image but washes out against a busy or
+       light/grey one, since a wide, low-opacity blur barely darkens the
+       pixels directly behind each letter. The tight layer is what
+       actually does the work; the soft one just keeps the edge from
+       looking cut-out. */
+    text-shadow:
+      0 1px 2px color-mix(in srgb, var(--bg) 95%, transparent),
+      0 1px 8px color-mix(in srgb, var(--bg) 85%, transparent);
   }
+  /* Inactive nav-link color is intentionally muted (--text-dim) on every
+     other page, where the background is always a flat, predictable app
+     color — but that same dim tone is close enough to a light or
+     mid-grey hero image's own tones that it can nearly disappear there
+     regardless of shadow strength. Full-strength --text for both states
+     on hero pages instead; --accent (matching the mobile tab bar's own
+     active-state color) is what marks the active one instead of dimness. */
+  body.has-hero #topbar .top-nav-link { color: var(--text); }
+  body.has-hero #topbar .top-nav-link.active { color: var(--accent); }
   #backBtn, #settingsToggle, #themeToggle {
     flex: 0 0 auto; background: none; border: none; color: var(--text);
     font-size: 20px; padding: 6px 8px; border-radius: 8px; line-height: 1;
@@ -437,11 +468,17 @@
   }
   .hero::after {
     content: ""; position: absolute; inset: 0;
+    /* The 70%/100% stops (the upper part of the hero, behind the
+       title/meta text since .hero-content bottom-aligns) were tuned
+       against typical dark, high-contrast movie stills — against a
+       genuinely light or grey backdrop they weren't dark enough to keep
+       --text-dim meta text (genre line, certification badge) readable.
+       Raised both; the bottom stays fully opaque either way. */
     background: linear-gradient(to top,
       var(--bg) 0%,
       color-mix(in srgb, var(--bg) 88%, transparent) 35%,
-      color-mix(in srgb, var(--bg) 45%, transparent) 70%,
-      color-mix(in srgb, var(--bg) 10%, transparent) 100%);
+      color-mix(in srgb, var(--bg) 58%, transparent) 70%,
+      color-mix(in srgb, var(--bg) 25%, transparent) 100%);
   }
   .hero-content {
     position: relative; z-index: 1; display: flex; gap: 16px; align-items: flex-end; flex-wrap: wrap;
@@ -455,6 +492,18 @@
   .detail-info { flex: 1; min-width: 220px; padding-bottom: 2px; }
   .detail-info h1 { font-size: 21px; margin: 0 0 6px; line-height: 1.2; }
   .detail-info h1 .hero-year { font-weight: 400; color: var(--text-dim); }
+  /* This dim-toned text (genre/runtime/certification/tagline/overview)
+     sits directly on the hero image itself — same reasoning as the
+     header's own text-shadow: --text-dim can read fine against .hero::
+     after's overlay over a typical dark still, but blends into a lighter
+     or grey one regardless of how dark that overlay gets tuned, so a
+     shadow that doesn't depend on the backdrop is the more robust fix.
+     Harmless where these classes are instead used on a page's plain flat
+     background (e.g. the Overview section below a movie/show's hero) —
+     a matching-color shadow there is imperceptible. */
+  .detail-meta, .cert-badge, .detail-overview, .tagline, .score-label {
+    text-shadow: 0 1px 4px color-mix(in srgb, var(--bg) 90%, transparent);
+  }
   .detail-meta {
     color: var(--text-dim); font-size: 13.5px; display: flex; align-items: center; gap: 8px;
     flex-wrap: wrap; margin-bottom: 14px;
@@ -1176,6 +1225,22 @@
   updateTopbarHeight();
   window.addEventListener("resize", updateTopbarHeight);
   if (document.fonts && document.fonts.ready) document.fonts.ready.then(updateTopbarHeight);
+
+  // The header's see-through hero scrim (body.has-hero, see its CSS) is
+  // specifically for reading over the hero image — once .hero has
+  // scrolled up far enough that it no longer reaches the header at all,
+  // .scrolled fades the header in to a flatter, more opaque fill instead
+  // (see body.has-hero.scrolled #topbar). Checked directly against
+  // .hero's own real position rather than a guessed scroll-distance
+  // constant, since hero height varies a little page to page. A no-op
+  // (and harmless) on any page without a hero at all.
+  function updateTopbarScrolled() {
+    const hero = document.querySelector(".hero");
+    const pastHero = !!hero && hero.getBoundingClientRect().bottom <= topbarEl.offsetHeight;
+    document.body.classList.toggle("scrolled", pastHero);
+  }
+  window.addEventListener("scroll", updateTopbarScrolled, { passive: true });
+  window.addEventListener("hashchange", () => setTimeout(updateTopbarScrolled, 0));
 
   const SECTION_HASH = { home: "#/home", movies: "#/movies", tv: "#/tv" };
   function navigate(hash) { window.location.hash = hash; }
