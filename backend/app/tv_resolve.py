@@ -4,7 +4,7 @@ search queries — the Stage 1 equivalent for TV. Family disambiguates
 separate problem, same split as movies' resolve.py/score.py."""
 
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from app.normalize import generate_variants
 from app.tmdb import TMDBClient
@@ -61,18 +61,29 @@ def season_range_pack_queries(title_variant: str, start: int, end: int) -> list[
 
 def _cutoff_date(now: datetime | None, buffer_hours: float) -> str:
     """The latest air_date treated as "already aired" — `buffer_hours`
-    shifted back from `now` (default: the actual current time) before
-    taking the date, so a same-day air_date doesn't count as aired until
-    that many hours have passed since midnight on it. TMDB only ever
-    gives a date, not a release time, and a real-world case (Ted Lasso
-    S04E06, air_date 2026-09-08, 2026-09-08) found this app's own
-    recheck cycle searching for an episode the *instant* the calendar
-    date rolled over — hours before the show's actual release time, and
-    long before any real torrent could plausibly exist yet, which is
-    exactly the window fake/malicious releases get uploaded into to
-    catch automated tools searching too early. `buffer_hours=0` (the
-    exact-date behavior this replaced) disables the delay entirely."""
-    now = now or datetime.now()
+    shifted back from `now` (default: the actual current UTC time, same
+    convention as every other timestamp in this app — db.py/worker.py/
+    tmdb.py all use `datetime.now(timezone.utc)`, never server-local)
+    before taking the date, so a same-day air_date doesn't count as aired
+    until that many hours have passed since UTC midnight on it. TMDB only
+    ever gives a date, not a release time, and a real-world case (Ted
+    Lasso S04E06, air_date 2026-09-08) found this app's own recheck cycle
+    searching for an episode the *instant* the calendar date rolled over
+    — hours before the show's actual release time, and long before any
+    real torrent could plausibly exist yet, which is exactly the window
+    fake/malicious releases get uploaded into to catch automated tools
+    searching too early. `buffer_hours=0` (the exact-date behavior this
+    replaced) disables the delay entirely.
+
+    Note for tuning this setting: the comparison is anchored to UTC
+    midnight, not the show's own release-market midnight — a platform
+    releasing at 00:00 Pacific (UTC-7/-8) makes an episode genuinely
+    available only ~7-8 hours *after* UTC midnight on its air_date,
+    regardless of what time that is anywhere else (including wherever
+    this app's household actually is). `buffer_hours` should cover that
+    fixed offset plus however much longer real uploads realistically take
+    to appear after the official release."""
+    now = now or datetime.now(timezone.utc)
     return (now - timedelta(hours=buffer_hours)).date().isoformat()
 
 
