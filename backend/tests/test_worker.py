@@ -1142,6 +1142,7 @@ def _settings(**overrides) -> TVScheduleSettings:
         episode_recheck_enabled=False,
         episode_recheck_interval_hours=24.0,
         episode_recheck_max_attempts=0,
+        episode_air_buffer_hours=0,
     )
     base.update(overrides)
     return TVScheduleSettings(**base)
@@ -1411,6 +1412,7 @@ def _tv_settings(**overrides):
         episode_recheck_enabled=True,
         episode_recheck_interval_hours=1,
         episode_recheck_max_attempts=3,
+        episode_air_buffer_hours=0,
     )
     base.update(overrides)
     return TVScheduleSettings(**base)

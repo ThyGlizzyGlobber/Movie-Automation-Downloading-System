@@ -229,6 +229,18 @@ VIDEO_EXTENSIONS = frozenset({".mkv", ".mp4", ".avi", ".m4v", ".ts", ".wmv", ".m
 # for newly-aired episodes.
 SHOW_CHECK_INTERVAL_HOURS = 6.0
 
+# How many hours past midnight on an episode's TMDB air_date before
+# tv_resolve.aired_episode_numbers()/season_is_complete() treat it as
+# genuinely aired. TMDB only ever gives a date, never a release time, so
+# without this a same-day air_date makes an episode "due" for search the
+# instant the calendar date rolls over — real-world case: a Ted Lasso
+# S04E06 recheck that fired hours before the actual release, into a
+# window with no legitimate torrent yet, where the only results were a
+# .zipx with no video file and, worse, a fake-release .exe (2026-09-08).
+# A household can raise this if it wants a wider safety margin, or drop
+# it to 0 to restore the original exact-date behavior.
+EPISODE_AIR_BUFFER_HOURS = 12.0
+
 # Episode auto-recheck (retry a stuck episode, or look for a better release
 # once one is already downloaded): off by default — this is new, automatic,
 # unattended behavior (including auto-replacing an already-downloaded file

@@ -2549,6 +2549,11 @@
           <div class="settings-hint">How often to look for newly-aired episodes on shows you're watching.</div>
         </div>
         <div class="settings-field">
+          <label for="tvAirBuffer">Wait this long after an episode's air date before searching (hours)</label>
+          <input type="number" id="tvAirBuffer" min="0" step="1" value="${s.episode_air_buffer_hours}">
+          <div class="settings-hint">TMDB only lists a release date, not a time, so without a buffer a same-day air date can trigger a search hours before the episode is actually out — a window where the only "results" tend to be fake or malicious. 0 searches the instant the date arrives.</div>
+        </div>
+        <div class="settings-field">
           <label class="settings-checkbox-label">
             <input type="checkbox" id="tvRecheckEnabled" ${s.episode_recheck_enabled ? "checked" : ""}>
             Automatically recheck episodes &amp; season packs
@@ -2580,6 +2585,7 @@
 
     const body = {
       show_check_interval_hours: Number(document.getElementById("tvCheckInterval").value),
+      episode_air_buffer_hours: Number(document.getElementById("tvAirBuffer").value),
       episode_recheck_enabled: document.getElementById("tvRecheckEnabled").checked,
       episode_recheck_interval_hours: Number(document.getElementById("tvRecheckInterval").value),
       episode_recheck_max_attempts: Number(document.getElementById("tvRecheckLimit").value),

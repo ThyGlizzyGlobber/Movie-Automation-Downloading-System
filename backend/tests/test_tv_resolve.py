@@ -1,3 +1,5 @@
+from datetime import datetime
+
 from app.tmdb import TMDBClient
 from app.tv_resolve import (
     aired_episode_numbers,
@@ -136,17 +138,17 @@ def test_aired_episode_numbers_excludes_unaired_and_missing_air_dates():
         {"episode_number": 3, "air_date": "2099-01-01"},  # far future — unaired
         {"episode_number": 4, "air_date": None},  # no air date on record yet
     ]
-    assert aired_episode_numbers(episodes, today="2026-09-07") == [1, 2]
+    assert aired_episode_numbers(episodes, now=datetime(2026, 9, 7)) == [1, 2]
 
 
 def test_aired_episode_numbers_boundary_is_inclusive():
     episodes = [{"episode_number": 1, "air_date": "2026-09-07"}]
-    assert aired_episode_numbers(episodes, today="2026-09-07") == [1]
+    assert aired_episode_numbers(episodes, now=datetime(2026, 9, 7)) == [1]
 
 
 def test_aired_episode_numbers_ignores_entries_with_no_episode_number():
     episodes = [{"episode_number": None, "air_date": "2026-08-16"}]
-    assert aired_episode_numbers(episodes, today="2026-09-07") == []
+    assert aired_episode_numbers(episodes, now=datetime(2026, 9, 7)) == []
 
 
 def test_season_is_complete_true_when_every_episode_has_already_aired():
@@ -154,7 +156,7 @@ def test_season_is_complete_true_when_every_episode_has_already_aired():
         {"episode_number": 1, "air_date": "2026-08-16"},
         {"episode_number": 2, "air_date": "2026-08-23"},
     ]
-    assert season_is_complete(episodes, today="2026-09-07") is True
+    assert season_is_complete(episodes, now=datetime(2026, 9, 7)) is True
 
 
 def test_season_is_complete_false_with_an_unaired_episode():
@@ -162,18 +164,53 @@ def test_season_is_complete_false_with_an_unaired_episode():
         {"episode_number": 1, "air_date": "2026-08-16"},
         {"episode_number": 2, "air_date": "2099-01-01"},
     ]
-    assert season_is_complete(episodes, today="2026-09-07") is False
+    assert season_is_complete(episodes, now=datetime(2026, 9, 7)) is False
 
 
 def test_season_is_complete_false_with_an_entirely_unscheduled_episode():
     episodes = [{"episode_number": 1, "air_date": "2026-08-16"}, {"episode_number": 2, "air_date": None}]
-    assert season_is_complete(episodes, today="2026-09-07") is False
+    assert season_is_complete(episodes, now=datetime(2026, 9, 7)) is False
 
 
 def test_season_is_complete_boundary_is_inclusive():
     episodes = [{"episode_number": 1, "air_date": "2026-09-07"}]
-    assert season_is_complete(episodes, today="2026-09-07") is True
+    assert season_is_complete(episodes, now=datetime(2026, 9, 7)) is True
 
 
 def test_season_is_complete_false_for_an_empty_season():
-    assert season_is_complete([], today="2026-09-07") is False
+    assert season_is_complete([], now=datetime(2026, 9, 7)) is False
+
+
+# ---------------------------------------------------------------------------
+# episode_air_buffer_hours — a same-day air_date shouldn't count as aired
+# until this many hours have passed since midnight on it (real-world case:
+# a recheck firing the instant the calendar date rolled over, hours before
+# the show's actual release and before any real torrent existed yet).
+# ---------------------------------------------------------------------------
+
+
+def test_aired_episode_numbers_same_day_air_date_not_yet_aired_within_buffer():
+    episodes = [{"episode_number": 6, "air_date": "2026-09-08"}]
+    # 03:00 on the air date itself, with a 12-hour buffer: only 3 hours
+    # have passed since midnight, short of the buffer.
+    assert aired_episode_numbers(episodes, now=datetime(2026, 9, 8, 3, 0), buffer_hours=12) == []
+
+
+def test_aired_episode_numbers_same_day_air_date_aired_once_buffer_elapses():
+    episodes = [{"episode_number": 6, "air_date": "2026-09-08"}]
+    # 15:00 on the air date: 15 hours since midnight, past the 12-hour buffer.
+    assert aired_episode_numbers(episodes, now=datetime(2026, 9, 8, 15, 0), buffer_hours=12) == [6]
+
+
+def test_aired_episode_numbers_zero_buffer_matches_original_exact_date_behavior():
+    episodes = [{"episode_number": 6, "air_date": "2026-09-08"}]
+    assert aired_episode_numbers(episodes, now=datetime(2026, 9, 8, 0, 1), buffer_hours=0) == [6]
+
+
+def test_season_is_complete_respects_buffer_on_its_last_episode():
+    episodes = [
+        {"episode_number": 1, "air_date": "2026-08-16"},
+        {"episode_number": 2, "air_date": "2026-09-08"},
+    ]
+    assert season_is_complete(episodes, now=datetime(2026, 9, 8, 3, 0), buffer_hours=12) is False
+    assert season_is_complete(episodes, now=datetime(2026, 9, 8, 15, 0), buffer_hours=12) is True

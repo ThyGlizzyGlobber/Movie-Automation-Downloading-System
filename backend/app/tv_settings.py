@@ -21,6 +21,7 @@ class TVScheduleSettings:
     episode_recheck_enabled: bool
     episode_recheck_interval_hours: float
     episode_recheck_max_attempts: int  # 0 = infinite
+    episode_air_buffer_hours: float  # 0 = search the instant the air_date arrives
 
     @classmethod
     def from_config(cls) -> "TVScheduleSettings":
@@ -31,6 +32,7 @@ class TVScheduleSettings:
             episode_recheck_enabled=config.EPISODE_RECHECK_ENABLED,
             episode_recheck_interval_hours=config.EPISODE_RECHECK_INTERVAL_HOURS,
             episode_recheck_max_attempts=config.EPISODE_RECHECK_MAX_ATTEMPTS,
+            episode_air_buffer_hours=config.EPISODE_AIR_BUFFER_HOURS,
         )
 
 
@@ -61,6 +63,11 @@ def settings_from_raw(saved: dict) -> TVScheduleSettings:
             saved.get("episode_recheck_max_attempts")
             if saved.get("episode_recheck_max_attempts") is not None
             else defaults.episode_recheck_max_attempts
+        ),
+        episode_air_buffer_hours=(
+            saved.get("episode_air_buffer_hours")
+            if saved.get("episode_air_buffer_hours") is not None
+            else defaults.episode_air_buffer_hours
         ),
     )
 

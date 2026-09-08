@@ -9,6 +9,7 @@ def test_from_config_matches_config_defaults():
     assert settings.episode_recheck_enabled == config.EPISODE_RECHECK_ENABLED
     assert settings.episode_recheck_interval_hours == config.EPISODE_RECHECK_INTERVAL_HOURS
     assert settings.episode_recheck_max_attempts == config.EPISODE_RECHECK_MAX_ATTEMPTS
+    assert settings.episode_air_buffer_hours == config.EPISODE_AIR_BUFFER_HOURS
 
 
 def test_resolve_tv_settings_falls_back_to_defaults_when_store_is_empty():
@@ -24,6 +25,7 @@ def test_resolve_tv_settings_overlays_saved_values():
             "episode_recheck_enabled": True,
             "episode_recheck_interval_hours": 0.5,
             "episode_recheck_max_attempts": 0,
+            "episode_air_buffer_hours": 24,
         }
     )
     settings = resolve_tv_settings(store)
@@ -31,6 +33,7 @@ def test_resolve_tv_settings_overlays_saved_values():
     assert settings.episode_recheck_enabled is True
     assert settings.episode_recheck_interval_hours == 0.5
     assert settings.episode_recheck_max_attempts == 0  # infinite, distinct from "unset"
+    assert settings.episode_air_buffer_hours == 24
 
 
 def test_resolve_tv_settings_null_field_falls_back_to_default():
@@ -46,6 +49,14 @@ def test_resolve_tv_settings_max_attempts_zero_is_not_treated_as_unset():
     store = RequestStore(":memory:")
     store.update_settings({"episode_recheck_max_attempts": 0})
     assert resolve_tv_settings(store).episode_recheck_max_attempts == 0
+
+
+def test_resolve_tv_settings_air_buffer_zero_is_not_treated_as_unset():
+    """0 means "search the instant the air_date arrives" (the original,
+    pre-buffer behavior) — a deliberate value, not "unset"."""
+    store = RequestStore(":memory:")
+    store.update_settings({"episode_air_buffer_hours": 0})
+    assert resolve_tv_settings(store).episode_air_buffer_hours == 0
 
 
 def test_settings_from_raw_matches_resolve_tv_settings():

@@ -532,6 +532,7 @@ def test_get_tv_settings_defaults_match_config(client_and_deps):
     assert body["episode_recheck_enabled"] == config.EPISODE_RECHECK_ENABLED
     assert body["episode_recheck_interval_hours"] == config.EPISODE_RECHECK_INTERVAL_HOURS
     assert body["episode_recheck_max_attempts"] == config.EPISODE_RECHECK_MAX_ATTEMPTS
+    assert body["episode_air_buffer_hours"] == config.EPISODE_AIR_BUFFER_HOURS
 
 
 def test_set_tv_settings_persists_and_reads_back(client_and_deps):
@@ -543,6 +544,7 @@ def test_set_tv_settings_persists_and_reads_back(client_and_deps):
             "episode_recheck_enabled": True,
             "episode_recheck_interval_hours": 0.5,
             "episode_recheck_max_attempts": 0,
+            "episode_air_buffer_hours": 24,
         },
     )
 
@@ -552,6 +554,7 @@ def test_set_tv_settings_persists_and_reads_back(client_and_deps):
         "episode_recheck_enabled": True,
         "episode_recheck_interval_hours": 0.5,
         "episode_recheck_max_attempts": 0,
+        "episode_air_buffer_hours": 24,
     }
     assert store.get_settings()["episode_recheck_enabled"] is True
     assert client.get("/api/settings/tv").json()["show_check_interval_hours"] == 2
@@ -587,6 +590,24 @@ def test_set_tv_settings_rejects_negative_max_attempts(client_and_deps):
 def test_set_tv_settings_rejects_non_positive_interval(client_and_deps):
     client, _, _, _, _, _ = client_and_deps
     response = client.put("/api/settings/tv", json={"show_check_interval_hours": 0})
+
+    assert response.status_code == 422
+
+
+def test_set_tv_settings_accepts_zero_air_buffer(client_and_deps):
+    """0 is a valid, deliberate value (search the instant the air_date
+    arrives, the pre-buffer behavior) — distinct from negative, which is
+    the actual invalid case."""
+    client, _, _, _, _, _ = client_and_deps
+    response = client.put("/api/settings/tv", json={"episode_air_buffer_hours": 0})
+
+    assert response.status_code == 200
+    assert response.json()["episode_air_buffer_hours"] == 0
+
+
+def test_set_tv_settings_rejects_negative_air_buffer(client_and_deps):
+    client, _, _, _, _, _ = client_and_deps
+    response = client.put("/api/settings/tv", json={"episode_air_buffer_hours": -1})
 
     assert response.status_code == 422
 

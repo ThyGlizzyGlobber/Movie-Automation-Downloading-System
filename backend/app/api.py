@@ -129,6 +129,7 @@ class TVScheduleSettingsIn(BaseModel):
     episode_recheck_enabled: bool | None = None
     episode_recheck_interval_hours: float | None = Field(default=None, gt=0)
     episode_recheck_max_attempts: int | None = Field(default=None, ge=0)
+    episode_air_buffer_hours: float | None = Field(default=None, ge=0)
 
 
 class RequestOut(BaseModel):
@@ -779,6 +780,7 @@ def set_tv_settings(body: TVScheduleSettingsIn, store: RequestStore = Depends(ge
         "episode_recheck_enabled": body.episode_recheck_enabled,
         "episode_recheck_interval_hours": body.episode_recheck_interval_hours,
         "episode_recheck_max_attempts": body.episode_recheck_max_attempts,
+        "episode_air_buffer_hours": body.episode_air_buffer_hours,
     }
     store.update_settings(patch)
     return asdict(resolve_tv_settings(store))

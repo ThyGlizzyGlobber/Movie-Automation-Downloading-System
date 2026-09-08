@@ -4,7 +4,7 @@ search queries — the Stage 1 equivalent for TV. Family disambiguates
 separate problem, same split as movies' resolve.py/score.py."""
 
 from dataclasses import dataclass, field
-from datetime import date
+from datetime import datetime, timedelta
 
 from app.normalize import generate_variants
 from app.tmdb import TMDBClient
@@ -59,27 +59,46 @@ def season_range_pack_queries(title_variant: str, start: int, end: int) -> list[
     return [f"{title_variant} S{start:02d}-S{end:02d}", f"{title_variant} Seasons {start}-{end}"]
 
 
-def aired_episode_numbers(episodes: list[dict], today: str | None = None) -> list[int]:
+def _cutoff_date(now: datetime | None, buffer_hours: float) -> str:
+    """The latest air_date treated as "already aired" — `buffer_hours`
+    shifted back from `now` (default: the actual current time) before
+    taking the date, so a same-day air_date doesn't count as aired until
+    that many hours have passed since midnight on it. TMDB only ever
+    gives a date, not a release time, and a real-world case (Ted Lasso
+    S04E06, air_date 2026-09-08, 2026-09-08) found this app's own
+    recheck cycle searching for an episode the *instant* the calendar
+    date rolled over — hours before the show's actual release time, and
+    long before any real torrent could plausibly exist yet, which is
+    exactly the window fake/malicious releases get uploaded into to
+    catch automated tools searching too early. `buffer_hours=0` (the
+    exact-date behavior this replaced) disables the delay entirely."""
+    now = now or datetime.now()
+    return (now - timedelta(hours=buffer_hours)).date().isoformat()
+
+
+def aired_episode_numbers(episodes: list[dict], now: datetime | None = None, buffer_hours: float = 0.0) -> list[int]:
     """Episode numbers from a TMDB season's episode list that have already
-    aired (a known air_date not in the future) — shared by worker.py's
-    check_show() (Stage 12) and pipeline.py's download_pack() (Stage 13),
-    which both need to turn a raw TMDB season listing into "which episodes
-    should actually exist by now"."""
-    today = today or date.today().isoformat()
+    aired (a known air_date at or before `_cutoff_date`) — shared by
+    worker.py's check_show() (Stage 12) and pipeline.py's download_pack()
+    (Stage 13), which both need to turn a raw TMDB season listing into
+    "which episodes should actually exist by now". See `_cutoff_date` for
+    what `buffer_hours` does and why it exists."""
+    cutoff = _cutoff_date(now, buffer_hours)
     return [
         ep["episode_number"]
         for ep in episodes
-        if ep.get("episode_number") is not None and ep.get("air_date") and ep["air_date"] <= today
+        if ep.get("episode_number") is not None and ep.get("air_date") and ep["air_date"] <= cutoff
     ]
 
 
-def season_is_complete(episodes: list[dict], today: str | None = None) -> bool:
+def season_is_complete(episodes: list[dict], now: datetime | None = None, buffer_hours: float = 0.0) -> bool:
     """True once every episode TMDB knows about for this season already
-    has a past air_date — i.e. the season has finished its run, not just
-    "some episodes have aired so far". False for a season still actively
-    releasing new episodes (an unaired or entirely unscheduled entry still
-    remains), or one with no episodes listed at all (nothing to judge
-    either way).
+    has an air_date at or before `_cutoff_date` — i.e. the season has
+    finished its run, not just "some episodes have aired so far". False
+    for a season still actively releasing new episodes (an unaired or
+    entirely unscheduled entry still remains), or one with no episodes
+    listed at all (nothing to judge either way). See `_cutoff_date` for
+    what `buffer_hours` does and why it exists.
 
     Used by worker.py's check_show() (Stage 14.x) to decide whether a
     season's still-unhandled aired episodes should be requested as a
@@ -89,8 +108,8 @@ def season_is_complete(episodes: list[dict], today: str | None = None) -> bool:
     releases, which tend to go cold once a show has moved on."""
     if not episodes:
         return False
-    today = today or date.today().isoformat()
-    return all(ep.get("air_date") and ep["air_date"] <= today for ep in episodes)
+    cutoff = _cutoff_date(now, buffer_hours)
+    return all(ep.get("air_date") and ep["air_date"] <= cutoff for ep in episodes)
 
 
 def resolve_show(tmdb_id: int, client: TMDBClient) -> ShowIdentity:

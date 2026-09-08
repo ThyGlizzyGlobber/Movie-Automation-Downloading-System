@@ -618,7 +618,12 @@ class Worker:
                 logger.exception("show check crashed for show %d (%s)", show.id, show.title)
 
     def _unhandled_episodes_for_season(
-        self, show: ShowRow, identity: ShowIdentity, season_number: int, episodes: list[dict]
+        self,
+        show: ShowRow,
+        identity: ShowIdentity,
+        season_number: int,
+        episodes: list[dict],
+        buffer_hours: float = 0.0,
     ) -> list[int]:
         """Which of this season's already-aired episodes are genuinely
         still unhandled — not already in the `show_episodes` ledger, and
@@ -628,8 +633,12 @@ class Worker:
         never re-searches-and-re-adds them). Factored out of
         `_check_show_season` so `check_show()`'s season-range detection
         (Stage 14.x) can reuse the exact same disk/ledger check when
-        deciding how far a bundled range extends, without duplicating it."""
-        aired = set(aired_episode_numbers(episodes))
+        deciding how far a bundled range extends, without duplicating it.
+
+        `buffer_hours` is `tv_settings.episode_air_buffer_hours`, passed
+        straight through to `aired_episode_numbers` — see tv_resolve.py's
+        `_cutoff_date` for what it does and why."""
+        aired = set(aired_episode_numbers(episodes, buffer_hours=buffer_hours))
         unhandled = []
         for episode_number in sorted(aired):
             if self.store.has_show_episode(show.id, season_number, episode_number):
@@ -672,6 +681,7 @@ class Worker:
         episodes: list[dict],
         season_complete: bool,
         pack_due: bool,
+        buffer_hours: float = 0.0,
     ) -> int:
         """One season's worth of `check_show()`'s own diff-then-download-
         or-mark-found logic, factored out so `full_backfill` can run it
@@ -702,7 +712,7 @@ class Worker:
           it's eligible for a pack retry (opted in, cooldown elapsed) or
           the user steps in manually (e.g. a fresh "Download this season"
           click, which tries again immediately regardless of this gate)."""
-        unhandled = self._unhandled_episodes_for_season(show, identity, season_number, episodes)
+        unhandled = self._unhandled_episodes_for_season(show, identity, season_number, episodes, buffer_hours)
         if not unhandled:
             return 0
 
@@ -788,7 +798,9 @@ class Worker:
         due_at = datetime.fromisoformat(latest.updated_at) + timedelta(hours=tv_settings.episode_recheck_interval_hours)
         return datetime.now(timezone.utc) >= due_at
 
-    def _detect_complete_unhandled_prefix(self, show: ShowRow, identity: ShowIdentity, latest_season: int) -> int:
+    def _detect_complete_unhandled_prefix(
+        self, show: ShowRow, identity: ShowIdentity, latest_season: int, buffer_hours: float = 0.0
+    ) -> int:
         """How many seasons, starting from season 1, are both fully aired
         and still genuinely unhandled — the contiguous run a single real
         "S01-S0N"-style bundle would realistically cover. Walks seasons 1,
@@ -827,9 +839,9 @@ class Worker:
                 episodes = self.tmdb.get_tv_season(show.tmdb_id, season_number)
             except TMDBError:
                 break
-            if not season_is_complete(episodes):
+            if not season_is_complete(episodes, buffer_hours=buffer_hours):
                 break
-            if not self._unhandled_episodes_for_season(show, identity, season_number, episodes):
+            if not self._unhandled_episodes_for_season(show, identity, season_number, episodes, buffer_hours):
                 break
             prefix_end = season_number
         return prefix_end
@@ -950,7 +962,9 @@ class Worker:
         # there are at least two seasons in it; a single season is
         # _check_show_season's own single-season-pack case, not a range.
         if full_backfill and not show_ended and latest_season > 1:
-            prefix_end = self._detect_complete_unhandled_prefix(show, identity, latest_season)
+            prefix_end = self._detect_complete_unhandled_prefix(
+                show, identity, latest_season, tv_settings.episode_air_buffer_hours
+            )
             if prefix_end >= 2 and self._should_attempt_pack(show, 1, tv_settings, season_range_end=prefix_end):
                 request_row = self.store.create_pack_request(
                     tmdb_id=show.tmdb_id, show_id=show.id, title=identity.title,
@@ -975,9 +989,11 @@ class Worker:
                     "show check: couldn't fetch season %d for show %d (%s)", season_number, show.id, show.title
                 )
                 continue
-            complete = season_is_complete(episodes)
+            complete = season_is_complete(episodes, buffer_hours=tv_settings.episode_air_buffer_hours)
             pack_due = complete and self._should_attempt_pack(show, season_number, tv_settings)
-            created += self._check_show_season(show, identity, season_number, episodes, complete, pack_due)
+            created += self._check_show_season(
+                show, identity, season_number, episodes, complete, pack_due, tv_settings.episode_air_buffer_hours
+            )
 
         self.store.update_show_last_checked(show.id)
         return created
