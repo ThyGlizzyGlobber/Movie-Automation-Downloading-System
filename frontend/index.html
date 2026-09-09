@@ -692,8 +692,8 @@
      here, just sizing/spacing. Height fixed, width left to scale
      naturally since each service's own wordmark has a different aspect
      ratio; omitted entirely (no gap) when there's no match. */
-  .detail-original-badge { display: block; height: 22px; margin-bottom: 8px; }
-  .detail-info h1 { font-size: 28px; font-weight: 800; margin: 0 0 10px; line-height: 1.15; }
+  .detail-original-badge { display: block; height: 16px; margin-bottom: 14px; }
+  .detail-info h1 { font-size: 34px; font-weight: 800; margin: 0 0 10px; line-height: 1.15; }
   .detail-info h1 .hero-year { font-weight: 400; color: var(--text-dim); }
   /* This dim-toned text (genre/runtime/certification/overview/cast) sits
      directly on the hero image itself: --text-dim can read fine against
@@ -1257,7 +1257,7 @@
        below picks up the same jump automatically. */
     .detail-action-col { --detail-poster-w: 200px; }
     .detail-poster { height: 300px; }
-    .detail-info h1 { font-size: 32px; }
+    .detail-info h1 { font-size: 40px; }
     .add-btn { padding: 14px 28px; font-size: 16px; }
   }
 
@@ -3135,7 +3135,7 @@
   // record on first use if it needs to (see api.py's bulk_download_show),
   // so there's nothing to gate here on subscription state any more.
   function bulkAreaHtml(seasons) {
-    const seriesBtn = `<button class="bulk-btn primary" id="bulkSeriesBtn">Download complete series</button>`;
+    const seriesBtn = `<button class="bulk-btn primary" id="bulkSeriesBtn">Download Complete Series</button>`;
     const seasonRows = seasons.length
       ? `<div class="season-list">${seasons.map((s) => `
           <div class="season-row">
