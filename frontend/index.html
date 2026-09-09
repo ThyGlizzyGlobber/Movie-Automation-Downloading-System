@@ -645,34 +645,46 @@
     background: linear-gradient(90deg, #000 0%, rgba(0,0,0,0.6) 6%, transparent 16%);
   }
   /* Above .home-hero-media (z-index 1 vs. its 0) so it unambiguously
-     darkens the video too, not just the plain backdrop beside it —
-     Prime's own hero clearly keeps blending some darkness into the
-     video's own left portion, not just the poster area outside it.
-     Stops pushed noticeably further right than the poster-only hero
-     (.hero) ever needed — the video's own fixed (height-driven, not
-     hero-width-driven) box can end up covering anywhere from ~35% to
-     ~65% of the hero's width depending on viewport, so the fade has to
-     stay meaningfully opaque well past the halfway point on every
-     width, not just whatever one ratio looked right on a single test
-     viewport. */
-  /* Deliberately literal black (not var(--bg), which is a dark charcoal
-     in this theme, not true black) — per direct request: the hero fade
-     should read as black specifically, not "the theme's own background
-     color," even though every other dark surface in the app is
-     intentionally charcoal via --bg. Pushed harder than a first pass at
-     this (higher opacity at every stop, transparent point moved from
-     90% out to 96%) since that one still let the video's edge read
-     through visibly on a real viewport. */
+     darkens the poster/video too, not just sitting beside it. Confined
+     to roughly the left third/bottom, not smeared across the whole
+     banner — matching a real Prime Video poster-only slide (its own
+     fade is only there to keep the title/CTA column legible, not to
+     darken art the user is meant to actually look at), and per direct
+     "too much black fade, blend at the edges" feedback on the video
+     slides below, which this same base rule fed into before being
+     dialed back this hard. Deliberately literal black (not var(--bg),
+     a dark charcoal in this theme, not true black) — per earlier direct
+     request: the fade should read as black specifically, not "the
+     theme's own background color." */
   .home-hero-fade {
     position: absolute; inset: 0; z-index: 1;
     background:
       linear-gradient(90deg,
-        #000 0%,
-        rgba(0,0,0,0.98) 30%,
-        rgba(0,0,0,0.9) 50%,
-        rgba(0,0,0,0.6) 72%,
-        transparent 96%),
-      linear-gradient(180deg, transparent 50%, rgba(0,0,0,0.6) 82%, #000 100%);
+        rgba(0,0,0,0.9) 0%,
+        rgba(0,0,0,0.6) 18%,
+        rgba(0,0,0,0.2) 34%,
+        transparent 44%),
+      linear-gradient(180deg, transparent 55%, rgba(0,0,0,0.55) 85%, rgba(0,0,0,0.85) 100%);
+  }
+  /* A trailer is actual content the user is meant to watch, not just
+     background art — the poster-only fade above was still eating well
+     into it ("too much black fade... makes the trailer impossible to
+     see"). This override keeps the same idea (darken the left/bottom
+     for the text column) but pulls the stops in tight against the
+     video's own left edge instead of reaching across most of the
+     banner, so it reads as an edge blend rather than a wash over the
+     whole clip. Only applied once wireHomeHero confirms a video
+     actually attached (home-hero-has-video) — a slide that's still
+     waiting on its trailer fetch, or never gets one, keeps the
+     poster-only fade above. */
+  .home-hero-slide.home-hero-has-video .home-hero-fade {
+    background:
+      linear-gradient(90deg,
+        rgba(0,0,0,0.85) 0%,
+        rgba(0,0,0,0.45) 14%,
+        rgba(0,0,0,0.12) 26%,
+        transparent 36%),
+      linear-gradient(180deg, transparent 60%, rgba(0,0,0,0.4) 88%, rgba(0,0,0,0.7) 100%);
   }
   .home-hero-content {
     position: relative; z-index: 2; display: flex; align-items: flex-end;
@@ -1482,6 +1494,11 @@
   const HERO_SLIDE_COUNT = 5;
   const HERO_TRAILER_COUNT = 2; // only the front slides ever get a background video
   const HERO_AUTOPLAY_MS = 7000;
+  // Once a trailer slide's HERO_AUTOPLAY_MS view window ends, the poster
+  // reappears over the (still-playing, muted, just no longer visible)
+  // video for this long before actually advancing — a settling beat
+  // rather than cutting straight from mid-trailer to the next slide.
+  const HERO_POSTER_HOLD_MS = 10000;
   const HERO_CERT_REGION = "AU";
 
   function homeHeroBadgeHtml(text) {
@@ -1637,22 +1654,57 @@
       refreshMuteButton();
     }
 
-    function resetAutoplay() {
-      if (activePollTimer) clearInterval(activePollTimer);
-      if (items.length > 1) activePollTimer = setInterval(() => showSlide(index + 1), HERO_AUTOPLAY_MS);
+    // Advance timing: a flat HERO_AUTOPLAY_MS timer for a poster-only
+    // slide, same as before. A slide with a trailer is different — its
+    // clock doesn't start until the video's own "playing" event actually
+    // fires, not the instant the slide becomes active, since advancing
+    // on a fixed timer regardless of playback state was cutting slides
+    // away while the trailer was still loading or barely a second in.
+    // Once it's genuinely playing, it gets a full HERO_AUTOPLAY_MS view,
+    // then the poster reappears for HERO_POSTER_HOLD_MS before actually
+    // moving on. `scheduleToken` invalidates any in-flight timer/
+    // listener from a previous call (a manual arrow/dot click, or the
+    // active slide's trailer only just finishing its fetch) so a stale
+    // continuation becomes a harmless no-op instead of firing late.
+    let scheduleToken = 0;
+    function clearSchedule() {
+      if (activePollTimer) { clearTimeout(activePollTimer); activePollTimer = null; }
+    }
+    function scheduleAdvance() {
+      clearSchedule();
+      const token = ++scheduleToken;
+      if (items.length <= 1) return;
+      const advance = () => {
+        if (token !== scheduleToken) return;
+        showSlide(index + 1);
+        scheduleAdvance();
+      };
+      const video = heroVideos[index];
+      if (!video) { activePollTimer = setTimeout(advance, HERO_AUTOPLAY_MS); return; }
+      const startViewWindow = () => {
+        if (token !== scheduleToken) return;
+        activePollTimer = setTimeout(() => {
+          if (token !== scheduleToken) return;
+          const poster = heroEl.querySelector(`.home-hero-slide[data-index="${index}"] img`);
+          if (poster) poster.classList.remove("home-hero-poster-hidden");
+          activePollTimer = setTimeout(advance, HERO_POSTER_HOLD_MS);
+        }, HERO_AUTOPLAY_MS);
+      };
+      if (!video.paused) { startViewWindow(); return; }
+      video.addEventListener("playing", startViewWindow, { once: true });
     }
 
     heroEl.querySelectorAll(".home-hero-arrow").forEach((btn) => btn.addEventListener("click", () => {
       showSlide(index + Number(btn.dataset.dir));
-      resetAutoplay();
+      scheduleAdvance();
     }));
     heroEl.querySelectorAll(".home-hero-dot").forEach((btn) => btn.addEventListener("click", () => {
       showSlide(Number(btn.dataset.index));
-      resetAutoplay();
+      scheduleAdvance();
     }));
-    heroEl.addEventListener("mouseenter", () => { if (activePollTimer) clearInterval(activePollTimer); });
-    heroEl.addEventListener("mouseleave", resetAutoplay);
-    resetAutoplay();
+    heroEl.addEventListener("mouseenter", () => { scheduleToken++; clearSchedule(); });
+    heroEl.addEventListener("mouseleave", scheduleAdvance);
+    scheduleAdvance();
 
     items.slice(0, HERO_TRAILER_COUNT).forEach(async (item, i) => {
       const isTv = item.__mediaType === "tv";
@@ -1679,8 +1731,14 @@
         video.addEventListener("waiting", () => { if (poster) poster.classList.remove("home-hero-poster-hidden"); });
         video.addEventListener("error", () => { if (poster) poster.classList.remove("home-hero-poster-hidden"); });
         wrap.appendChild(video);
+        const slideEl = heroEl.querySelector(`.home-hero-slide[data-index="${i}"]`);
+        if (slideEl) slideEl.classList.add("home-hero-has-video");
         heroVideos[i] = video;
-        if (i === index) refreshMuteButton();
+        // If this is the currently-active slide, upgrade its schedule
+        // from the initial poster-only guess (the trailer fetch is async
+        // and hadn't resolved yet when scheduleAdvance() first ran) to
+        // the playback-aware one now that a video actually exists.
+        if (i === index) { refreshMuteButton(); scheduleAdvance(); }
       } catch (err) { /* no trailer on file — the poster stays as the slide's art */ }
     });
 
