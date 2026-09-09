@@ -34,7 +34,13 @@
      never recolored per-household" still holds. */
   :root {
     --smithflix-cream: #f3ede2;
-    --smithflix-charcoal: #141312;
+    /* Literal black, not a dark charcoal — per direct request, so the
+       page background blends seamlessly with the hero's own (also
+       literal-black) fade instead of reading as two adjacent, slightly
+       different dark tones. --bg-card/--bg-elevated (card/surface
+       layering) are deliberately untouched — this is scoped to the
+       page background specifically, not every dark surface in the app. */
+    --smithflix-charcoal: #000000;
     --smithflix-charcoal-card: #201e1c;
     --smithflix-red: #f0605f;
 
@@ -632,10 +638,14 @@
      line up neatly enough for the outer fade alone to fully blend right
      at the video's own seam. This one is scoped to the video box
      itself, so it always blends its own left edge regardless of how
-     wide the hero happens to be. */
+     wide the hero happens to be. Deliberately narrow — just enough to
+     blend the seam itself, not eat into the video's own visible area;
+     a wider first pass at this darkened a large chunk of the trailer
+     itself, which was worse for actually watching it than the hard
+     edge it was meant to soften. */
   .home-hero-video-wrap::before {
     content: ""; position: absolute; inset: 0; z-index: 2;
-    background: linear-gradient(90deg, #000 0%, rgba(0,0,0,0.85) 22%, rgba(0,0,0,0.4) 38%, transparent 60%);
+    background: linear-gradient(90deg, #000 0%, rgba(0,0,0,0.6) 6%, transparent 16%);
   }
   /* Above .home-hero-media (z-index 1 vs. its 0) so it unambiguously
      darkens the video too, not just the plain backdrop beside it —
