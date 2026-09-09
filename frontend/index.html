@@ -693,80 +693,18 @@
     position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; border: none; pointer-events: none;
     transform: scale(1.28);
   }
-  /* ============================================================
-     Hero gradient system. Two jobs, each a single independent layer:
-
-     1. TEXT SCRIM (horizontal) — darkens behind the title/badge/CTA
-        column so it reads over any backdrop. Poster slides can afford
-        a wider, stronger scrim (there's no trailer to protect); video
-        slides get a tighter, lighter one so it doesn't wash out the
-        clip itself.
-     2. BOTTOM VIGNETTE (vertical, full width) — fades to literal #000
-        for the last stretch so the hero blends into the page's own
-        black background below it, rather than a poster/video's real
-        colors cutting off hard against it.
-
-     No separate layer bridges the fixed header's own fade into this
-     one — removed per direct request. #topbar's own gradient (see
-     body.has-hero #topbar above) is untouched either way.
-
-     The video's own left-edge blend (.home-hero-video-wrap::before,
-     just above) is a separate, third piece — it solves a different
-     problem (masking the video box's own hard edge and any baked-in
-     letterboxing), stays scoped to the video box itself regardless of
-     viewport width, and is unaffected by anything below. Deliberately
-     literal black throughout (not var(--bg), a warm charcoal in this
-     theme) — per direct request, the fade should read as black
-     specifically, not "the theme's own background color." */
+  /* All hero gradients removed per direct request — starting fresh.
+     .home-hero-video-wrap::before and .home-hero-fade stay in the
+     markup/JS (wireHomeHero still toggles home-hero-has-video, still
+     creates both elements) with no visual effect of their own, so a
+     new gradient system can be built back in here without touching
+     anything else. #topbar's own gradient (see body.has-hero #topbar
+     above) is untouched — this was never part of that rule. */
   .home-hero-video-wrap::before {
     content: ""; position: absolute; inset: 0; z-index: 2;
-    background: linear-gradient(90deg, #000 0%, rgba(0,0,0,0.8) 12%, rgba(0,0,0,0.4) 26%, transparent 42%);
   }
   .home-hero-fade {
     position: absolute; inset: 0; z-index: 1;
-    background-repeat: no-repeat;
-    background-position: left top;
-    background-image:
-      /* 1. Text scrim */
-      linear-gradient(90deg,
-        rgba(0,0,0,0.88) 0%,
-        rgba(0,0,0,0.55) 20%,
-        rgba(0,0,0,0.2) 38%,
-        transparent 54%),
-      /* 2. Bottom vignette */
-      linear-gradient(180deg, transparent 55%, rgba(0,0,0,0.55) 82%, #000 100%);
-    background-size: 100% 100%, 100% 100%;
-  }
-  /* Same two-layer system, tuned lighter/tighter throughout so it
-     never smears over the trailer itself ("too much black fade...
-     makes the trailer impossible to see" / "dimming it by a lot" —
-     both confirmed live against this exact rule before). Only applied
-     once wireHomeHero confirms a video actually attached
-     (home-hero-has-video) — a slide still waiting on its trailer
-     fetch, or that never gets one, keeps the poster-only fade above. */
-  .home-hero-slide.home-hero-has-video .home-hero-fade {
-    background-image:
-      linear-gradient(90deg,
-        rgba(0,0,0,0.78) 0%,
-        rgba(0,0,0,0.38) 12%,
-        rgba(0,0,0,0.1) 24%,
-        transparent 34%),
-      linear-gradient(180deg, transparent 58%, rgba(0,0,0,0.5) 82%, #000 100%);
-    background-size: 100% 100%, 100% 100%;
-  }
-  /* Per direct request: no horizontal text scrim at all below the
-     hero's own mobile breakpoint (see the min-width:640px block
-     further down) — just the bottom vignette, same as its desktop
-     counterpart above. */
-  @media (max-width: 639px) {
-    .home-hero-fade {
-      background-image: linear-gradient(180deg, transparent 55%, rgba(0,0,0,0.55) 82%, #000 100%);
-      background-size: 100% 100%;
-    }
-    .home-hero-slide.home-hero-has-video .home-hero-fade {
-      background-image: linear-gradient(180deg, transparent 58%, rgba(0,0,0,0.5) 82%, #000 100%);
-      background-size: 100% 100%;
-    }
   }
   .home-hero-content {
     position: relative; z-index: 2; display: flex; align-items: flex-end;
