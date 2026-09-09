@@ -670,8 +670,20 @@
      .home-hero-media's own stacking context now) until wireHomeHero
      fades it out once the <video>'s own "playing" event actually fires.
      Poster-only slides simply never get that class added. */
+  /* Right-anchored at its own native aspect ratio (height locked to the
+     hero's, width left to auto) rather than stretched/cropped to fill
+     the full hero width — matches Prime Video's own hero art exactly,
+     confirmed against several of their real banners side by side: a
+     backdrop that's natively wider reaches further left on its own
+     (more of the actual photo visible before the gradient/black takes
+     over), while a narrower one runs out of width sooner and sits
+     further right, leaving more solid black on the left for the title
+     text — entirely a side effect of height:100%/width:auto on a
+     right-anchored image, no per-title logic needed. .home-hero-media's
+     own overflow:hidden (and .home-hero's, above it) clips whatever
+     spills past the left edge on a very wide one. */
   .home-hero-media img {
-    position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; object-position: center top;
+    position: absolute; top: 0; right: 0; height: 100%; width: auto;
     z-index: 2; transition: opacity 0.6s ease;
   }
   .home-hero-media img.home-hero-poster-hidden { opacity: 0; }
@@ -716,18 +728,35 @@
     position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; border: none; pointer-events: none;
     transform: scale(1.18);
   }
-  /* All hero gradients removed per direct request — starting fresh.
-     .home-hero-video-wrap::before and .home-hero-fade stay in the
-     markup/JS (wireHomeHero still toggles home-hero-has-video, still
-     creates both elements) with no visual effect of their own, so a
-     new gradient system can be built back in here without touching
-     anything else. #topbar's own gradient (see body.has-hero #topbar
-     above) is untouched — this was never part of that rule. */
+  /* .home-hero-video-wrap::before stays empty — the poster gradient
+     below (a slide-level sibling that paints above the *entire* media
+     box, poster and video-wrap alike — see the .home-hero-slide.active
+     stacking-context comment above) already reaches over the trailer
+     too, so a second one here would just double up. #topbar's own
+     gradient (see body.has-hero #topbar above) is untouched — never
+     part of this. */
   .home-hero-video-wrap::before {
     content: ""; position: absolute; inset: 0; z-index: 2;
   }
+  /* Left-to-right fade matching Prime Video's own hero banners
+     (confirmed against several of their real posters side by side) —
+     stops are relative to the hero's own full width, not the poster
+     image's, which works out regardless of the image's own native
+     width from the object-position change above: a narrow poster
+     leaves the left portion of this gradient sitting over plain black
+     already (a no-op, same background either way), while a wide one
+     puts real image content under that same stretch, so the fade
+     blends it into the title-text column exactly where it needs to
+     either way, with one fixed gradient rather than something that has
+     to react per-image. */
   .home-hero-fade {
     position: absolute; inset: 0; z-index: 1;
+    background: linear-gradient(90deg,
+      rgba(0, 0, 0, 0.95) 0%,
+      rgba(0, 0, 0, 0.85) 15%,
+      rgba(0, 0, 0, 0.55) 35%,
+      rgba(0, 0, 0, 0.15) 55%,
+      rgba(0, 0, 0, 0) 70%);
   }
   .home-hero-content {
     position: relative; z-index: 2; display: flex; align-items: flex-end;
