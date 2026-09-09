@@ -194,9 +194,14 @@
      every inactive link gets — its white pill background is the only
      thing that'd still look right. Every page a nav link actually
      points to (home, movies, tv) is a hero page, so this isn't a rare
-     edge case. */
+     edge case. Also cancels the dark text-shadow every hero-page nav
+     link gets below (for light text against an unpredictable hero
+     image) — with dark charcoal text sitting on its own solid white
+     pill, that shadow only ever showed up as an unwanted dark halo
+     hugging the pill, and the white fill already guarantees contrast
+     without it. */
   body.has-hero #topbar .top-nav-link { color: var(--text); }
-  body.has-hero #topbar .top-nav-link.active { color: var(--smithflix-charcoal); }
+  body.has-hero #topbar .top-nav-link.active { color: var(--smithflix-charcoal); text-shadow: none; }
   #backBtn, #settingsToggle, #themeToggle {
     flex: 0 0 auto; background: none; border: none; color: var(--text);
     font-size: 20px; padding: 6px 8px; border-radius: 8px; line-height: 1;
