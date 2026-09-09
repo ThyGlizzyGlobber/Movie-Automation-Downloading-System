@@ -415,7 +415,7 @@ def test_search_tv_omits_year_param_when_not_given():
     assert captured["params"] == {"query": "Lanterns"}
 
 
-def test_get_tv_requests_credits_append():
+def test_get_tv_requests_credits_and_content_ratings_append():
     client = TMDBClient(api_key="test-key")
     captured = {}
 
@@ -428,7 +428,7 @@ def test_get_tv_requests_credits_append():
     result = client.get_tv(1)
 
     assert captured["path"] == "/tv/1"
-    assert captured["params"] == {"append_to_response": "credits"}
+    assert captured["params"] == {"append_to_response": "credits,content_ratings"}
     assert result["name"] == "Lanterns"
 
 

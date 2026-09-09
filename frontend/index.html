@@ -75,6 +75,14 @@
        a circular cast photo reads fine noticeably smaller than a poster,
        and the row would otherwise dominate the page at desktop widths. */
     --cast-w: clamp(64px, 7vw, 104px);
+    /* Shared horizontal inset for the app's own "chrome" — the header
+       logo/icons, the home hero's text column, and the floating
+       downloads/storage pills — so they all line up on the same edge.
+       Deliberately NOT used by row-inset/content rows (.hscroll/.grid),
+       which stay full-bleed by their own separate design. Matches
+       Prime Video's own wider storefront-header margin, bumped up from
+       an earlier, tighter 32px pass. */
+    --edge-inset: 48px;
   }
   :root[data-theme="light"] {
     --bg: #ece8e1;
@@ -128,10 +136,10 @@
   #topbar {
     position: fixed; top: 0; left: 0; right: 0; z-index: 10;
     display: flex; align-items: center; gap: 10px;
-    /* 32px left/right — same edge inset as the downloads FAB/storage
-       ring at the bottom of the screen, so the logo and those floating
-       buttons line up on the same vertical edge. */
-    padding: calc(10px + var(--safe-top)) 32px 10px;
+    /* --edge-inset left/right — same shared inset as the downloads FAB/
+       storage pill and the home hero's own text column, so they all
+       line up on the same vertical edge. */
+    padding: calc(10px + var(--safe-top)) var(--edge-inset) 10px;
     background: color-mix(in srgb, var(--bg) 92%, transparent);
     backdrop-filter: blur(10px);
   }
@@ -580,30 +588,40 @@
   }
   .home-hero-slide.active { opacity: 1; visibility: visible; pointer-events: auto; z-index: 1; }
   .home-hero-media { position: absolute; inset: 0; overflow: hidden; background: var(--bg-card); }
+  /* Sits ABOVE the video (z-index 2 vs. its 1) until wireHomeHero fades
+     it out a moment after the trailer's iframe is actually injected —
+     masking the YouTube embed's own brief native-control/loading flash
+     on first paint, which pointer-events:none alone doesn't hide since
+     it's a visual render, not a click target. Poster-only slides simply
+     never get that class added, so they're unaffected. */
   .home-hero-media img {
     position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; object-position: center top;
+    z-index: 2; transition: opacity 0.6s ease;
   }
-  /* The standard CSS-only "video cover" trick: size the iframe off
-     viewport units in both directions (one pair driven by width, one by
-     height) so whichever dimension is the tighter constraint still fully
-     covers the hero — there's no reliable way to size an <iframe> by its
-     own content the way object-fit:cover sizes an <img>. Approximate
-     against the real (non-viewport) hero box, not pixel-perfect, but the
-     hero is already close to full viewport width so the error is minor. */
-  .home-hero-video-wrap { position: absolute; inset: 0; overflow: hidden; pointer-events: none; }
+  .home-hero-media img.home-hero-poster-hidden { opacity: 0; }
+  /* Right-anchored at the hero's own native video ratio (height-driven,
+     width auto via aspect-ratio) rather than the old cover-both-
+     dimensions trick — that cropped into the trailer to fill the whole
+     hero; this instead shows it in full, at its real aspect ratio,
+     scaled to the hero's height and pinned to the right edge, matching
+     Prime's own hero treatment. The full-bleed backdrop <img> above
+     still covers the rest of the hero on either side of it. */
+  .home-hero-video-wrap {
+    position: absolute; top: 0; right: 0; height: 100%; aspect-ratio: 16 / 9;
+    overflow: hidden; z-index: 1; pointer-events: none;
+  }
   .home-hero-video-wrap iframe {
-    position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
-    width: 100vw; height: 56.25vw; min-width: 177.78vh; min-height: 100vh; border: none;
+    position: absolute; inset: 0; width: 100%; height: 100%; border: none; pointer-events: none;
   }
   .home-hero-fade {
-    position: absolute; inset: 0;
+    position: absolute; inset: 0; z-index: 1;
     background:
-      linear-gradient(90deg, var(--bg) 0%, color-mix(in srgb, var(--bg) 82%, transparent) 30%, transparent 62%),
+      linear-gradient(90deg, var(--bg) 0%, color-mix(in srgb, var(--bg) 85%, transparent) 25%, transparent 48%),
       linear-gradient(180deg, transparent 55%, color-mix(in srgb, var(--bg) 65%, transparent) 85%, var(--bg) 100%);
   }
   .home-hero-content {
-    position: relative; z-index: 1; display: flex; align-items: flex-end;
-    min-height: 420px; padding: 24px 14px 28px;
+    position: relative; z-index: 2; display: flex; align-items: flex-end;
+    min-height: 420px; padding: 24px var(--edge-inset) 44px;
   }
   .home-hero-info { max-width: 560px; }
   .home-hero-info h1 { font-size: 30px; font-weight: 800; margin: 0 0 10px; line-height: 1.1; }
@@ -621,7 +639,7 @@
   }
   .home-hero-info-btn:active { background: var(--bg-card); }
   .home-hero-arrow {
-    position: absolute; top: 50%; transform: translateY(-50%); z-index: 2;
+    position: absolute; top: 50%; transform: translateY(-50%); z-index: 3;
     width: 44px; height: 44px; border-radius: 50%; border: none;
     background: color-mix(in srgb, var(--bg) 55%, transparent); color: var(--text);
     display: flex; align-items: center; justify-content: center; opacity: 0.7;
@@ -629,12 +647,41 @@
   .home-hero-arrow:hover { opacity: 1; background: color-mix(in srgb, var(--bg) 75%, transparent); }
   .home-hero-arrow-left { left: 14px; }
   .home-hero-arrow-right { right: 14px; }
-  .home-hero-dots { position: absolute; left: 14px; bottom: 10px; z-index: 2; display: flex; gap: 6px; }
+  /* Centered on the banner as a whole (not the text column) — matches
+     Prime's own dot position exactly. */
+  .home-hero-dots {
+    position: absolute; left: 50%; transform: translateX(-50%); bottom: 14px; z-index: 3;
+    display: flex; gap: 6px;
+  }
   .home-hero-dot {
     width: 8px; height: 8px; border-radius: 999px; border: none;
     background: rgba(255, 255, 255, 0.4); transition: width 0.25s ease, background 0.25s ease; padding: 0;
   }
   .home-hero-dot.active { width: 22px; background: #fff; }
+  /* Age-rating badge (AU) — bottom-right corner, same small muted-pill
+     treatment as Prime's own. Empty (and invisible — no border/padding
+     shows on an empty element) until wireHomeHero's per-slide detail
+     fetch resolves; a title with no AU rating on file just never gets
+     one, same "quietly omit, don't show broken" rule the rest of this
+     hero already follows for trailers/badges. */
+  .home-hero-cert {
+    position: absolute; right: var(--edge-inset); bottom: 14px; z-index: 3;
+  }
+  .home-hero-cert:not(:empty) {
+    padding: 3px 8px; font-size: 12px; font-weight: 700; color: var(--text-dim);
+    background: color-mix(in srgb, var(--bg) 55%, transparent); border: 1px solid var(--border); border-radius: 4px;
+  }
+  /* Muted by default (autoplay requires it anyway) — one button controls
+     every currently-injected trailer iframe at once, via the YouTube
+     player's postMessage command API (enablejsapi=1 on the iframe src). */
+  .home-hero-mute-btn {
+    position: absolute; top: 20px; right: var(--edge-inset); z-index: 3;
+    width: 38px; height: 38px; border-radius: 50%; border: none;
+    background: color-mix(in srgb, var(--bg) 55%, transparent); color: var(--text);
+    display: flex; align-items: center; justify-content: center; opacity: 0.85;
+  }
+  .home-hero-mute-btn:hover { opacity: 1; background: color-mix(in srgb, var(--bg) 75%, transparent); }
+  .home-hero-mute-btn[hidden] { display: none; }
   @media (min-width: 640px) {
     .home-hero, .home-hero-content { min-height: 520px; }
     .home-hero-info h1 { font-size: 42px; }
@@ -795,7 +842,7 @@
      else, since the two never appear on screen together — .downloads-fab
      is hidden on this exact page (see route()). */
   .clear-requests-fab {
-    position: fixed; right: 32px; bottom: calc(84px + var(--safe-bottom)); z-index: 9;
+    position: fixed; right: var(--edge-inset); bottom: calc(84px + var(--safe-bottom)); z-index: 9;
   }
   .split-btn {
     display: flex; align-items: stretch; background: var(--bg-card);
@@ -836,7 +883,7 @@
      Hidden on the Requests page itself via route()'s own toggle — no
      point offering to navigate to where you already are. */
   .downloads-fab {
-    position: fixed; right: 32px; bottom: calc(84px + var(--safe-bottom)); z-index: 9;
+    position: fixed; right: var(--edge-inset); bottom: calc(84px + var(--safe-bottom)); z-index: 9;
     width: 56px; height: 56px; border-radius: 50%;
     /* Same card/border look as .storage-indicator's pill — a circle,
        not a pill, but the same visual language rather than a solid
@@ -871,7 +918,7 @@
      mount — every local/test environment) rather than showing a broken
      or zeroed-out readout. */
   .storage-indicator {
-    position: fixed; left: 32px; bottom: calc(84px + var(--safe-bottom)); z-index: 9;
+    position: fixed; left: var(--edge-inset); bottom: calc(84px + var(--safe-bottom)); z-index: 9;
     display: flex; align-items: center; gap: 10px;
     background: var(--bg-card); border: 1px solid var(--border); border-radius: 999px;
     padding: 11px 18px 11px 14px;
@@ -1376,9 +1423,52 @@
   const HERO_SLIDE_COUNT = 5;
   const HERO_TRAILER_COUNT = 2; // only the front slides ever get a background video
   const HERO_AUTOPLAY_MS = 7000;
+  // Long enough to mask the YouTube embed's own brief native-control/
+  // loading flash on first paint (the poster stays on top, unaffected by
+  // pointer-events:none since that's a visual render, not a click
+  // target) without leaving the poster up distractingly long once the
+  // trailer's genuinely playing underneath it.
+  const HERO_POSTER_HIDE_DELAY_MS = 1200;
+  const HERO_CERT_REGION = "AU";
 
-  function homeHeroEpisodeBadgeHtml(text) {
+  function homeHeroBadgeHtml(text) {
     return `<div class="home-hero-badge"><span class="material-symbols-rounded">campaign</span>${escapeHtml(text)}</div>`;
+  }
+
+  // TMDB's list/trending endpoints carry neither a TV show's
+  // next_episode_to_air/last_episode_to_air nor either media type's
+  // region-specific certification — only the full per-title detail call
+  // does (same reason fetchEnrichedWatchingShows already does this exact
+  // per-show fetch for the Watching rows elsewhere on this page) — so
+  // both of these read from the enriched `detail` object wireHomeHero
+  // fetches per slide, never the raw trending-list item.
+  function tvHeroBadgeHtml(show) {
+    const next = show.next_episode_to_air;
+    if (next && next.air_date) {
+      const day = new Date(`${next.air_date}T00:00:00`).toLocaleDateString(undefined, { weekday: "long" });
+      return homeHeroBadgeHtml(`New episode ${day}`);
+    }
+    if (show.last_episode_to_air) return homeHeroBadgeHtml("All episodes available");
+    return "";
+  }
+
+  function movieHeroBadgeHtml(movie) {
+    if (movie.is_coming_soon) return homeHeroBadgeHtml("Coming Soon");
+    if (movie.release_date) {
+      const ageDays = (Date.now() - new Date(`${movie.release_date}T00:00:00`).getTime()) / 86400000;
+      if (ageDays >= 0 && ageDays <= 30) return homeHeroBadgeHtml("Newly Released");
+    }
+    return "";
+  }
+
+  function tvCertOf(show) {
+    return (show.content_ratings?.results || []).find((r) => r.iso_3166_1 === HERO_CERT_REGION)?.rating || "";
+  }
+
+  function movieCertOf(movie) {
+    const entry = (movie.release_dates?.results || []).find((r) => r.iso_3166_1 === HERO_CERT_REGION);
+    const withCert = (entry?.release_dates || []).find((rd) => rd.certification);
+    return withCert ? withCert.certification : "";
   }
 
   function homeHeroSlideHtml(item, index) {
@@ -1413,6 +1503,7 @@
           </div>
         </div>
       </div>
+      <div class="home-hero-cert" id="heroCert${index}"></div>
     </div>`;
   }
 
@@ -1420,6 +1511,9 @@
     if (!items.length) return "";
     return `<div class="home-hero" id="homeHero">
       ${items.map((it, i) => homeHeroSlideHtml(it, i)).join("")}
+      <button class="home-hero-mute-btn" id="heroMuteBtn" aria-label="Unmute trailer" hidden>
+        <span class="material-symbols-rounded">volume_off</span>
+      </button>
       ${items.length > 1 ? `
         <button class="home-hero-arrow home-hero-arrow-left" data-dir="-1" aria-label="Previous slide"><span class="material-symbols-rounded">chevron_left</span></button>
         <button class="home-hero-arrow home-hero-arrow-right" data-dir="1" aria-label="Next slide"><span class="material-symbols-rounded">chevron_right</span></button>
@@ -1430,15 +1524,17 @@
     </div>`;
   }
 
-  // Wires arrows/dots/autoplay, then progressively enhances the first
-  // couple of slides with a background trailer and every TV slide with
-  // its episode-status badge — both fetched after the initial paint so
-  // neither blocks the hero from showing immediately with its poster.
+  // Wires arrows/dots/autoplay/mute, then progressively enhances the
+  // hero with per-slide data fetched after the initial paint so none of
+  // it ever blocks the hero from showing immediately with its poster:
+  // a background trailer for the front couple of slides, and (every
+  // slide, not just those) a status badge plus an AU age-rating pill.
   function wireHomeHero(items) {
     if (!items.length) return;
     const heroEl = document.getElementById("homeHero");
     if (!heroEl) return;
     let index = 0;
+    let heroMuted = true;
 
     function showSlide(newIndex) {
       index = ((newIndex % items.length) + items.length) % items.length;
@@ -1467,6 +1563,27 @@
     heroEl.addEventListener("mouseleave", resetAutoplay);
     resetAutoplay();
 
+    // The YouTube embedded player listens for postMessage commands
+    // directly (no need to load the full IFrame Player API script) as
+    // long as its src carries enablejsapi=1 — a plain fire-and-forget
+    // postMessage, so a command sent before the player's internal
+    // listener is ready is simply dropped rather than erroring; the
+    // iframe's own "load" handler below resends the current mute state
+    // once it fires, which covers that gap in practice.
+    function ytCommand(iframe, func) {
+      try {
+        iframe.contentWindow.postMessage(JSON.stringify({ event: "command", func, args: [] }), "*");
+      } catch (err) { /* not ready yet — the next explicit toggle still reaches it */ }
+    }
+
+    const muteBtn = document.getElementById("heroMuteBtn");
+    function applyMuteState() {
+      muteBtn.querySelector(".material-symbols-rounded").textContent = heroMuted ? "volume_off" : "volume_up";
+      muteBtn.setAttribute("aria-label", heroMuted ? "Unmute trailer" : "Mute trailer");
+      heroEl.querySelectorAll(".home-hero-video-wrap iframe").forEach((f) => ytCommand(f, heroMuted ? "mute" : "unMute"));
+    }
+    muteBtn.addEventListener("click", () => { heroMuted = !heroMuted; applyMuteState(); });
+
     items.slice(0, HERO_TRAILER_COUNT).forEach(async (item, i) => {
       const isTv = item.__mediaType === "tv";
       try {
@@ -1476,29 +1593,42 @@
         if (!wrap) return;
         const src = `https://www.youtube.com/embed/${encodeURIComponent(key)}` +
           `?autoplay=1&mute=1&loop=1&playlist=${encodeURIComponent(key)}` +
-          `&controls=0&modestbranding=1&rel=0&iv_load_policy=3&playsinline=1&disablekb=1`;
-        wrap.innerHTML = `<iframe src="${src}" allow="autoplay; encrypted-media" title="Trailer"></iframe>`;
+          `&controls=0&modestbranding=1&rel=0&iv_load_policy=3&playsinline=1&disablekb=1&enablejsapi=1`;
+        const iframe = document.createElement("iframe");
+        iframe.src = src;
+        iframe.allow = "autoplay; encrypted-media";
+        iframe.title = "Trailer";
+        // Only resync when the user has already unmuted (heroMuted false)
+        // — the URL's own mute=1 already covers the common default-muted
+        // case, so there's nothing to correct there, and skipping it
+        // avoids sending a postMessage command this early at all in the
+        // (far more common) case it isn't even needed. A real delay, not
+        // immediate-on-load, since the player's internal postMessage
+        // listener sending a command too early — right as it's still
+        // establishing autoplay — risked interrupting that sequence
+        // rather than just the mute state (confirmed live: the embed
+        // sat on its paused/suggestions screen instead of autoplaying
+        // once an on-load command was added here).
+        if (!heroMuted) iframe.addEventListener("load", () => setTimeout(() => ytCommand(iframe, "unMute"), 500));
+        wrap.appendChild(iframe);
+        muteBtn.hidden = false;
+        setTimeout(() => {
+          const poster = heroEl.querySelector(`.home-hero-slide[data-index="${i}"] img`);
+          if (poster) poster.classList.add("home-hero-poster-hidden");
+        }, HERO_POSTER_HIDE_DELAY_MS);
       } catch (err) { /* no trailer on file — the poster stays as the slide's art */ }
     });
 
-    // TMDB's list/trending endpoints don't carry next_episode_to_air at
-    // all (only the full per-show detail call does) — same reason
-    // fetchEnrichedWatchingShows already does this exact per-show fetch
-    // for the Watching rows elsewhere on this page.
     items.forEach(async (item, i) => {
-      if (item.__mediaType !== "tv") return;
+      const isTv = item.__mediaType === "tv";
       try {
-        const show = await getTvShow(item.id);
+        const detail = isTv ? await getTvShow(item.id) : await getMovie(item.id);
         const badgeEl = document.getElementById(`heroBadge${i}`);
-        if (!badgeEl) return;
-        const next = show.next_episode_to_air;
-        if (next && next.air_date) {
-          const day = new Date(`${next.air_date}T00:00:00`).toLocaleDateString(undefined, { weekday: "long" });
-          badgeEl.innerHTML = homeHeroEpisodeBadgeHtml(`New episode ${day}`);
-        } else if (show.last_episode_to_air) {
-          badgeEl.innerHTML = homeHeroEpisodeBadgeHtml("All episodes available");
-        }
-      } catch (err) { /* badge just stays empty */ }
+        if (badgeEl) badgeEl.innerHTML = isTv ? tvHeroBadgeHtml(detail) : movieHeroBadgeHtml(detail);
+        const certEl = document.getElementById(`heroCert${i}`);
+        const cert = isTv ? tvCertOf(detail) : movieCertOf(detail);
+        if (certEl && cert) certEl.textContent = cert;
+      } catch (err) { /* badge/cert just stay empty */ }
     });
   }
 

@@ -258,7 +258,11 @@ class TMDBClient:
         return self._get("/search/tv", params)
 
     def get_tv(self, tmdb_id: int) -> dict:
-        return self._get(f"/tv/{tmdb_id}", {"append_to_response": "credits"})
+        # content_ratings folds in the show's own per-country age ratings
+        # (TV's equivalent of a movie's release_dates.certification) —
+        # the home hero carousel's AU rating badge reads this straight off
+        # this same call, no separate request.
+        return self._get(f"/tv/{tmdb_id}", {"append_to_response": "credits,content_ratings"})
 
     def get_person(self, person_id: int) -> dict:
         # append_to_response folds their whole filmography (movies + TV)
