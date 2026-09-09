@@ -745,7 +745,24 @@
         rgba(0,0,0,0.75) 22%,
         rgba(0,0,0,0.35) 40%,
         transparent 56%),
-      linear-gradient(180deg, transparent 42%, rgba(0,0,0,0.65) 80%, #000 100%);
+      /* The first two stops here are px, not %, deliberately — #topbar's
+         own gradient (a separate layer, overlapping the hero's own top
+         since .home-hero bleeds up underneath the fixed header) fades to
+         fully transparent by its own fixed ~64px height, and this layer
+         used to *also* start fully transparent, independently, all the
+         way out to 42% of the hero's own height (480-640px, so 200px+).
+         Both hitting zero right in the same band left a bright,
+         completely undarkened seam right under the header, sandwiched
+         between the darker header above it and the darker lower hero
+         below — confirmed live. A fixed-px tint over roughly the
+         header's own height, fading out by 100px, picks up where the
+         header's gradient leaves off instead of both going slack at
+         once; unlike the header's own height this doesn't scale with
+         viewport width, but the header's height itself doesn't either,
+         so a fixed value is the right kind of value here specifically
+         (the later stops stay %, scaling with the hero's own height as
+         before). */
+      linear-gradient(180deg, rgba(0,0,0,0.35) 0px, transparent 100px, rgba(0,0,0,0.65) 80%, #000 100%);
   }
   /* A trailer is actual content the user is meant to watch, not just
      background art — the poster-only fade above was still eating well
@@ -765,7 +782,9 @@
         rgba(0,0,0,0.45) 14%,
         rgba(0,0,0,0.12) 26%,
         transparent 36%),
-      linear-gradient(180deg, transparent 48%, rgba(0,0,0,0.55) 82%, #000 100%);
+      /* Same fixed-px top tint as the poster-only fade above, and for
+         the same reason — see its comment. */
+      linear-gradient(180deg, rgba(0,0,0,0.35) 0px, transparent 100px, rgba(0,0,0,0.55) 82%, #000 100%);
   }
   /* Per direct request: no horizontal/left fade at all below the hero's
      own mobile breakpoint (see the min-width:640px block further down)
@@ -777,10 +796,10 @@
      every width. */
   @media (max-width: 639px) {
     .home-hero-fade {
-      background: linear-gradient(180deg, transparent 42%, rgba(0,0,0,0.65) 80%, #000 100%);
+      background: linear-gradient(180deg, rgba(0,0,0,0.35) 0px, transparent 100px, rgba(0,0,0,0.65) 80%, #000 100%);
     }
     .home-hero-slide.home-hero-has-video .home-hero-fade {
-      background: linear-gradient(180deg, transparent 48%, rgba(0,0,0,0.55) 82%, #000 100%);
+      background: linear-gradient(180deg, rgba(0,0,0,0.35) 0px, transparent 100px, rgba(0,0,0,0.55) 82%, #000 100%);
     }
   }
   .home-hero-content {
