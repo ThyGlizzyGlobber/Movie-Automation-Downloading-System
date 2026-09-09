@@ -3470,11 +3470,18 @@
   // clientHeight while still clamped is the real signal that there's
   // hidden text (a plain line count would be wrong once font size/
   // column width change the wrap).
+  // Buffer is half a line's height, not a flat 1px — a real (non-
+  // truncated) overview still showed the button in practice: with a
+  // fractional line-height (17px * 1.5 = 25.5px/line here), sub-pixel
+  // rounding alone can put scrollHeight a couple px past clientHeight
+  // even when nothing is actually clipped. Genuine overflow is at least
+  // a full extra line, well past this buffer, so it still detects fine.
   function wireMoreToggle(textId, btnId) {
     const btn = document.getElementById(btnId);
     const text = document.getElementById(textId);
     if (!btn || !text) return;
-    if (text.scrollHeight <= text.clientHeight + 1) {
+    const lineHeight = parseFloat(getComputedStyle(text).lineHeight) || 0;
+    if (text.scrollHeight <= text.clientHeight + lineHeight / 2) {
       btn.hidden = true;
       return;
     }
