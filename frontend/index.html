@@ -449,8 +449,19 @@
   .hscroll-arrow-left {
     left: 0; background: linear-gradient(to right, color-mix(in srgb, var(--bg) 75%, transparent), transparent);
   }
+  /* right:-14px, not 0 — .hscroll-wrap (this button's own positioning
+     parent) never got .hscroll's matching margin-right:-14px (its
+     sibling, the actual scrolling track), since giving it to the wrap
+     too would double up with .hscroll's own already-negative margin
+     (a normal-flow child measures its negative margin against its
+     containing block's *own* width, so a second -14px on the parent
+     would let .hscroll overshoot the true edge by 28px total, not
+     14) — confirmed by reasoning through the box model rather than
+     risking that live. Repositioning just this button instead reaches
+     the same true edge .hscroll's cards already do, without touching
+     that shared box. */
   .hscroll-arrow-right {
-    right: 0; background: linear-gradient(to left, color-mix(in srgb, var(--bg) 75%, transparent), transparent);
+    right: -14px; background: linear-gradient(to left, color-mix(in srgb, var(--bg) 75%, transparent), transparent);
   }
   @media (hover: hover) {
     .hscroll-wrap:hover .hscroll-arrow { opacity: 1; pointer-events: auto; }
@@ -524,6 +535,18 @@
   }
   .grid .poster-card { width: auto; }
   .grid .poster-card img { width: 100%; height: auto; aspect-ratio: 2 / 3; }
+  /* Actor/person credit page only — symmetric padding-right instead
+     of .grid's own reach-the-true-edge margin-right:-14px, per direct
+     request (this grid's last column was flush against the true
+     viewport edge, unlike every other edge-aligned element on the
+     page, which all stop at the header's own right inset). A smaller
+     --poster-w (only redefined here, not globally) keeps the same
+     column density despite the narrower available width, rather than
+     just dropping a column at any given viewport width. */
+  .grid.person-grid {
+    --poster-w: clamp(104px, 12vw, 210px);
+    padding-right: var(--row-inset); margin-right: 0;
+  }
 
   /* Symmetric --row-inset on both sides (== --edge-inset, 64px, on
      top of main's own 14px) — NOT .hscroll's asymmetric left-inset/
@@ -3117,7 +3140,7 @@
         <h1 class="page-title">${escapeHtml(person.name || "Unknown")}</h1>
         <div class="page-subtitle">${count} result${count === 1 ? "" : "s"} with ${escapeHtml(person.name || "this person")}</div>
         ${count
-          ? `<div class="grid">${person.credits.map((c) => posterCard(c, c.media_type)).join("")}</div>`
+          ? `<div class="grid person-grid">${person.credits.map((c) => posterCard(c, c.media_type)).join("")}</div>`
           : emptyHtml("No filmography found.")}
       `;
     } catch (err) {
