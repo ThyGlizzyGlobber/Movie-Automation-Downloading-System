@@ -682,9 +682,32 @@
      right-anchored image, no per-title logic needed. .home-hero-media's
      own overflow:hidden (and .home-hero's, above it) clips whatever
      spills past the left edge on a very wide one. */
+  /* The left fade lives on the image itself (a mask, not a separate
+     overlay div) specifically so it always starts at the image's own
+     actual left edge — a plain overlay positioned against the HERO's
+     edge instead (an earlier attempt) went fully transparent at a
+     fixed distance from the hero's own edge regardless of where the
+     image itself actually started, so a narrower image (whose edge
+     sits well past that fixed distance on a wide window) got no
+     visible blend at all, just a hard cut where its real pixels
+     began. A mask's own gradient is positioned against the masked
+     element's box, i.e. the image's own auto-width box, so this
+     follows the image no matter how far left or right it lands.
+     Distance is 2x the bottom fade's own 0%-to-clear span (50% of
+     .home-hero-fade's height) per direct request — absolute calc()
+     off the same clamp() as .home-hero's own height, same reasoning
+     as that fade's own px conversion. */
   .home-hero-media img {
     position: absolute; top: 0; right: 0; height: 100%; width: auto;
     z-index: 2; transition: opacity 0.6s ease;
+    mask-image: linear-gradient(90deg,
+      transparent 0,
+      rgba(0, 0, 0, 0.35) calc(0.4 * clamp(450px, 38vw, 720px)),
+      black clamp(450px, 38vw, 720px));
+    -webkit-mask-image: linear-gradient(90deg,
+      transparent 0,
+      rgba(0, 0, 0, 0.35) calc(0.4 * clamp(450px, 38vw, 720px)),
+      black clamp(450px, 38vw, 720px));
   }
   .home-hero-media img.home-hero-poster-hidden { opacity: 0; }
   /* Right-anchored, height matching the hero's own (now-fluid) height —
@@ -738,40 +761,18 @@
   .home-hero-video-wrap::before {
     content: ""; position: absolute; inset: 0; z-index: 2;
   }
-  /* Two stacked gradients matching Prime Video's own hero banners
-     (confirmed against several of their real posters side by side):
-     a left-to-right fade over the image, plus a bottom fade into the
-     page's own black beneath the hero. Both are sized to the hero's
-     own box, not the poster image's, which works out regardless of
-     where the image above actually sits: a narrow poster leaves the
-     left portion of the horizontal fade sitting over plain black
-     already (a no-op, same background either way), while a wide one
-     puts real image content under that same stretch, so the fade
-     blends it into the title-text column exactly where it needs to
-     either way, with one fixed gradient rather than something that
-     has to react per-image.
-     The horizontal fade's stops are absolute lengths (calc() off the
-     same clamp() as .home-hero's own min-height), not percentages —
-     a plain 90deg gradient's percentages run against the box's WIDTH,
-     which would make the fade's reach balloon on a wide desktop
-     window even though the request was a fixed multiple of the
-     *bottom* fade's own distance (which runs against HEIGHT, so it
-     already tracks the hero's own fluid height correctly). Per direct
-     request: fully solid at the left edge, transparent by 2x the
-     bottom fade's full-black-to-clear span (2 * 50% of the hero's
-     height == exactly one hero-height's worth of horizontal
-     distance). */
+  /* Bottom fade into the page's own black beneath the hero, matching
+     Prime Video's own hero banners (confirmed against several of
+     their real posters side by side). The matching left-to-right
+     fade lives on .home-hero-media img itself now (a mask, not a
+     layer here) — see its own comment for why a hero-relative overlay
+     here couldn't work for every image position. */
   .home-hero-fade {
     position: absolute; inset: 0; z-index: 1;
-    background-image:
-      linear-gradient(90deg,
-        rgba(0, 0, 0, 1) 0,
-        rgba(0, 0, 0, 0.65) calc(0.4 * clamp(450px, 38vw, 720px)),
-        rgba(0, 0, 0, 0) clamp(450px, 38vw, 720px)),
-      linear-gradient(to top,
-        rgba(0, 0, 0, 1) 0%,
-        rgba(0, 0, 0, 0.65) 20%,
-        rgba(0, 0, 0, 0) 50%);
+    background-image: linear-gradient(to top,
+      rgba(0, 0, 0, 1) 0%,
+      rgba(0, 0, 0, 0.65) 20%,
+      rgba(0, 0, 0, 0) 50%);
   }
   .home-hero-content {
     position: relative; z-index: 2; display: flex; align-items: flex-end;
