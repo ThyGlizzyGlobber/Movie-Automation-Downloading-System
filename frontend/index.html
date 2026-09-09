@@ -815,18 +815,20 @@
   }
   /* Muted by default (autoplay requires it anyway) — toggles the active
      slide's own <video>.muted directly, no postMessage/API round trip.
-     top is offset past the topbar's own height, not a flat pixel value —
-     .home-hero bleeds up underneath the fixed topbar (same trick as
-     .hero), so a plain "20px from the hero's own top" landed this
-     *under* the topbar's own icon buttons instead of visibly below
-     them. */
+     Lives in the actions row now, right after .home-hero-info-btn (moved
+     out of its own floating top-right circle per direct request — JS
+     reparents this single shared button into whichever slide's own
+     .home-hero-mute-slot is currently active, see wireHomeHero's
+     refreshMuteButton), sized to match that button exactly rather than
+     an independent guess. */
+  .home-hero-mute-slot { display: contents; }
   .home-hero-mute-btn {
-    position: absolute; top: calc(var(--topbar-h, 64px) + 14px); right: var(--edge-inset); z-index: 3;
-    width: 38px; height: 38px; border-radius: 50%; border: none;
-    background: color-mix(in srgb, var(--bg) 55%, transparent); color: var(--text);
-    display: flex; align-items: center; justify-content: center; opacity: 0.85;
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 48px; height: 48px; font-size: 20px; z-index: 3;
+    border-radius: 50%; background: color-mix(in srgb, var(--bg-card) 70%, transparent);
+    border: 1px solid var(--border); color: var(--text); opacity: 0.85;
   }
-  .home-hero-mute-btn:hover { opacity: 1; background: color-mix(in srgb, var(--bg) 75%, transparent); }
+  .home-hero-mute-btn:hover { opacity: 1; background: var(--bg-card); }
   .home-hero-mute-btn[hidden] { display: none; }
   /* Hero height and title size used to step here at 640px — both are
      fluid clamp()s on their own base rules now (see .home-hero,
@@ -836,7 +838,7 @@
      continuously. */
   @media (min-width: 640px) {
     .home-hero-actions .add-btn { height: 56px; padding: 0 32px; font-size: 17px; }
-    .home-hero-info-btn { width: 56px; height: 56px; font-size: 22px; }
+    .home-hero-info-btn, .home-hero-mute-btn { width: 56px; height: 56px; font-size: 22px; }
   }
 
   .crew-row { display: flex; gap: 22px; margin-top: 18px; flex-wrap: wrap; }
@@ -1647,6 +1649,7 @@
           <div class="home-hero-actions">
             <a class="add-btn" href="${href}"><span class="material-symbols-rounded">${ctaIcon}</span>${ctaLabel}</a>
             <a class="home-hero-info-btn" href="${href}" aria-label="More info"><span class="material-symbols-rounded">info</span></a>
+            <span class="home-hero-mute-slot" id="heroMuteSlot${index}"></span>
           </div>
         </div>
       </div>
@@ -1713,6 +1716,12 @@
       muteBtn.setAttribute("aria-label", muted ? "Unmute trailer" : "Mute trailer");
     }
     function refreshMuteButton() {
+      // Only one mute button ever exists — reparented into whichever
+      // slide is currently active's own slot (right after its info
+      // button) rather than duplicated per slide, since there's only
+      // ever one slide's audio to control at a time anyway.
+      const slot = document.getElementById(`heroMuteSlot${index}`);
+      if (slot && muteBtn.parentElement !== slot) slot.appendChild(muteBtn);
       const video = heroVideos[index];
       if (!video) { muteBtn.hidden = true; return; }
       muteBtn.hidden = false;
