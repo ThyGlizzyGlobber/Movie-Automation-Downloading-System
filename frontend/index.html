@@ -193,31 +193,30 @@
     background: rgba(0, 0, 0, 0.55);
     backdrop-filter: blur(20px);
   }
-  /* While the search overlay (below) is open, #topbar needs to match its
-     tint — it sits above and outside the overlay itself (so it stays
-     reachable/undimmed as chrome, per the overlay's own design), but
-     without this it kept whatever background its other states already
-     gave it (the hero gradient scrim, or scrolled frosted glass),
-     staying see-through to the sharp, unblurred hero behind it while
-     everything below it was dimmed and blurred — confirmed live, still
-     visible even after matching #searchOverlay's own rgba(0,0,0,0.7):
-     two stacked backdrop-filter elements (this one sitting right above
-     the overlay, which is ALSO backdrop-filter'd) don't reliably
-     compose in every render pipeline, so #topbar's own blur ended up
-     doing much less visible work than the overlay's — confirmed by the
-     computed style correctly reporting the intended values while the
-     rendered header still looked distinctly less tinted than the panel
-     below it. Solid enough on its own (0.92, not 0.7) that the header
-     reads as a consistent, uniformly dark bar regardless of whether its
-     own blur actually composes with what's behind it. Each variant
-     below matches (a search-open class added to) an existing #topbar
-     background rule's own selector, so it's specific enough to actually
-     override that rule rather than losing the cascade to it. */
+  /* While the search overlay (below) is open, #topbar needs to look
+     IDENTICAL to the dimmed/blurred page beneath it, not its own
+     separately-tinted bar — two different attempts at giving #topbar its
+     own matching background (first the overlay's exact rgba(0,0,0,0.7),
+     then a more opaque 0.92 to compensate) both still read as a visibly
+     different bar poking out above the rest of the page, confirmed live
+     both times. Root cause: two independently-rendered backdrop-filter
+     elements (this one, and the overlay) don't reliably composite to
+     the same result even with identical declared values. Fixed at the
+     source instead — #searchOverlay (below) now extends up to cover the
+     header's own area too (top:0, not var(--topbar-h)), so there's only
+     ONE blur/tint layer for the entire viewport. #topbar itself just
+     goes fully transparent here, letting that single layer show through
+     uniformly behind it — guarantees an exact match since it's
+     literally the same paint, not two separate approximations of it.
+     Each variant below matches (a search-open class added to) an
+     existing #topbar background rule's own selector, so it's specific
+     enough to actually override that rule rather than losing the
+     cascade to it. */
   body.search-open #topbar,
   body.has-hero.search-open #topbar,
   body.has-hero.scrolled.search-open #topbar {
-    background: rgba(0, 0, 0, 0.92);
-    backdrop-filter: blur(10px);
+    background: transparent;
+    backdrop-filter: none;
   }
   body.has-hero #topbar #backBtn,
   body.has-hero #topbar #topbarLogo,
@@ -279,15 +278,19 @@
   #topbarLogo .brand-word-smith { color: var(--text); }
   #topbarLogo .brand-word-flix { color: var(--smithflix-red); }
   /* Prime-Video-style search overlay: the header icon (#searchToggleBtn)
-     toggles this rather than a field permanently sitting in the header.
-     Sits BELOW #topbar in the stack (z-index 9 vs. its 10) and starts
-     below it (top: var(--topbar-h)), not inset:0 — the header itself
-     stays fully visible/interactive and undimmed, matching Prime's own
-     treatment, with only the page content beneath it tinted and
-     blurred. Literal black tint (not var(--bg)), same "read as black
-     specifically" rule the hero/header scrims already follow. */
+     toggles this. Covers the FULL viewport (top:0), including behind
+     the header — not just below it — so there's exactly one blur/tint
+     layer for the whole page (see the body.search-open #topbar comment
+     above for why: two separately-rendered backdrop-filter layers don't
+     reliably composite to an identical result, even with matching
+     values). #topbar sits above this in z-index (10 vs. 9) and goes
+     transparent while search is open, so its own icons/logo stay
+     visible and interactive on top of this single tinted/blurred
+     surface rather than being hidden behind it. Literal black tint (not
+     var(--bg)), same "read as black specifically" rule the hero/header
+     scrims already follow. */
   #searchOverlay {
-    position: fixed; top: var(--topbar-h, 64px); left: 0; right: 0; bottom: 0; z-index: 9;
+    position: fixed; inset: 0; z-index: 9;
     background: rgba(0, 0, 0, 0.7); backdrop-filter: blur(10px);
     /* align-items defaults to stretch — without flex-start here the
        pill (an auto-height flex child) stretches to fill this overlay's
@@ -295,7 +298,10 @@
        its own content height. Confirmed live: without this the pill
        rendered as a giant vertical capsule spanning most of the screen. */
     display: flex; justify-content: center; align-items: flex-start;
-    padding: 28px var(--edge-inset) 0;
+    /* Top padding now has to clear the header's own height itself (this
+       overlay extends behind it, unlike before), plus the original 28px
+       breathing room below that. */
+    padding: calc(var(--topbar-h, 64px) + 28px) var(--edge-inset) 0;
   }
   #searchOverlay[hidden] { display: none; }
   .search-overlay-pill {
