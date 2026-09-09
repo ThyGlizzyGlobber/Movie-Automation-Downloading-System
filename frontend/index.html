@@ -157,17 +157,15 @@
      transparency) keeps icon/text contrast readable regardless of what's
      in the backdrop image right behind them. */
   body.has-hero #topbar {
-    /* A light tint, not a heavy one — text-shadow below is now doing real
-       work as an independent line of defense (it doesn't rely on the
-       backdrop being dark at all), so this doesn't have to carry
-       legibility on its own against a bright hero. More stops than a
-       plain two-color fade so it tapers off gradually rather than
-       reading as a hard-edged band. */
-    background: linear-gradient(to bottom,
-      color-mix(in srgb, var(--bg) 38%, transparent) 0%,
-      color-mix(in srgb, var(--bg) 22%, transparent) 45%,
-      color-mix(in srgb, var(--bg) 8%, transparent) 75%,
-      transparent 100%);
+    /* Literal black, not var(--bg) — same "read as black specifically,
+       not the theme's own background color" rule the hero fades below
+       already follow, so the header blends into the same black the hero
+       itself fades into rather than reading as its own separate tinted
+       bar. text-shadow below is a second, independent line of defense
+       for icon/text legibility (it doesn't rely on the backdrop being
+       dark at all), so this doesn't have to carry contrast on its own
+       against a bright hero — it's mainly here for the blend. */
+    background: linear-gradient(to bottom, rgba(0,0,0,0.44) 0%, transparent 100%);
     backdrop-filter: none;
     transition: background 0.2s ease;
   }
