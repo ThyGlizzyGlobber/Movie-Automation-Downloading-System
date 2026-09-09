@@ -611,90 +611,149 @@
   }
   @keyframes spin { to { transform: rotate(360deg); } }
 
-  /* Detail view — mirrors TMDB's own movie/show page: a full-bleed
-     backdrop hero with the poster and title/meta/score/action row
-     overlaid near its bottom edge (a dark gradient keeps the text
-     legible over any backdrop), Overview/crew/cast below in the normal
-     content column. */
-  /* Negative top margin pulls just the hero's own box (and therefore its
-     background-image, which covers the full border-box) up to the true
-     viewport top, behind the fixed header — independent of main's own
-     top padding (which every other page, and this page's own loading
-     spinner before the hero renders, still gets normally, see main's
-     CSS). The matching padding-top pushes the hero's *content* back down
-     by that exact same amount, landing it right where main's padding
-     would have put it anyway — so the background reaches behind the
-     header without the title/button also cramming up underneath it. */
-  .hero {
-    position: relative; width: calc(100% + 28px);
+  /* Detail view — Prime Video's own movie/show page layout (per direct
+     request, matched exactly where this app has an equivalent): a
+     full-bleed backdrop reaching the true viewport top/width — same fade
+     treatment as the home-hero carousel, copied verbatim below — with a
+     left action column (poster, score ring, add/subscribe-state icon,
+     big primary button) and a right info column (title, meta tags,
+     overview, a short cast list) overlaid near the bottom. */
+  /* Same negative-margin-behind-the-header trick .home-hero uses (see its
+     own comment) — but the backdrop image itself spans the full width via
+     width:100% rather than .home-hero's right-anchored native-aspect box,
+     per direct request ("enlarged to the entire viewport width, top of
+     poster aligned with top of viewport"). */
+  .detail-hero {
+    position: relative; width: calc(100% + 28px); overflow: hidden;
     margin: calc(-1 * (var(--topbar-h, 64px) + 14px)) -14px 18px;
     padding-top: calc(var(--topbar-h, 64px) + 14px);
-    background-color: var(--bg-card); background-size: cover; background-position: center top;
+    min-height: clamp(450px, 38vw, 720px);
+    background: #000;
   }
-  .hero::after {
-    content: ""; position: absolute; inset: 0;
-    /* The 70%/100% stops (the upper part of the hero, behind the
-       title/meta text since .hero-content bottom-aligns) were tuned
-       against typical dark, high-contrast movie stills — against a
-       genuinely light or grey backdrop they weren't dark enough to keep
-       --text-dim meta text (genre line, certification badge) readable.
-       Raised both; the bottom stays fully opaque either way. */
-    background: linear-gradient(to top,
-      var(--bg) 0%,
-      color-mix(in srgb, var(--bg) 88%, transparent) 35%,
-      color-mix(in srgb, var(--bg) 58%, transparent) 70%,
-      color-mix(in srgb, var(--bg) 25%, transparent) 100%);
+  .detail-hero-backdrop {
+    position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; z-index: 0;
+    /* Same left-fade formula as .home-hero-media img, copied verbatim —
+       a mask (not an overlay div) so it's always anchored to this
+       image's own left edge, per direct request to copy the hero
+       banner's poster fade settings exactly. Trivially the viewport's
+       own left edge here, since this image is already full-width,
+       unlike the carousel's native-aspect box. */
+    mask-image: linear-gradient(90deg,
+      transparent 0,
+      rgba(0, 0, 0, 0.35) calc(0.4 * clamp(450px, 38vw, 720px)),
+      black clamp(450px, 38vw, 720px));
+    -webkit-mask-image: linear-gradient(90deg,
+      transparent 0,
+      rgba(0, 0, 0, 0.35) calc(0.4 * clamp(450px, 38vw, 720px)),
+      black clamp(450px, 38vw, 720px));
   }
-  .hero-content {
-    position: relative; z-index: 1; display: flex; gap: 16px; align-items: flex-end; flex-wrap: wrap;
-    min-height: 300px; padding: 24px 14px 20px;
+  /* Same top+bottom fade as .home-hero-fade, copied verbatim. */
+  .detail-hero-fade {
+    position: absolute; inset: 0; z-index: 1;
+    background-image:
+      linear-gradient(to bottom,
+        rgba(0, 0, 0, 0.5) 0%,
+        rgba(0, 0, 0, 0.325) 20%,
+        rgba(0, 0, 0, 0) 50%),
+      linear-gradient(to top,
+        rgba(0, 0, 0, 1) 0%,
+        rgba(0, 0, 0, 0.65) 20%,
+        rgba(0, 0, 0, 0) 50%);
   }
+  .detail-hero-content {
+    position: relative; z-index: 2; display: flex; gap: 24px; align-items: flex-end; flex-wrap: wrap;
+    min-height: clamp(450px, 38vw, 720px); padding: 24px var(--edge-inset) 32px;
+  }
+  .detail-action-col { flex: 0 0 auto; display: flex; flex-direction: column; align-items: center; gap: 12px; }
   .detail-poster-wrap {
-    position: relative; flex: 0 0 auto; border-radius: 10px; overflow: hidden;
+    position: relative; border-radius: 10px; overflow: hidden;
     box-shadow: 0 8px 24px rgba(0,0,0,0.55);
   }
   .detail-poster { width: 130px; height: 195px; object-fit: cover; background: var(--bg-card); display: block; }
-  .detail-info { flex: 1; min-width: 220px; padding-bottom: 2px; }
-  .detail-info h1 { font-size: 21px; margin: 0 0 6px; line-height: 1.2; }
+  .detail-info { flex: 1 1 320px; min-width: 260px; padding-bottom: 2px; }
+  .detail-info h1 { font-size: 28px; font-weight: 800; margin: 0 0 10px; line-height: 1.15; }
   .detail-info h1 .hero-year { font-weight: 400; color: var(--text-dim); }
-  /* This dim-toned text (genre/runtime/certification/tagline/overview)
-     sits directly on the hero image itself: --text-dim can read fine
-     against .hero::after's overlay over a typical dark still, but
-     blends into a lighter or grey one regardless of how dark that
-     overlay gets tuned, so a shadow that doesn't depend on the backdrop
-     is the more robust fix. Harmless where these classes are instead
-     used on a page's plain flat background (e.g. the Overview section
-     below a movie/show's hero) — a matching-color shadow there is
-     imperceptible. (The top header used a similar shadow for the same
-     reason, removed per direct request in favor of a stronger
-     background gradient alone carrying contrast there instead.) */
-  .detail-meta, .cert-badge, .detail-overview, .tagline, .score-label {
+  /* This dim-toned text (genre/runtime/certification/overview/cast) sits
+     directly on the hero image itself: --text-dim can read fine against
+     .detail-hero-fade's own overlay over a typical dark still, but
+     blends into a lighter or grey one regardless of how dark that fade
+     gets tuned, so a shadow that doesn't depend on the backdrop is the
+     more robust fix. */
+  .detail-meta, .cert-badge, .detail-overview, .detail-cast-line {
     text-shadow: 0 1px 4px color-mix(in srgb, var(--bg) 90%, transparent);
   }
   .detail-meta {
-    color: var(--text-dim); font-size: 13.5px; display: flex; align-items: center; gap: 8px;
+    color: var(--text-dim); font-size: 14px; display: flex; align-items: center; gap: 8px;
     flex-wrap: wrap; margin-bottom: 14px;
   }
   .cert-badge {
     font-size: 11px; font-weight: 700; padding: 1px 6px; border: 1px solid var(--text-dim);
     border-radius: 4px; color: var(--text-dim); line-height: 1.4;
   }
-  .detail-overview { margin-top: 8px; font-size: 15px; line-height: 1.5; color: var(--text-dim); }
+  .detail-overview { margin-top: 8px; font-size: 15px; line-height: 1.5; color: var(--text-dim); max-width: 640px; }
+  /* Matches the Prime screenshot's own "Cast: Name, Name, Name" line —
+     just the first handful of names as plain #/person/{id} links, not
+     the photo-card row (that one's still here too, further down the
+     page — see castSectionHtml). */
+  .detail-cast-line { margin-top: 12px; font-size: 13.5px; color: var(--text-dim); max-width: 260px; }
+  .detail-cast-line a { color: var(--text); }
+  .detail-cast-line a:hover { text-decoration: underline; }
 
-  /* The score ring + the primary action button share one row, same as
-     TMDB's User Score + Play Trailer row. */
-  .hero-actions { display: flex; align-items: center; gap: 18px; flex-wrap: wrap; }
-  .score-row { display: flex; align-items: center; gap: 10px; }
-  .score-ring {
-    width: 44px; height: 44px; border-radius: 50%; position: relative; flex: 0 0 auto;
-    background: conic-gradient(var(--score-color, var(--status-complete)) calc(var(--score-pct, 0) * 1%), var(--bg-card) 0);
-    display: flex; align-items: center; justify-content: center;
+  /* Score ring: rounded stroke ends (matching the site's own pill
+     language everywhere else — a plain conic-gradient div, the previous
+     implementation, can only draw a hard-edged pie-slice arc with no
+     rounded-cap option) via an inline SVG circle with stroke-linecap:
+     round, filled with the site's own accent color rather than the
+     traffic-light red/yellow/green this used before — reads as on-brand
+     rather than a status indicator, per direct request. Sits in the
+     action column where Prime's own like/dislike circles are, alongside
+     the poster above it and the add/subscribe-state icon below. */
+  .score-ring { width: 48px; height: 48px; position: relative; flex: 0 0 auto; }
+  .score-ring svg { width: 100%; height: 100%; transform: rotate(-90deg); }
+  .score-ring circle { fill: none; stroke-width: 4; }
+  .score-ring circle.track { stroke: var(--bg-card); }
+  .score-ring circle.fill { stroke: var(--accent); stroke-linecap: round; transition: stroke-dashoffset 0.3s ease; }
+  .score-ring span {
+    position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+    font-size: 12px; font-weight: 700;
   }
-  .score-ring::before { content: ""; position: absolute; inset: 4px; border-radius: 50%; background: var(--bg); }
-  .score-ring span { position: relative; font-size: 12px; font-weight: 700; }
-  .score-label { font-size: 12.5px; color: var(--text-dim); font-weight: 600; }
 
-  .tagline { font-style: italic; color: var(--text-dim); margin-top: 14px; font-size: 14px; }
+  /* Add/subscribe-state indicator — a tick (not yet added/subscribed,
+     click adds) or a cross (already subscribed, click unsubscribes —
+     movies have no unsubscribe concept, so this just mirrors the primary
+     button's own state there instead of a second independent action).
+     Same hover treatment as the header's own #searchToggleBtn/
+     #settingsToggle (white circle, black icon) for consistency, per
+     direct request. title carries the actual action in words, since an
+     icon alone left it a guess. */
+  .detail-state-icon {
+    width: 40px; height: 40px; border-radius: 50%; flex: 0 0 auto;
+    display: flex; align-items: center; justify-content: center;
+    background: color-mix(in srgb, var(--bg-card) 70%, transparent); border: 1px solid var(--border);
+    color: var(--text); font-size: 20px;
+  }
+  .detail-state-icon:hover { background: #fff; color: var(--smithflix-charcoal); border-radius: 50%; }
+  .detail-state-icon[disabled] { opacity: 0.5; pointer-events: none; }
+
+  /* Big primary button (Prime's own "Play" pill) — reuses .add-btn's
+     existing request/subscribe click handlers and ids verbatim (see
+     renderMovie/renderShow), just sized up and set to the same white-
+     pill look Prime's own Play button uses instead of this app's usual
+     accent-colored add-btn fill. */
+  .detail-action-col .add-btn {
+    height: 48px; padding: 0 28px; font-size: 16px; font-weight: 700;
+    background: #fff; color: var(--smithflix-charcoal); border: none;
+  }
+  /* .unsubscribe-link keeps its real id/click-handler (wireSubscribeArea
+     wires it exactly as before) but isn't shown as its own button here —
+     the state icon above proxies a click onto it when showing the cross,
+     so this only needs to exist in the DOM, not be visible. Standard
+     visually-hidden pattern (not display:none, which would also block
+     the programmatic .click() from working in some engines). */
+  .detail-action-col .unsubscribe-link {
+    position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+    overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0;
+  }
   .section-heading { font-size: 15px; font-weight: 700; margin: 20px 0 10px; }
 
   /* Home's Prime-Video-style hero carousel — deliberately its own class
@@ -1062,7 +1121,9 @@
   }
 
   @media (min-width: 860px) {
-    .hero-content { min-height: 420px; padding: 40px 32px; gap: 28px; }
+    /* .detail-hero-content's own min-height is already a fluid clamp()
+       (matching .home-hero's), not a fixed size — no breakpoint jump
+       needed for it the way the old .hero-content had. */
     .detail-poster { width: 200px; height: 300px; }
     .detail-info h1 { font-size: 32px; }
     .add-btn { padding: 14px 28px; font-size: 16px; }
@@ -1745,9 +1806,10 @@
   //    trending items, only the front couple ever carrying a background
   //    trailer video, cycling with dots/arrows/autoplay. Home, Movies, and
   //    TV all use this same carousel now (movie-only/TV-only trending
-  //    items on the latter two, per direct request) — .hero/.hero-content
-  //    (below) are the *detail*-page hero's own classes now, unrelated to
-  //    this one. --
+  //    items on the latter two, per direct request) — .detail-hero/
+  //    .detail-hero-content (below) are the *detail*-page hero's own
+  //    classes, unrelated to this one (its own, separate full-bleed
+  //    backdrop with the same fade treatment, no carousel). --
 
   const HERO_SLIDE_COUNT = 5;
   const HERO_TRAILER_COUNT = 2; // only the front slides ever get a background video
@@ -2875,6 +2937,21 @@
     return subscription ? `<button class="unsubscribe-link" id="unsubBtn">Unsubscribe</button>` : "";
   }
 
+  // The small circle icon above the big subscribe/pause/resume pill —
+  // tick (not yet subscribed, proxies a click onto subscribeBtn) or
+  // cross (already subscribed — watching or paused, either way — proxies
+  // onto the hidden unsubBtn), see wireStateIcon. title/aria-label carry
+  // the actual action in words per direct request.
+  function stateIconHtml(subscription, isComingSoon) {
+    if (!subscription) {
+      return `<button class="detail-state-icon" id="stateIcon" title="${isComingSoon ? "Not out yet" : "Add Show"}"
+        aria-label="Add Show" ${isComingSoon ? "disabled" : ""}><span class="material-symbols-rounded">add</span></button>`;
+    }
+    return `<button class="detail-state-icon" id="stateIcon" title="Unsubscribe" aria-label="Unsubscribe">
+      <span class="material-symbols-rounded">close</span>
+    </button>`;
+  }
+
   // Bulk-download (Stage 13/14.x) works whether or not the show is
   // subscribed — the backend anchors a one-off download to a paused show
   // record on first use if it needs to (see api.py's bulk_download_show),
@@ -2917,29 +2994,32 @@
       const year = yearOf(show.first_air_date);
 
       app.innerHTML = `
-        <div class="hero" style="${backdrop ? `background-image:url('${backdrop}')` : ""}">
-          <div class="hero-content">
-            <div class="detail-poster-wrap">
-              <img class="detail-poster" src="${posterUrl(show.poster_path)}" alt="">
-              ${show.on_plex ? `<div class="on-plex-badge">On Plex</div>` : ""}
+        <div class="detail-hero">
+          ${backdrop ? `<img class="detail-hero-backdrop" src="${backdrop}" alt="">` : ""}
+          <div class="detail-hero-fade"></div>
+          <div class="detail-hero-content">
+            <div class="detail-action-col">
+              <div class="detail-poster-wrap">
+                <img class="detail-poster" src="${posterUrl(show.poster_path)}" alt="">
+                ${show.on_plex ? `<div class="on-plex-badge">On Plex</div>` : ""}
+              </div>
+              ${scoreRowHtml(show.vote_average)}
+              <div id="stateIconArea">${stateIconHtml(subscription, show.is_coming_soon)}</div>
+              <div id="subscribeButtonArea">${subscribeButtonHtml(subscription, show.is_coming_soon)}</div>
+              <div id="unsubscribeArea">${unsubscribeLinkHtml(subscription)}</div>
             </div>
             <div class="detail-info">
               <h1>${escapeHtml(show.name || show.original_name)}${year ? ` <span class="hero-year">(${year})</span>` : ""}</h1>
               <div class="detail-meta">
                 ${show.status ? `<span class="cert-badge">${escapeHtml(show.status)}</span>` : ""}
                 <span>${escapeHtml(genreLine(show.genres))}</span>
+                ${year ? `<span>${escapeHtml(year)}</span>` : ""}
               </div>
-              <div class="hero-actions">
-                ${scoreRowHtml(show.vote_average)}
-                <div id="subscribeButtonArea">${subscribeButtonHtml(subscription, show.is_coming_soon)}</div>
-              </div>
-              ${show.tagline ? `<div class="tagline">${escapeHtml(show.tagline)}</div>` : ""}
+              <div class="detail-overview">${escapeHtml(show.overview) || "<em>No synopsis available.</em>"}</div>
+              ${castLineHtml(cast)}
             </div>
           </div>
         </div>
-        <div id="unsubscribeArea">${unsubscribeLinkHtml(subscription)}</div>
-        <h2 class="section-heading">Overview</h2>
-        <div class="detail-overview">${escapeHtml(show.overview) || "<em>No synopsis available.</em>"}</div>
         ${crewRowHtml(crew)}
         <div id="bulkArea">${bulkAreaHtml(isEndedOrCanceled, seasons)}</div>
         ${castSectionHtml(cast)}
@@ -2948,12 +3028,31 @@
       function refreshSubscribeAreas() {
         document.getElementById("subscribeButtonArea").innerHTML = subscribeButtonHtml(subscription, show.is_coming_soon);
         document.getElementById("unsubscribeArea").innerHTML = unsubscribeLinkHtml(subscription);
+        document.getElementById("stateIconArea").innerHTML = stateIconHtml(subscription, show.is_coming_soon);
         document.getElementById("bulkArea").innerHTML = bulkAreaHtml(isEndedOrCanceled, seasons);
         wireSubscribeArea();
         wireBulkArea();
       }
 
+      // The small circle icon (tick to subscribe, cross to unsubscribe —
+      // see stateIconHtml) has no request logic of its own: it just
+      // proxies a click onto whichever real button currently exists
+      // below it (subscribeBtn when not yet subscribed, unsubBtn — kept
+      // in the DOM but visually hidden, see .detail-action-col
+      // .unsubscribe-link's own CSS comment — once subscribed), so
+      // there's exactly one place (wireSubscribeArea's own handlers)
+      // that actually talks to the backend either way.
+      function wireStateIcon() {
+        const stateIcon = document.getElementById("stateIcon");
+        if (!stateIcon || stateIcon.disabled) return;
+        stateIcon.addEventListener("click", () => {
+          const target = document.getElementById("subscribeBtn") || document.getElementById("unsubBtn");
+          if (target) target.click();
+        });
+      }
+
       function wireSubscribeArea() {
+        wireStateIcon();
         const addBtn = document.getElementById("subscribeBtn");
         if (addBtn && !addBtn.disabled) addBtn.addEventListener("click", async () => {
           addBtn.disabled = true;
@@ -3005,6 +3104,7 @@
               subscription = shows.find((s) => s.tmdb_id === Number(id)) || null;
               document.getElementById("subscribeButtonArea").innerHTML = subscribeButtonHtml(subscription, show.is_coming_soon);
               document.getElementById("unsubscribeArea").innerHTML = unsubscribeLinkHtml(subscription);
+              document.getElementById("stateIconArea").innerHTML = stateIconHtml(subscription, show.is_coming_soon);
               wireSubscribeArea();
             }
           } catch (err) {
@@ -3079,14 +3179,35 @@
     return `${names.slice(0, -1).join(", ")}, and ${names[names.length - 1]}`;
   }
 
+  // Rounded-cap ring via an inline SVG circle (stroke-dasharray/
+  // -dashoffset), not the old conic-gradient div — see .score-ring's own
+  // CSS comment for why a conic-gradient can't do rounded ends. r=22
+  // matches the ring's own 48px box at stroke-width:4 (22 = (48-4)/2).
   function scoreRowHtml(voteAverage) {
     if (!voteAverage) return "";
     const pct = Math.round(voteAverage * 10);
-    const color = pct >= 70 ? "var(--status-complete)" : pct >= 40 ? "var(--status-nomatch)" : "var(--status-nospace)";
-    return `<div class="score-row">
-      <div class="score-ring" style="--score-pct:${pct};--score-color:${color}"><span>${pct}%</span></div>
-      <span class="score-label">User Score</span>
+    const r = 22;
+    const circumference = 2 * Math.PI * r;
+    const offset = circumference * (1 - pct / 100);
+    return `<div class="score-ring" title="User Score: ${pct}%">
+      <svg viewBox="0 0 48 48" aria-hidden="true">
+        <circle class="track" cx="24" cy="24" r="${r}"></circle>
+        <circle class="fill" cx="24" cy="24" r="${r}"
+          stroke-dasharray="${circumference}" stroke-dashoffset="${offset}"></circle>
+      </svg>
+      <span>${pct}%</span>
     </div>`;
+  }
+
+  // Matches the Prime screenshot's own "Cast: Name, Name, Name" line —
+  // top few names as plain #/person/{id} links, sitting in the hero's
+  // own info column (see .detail-cast-line). The full photo-card row
+  // (castSectionHtml, further down the page) still has the complete list.
+  function castLineHtml(cast) {
+    const top = (cast || []).slice(0, 4);
+    if (!top.length) return "";
+    const names = top.map((c) => `<a href="#/person/${c.id}">${escapeHtml(c.name)}</a>`).join(", ");
+    return `<div class="detail-cast-line">Cast: ${names}</div>`;
   }
 
   function crewRowHtml(crew) {
@@ -3163,11 +3284,24 @@
       const year = yearOf(movie.release_date);
 
       app.innerHTML = `
-        <div class="hero" style="${backdrop ? `background-image:url('${backdrop}')` : ""}">
-          <div class="hero-content">
-            <div class="detail-poster-wrap">
-              <img class="detail-poster" src="${posterUrl(movie.poster_path)}" alt="">
-              ${movie.on_plex ? `<div class="on-plex-badge">On Plex</div>` : ""}
+        <div class="detail-hero">
+          ${backdrop ? `<img class="detail-hero-backdrop" src="${backdrop}" alt="">` : ""}
+          <div class="detail-hero-fade"></div>
+          <div class="detail-hero-content">
+            <div class="detail-action-col">
+              <div class="detail-poster-wrap">
+                <img class="detail-poster" src="${posterUrl(movie.poster_path)}" alt="">
+                ${movie.on_plex ? `<div class="on-plex-badge">On Plex</div>` : ""}
+              </div>
+              ${scoreRowHtml(movie.vote_average)}
+              <button class="detail-state-icon" id="stateIcon"
+                title="${movie.is_coming_soon ? "Not out digitally yet" : "Add to Plex"}"
+                aria-label="Add to Plex" ${movie.is_coming_soon ? "disabled" : ""}>
+                <span class="material-symbols-rounded">add</span>
+              </button>
+              ${movie.is_coming_soon
+                ? `<button class="add-btn" id="addBtn" disabled title="Not out digitally yet">+ Add to Plex</button>`
+                : `<button class="add-btn" id="addBtn">+ Add to Plex</button>`}
             </div>
             <div class="detail-info">
               <h1>${escapeHtml(movie.title || movie.original_title)}${year ? ` <span class="hero-year">(${year})</span>` : ""}</h1>
@@ -3175,20 +3309,14 @@
                 ${certification ? `<span class="cert-badge">${escapeHtml(certification)}</span>` : ""}
                 <span>${escapeHtml(genreLine(movie.genres))}</span>
                 ${runtime ? `<span>${escapeHtml(runtime)}</span>` : ""}
+                ${year ? `<span>${escapeHtml(year)}</span>` : ""}
               </div>
-              <div class="hero-actions">
-                ${scoreRowHtml(movie.vote_average)}
-                ${movie.is_coming_soon
-                  ? `<button class="add-btn" id="addBtn" disabled title="Not out digitally yet">+ Add to Plex</button>`
-                  : `<button class="add-btn" id="addBtn">+ Add to Plex</button>`}
-              </div>
-              ${movie.tagline ? `<div class="tagline">${escapeHtml(movie.tagline)}</div>` : ""}
+              <div class="detail-overview">${escapeHtml(movie.overview) || "<em>No synopsis available.</em>"}</div>
+              ${castLineHtml(cast)}
             </div>
           </div>
         </div>
         <div id="addResult"></div>
-        <h2 class="section-heading">Overview</h2>
-        <div class="detail-overview">${escapeHtml(movie.overview) || "<em>No synopsis available.</em>"}</div>
         ${crewRowHtml(crew)}
         ${castSectionHtml(cast)}
       `;
@@ -3196,32 +3324,46 @@
       // Coming Soon titles render the button disabled (see the markup
       // above) — skip wiring a handler onto it entirely rather than
       // relying only on the disabled attribute to block the click.
-      if (!movie.is_coming_soon) document.getElementById("addBtn").addEventListener("click", async (e) => {
-        const btn = e.currentTarget;
-        btn.disabled = true;
-        btn.textContent = "Adding…";
-        const resultBox = document.getElementById("addResult");
-        try {
-          const req = await createRequest(Number(id), movie.title);
-          btn.textContent = "Added";
-          resultBox.innerHTML = `<div class="add-confirm" id="addConfirm">
-            ${statusPillHtml(req.status)}
-            <span>We'll grab the best copy automatically.</span>
-          </div>`;
-          const poll = setInterval(async () => {
-            try {
-              const updated = await getRequest(req.id);
-              document.getElementById("addConfirm").innerHTML =
-                `${statusPillHtml(updated.status)}<span>${statusFollowupText(updated)}</span>`;
-              if (!NON_TERMINAL.has(updated.status)) clearInterval(poll);
-            } catch (e) { clearInterval(poll); }
-          }, 4000);
-        } catch (err) {
-          btn.disabled = false;
-          btn.textContent = "+ Add to Plex";
-          resultBox.innerHTML = `<div class="add-confirm">Couldn't add that: ${escapeHtml(err.message)}</div>`;
-        }
-      });
+      if (!movie.is_coming_soon) {
+        const stateIcon = document.getElementById("stateIcon");
+        // The small circle icon has no request/status logic of its own —
+        // it just proxies a click onto the real button below it, so
+        // there's exactly one place (addBtn's own handler) that actually
+        // talks to the backend. A disabled addBtn's own .click() is a
+        // browser no-op, so this needs no extra disabled-state tracking
+        // once "Added" sets that below.
+        stateIcon.addEventListener("click", () => document.getElementById("addBtn").click());
+        document.getElementById("addBtn").addEventListener("click", async (e) => {
+          const btn = e.currentTarget;
+          btn.disabled = true;
+          btn.textContent = "Adding…";
+          const resultBox = document.getElementById("addResult");
+          try {
+            const req = await createRequest(Number(id), movie.title);
+            btn.textContent = "Added";
+            stateIcon.disabled = true;
+            stateIcon.title = "Added";
+            stateIcon.setAttribute("aria-label", "Added");
+            stateIcon.querySelector(".material-symbols-rounded").textContent = "check";
+            resultBox.innerHTML = `<div class="add-confirm" id="addConfirm">
+              ${statusPillHtml(req.status)}
+              <span>We'll grab the best copy automatically.</span>
+            </div>`;
+            const poll = setInterval(async () => {
+              try {
+                const updated = await getRequest(req.id);
+                document.getElementById("addConfirm").innerHTML =
+                  `${statusPillHtml(updated.status)}<span>${statusFollowupText(updated)}</span>`;
+                if (!NON_TERMINAL.has(updated.status)) clearInterval(poll);
+              } catch (e) { clearInterval(poll); }
+            }, 4000);
+          } catch (err) {
+            btn.disabled = false;
+            btn.textContent = "+ Add to Plex";
+            resultBox.innerHTML = `<div class="add-confirm">Couldn't add that: ${escapeHtml(err.message)}</div>`;
+          }
+        });
+      }
     } catch (err) {
       app.innerHTML = errorHtml(err.message);
     }
