@@ -1599,12 +1599,11 @@
 
   const HERO_SLIDE_COUNT = 5;
   const HERO_TRAILER_COUNT = 2; // only the front slides ever get a background video
-  const HERO_AUTOPLAY_MS = 7000;
-  // Once a trailer slide's HERO_AUTOPLAY_MS view window ends, the poster
-  // reappears over the (still-playing, muted, just no longer visible)
-  // video for this long before actually advancing — a settling beat
-  // rather than cutting straight from mid-trailer to the next slide.
-  const HERO_POSTER_HOLD_MS = 10000;
+  const HERO_AUTOPLAY_MS = 7000; // flat dwell time for a poster-only slide (no trailer)
+  // How long a trailer slide's poster shows on its own — both before the
+  // trailer starts (a deliberate lead-in, not an instant cut) and again
+  // after it finishes (before actually advancing to the next slide).
+  const HERO_POSTER_LEAD_MS = 3000;
   const HERO_CERT_REGION = "AU";
 
   function homeHeroBadgeHtml(text) {
@@ -1712,16 +1711,28 @@
     let index = 0;
     // Plain <video> elements (indices 0/1, matching HERO_TRAILER_COUNT),
     // self-hosted from our own trailer cache rather than a YouTube
-    // iframe — see trailers.py's docstring for why. A native <video>'s
-    // own `muted` property is synchronous and always accurate, so unlike
-    // the old YT.Player setup there's no separate mute-state flag and no
-    // stale-icon race: every video is muted the instant it's created and
-    // every time a slide becomes active again, regardless of whatever an
-    // earlier visit to it left behind (per explicit request: always
-    // muted by default, never carried over between titles in the
-    // carousel).
+    // iframe — see trailers.py's docstring for why. Created as soon as
+    // each trailer's URL resolves (so the file starts buffering right
+    // away), but never autoplaying on its own — playback is entirely
+    // driven by scheduleAdvance() below, gated on the slide actually
+    // being the active one (per direct request: a background slide's
+    // trailer must not be playing at all, muted or not, until the user
+    // is actually looking at it — previously every eligible slide's
+    // video started autoplaying the instant the page loaded, so by the
+    // time the user reached slide 2 its trailer was already most of the
+    // way through). A native <video>'s own `muted` property is
+    // synchronous and always accurate, so there's no separate mute-state
+    // flag and no stale-icon race: every video is muted the instant it's
+    // created and every time a slide becomes active again, regardless of
+    // whatever an earlier visit to it left behind (per earlier explicit
+    // request: always muted by default, never carried over between
+    // titles in the carousel).
     const heroVideos = [];
     const muteBtn = document.getElementById("heroMuteBtn");
+
+    function posterOf(i) {
+      return heroEl.querySelector(`.home-hero-slide[data-index="${i}"] img`);
+    }
 
     // Only ever shows/enables the mute button for a slide that actually
     // has a trailer video.
@@ -1760,18 +1771,32 @@
       refreshMuteButton();
     }
 
+    // A slide being left behind — whether by autoplay advancing past it
+    // or a manual arrow/dot click — always pauses its trailer and rewinds
+    // it to the start, and makes sure its poster is showing again. Per
+    // direct request: coming back to a slide later should replay its
+    // trailer from the beginning, never resume wherever it happened to
+    // be left off.
+    function deactivateSlide(i) {
+      const video = heroVideos[i];
+      if (!video) return;
+      video.pause();
+      video.currentTime = 0;
+    }
+
     // Advance timing: a flat HERO_AUTOPLAY_MS timer for a poster-only
-    // slide, same as before. A slide with a trailer is different — its
-    // clock doesn't start until the video's own "playing" event actually
-    // fires, not the instant the slide becomes active, since advancing
-    // on a fixed timer regardless of playback state was cutting slides
-    // away while the trailer was still loading or barely a second in.
-    // Once it's genuinely playing, it gets a full HERO_AUTOPLAY_MS view,
-    // then the poster reappears for HERO_POSTER_HOLD_MS before actually
-    // moving on. `scheduleToken` invalidates any in-flight timer/
-    // listener from a previous call (a manual arrow/dot click, or the
-    // active slide's trailer only just finishing its fetch) so a stale
-    // continuation becomes a harmless no-op instead of firing late.
+    // slide. A slide with a trailer follows a fixed sequence instead —
+    // poster alone for HERO_POSTER_LEAD_MS, then the trailer plays all
+    // the way through *once* (no loop) before the poster reappears for
+    // another HERO_POSTER_LEAD_MS and the carousel actually advances.
+    // Poster visibility itself is driven by the video's own persistent
+    // event listeners below (hidePoster/revealPoster), not by this
+    // function directly — this only decides *when* to call play() and
+    // *when* a finished trailer should lead to the next slide.
+    // `scheduleToken` invalidates any in-flight timer/listener from a
+    // previous call (a manual arrow/dot click, hover pause/resume, or
+    // the active slide's trailer only just finishing its fetch) so a
+    // stale continuation becomes a harmless no-op instead of firing late.
     let scheduleToken = 0;
     function clearSchedule() {
       if (activePollTimer) { clearTimeout(activePollTimer); activePollTimer = null; }
@@ -1782,31 +1807,36 @@
       if (items.length <= 1) return;
       const advance = () => {
         if (token !== scheduleToken) return;
+        const leavingIndex = index;
         showSlide(index + 1);
+        deactivateSlide(leavingIndex);
         scheduleAdvance();
       };
       const video = heroVideos[index];
       if (!video) { activePollTimer = setTimeout(advance, HERO_AUTOPLAY_MS); return; }
-      const startViewWindow = () => {
+      activePollTimer = setTimeout(() => {
         if (token !== scheduleToken) return;
-        activePollTimer = setTimeout(() => {
+        video.currentTime = 0;
+        video.play().catch(() => {});
+        video.addEventListener("ended", function onEnded() {
+          video.removeEventListener("ended", onEnded);
           if (token !== scheduleToken) return;
-          const poster = heroEl.querySelector(`.home-hero-slide[data-index="${index}"] img`);
-          if (poster) poster.classList.remove("home-hero-poster-hidden");
-          activePollTimer = setTimeout(advance, HERO_POSTER_HOLD_MS);
-        }, HERO_AUTOPLAY_MS);
-      };
-      if (!video.paused) { startViewWindow(); return; }
-      video.addEventListener("playing", startViewWindow, { once: true });
+          activePollTimer = setTimeout(advance, HERO_POSTER_LEAD_MS);
+        });
+      }, HERO_POSTER_LEAD_MS);
     }
 
-    heroEl.querySelectorAll(".home-hero-arrow").forEach((btn) => btn.addEventListener("click", () => {
-      showSlide(index + Number(btn.dataset.dir));
+    function goToSlide(newIndex) {
+      const leavingIndex = index;
+      showSlide(newIndex);
+      if (leavingIndex !== index) deactivateSlide(leavingIndex);
       scheduleAdvance();
+    }
+    heroEl.querySelectorAll(".home-hero-arrow").forEach((btn) => btn.addEventListener("click", () => {
+      goToSlide(index + Number(btn.dataset.dir));
     }));
     heroEl.querySelectorAll(".home-hero-dot").forEach((btn) => btn.addEventListener("click", () => {
-      showSlide(Number(btn.dataset.index));
-      scheduleAdvance();
+      goToSlide(Number(btn.dataset.index));
     }));
     heroEl.addEventListener("mouseenter", () => { scheduleToken++; clearSchedule(); });
     heroEl.addEventListener("mouseleave", scheduleAdvance);
@@ -1819,29 +1849,30 @@
         if (!url) return;
         const wrap = document.getElementById(`heroVideoWrap${i}`);
         if (!wrap) return;
-        const poster = heroEl.querySelector(`.home-hero-slide[data-index="${i}"] img`);
+        const poster = posterOf(i);
         const video = document.createElement("video");
         video.src = url;
         video.muted = true;
-        video.loop = true;
+        video.loop = false; // plays through once per activation — see scheduleAdvance
         video.playsInline = true;
-        video.autoplay = true;
+        video.preload = "auto"; // starts buffering now even though play() is gated on activation
         video.setAttribute("aria-hidden", "true");
         // Self-hosted, chromeless <video> — no YouTube iframe, so none
         // of the old end-of-clip Cards-overlay/watermark workarounds are
-        // needed: `loop` alone replays the file with zero external
-        // chrome ever appearing. The poster just tracks genuine
-        // playback state via the browser's own native video events —
-        // but "waiting" fires on any buffer refill, including a brief,
-        // normal blip mid-playback over a real network, not just a
-        // genuine stall. Revealing the poster (which spans the full
-        // hero, not just the video's own box) for something that
-        // resolves in well under a second read as a bright flash next
-        // to the video rather than a helpful fallback — confirmed live.
-        // So a stall only actually reveals it if still ongoing half a
-        // second later; "playing" cancels that pending reveal immediately
-        // since it means real playback resumed. "pause"/"error" are
-        // terminal enough to reveal right away, same as before.
+        // needed. Poster visibility mirrors genuine playback state via
+        // these persistent listeners, independent of whatever triggered
+        // play()/pause() (scheduleAdvance's own timers, deactivateSlide,
+        // a real network stall) — "waiting" fires on any buffer refill,
+        // including a brief, normal blip mid-playback over a real
+        // network, not just a genuine stall, so revealing the poster
+        // (which spans the full hero, not just the video's own box) for
+        // something that resolves in well under a second read as a
+        // bright flash next to the video rather than a helpful fallback
+        // — confirmed live. So a stall only actually reveals it if still
+        // ongoing half a second later; "playing" cancels that pending
+        // reveal immediately since it means real playback resumed.
+        // "pause" (which also fires right before "ended", per spec) and
+        // "error" are terminal enough to reveal right away.
         let posterRevealTimer = null;
         function clearPosterRevealTimer() {
           if (posterRevealTimer) { clearTimeout(posterRevealTimer); posterRevealTimer = null; }
@@ -1869,7 +1900,8 @@
         // If this is the currently-active slide, upgrade its schedule
         // from the initial poster-only guess (the trailer fetch is async
         // and hadn't resolved yet when scheduleAdvance() first ran) to
-        // the playback-aware one now that a video actually exists.
+        // the real lead-in/play-through/hold sequence now that a video
+        // actually exists.
         if (i === index) { refreshMuteButton(); scheduleAdvance(); }
       } catch (err) { /* no trailer on file — the poster stays as the slide's art */ }
     });
