@@ -622,8 +622,21 @@
     position: absolute; top: 0; right: 0; height: 100%; aspect-ratio: 16 / 9;
     overflow: hidden; z-index: 1; pointer-events: none;
   }
+  /* A lot of trailers are cut at a wider cinematic aspect (e.g. 2.35:1)
+     but delivered inside a plain 16:9 frame, with the difference baked
+     in as literal black letterboxing bars — object-fit: cover alone
+     can't crop that out, since the video's *reported* dimensions are
+     still 16:9 and cover only kicks in when the box and content ratios
+     actually differ. A uniform zoom, clipped by the wrap's own
+     overflow:hidden, pushes those bars (and a little of the left/right
+     edges) outside the visible box instead. There's no way to detect a
+     given trailer's real embedded aspect from CSS, so this is one fixed
+     factor tuned for the common 2.35:1-in-16:9 case — a trailer with no
+     letterboxing at all loses a bit more of its own edges than strictly
+     needed, but that's a smaller cost than visible black bars. */
   .home-hero-video-wrap video {
     position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; border: none; pointer-events: none;
+    transform: scale(1.28);
   }
   /* A dedicated fade scoped to the video box's own left edge, and now
      the ONLY thing responsible for blending video into the surrounding
@@ -1729,11 +1742,37 @@
         // of the old end-of-clip Cards-overlay/watermark workarounds are
         // needed: `loop` alone replays the file with zero external
         // chrome ever appearing. The poster just tracks genuine
-        // playback state via the browser's own native video events.
-        video.addEventListener("playing", () => { if (poster) poster.classList.add("home-hero-poster-hidden"); });
-        video.addEventListener("pause", () => { if (poster) poster.classList.remove("home-hero-poster-hidden"); });
-        video.addEventListener("waiting", () => { if (poster) poster.classList.remove("home-hero-poster-hidden"); });
-        video.addEventListener("error", () => { if (poster) poster.classList.remove("home-hero-poster-hidden"); });
+        // playback state via the browser's own native video events —
+        // but "waiting" fires on any buffer refill, including a brief,
+        // normal blip mid-playback over a real network, not just a
+        // genuine stall. Revealing the poster (which spans the full
+        // hero, not just the video's own box) for something that
+        // resolves in well under a second read as a bright flash next
+        // to the video rather than a helpful fallback — confirmed live.
+        // So a stall only actually reveals it if still ongoing half a
+        // second later; "playing" cancels that pending reveal immediately
+        // since it means real playback resumed. "pause"/"error" are
+        // terminal enough to reveal right away, same as before.
+        let posterRevealTimer = null;
+        function clearPosterRevealTimer() {
+          if (posterRevealTimer) { clearTimeout(posterRevealTimer); posterRevealTimer = null; }
+        }
+        function hidePoster() {
+          clearPosterRevealTimer();
+          if (poster) poster.classList.add("home-hero-poster-hidden");
+        }
+        function revealPoster() {
+          clearPosterRevealTimer();
+          if (poster) poster.classList.remove("home-hero-poster-hidden");
+        }
+        function revealPosterAfterStall() {
+          if (posterRevealTimer) return;
+          posterRevealTimer = setTimeout(() => { posterRevealTimer = null; revealPoster(); }, 500);
+        }
+        video.addEventListener("playing", hidePoster);
+        video.addEventListener("pause", revealPoster);
+        video.addEventListener("waiting", revealPosterAfterStall);
+        video.addEventListener("error", revealPoster);
         wrap.appendChild(video);
         const slideEl = heroEl.querySelector(`.home-hero-slide[data-index="${i}"]`);
         if (slideEl) slideEl.classList.add("home-hero-has-video");
