@@ -807,17 +807,30 @@
     min-height: 480px; padding: 24px var(--edge-inset) 44px;
   }
   .home-hero-info { max-width: 560px; }
-  .home-hero-info h1 { font-size: 36px; font-weight: 800; margin: 0 0 10px; line-height: 1.1; }
+  .home-hero-info h1 { font-size: 44px; font-weight: 800; margin: 0 0 10px; line-height: 1.1; }
   .home-hero-badge {
     display: flex; align-items: center; gap: 6px; color: var(--status-complete);
     font-size: 13.5px; font-weight: 700; margin-bottom: 10px;
   }
   .home-hero-badge .material-symbols-rounded { font-size: 17px; }
   .home-hero-actions { display: flex; align-items: center; gap: 10px; margin-top: 16px; flex-wrap: wrap; }
-  .home-hero-actions .add-btn { display: inline-flex; align-items: center; gap: 8px; }
+  /* Explicit height (not padding-driven, like the shared .add-btn this
+     overrides) so .home-hero-info-btn below can size its own circle to
+     match exactly, per direct request — a padding-based height is a
+     font-metrics-dependent guess, an explicit one is a number the icon
+     button can just reuse directly. */
+  .home-hero-actions .add-btn {
+    display: inline-flex; align-items: center; gap: 10px;
+    height: 48px; padding: 0 26px; font-size: 16px;
+  }
+  /* Icon-only now (per direct request to drop the "More Info" label) —
+     a circle sized to match .home-hero-actions .add-btn's own height
+     exactly, so the two sit flush together at the same scale rather
+     than the pill towering over a smaller circle or vice versa. */
   .home-hero-info-btn {
-    display: inline-flex; align-items: center; gap: 8px; padding: 12px 22px; font-size: 15px; font-weight: 600;
-    border-radius: 999px; background: color-mix(in srgb, var(--bg-card) 70%, transparent);
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 48px; height: 48px; font-size: 20px;
+    border-radius: 50%; background: color-mix(in srgb, var(--bg-card) 70%, transparent);
     border: 1px solid var(--border); color: var(--text);
   }
   .home-hero-info-btn:active { background: var(--bg-card); }
@@ -871,7 +884,9 @@
   .home-hero-mute-btn[hidden] { display: none; }
   @media (min-width: 640px) {
     .home-hero, .home-hero-content { min-height: 640px; }
-    .home-hero-info h1 { font-size: 52px; }
+    .home-hero-info h1 { font-size: 64px; }
+    .home-hero-actions .add-btn { height: 56px; padding: 0 32px; font-size: 17px; }
+    .home-hero-info-btn { width: 56px; height: 56px; font-size: 22px; }
   }
 
   .crew-row { display: flex; gap: 22px; margin-top: 18px; flex-wrap: wrap; }
@@ -1694,7 +1709,7 @@
           <h1>${title}</h1>
           <div class="home-hero-actions">
             <a class="add-btn" href="${href}"><span class="material-symbols-rounded">${ctaIcon}</span>${ctaLabel}</a>
-            <a class="home-hero-info-btn" href="${href}"><span class="material-symbols-rounded">info</span>More Info</a>
+            <a class="home-hero-info-btn" href="${href}" aria-label="More info"><span class="material-symbols-rounded">info</span></a>
           </div>
         </div>
       </div>
