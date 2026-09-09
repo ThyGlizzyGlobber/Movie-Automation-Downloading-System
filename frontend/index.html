@@ -698,14 +698,26 @@
     font-size: 11px; font-weight: 700; padding: 1px 6px; border: 1px solid var(--text-dim);
     border-radius: 4px; color: var(--text-dim); line-height: 1.4;
   }
-  .detail-overview { margin-top: 8px; font-size: 15px; line-height: 1.5; color: var(--text-dim); max-width: 640px; }
+  .detail-overview { margin-top: 8px; font-size: 15px; line-height: 1.5; color: var(--text); max-width: 640px; }
   /* Matches the Prime screenshot's own "Cast: Name, Name, Name" line —
      just the first handful of names as plain #/person/{id} links, not
      the photo-card row (that one's still here too, further down the
-     page — see castSectionHtml). */
+     page — see castSectionHtml). Stacked under the overview by default
+     (mobile/narrow) — .detail-overview-row below switches this to
+     sitting alongside it once there's room, per direct request. */
   .detail-cast-line { margin-top: 12px; font-size: 13.5px; color: var(--text-dim); max-width: 260px; }
   .detail-cast-line a { color: var(--text); }
   .detail-cast-line a:hover { text-decoration: underline; }
+  /* Same 860px breakpoint as .settings-grid/.detail-poster above — the
+     overview and cast line share one row once there's room for both
+     side by side, per direct request ("only go underneath it when the
+     viewport... narrows"); default (mobile) stacks them, same as any
+     other narrow-viewport wrap. */
+  @media (min-width: 860px) {
+    .detail-overview-row { display: flex; align-items: flex-start; gap: 32px; margin-top: 8px; }
+    .detail-overview-row .detail-overview { flex: 1 1 auto; margin-top: 0; }
+    .detail-overview-row .detail-cast-line { flex: 0 0 220px; margin-top: 0; }
+  }
 
   /* Score ring: rounded stroke ends (matching the site's own pill
      language everywhere else — a plain conic-gradient div, the previous
@@ -3027,8 +3039,10 @@
                 <span>${escapeHtml(genreLine(show.genres))}</span>
                 ${year ? `<span>${escapeHtml(year)}</span>` : ""}
               </div>
-              <div class="detail-overview">${escapeHtml(show.overview) || "<em>No synopsis available.</em>"}</div>
-              ${castLineHtml(cast)}
+              <div class="detail-overview-row">
+                <div class="detail-overview">${escapeHtml(show.overview) || "<em>No synopsis available.</em>"}</div>
+                ${castLineHtml(cast)}
+              </div>
             </div>
           </div>
         </div>
@@ -3325,8 +3339,10 @@
                 ${runtime ? `<span>${escapeHtml(runtime)}</span>` : ""}
                 ${year ? `<span>${escapeHtml(year)}</span>` : ""}
               </div>
-              <div class="detail-overview">${escapeHtml(movie.overview) || "<em>No synopsis available.</em>"}</div>
-              ${castLineHtml(cast)}
+              <div class="detail-overview-row">
+                <div class="detail-overview">${escapeHtml(movie.overview) || "<em>No synopsis available.</em>"}</div>
+                ${castLineHtml(cast)}
+              </div>
             </div>
           </div>
         </div>
