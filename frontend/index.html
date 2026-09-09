@@ -625,7 +625,11 @@
      poster aligned with top of viewport"). */
   .detail-hero {
     position: relative; width: calc(100% + 28px); overflow: hidden;
-    margin: calc(-1 * (var(--topbar-h, 64px) + 14px)) -14px 18px;
+    /* Bottom margin bumped 18px -> 40px — the crew row (crewRowHtml,
+       right after this in the page flow) read as cramped underneath
+       the action column's own button, almost like part of it rather
+       than a separate section below, confirmed live. */
+    margin: calc(-1 * (var(--topbar-h, 64px) + 14px)) -14px 40px;
     padding-top: calc(var(--topbar-h, 64px) + 14px);
     min-height: clamp(450px, 38vw, 720px);
     background: #000;
@@ -665,6 +669,10 @@
     min-height: clamp(450px, 38vw, 720px); padding: 24px var(--edge-inset) 32px;
   }
   .detail-action-col { flex: 0 0 auto; display: flex; flex-direction: column; align-items: center; gap: 12px; }
+  /* Score ring + add/subscribe-state icon share one row — per direct
+     request, matching Prime's own icon row (a horizontal strip) more
+     closely than the fully-stacked column this was before. */
+  .detail-icon-row { display: flex; align-items: center; gap: 10px; }
   .detail-poster-wrap {
     position: relative; border-radius: 10px; overflow: hidden;
     box-shadow: 0 8px 24px rgba(0,0,0,0.55);
@@ -726,11 +734,13 @@
      #settingsToggle (white circle, black icon) for consistency, per
      direct request. title carries the actual action in words, since an
      icon alone left it a guess. */
+  /* Same 48px size as .score-ring, per direct request — they sit
+     side by side in .detail-icon-row. */
   .detail-state-icon {
-    width: 40px; height: 40px; border-radius: 50%; flex: 0 0 auto;
+    width: 48px; height: 48px; border-radius: 50%; flex: 0 0 auto;
     display: flex; align-items: center; justify-content: center;
     background: color-mix(in srgb, var(--bg-card) 70%, transparent); border: 1px solid var(--border);
-    color: var(--text); font-size: 20px;
+    color: var(--text); font-size: 22px;
   }
   .detail-state-icon:hover { background: #fff; color: var(--smithflix-charcoal); border-radius: 50%; }
   .detail-state-icon[disabled] { opacity: 0.5; pointer-events: none; }
@@ -3003,8 +3013,10 @@
                 <img class="detail-poster" src="${posterUrl(show.poster_path)}" alt="">
                 ${show.on_plex ? `<div class="on-plex-badge">On Plex</div>` : ""}
               </div>
-              ${scoreRowHtml(show.vote_average)}
-              <div id="stateIconArea">${stateIconHtml(subscription, show.is_coming_soon)}</div>
+              <div class="detail-icon-row">
+                ${scoreRowHtml(show.vote_average)}
+                <div id="stateIconArea">${stateIconHtml(subscription, show.is_coming_soon)}</div>
+              </div>
               <div id="subscribeButtonArea">${subscribeButtonHtml(subscription, show.is_coming_soon)}</div>
               <div id="unsubscribeArea">${unsubscribeLinkHtml(subscription)}</div>
             </div>
@@ -3293,12 +3305,14 @@
                 <img class="detail-poster" src="${posterUrl(movie.poster_path)}" alt="">
                 ${movie.on_plex ? `<div class="on-plex-badge">On Plex</div>` : ""}
               </div>
-              ${scoreRowHtml(movie.vote_average)}
-              <button class="detail-state-icon" id="stateIcon"
-                title="${movie.is_coming_soon ? "Not out digitally yet" : "Add to Plex"}"
-                aria-label="Add to Plex" ${movie.is_coming_soon ? "disabled" : ""}>
-                <span class="material-symbols-rounded">add</span>
-              </button>
+              <div class="detail-icon-row">
+                ${scoreRowHtml(movie.vote_average)}
+                <button class="detail-state-icon" id="stateIcon"
+                  title="${movie.is_coming_soon ? "Not out digitally yet" : "Add to Plex"}"
+                  aria-label="Add to Plex" ${movie.is_coming_soon ? "disabled" : ""}>
+                  <span class="material-symbols-rounded">add</span>
+                </button>
+              </div>
               ${movie.is_coming_soon
                 ? `<button class="add-btn" id="addBtn" disabled title="Not out digitally yet">+ Add to Plex</button>`
                 : `<button class="add-btn" id="addBtn">+ Add to Plex</button>`}
