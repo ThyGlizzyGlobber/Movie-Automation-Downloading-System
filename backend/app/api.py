@@ -25,7 +25,7 @@ from app.pipeline_settings import (
 from app.plex import PlexError, PlexLinker, plex_library_lookup
 from app.qbt import QBTClient
 from app.resolve import resolve
-from app.tmdb import TMDBClient, TMDBError, is_movie_coming_soon, is_tv_upcoming
+from app.tmdb import TMDBClient, TMDBError, best_trailer_key, is_movie_coming_soon, is_tv_upcoming
 from app.tv_resolve import resolve_show
 from app.tv_settings import resolve_tv_settings
 from app.worker import Worker
@@ -372,6 +372,22 @@ def get_movie_detail(
     }
 
 
+@app.get("/api/movies/{tmdb_id}/trailer")
+def get_movie_trailer(tmdb_id: int, tmdb: TMDBClient = Depends(get_tmdb)) -> dict:
+    """Backs the home hero carousel's background video — a separate call
+    from get_movie_detail rather than another append_to_response, since
+    this is only ever fetched for the couple of hero slides that actually
+    need a trailer, not every movie the frontend touches. `key: null`
+    (never a 404) when nothing suitable is on file — a title with no
+    trailer is a normal, expected case, not an error the caller needs to
+    handle specially; it just falls back to a plain poster/backdrop."""
+    try:
+        videos = tmdb.get_movie_videos(tmdb_id)
+    except TMDBError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    return {"key": best_trailer_key(videos)}
+
+
 # -- Stage 14: TV browse surface — the show equivalent of the movie routes
 #    above. Same thin-pass-through/on_plex-annotation/key-never-reaches-
 #    the-browser rules. --
@@ -464,6 +480,16 @@ def get_tv_detail(tmdb_id: int, store: RequestStore = Depends(get_store), tmdb: 
         "on_plex": _on_plex_for(show.get("name") or "", year, "show", store),
         "is_coming_soon": is_tv_upcoming(show),
     }
+
+
+@app.get("/api/tv/{tmdb_id}/trailer")
+def get_tv_trailer(tmdb_id: int, tmdb: TMDBClient = Depends(get_tmdb)) -> dict:
+    """The TV equivalent of get_movie_trailer above — same reasoning."""
+    try:
+        videos = tmdb.get_tv_videos(tmdb_id)
+    except TMDBError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    return {"key": best_trailer_key(videos)}
 
 
 @app.get("/api/person/{person_id}")

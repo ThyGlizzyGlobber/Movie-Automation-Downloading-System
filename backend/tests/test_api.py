@@ -78,6 +78,10 @@ class FakeTMDBClient:
         raise_on_get_tv=False,
         person=None,
         raise_on_get_person=False,
+        movie_videos=None,
+        raise_on_get_movie_videos=False,
+        tv_videos=None,
+        raise_on_get_tv_videos=False,
     ):
         self._search_results = search_results if search_results is not None else [MOVIE]
         self._movie = movie or MOVIE
@@ -86,6 +90,10 @@ class FakeTMDBClient:
         self._raise_on_get_tv = raise_on_get_tv
         self._person = person or PERSON
         self._raise_on_get_person = raise_on_get_person
+        self._movie_videos = movie_videos if movie_videos is not None else []
+        self._raise_on_get_movie_videos = raise_on_get_movie_videos
+        self._tv_videos = tv_videos if tv_videos is not None else []
+        self._raise_on_get_tv_videos = raise_on_get_tv_videos
 
     def search_movie(self, query, year=None):
         return {"results": self._search_results}
@@ -163,6 +171,22 @@ class FakeTMDBClient:
 
             raise TMDBError("not found")
         return dict(self._person, id=person_id)
+
+    # -- trailers --
+
+    def get_movie_videos(self, tmdb_id):
+        if self._raise_on_get_movie_videos:
+            from app.tmdb import TMDBError
+
+            raise TMDBError("upstream error")
+        return self._movie_videos
+
+    def get_tv_videos(self, tmdb_id):
+        if self._raise_on_get_tv_videos:
+            from app.tmdb import TMDBError
+
+            raise TMDBError("upstream error")
+        return self._tv_videos
 
 
 class FakeQBTClient:
@@ -836,6 +860,57 @@ def test_get_person_detail_404s_on_unknown_person_id(client_and_deps):
     response = client.get("/api/person/999999")
 
     assert response.status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# /api/movies/{id}/trailer and /api/tv/{id}/trailer — home hero carousel
+# ---------------------------------------------------------------------------
+
+
+def test_get_movie_trailer_returns_best_key(client_and_deps):
+    client, _, tmdb, _, _, _ = client_and_deps
+    tmdb._movie_videos = [{"site": "YouTube", "type": "Trailer", "official": True, "key": "abc123"}]
+
+    response = client.get("/api/movies/693134/trailer")
+
+    assert response.status_code == 200
+    assert response.json() == {"key": "abc123"}
+
+
+def test_get_movie_trailer_returns_null_key_when_none_found(client_and_deps):
+    client, _, _, _, _, _ = client_and_deps
+    response = client.get("/api/movies/693134/trailer")
+
+    assert response.status_code == 200
+    assert response.json() == {"key": None}
+
+
+def test_get_movie_trailer_502s_on_upstream_error(client_and_deps):
+    client, _, tmdb, _, _, _ = client_and_deps
+    tmdb._raise_on_get_movie_videos = True
+
+    response = client.get("/api/movies/693134/trailer")
+
+    assert response.status_code == 502
+
+
+def test_get_tv_trailer_returns_best_key(client_and_deps):
+    client, _, tmdb, _, _, _ = client_and_deps
+    tmdb._tv_videos = [{"site": "YouTube", "type": "Teaser", "official": True, "key": "xyz789"}]
+
+    response = client.get("/api/tv/97546/trailer")
+
+    assert response.status_code == 200
+    assert response.json() == {"key": "xyz789"}
+
+
+def test_get_tv_trailer_502s_on_upstream_error(client_and_deps):
+    client, _, tmdb, _, _, _ = client_and_deps
+    tmdb._raise_on_get_tv_videos = True
+
+    response = client.get("/api/tv/97546/trailer")
+
+    assert response.status_code == 502
 
 
 def test_tv_discover_coming_soon_passes_through_tmdb(client_and_deps):

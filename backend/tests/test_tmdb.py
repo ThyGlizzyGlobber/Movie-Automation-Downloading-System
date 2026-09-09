@@ -5,6 +5,7 @@ from app.tmdb import (
     _available_on_provider,
     _is_recent_release,
     _lacks_digital_release,
+    best_trailer_key,
     is_movie_coming_soon,
     is_tv_upcoming,
 )
@@ -429,6 +430,72 @@ def test_get_tv_requests_credits_append():
     assert captured["path"] == "/tv/1"
     assert captured["params"] == {"append_to_response": "credits"}
     assert result["name"] == "Lanterns"
+
+
+# ---------------------------------------------------------------------------
+# best_trailer_key — preference order: official Trailer, any Trailer,
+# official Teaser, any Teaser, then None.
+# ---------------------------------------------------------------------------
+
+
+def test_best_trailer_key_prefers_official_trailer_over_everything_else():
+    videos = [
+        {"site": "YouTube", "type": "Teaser", "official": True, "key": "teaser-key"},
+        {"site": "YouTube", "type": "Trailer", "official": False, "key": "unofficial-trailer-key"},
+        {"site": "YouTube", "type": "Trailer", "official": True, "key": "official-trailer-key"},
+    ]
+    assert best_trailer_key(videos) == "official-trailer-key"
+
+
+def test_best_trailer_key_falls_back_to_unofficial_trailer():
+    videos = [{"site": "YouTube", "type": "Trailer", "official": False, "key": "unofficial-trailer-key"}]
+    assert best_trailer_key(videos) == "unofficial-trailer-key"
+
+
+def test_best_trailer_key_falls_back_to_teaser_when_no_trailer_exists():
+    videos = [{"site": "YouTube", "type": "Teaser", "official": True, "key": "teaser-key"}]
+    assert best_trailer_key(videos) == "teaser-key"
+
+
+def test_best_trailer_key_ignores_non_youtube_and_non_trailer_video_types():
+    videos = [
+        {"site": "Vimeo", "type": "Trailer", "official": True, "key": "vimeo-key"},
+        {"site": "YouTube", "type": "Featurette", "official": True, "key": "featurette-key"},
+        {"site": "YouTube", "type": "Bloopers", "official": True, "key": "bloopers-key"},
+    ]
+    assert best_trailer_key(videos) is None
+
+
+def test_best_trailer_key_returns_none_for_no_videos():
+    assert best_trailer_key([]) is None
+
+
+def test_get_movie_videos_returns_results_list():
+    client = TMDBClient(api_key="test-key")
+
+    def fake_get(path, params=None):
+        assert path == "/movie/1/videos"
+        return {"results": [{"key": "abc", "site": "YouTube", "type": "Trailer"}]}
+
+    client._get = fake_get
+    assert client.get_movie_videos(1) == [{"key": "abc", "site": "YouTube", "type": "Trailer"}]
+
+
+def test_get_movie_videos_missing_results_key_returns_empty_list():
+    client = TMDBClient(api_key="test-key")
+    client._get = lambda path, params=None: {}
+    assert client.get_movie_videos(1) == []
+
+
+def test_get_tv_videos_returns_results_list():
+    client = TMDBClient(api_key="test-key")
+
+    def fake_get(path, params=None):
+        assert path == "/tv/1/videos"
+        return {"results": [{"key": "xyz", "site": "YouTube", "type": "Teaser"}]}
+
+    client._get = fake_get
+    assert client.get_tv_videos(1) == [{"key": "xyz", "site": "YouTube", "type": "Teaser"}]
 
 
 def test_get_person_requests_combined_credits_append():

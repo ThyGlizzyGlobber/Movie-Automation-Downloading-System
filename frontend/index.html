@@ -561,6 +561,85 @@
   .tagline { font-style: italic; color: var(--text-dim); margin-top: 14px; font-size: 14px; }
   .section-heading { font-size: 15px; font-weight: 700; margin: 20px 0 10px; }
 
+  /* Home's Prime-Video-style hero carousel — deliberately its own class
+     rather than reusing .hero (which the movie/show detail pages and the
+     Movies/TV landing pages still use, with its own bottom-up fade and
+     poster+meta layout). Same negative-margin bleed-under-the-fixed-
+     topbar trick as .hero. Only the first couple of slides ever carry a
+     background video (see wireHomeHero's own trailer-fetch cap) — every
+     other slide is a plain backdrop image, exactly like Prime's own
+     storefront hero mixes video and poster slides in one carousel. */
+  .home-hero {
+    position: relative; width: calc(100% + 28px);
+    margin: calc(-1 * (var(--topbar-h, 64px) + 14px)) -14px 18px;
+    min-height: 420px; overflow: hidden; background: var(--bg-card);
+  }
+  .home-hero-slide {
+    position: absolute; inset: 0; opacity: 0; visibility: hidden; pointer-events: none;
+    transition: opacity 0.6s ease;
+  }
+  .home-hero-slide.active { opacity: 1; visibility: visible; pointer-events: auto; z-index: 1; }
+  .home-hero-media { position: absolute; inset: 0; overflow: hidden; background: var(--bg-card); }
+  .home-hero-media img {
+    position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; object-position: center top;
+  }
+  /* The standard CSS-only "video cover" trick: size the iframe off
+     viewport units in both directions (one pair driven by width, one by
+     height) so whichever dimension is the tighter constraint still fully
+     covers the hero — there's no reliable way to size an <iframe> by its
+     own content the way object-fit:cover sizes an <img>. Approximate
+     against the real (non-viewport) hero box, not pixel-perfect, but the
+     hero is already close to full viewport width so the error is minor. */
+  .home-hero-video-wrap { position: absolute; inset: 0; overflow: hidden; pointer-events: none; }
+  .home-hero-video-wrap iframe {
+    position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+    width: 100vw; height: 56.25vw; min-width: 177.78vh; min-height: 100vh; border: none;
+  }
+  .home-hero-fade {
+    position: absolute; inset: 0;
+    background:
+      linear-gradient(90deg, var(--bg) 0%, color-mix(in srgb, var(--bg) 82%, transparent) 30%, transparent 62%),
+      linear-gradient(180deg, transparent 55%, color-mix(in srgb, var(--bg) 65%, transparent) 85%, var(--bg) 100%);
+  }
+  .home-hero-content {
+    position: relative; z-index: 1; display: flex; align-items: flex-end;
+    min-height: 420px; padding: 24px 14px 28px;
+  }
+  .home-hero-info { max-width: 560px; }
+  .home-hero-info h1 { font-size: 30px; font-weight: 800; margin: 0 0 10px; line-height: 1.1; }
+  .home-hero-badge {
+    display: flex; align-items: center; gap: 6px; color: var(--status-complete);
+    font-size: 13.5px; font-weight: 700; margin-bottom: 10px;
+  }
+  .home-hero-badge .material-symbols-rounded { font-size: 17px; }
+  .home-hero-actions { display: flex; align-items: center; gap: 10px; margin-top: 16px; flex-wrap: wrap; }
+  .home-hero-actions .add-btn { display: inline-flex; align-items: center; gap: 8px; }
+  .home-hero-info-btn {
+    display: inline-flex; align-items: center; gap: 8px; padding: 12px 22px; font-size: 15px; font-weight: 600;
+    border-radius: 999px; background: color-mix(in srgb, var(--bg-card) 70%, transparent);
+    border: 1px solid var(--border); color: var(--text);
+  }
+  .home-hero-info-btn:active { background: var(--bg-card); }
+  .home-hero-arrow {
+    position: absolute; top: 50%; transform: translateY(-50%); z-index: 2;
+    width: 44px; height: 44px; border-radius: 50%; border: none;
+    background: color-mix(in srgb, var(--bg) 55%, transparent); color: var(--text);
+    display: flex; align-items: center; justify-content: center; opacity: 0.7;
+  }
+  .home-hero-arrow:hover { opacity: 1; background: color-mix(in srgb, var(--bg) 75%, transparent); }
+  .home-hero-arrow-left { left: 14px; }
+  .home-hero-arrow-right { right: 14px; }
+  .home-hero-dots { position: absolute; left: 14px; bottom: 10px; z-index: 2; display: flex; gap: 6px; }
+  .home-hero-dot {
+    width: 8px; height: 8px; border-radius: 999px; border: none;
+    background: rgba(255, 255, 255, 0.4); transition: width 0.25s ease, background 0.25s ease; padding: 0;
+  }
+  .home-hero-dot.active { width: 22px; background: #fff; }
+  @media (min-width: 640px) {
+    .home-hero, .home-hero-content { min-height: 520px; }
+    .home-hero-info h1 { font-size: 42px; }
+  }
+
   .crew-row { display: flex; gap: 22px; margin-top: 18px; flex-wrap: wrap; }
   .crew-name { font-weight: 600; font-size: 14px; }
   .crew-job { font-size: 12.5px; color: var(--text-dim); }
@@ -1139,6 +1218,7 @@
   const getDiscoverByGenre = (id, page) => api(`/api/discover/genre/${id}?page=${page || 1}`);
   const getComingSoon = (page) => api(`/api/discover/coming-soon?page=${page || 1}`);
   const getMovie = (id) => api(`/api/movies/${id}`);
+  const getMovieTrailer = (id) => api(`/api/movies/${id}/trailer`);
   const getPerson = (id) => api(`/api/person/${id}`);
   const postSearch = (query, providerId) => api(`/api/search`, {
     method: "POST", headers: { "Content-Type": "application/json" },
@@ -1152,6 +1232,7 @@
   const getTvDiscoverByGenre = (id, page) => api(`/api/tv/discover/genre/${id}?page=${page || 1}`);
   const getTvComingSoon = (page) => api(`/api/tv/discover/coming-soon?page=${page || 1}`);
   const getTvShow = (id) => api(`/api/tv/${id}`);
+  const getTvTrailer = (id) => api(`/api/tv/${id}/trailer`);
   const postSearchTv = (query, providerId) => api(`/api/tv/search`, {
     method: "POST", headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ query, provider_id: providerId || null }),
@@ -1284,6 +1365,141 @@
         </div>
       </div>
     </div>`;
+  }
+
+  // -- Home hero carousel (Prime-Video-storefront style): several
+  //    trending items, only the front couple ever carrying a background
+  //    trailer video, cycling with dots/arrows/autoplay. Separate from
+  //    homeHeroHtml above, which the Movies/TV landing pages still use
+  //    unchanged (a single static-backdrop hero, no carousel). --
+
+  const HERO_SLIDE_COUNT = 5;
+  const HERO_TRAILER_COUNT = 2; // only the front slides ever get a background video
+  const HERO_AUTOPLAY_MS = 7000;
+
+  function homeHeroEpisodeBadgeHtml(text) {
+    return `<div class="home-hero-badge"><span class="material-symbols-rounded">campaign</span>${escapeHtml(text)}</div>`;
+  }
+
+  function homeHeroSlideHtml(item, index) {
+    const isTv = item.__mediaType === "tv";
+    const title = escapeHtml(item.title || item.name || item.original_title || item.original_name || "");
+    const backdrop = backdropUrl(item.backdrop_path);
+    const href = isTv ? `#/tv/${item.id}` : `#/movies/${item.id}`;
+    // "Watch on Plex" navigates into this same app's own detail page
+    // (not a direct Plex deep link — this app only ever tracks a
+    // title/year match against the Plex library, not a specific Plex
+    // ratingKey to link straight into playback with); "Add to Plex"
+    // does the same, landing on the exact button that actually adds it
+    // rather than duplicating that whole add/subscribe flow (polling,
+    // retry, disabled-while-coming-soon) a second time inside a
+    // carousel slide that can auto-advance out from under it.
+    const onPlex = !!item.on_plex;
+    const ctaIcon = onPlex ? "play_arrow" : "add";
+    const ctaLabel = onPlex ? "Watch on Plex" : "Add to Plex";
+    return `<div class="home-hero-slide${index === 0 ? " active" : ""}" data-index="${index}">
+      <div class="home-hero-media">
+        <img src="${backdrop}" alt="" loading="${index === 0 ? "eager" : "lazy"}">
+        <div class="home-hero-video-wrap" id="heroVideoWrap${index}"></div>
+      </div>
+      <div class="home-hero-fade"></div>
+      <div class="home-hero-content">
+        <div class="home-hero-info">
+          <div id="heroBadge${index}"></div>
+          <h1>${title}</h1>
+          <div class="home-hero-actions">
+            <a class="add-btn" href="${href}"><span class="material-symbols-rounded">${ctaIcon}</span>${ctaLabel}</a>
+            <a class="home-hero-info-btn" href="${href}"><span class="material-symbols-rounded">info</span>More Info</a>
+          </div>
+        </div>
+      </div>
+    </div>`;
+  }
+
+  function homeHeroCarouselHtml(items) {
+    if (!items.length) return "";
+    return `<div class="home-hero" id="homeHero">
+      ${items.map((it, i) => homeHeroSlideHtml(it, i)).join("")}
+      ${items.length > 1 ? `
+        <button class="home-hero-arrow home-hero-arrow-left" data-dir="-1" aria-label="Previous slide"><span class="material-symbols-rounded">chevron_left</span></button>
+        <button class="home-hero-arrow home-hero-arrow-right" data-dir="1" aria-label="Next slide"><span class="material-symbols-rounded">chevron_right</span></button>
+        <div class="home-hero-dots">
+          ${items.map((_, i) => `<button class="home-hero-dot${i === 0 ? " active" : ""}" data-index="${i}" aria-label="Slide ${i + 1}"></button>`).join("")}
+        </div>
+      ` : ""}
+    </div>`;
+  }
+
+  // Wires arrows/dots/autoplay, then progressively enhances the first
+  // couple of slides with a background trailer and every TV slide with
+  // its episode-status badge — both fetched after the initial paint so
+  // neither blocks the hero from showing immediately with its poster.
+  function wireHomeHero(items) {
+    if (!items.length) return;
+    const heroEl = document.getElementById("homeHero");
+    if (!heroEl) return;
+    let index = 0;
+
+    function showSlide(newIndex) {
+      index = ((newIndex % items.length) + items.length) % items.length;
+      heroEl.querySelectorAll(".home-hero-slide").forEach((el) => {
+        el.classList.toggle("active", Number(el.dataset.index) === index);
+      });
+      heroEl.querySelectorAll(".home-hero-dot").forEach((el) => {
+        el.classList.toggle("active", Number(el.dataset.index) === index);
+      });
+    }
+
+    function resetAutoplay() {
+      if (activePollTimer) clearInterval(activePollTimer);
+      if (items.length > 1) activePollTimer = setInterval(() => showSlide(index + 1), HERO_AUTOPLAY_MS);
+    }
+
+    heroEl.querySelectorAll(".home-hero-arrow").forEach((btn) => btn.addEventListener("click", () => {
+      showSlide(index + Number(btn.dataset.dir));
+      resetAutoplay();
+    }));
+    heroEl.querySelectorAll(".home-hero-dot").forEach((btn) => btn.addEventListener("click", () => {
+      showSlide(Number(btn.dataset.index));
+      resetAutoplay();
+    }));
+    heroEl.addEventListener("mouseenter", () => { if (activePollTimer) clearInterval(activePollTimer); });
+    heroEl.addEventListener("mouseleave", resetAutoplay);
+    resetAutoplay();
+
+    items.slice(0, HERO_TRAILER_COUNT).forEach(async (item, i) => {
+      const isTv = item.__mediaType === "tv";
+      try {
+        const { key } = isTv ? await getTvTrailer(item.id) : await getMovieTrailer(item.id);
+        if (!key) return;
+        const wrap = document.getElementById(`heroVideoWrap${i}`);
+        if (!wrap) return;
+        const src = `https://www.youtube.com/embed/${encodeURIComponent(key)}` +
+          `?autoplay=1&mute=1&loop=1&playlist=${encodeURIComponent(key)}` +
+          `&controls=0&modestbranding=1&rel=0&iv_load_policy=3&playsinline=1&disablekb=1`;
+        wrap.innerHTML = `<iframe src="${src}" allow="autoplay; encrypted-media" title="Trailer"></iframe>`;
+      } catch (err) { /* no trailer on file — the poster stays as the slide's art */ }
+    });
+
+    // TMDB's list/trending endpoints don't carry next_episode_to_air at
+    // all (only the full per-show detail call does) — same reason
+    // fetchEnrichedWatchingShows already does this exact per-show fetch
+    // for the Watching rows elsewhere on this page.
+    items.forEach(async (item, i) => {
+      if (item.__mediaType !== "tv") return;
+      try {
+        const show = await getTvShow(item.id);
+        const badgeEl = document.getElementById(`heroBadge${i}`);
+        if (!badgeEl) return;
+        const next = show.next_episode_to_air;
+        if (next && next.air_date) {
+          const day = new Date(`${next.air_date}T00:00:00`).toLocaleDateString(undefined, { weekday: "long" });
+          badgeEl.innerHTML = homeHeroEpisodeBadgeHtml(`New episode ${day}`);
+        } else if (show.last_episode_to_air) {
+          badgeEl.innerHTML = homeHeroEpisodeBadgeHtml("All episodes available");
+        }
+      } catch (err) { /* badge just stays empty */ }
+    });
   }
 
   function loadingHtml() { return `<div class="loading"><div class="spinner"></div></div>`; }
@@ -1632,15 +1848,16 @@
       const byKey = {};
       jobs.forEach((j, i) => { byKey[j.key] = results[i]; });
 
-      const topMovie = byKey.movieTrending.results?.[0];
-      const topTv = byKey.tvTrending.results?.[0];
-      const heroIsTv = topTv && (!topMovie || (topTv.popularity || 0) > (topMovie.popularity || 0));
-      const heroItem = heroIsTv ? topTv : topMovie;
-
       const mixedTrending = [
         ...tagMediaType(byKey.movieTrending.results || [], "movie"),
         ...tagMediaType(byKey.tvTrending.results || [], "tv"),
       ].sort((a, b) => (b.popularity || 0) - (a.popularity || 0)).slice(0, 20);
+
+      // The hero carousel's own candidates — a title with no backdrop art
+      // isn't usable as a hero slide at all, so that filter runs first,
+      // before taking the top HERO_SLIDE_COUNT off the front of the same
+      // already-popularity-sorted list the Trending Now row below uses.
+      const heroItems = mixedTrending.filter((it) => it.backdrop_path).slice(0, HERO_SLIDE_COUNT);
 
       // Each named genre does a movie call + a TV call, interleaved into
       // one mixed row rather than split into two half-width rows — reads
@@ -1676,13 +1893,14 @@
       }
 
       app.innerHTML = `
-        ${homeHeroHtml(heroItem, heroIsTv ? "tv" : "movie")}
+        ${homeHeroCarouselHtml(heroItems)}
         ${contentRows.join("")}
         <section class="row">
           <h2>Browse a Service</h2>
           <div class="provider-row">${providerChipsHtml("#/movies/provider")}</div>
         </section>
       `;
+      wireHomeHero(heroItems);
     } catch (err) {
       app.innerHTML = errorHtml(err.message, "#/home");
     }
