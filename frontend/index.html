@@ -180,12 +180,15 @@
      longer floating over the hero at all (.scrolled, toggled in JS by
      comparing .hero's own position to the header's height), it's just
      floating over ordinary rows instead, so it fades in to a flatter,
-     more legible fill. Moderate, not the near-opaque non-hero-page
-     treatment — a plain flat tint rather than a gradient, since there's
-     no hero art left to fade in from at this point. */
+     more legible fill: a near-opaque black frosted glass, not the
+     see-through hero gradient above — literal black, same "read as
+     black specifically" rule as everything else on this hero, rather
+     than var(--bg) (a warm-tinted charcoal in this theme). Stronger
+     blur than the base non-hero #topbar's 10px — this is meant to read
+     as genuinely frosted, not just a tinted bar, per direct request. */
   body.has-hero.scrolled #topbar {
-    background: color-mix(in srgb, var(--bg) 78%, transparent);
-    backdrop-filter: blur(8px);
+    background: rgba(0, 0, 0, 0.85);
+    backdrop-filter: blur(20px);
   }
   body.has-hero #topbar #backBtn,
   body.has-hero #topbar #topbarLogo,
@@ -1877,15 +1880,20 @@
   if (document.fonts && document.fonts.ready) document.fonts.ready.then(updateTopbarHeight);
 
   // The header's see-through hero scrim (body.has-hero, see its CSS) is
-  // specifically for reading over the hero image — once .hero has
+  // specifically for reading over the hero image — once the hero has
   // scrolled up far enough that it no longer reaches the header at all,
   // .scrolled fades the header in to a flatter, more opaque fill instead
-  // (see body.has-hero.scrolled #topbar). Checked directly against
-  // .hero's own real position rather than a guessed scroll-distance
-  // constant, since hero height varies a little page to page. A no-op
-  // (and harmless) on any page without a hero at all.
+  // (see body.has-hero.scrolled #topbar). Checked directly against the
+  // hero's own real position rather than a guessed scroll-distance
+  // constant, since hero height varies a little page to page. Matches
+  // either hero class — .hero (Movies/TV landing + detail pages) or
+  // .home-hero (Home's own carousel, a separate class since it's a
+  // whole different carousel/video layout) — confirmed live that
+  // checking only .hero left .scrolled permanently false on Home, since
+  // querySelector(".hero") never matches there at all. A no-op (and
+  // harmless) on any page with neither.
   function updateTopbarScrolled() {
-    const hero = document.querySelector(".hero");
+    const hero = document.querySelector(".hero, .home-hero");
     const pastHero = !!hero && hero.getBoundingClientRect().bottom <= topbarEl.offsetHeight;
     document.body.classList.toggle("scrolled", pastHero);
   }
