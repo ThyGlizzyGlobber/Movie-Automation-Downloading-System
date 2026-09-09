@@ -221,23 +221,35 @@
      edge case. */
   body.has-hero #topbar .top-nav-link { color: var(--text); }
   body.has-hero #topbar .top-nav-link.active { color: var(--smithflix-charcoal); }
+  /* Fixed width/height (not padding-driven) matching .top-nav-link.
+     active's own rendered height exactly (measured live: 35.5px) —
+     set at rest, not just on :hover, so hovering only ever changes
+     background/color/border-radius, never the box's own size. An
+     earlier version sized this box on :hover alone, which shifted
+     both this button and its neighbors (flex siblings in #topbar)
+     every time the pointer entered/left it — confirmed live. */
   #searchToggleBtn, #settingsToggle {
     flex: 0 0 auto; background: none; border: none; color: var(--text);
-    font-size: 20px; padding: 6px 8px; border-radius: 8px; line-height: 1;
+    font-size: 20px; width: 35.5px; height: 35.5px; border-radius: 8px; line-height: 1;
     display: flex; align-items: center; justify-content: center;
   }
   #searchToggleBtn:active, #settingsToggle:active { background: var(--bg-card); }
   /* Hover: a true circle (not the 8px-radius rounded-square the tap
-     state above uses), sized to match .top-nav-link.active's own
-     rendered height exactly (measured live: 35.5px) per direct
-     request — same white-fill/black-icon language as that active
-     pill (var(--smithflix-charcoal), not --bg-card/--text, so it's
-     theme-invariant like the pill is). Width matches height so it's a
-     circle, not an oval, despite the button's own asymmetric 6px/8px
-     padding. */
-  #searchToggleBtn:hover, #settingsToggle:hover {
+     state above uses) — same white-fill/black-icon language as
+     .top-nav-link.active (var(--smithflix-charcoal), not
+     --bg-card/--text, so it's theme-invariant like that pill is).
+     The same look also applies as a persistent "active" state per
+     direct request: #searchToggleBtn while the search overlay is
+     open (body.search-open, already toggled by openSearchOverlay/
+     closeSearchOverlay) and #settingsToggle while actually on the Settings
+     page (.active, toggled by updateSettingsActive() below — the
+     Settings route has no activeTab of its own in setChrome() since
+     it isn't one of the shared tab-bar sections, so this icon needs
+     its own dedicated hash check rather than reusing that system). */
+  #searchToggleBtn:hover, #settingsToggle:hover,
+  body.search-open #searchToggleBtn, #settingsToggle.active {
     background: #fff; color: var(--smithflix-charcoal);
-    border-radius: 50%; width: 35.5px; height: 35.5px; padding: 0;
+    border-radius: 50%;
   }
   /* Pushes this whole trailing icon group (search/settings) to the
      right edge, same job .search-input-wrap's margin-left:auto used to
@@ -2070,6 +2082,18 @@
   }
   window.addEventListener("scroll", updateTopbarScrolled, { passive: true });
   window.addEventListener("hashchange", () => setTimeout(updateTopbarScrolled, 0));
+
+  // #settingsToggle gets the same white-circle look as its own :hover
+  // state while actually on the Settings page — a persistent "active"
+  // indicator, per direct request. Settings isn't one of the shared
+  // tab-bar sections (its own setChrome() call passes activeTab:
+  // null), so it has no existing active-tracking to hook into; this
+  // is its own dedicated hash check instead.
+  function updateSettingsActive() {
+    document.getElementById("settingsToggle").classList.toggle("active", location.hash.startsWith("#/settings"));
+  }
+  window.addEventListener("hashchange", updateSettingsActive);
+  updateSettingsActive();
 
   const SECTION_HASH = { home: "#/home", movies: "#/movies", tv: "#/tv" };
   function navigate(hash) { window.location.hash = hash; }
