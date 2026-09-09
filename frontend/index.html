@@ -738,25 +738,31 @@
   .home-hero-video-wrap::before {
     content: ""; position: absolute; inset: 0; z-index: 2;
   }
-  /* Left-to-right fade matching Prime Video's own hero banners
-     (confirmed against several of their real posters side by side) —
-     stops are relative to the hero's own full width, not the poster
-     image's, which works out regardless of the image's own native
-     width from the object-position change above: a narrow poster
-     leaves the left portion of this gradient sitting over plain black
+  /* Two stacked gradients matching Prime Video's own hero banners
+     (confirmed against several of their real posters side by side):
+     a left-to-right fade over the image, plus a bottom fade into the
+     page's own black beneath the hero. Both are sized to the hero's
+     own box, not the poster image's, which works out regardless of
+     where the image above actually sits: a narrow poster leaves the
+     left portion of the horizontal fade sitting over plain black
      already (a no-op, same background either way), while a wide one
      puts real image content under that same stretch, so the fade
      blends it into the title-text column exactly where it needs to
-     either way, with one fixed gradient rather than something that has
-     to react per-image. */
+     either way, with one fixed gradient rather than something that
+     has to react per-image. */
   .home-hero-fade {
     position: absolute; inset: 0; z-index: 1;
-    background: linear-gradient(90deg,
-      rgba(0, 0, 0, 0.95) 0%,
-      rgba(0, 0, 0, 0.85) 15%,
-      rgba(0, 0, 0, 0.55) 35%,
-      rgba(0, 0, 0, 0.15) 55%,
-      rgba(0, 0, 0, 0) 70%);
+    background-image:
+      linear-gradient(90deg,
+        rgba(0, 0, 0, 0.95) 0%,
+        rgba(0, 0, 0, 0.85) 15%,
+        rgba(0, 0, 0, 0.55) 35%,
+        rgba(0, 0, 0, 0.15) 55%,
+        rgba(0, 0, 0, 0) 70%),
+      linear-gradient(to top,
+        rgba(0, 0, 0, 0.9) 0%,
+        rgba(0, 0, 0, 0.5) 10%,
+        rgba(0, 0, 0, 0) 28%);
   }
   .home-hero-content {
     position: relative; z-index: 2; display: flex; align-items: flex-end;
