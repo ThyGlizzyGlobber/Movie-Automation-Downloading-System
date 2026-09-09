@@ -584,7 +584,13 @@
   .home-hero {
     position: relative; width: calc(100% + 28px);
     margin: calc(-1 * (var(--topbar-h, 64px) + 14px)) -14px 18px;
-    min-height: 480px; overflow: hidden; background: var(--bg-card);
+    /* Literal black, not var(--bg-card) (a warm-tinted dark charcoal,
+       #201e1c) — every fade/gradient on this hero is deliberately pure
+       black per direct request, but this base layer was never updated
+       to match, leaving a subtly warm tint showing wherever nothing else
+       covers it (before a slide's art loads, or the gap beside a video
+       before its own edge-blend). */
+    min-height: 480px; overflow: hidden; background: #000;
   }
   .home-hero-slide {
     position: absolute; inset: 0; opacity: 0; visibility: hidden; pointer-events: none;
@@ -601,7 +607,7 @@
      video on real hero-width/video-width ratios — confirmed live: the
      gradient simply never reached the video at all, reading as a flat
      dark panel with a hard seam instead of a blend into it. */
-  .home-hero-media { position: absolute; inset: 0; overflow: hidden; background: var(--bg-card); z-index: 0; }
+  .home-hero-media { position: absolute; inset: 0; overflow: hidden; background: #000; z-index: 0; }
   /* Sits ABOVE the video (z-index 2 vs. its 1, both scoped inside
      .home-hero-media's own stacking context now) until wireHomeHero
      fades it out once the <video>'s own "playing" event actually fires.
