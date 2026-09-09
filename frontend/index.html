@@ -3,12 +3,10 @@
 <head>
 <meta charset="utf-8">
 <title>Smithflix</title>
-<!-- Sets data-theme before first paint, so a saved light-mode preference
-     doesn't flash dark first — the full theme apply (meta theme-color,
-     toggle icon) happens later in the main script once the rest of the
-     DOM exists. -->
-<script>try{document.documentElement.dataset.theme=localStorage.getItem("smithflix-theme")==="light"?"light":"dark"}catch(e){}</script>
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1">
+<!-- Dark is the only theme (light mode removed per direct request) —
+     this stays a plain static value, no JS needed to keep it in sync
+     with a toggle that no longer exists. -->
 <meta name="theme-color" content="#141312">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -22,16 +20,19 @@
 <link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@600;700;800&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
 <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@48,700,1,0" rel="stylesheet">
 <style>
-  /* Smithflix brand palette — charcoal ground + a light red accent
-     (superseding the original teal/cream/coral kit in brand_identity/;
-     that folder is left as-is, this is a live in-app repaint, not yet
-     folded back into the reference kit). Dark is the default theme;
-     :root[data-theme="light"] below overrides the same tokens for the
-     manual light-mode toggle. Unlike the old teal identity, the accent
-     itself is *not* fully theme-invariant: the same light red loses
-     contrast against a pale ground, so light mode deepens it slightly
-     (see that block below) — everything else about "one fixed accent,
-     never recolored per-household" still holds. */
+  /* Smithflix brand palette — charcoal ground + a cool blue accent,
+     picked live via the theme-lab exercise against a "cool/moody blue"
+     Coolors board (superseding the original teal/cream/coral kit in
+     brand_identity/, and before that a light-red repaint; that folder is
+     left as-is, this is a live in-app repaint, not yet folded back into
+     the reference kit). Dark is the only theme — no light mode, no
+     toggle: removed per direct request rather than left dormant, since
+     the header icon slot it used is earmarked for a future profile icon
+     instead. --accent-secondary (also from the same board) is a second,
+     independent accent for elements that need to read as visually
+     distinct from the primary one (currently just the storage-used
+     fill, sitting right next to primary-accent buttons in the same
+     corner of the screen). */
   :root {
     --smithflix-cream: #f3ede2;
     /* Literal black, not a dark charcoal — per direct request, so the
@@ -42,7 +43,10 @@
        page background specifically, not every dark surface in the app. */
     --smithflix-charcoal: #000000;
     --smithflix-charcoal-card: #201e1c;
-    --smithflix-red: #f0605f;
+    --smithflix-accent: #b4c5e4;
+    /* Near-white with just enough of the board's own cream cast to not
+       read as flatly pure white — the hero carousel's active dot. */
+    --smithflix-dot-active: #fbfff1;
 
     --font-display: 'Baloo 2', sans-serif;
     --font-body: 'Inter', -apple-system, BlinkMacSystemFont, "Helvetica Neue", Arial, sans-serif;
@@ -52,8 +56,9 @@
     --bg-card: var(--smithflix-charcoal-card);
     --text: var(--smithflix-cream);
     --text-dim: #a39a8b;
-    --accent: var(--smithflix-red);
+    --accent: var(--smithflix-accent);
     --accent-text: #141312;
+    --accent-secondary: #3d52d5;
     --border: #332f2b;
     --status-queued: #6b7280;
     --status-searching: #3b82f6;
@@ -95,19 +100,6 @@
        from an earlier, tighter 32px pass, then again from 48px per
        direct request for more breathing room. */
     --edge-inset: 64px;
-  }
-  :root[data-theme="light"] {
-    --bg: #ece8e1;
-    --bg-elevated: #f5f1ea;
-    --bg-card: #ffffff;
-    --text: #211f1c;
-    --text-dim: #736c60;
-    --border: #dcd5c8;
-    /* A very light charcoal ground (not plain white) needs a slightly
-       deeper, more saturated red than the dark theme's to hold the same
-       contrast — same red family, not a different color. */
-    --accent: #e14e4d;
-    --accent-text: #ffffff;
   }
   * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
 
@@ -238,28 +230,27 @@
      edge case. */
   body.has-hero #topbar .top-nav-link { color: var(--text); }
   body.has-hero #topbar .top-nav-link.active { color: var(--smithflix-charcoal); }
-  #backBtn, #searchToggleBtn, #settingsToggle, #themeToggle {
+  #backBtn, #searchToggleBtn, #settingsToggle {
     flex: 0 0 auto; background: none; border: none; color: var(--text);
     font-size: 20px; padding: 6px 8px; border-radius: 8px; line-height: 1;
     display: flex; align-items: center; justify-content: center;
   }
-  #backBtn:active, #searchToggleBtn:active, #settingsToggle:active, #themeToggle:active { background: var(--bg-card); }
-  /* Pushes this whole trailing icon group (search/settings/theme) to the
+  #backBtn:active, #searchToggleBtn:active, #settingsToggle:active { background: var(--bg-card); }
+  /* Pushes this whole trailing icon group (search/settings) to the
      right edge, same job .search-input-wrap's margin-left:auto used to
      do before search moved into its own overlay below. */
   #searchToggleBtn { margin-left: auto; }
   #topbarLogo {
     flex: 0 0 auto; display: flex; align-items: center; min-width: 0;
   }
-  /* Real text, not an image — "smith" tracks the current theme's text
-     color, "flix" stays the fixed brand coral, so switching theme just
-     recolors it like everything else instead of needing a separate
-     light/dark SVG swap. */
+  /* Real text, not an image, colored via the same CSS vars as everything
+     else — no separate SVG asset to keep in sync with the brand
+     palette. */
   #topbarLogo .brand-wordmark {
     font-family: var(--font-display); font-weight: 800; font-size: 26px; line-height: 1;
   }
   #topbarLogo .brand-word-smith { color: var(--text); }
-  #topbarLogo .brand-word-flix { color: var(--smithflix-red); }
+  #topbarLogo .brand-word-flix { color: var(--accent); }
   /* Prime-Video-style search overlay: the header icon (#searchToggleBtn)
      toggles this. Covers the FULL viewport (top:0), including behind
      the header — not just below it — so there's exactly one blur/tint
@@ -853,7 +844,7 @@
     width: 8px; height: 8px; border-radius: 999px; border: none;
     background: rgba(255, 255, 255, 0.4); transition: width 0.25s ease, background 0.25s ease; padding: 0;
   }
-  .home-hero-dot.active { width: 22px; background: #fff; }
+  .home-hero-dot.active { width: 22px; background: var(--smithflix-dot-active); }
   /* Age-rating badge (AU) — bottom-right corner, same small muted-pill
      treatment as Prime's own. Empty (and invisible — no border/padding
      shows on an empty element) until wireHomeHero's per-slide detail
@@ -872,8 +863,8 @@
      top is offset past the topbar's own height, not a flat pixel value —
      .home-hero bleeds up underneath the fixed topbar (same trick as
      .hero), so a plain "20px from the hero's own top" landed this
-     *under* the topbar's settings/theme-toggle buttons instead of
-     visibly below them. */
+     *under* the topbar's own icon buttons instead of visibly below
+     them. */
   .home-hero-mute-btn {
     position: absolute; top: calc(var(--topbar-h, 64px) + 14px); right: var(--edge-inset); z-index: 3;
     width: 38px; height: 38px; border-radius: 50%; border: none;
@@ -1134,7 +1125,11 @@
   }
   .storage-indicator-fill {
     display: block; height: 100%; width: 0%; border-radius: 999px;
-    background: var(--accent); transition: width 0.3s ease;
+    /* --accent-secondary, not --accent — this pill sits directly beside
+       the primary-accent downloads FAB in the same bottom corner, so it
+       reads more like its own status readout than a second "button" if
+       it's visually distinct rather than matching. */
+    background: var(--accent-secondary); transition: width 0.3s ease;
   }
   .storage-indicator-pct { font-size: 14px; font-weight: 700; color: var(--text); white-space: nowrap; }
 
@@ -1262,9 +1257,8 @@
   <button id="settingsToggle" aria-label="Settings">
     <span class="material-symbols-rounded">settings</span>
   </button>
-  <button id="themeToggle" aria-label="Switch to light mode">
-    <span class="material-symbols-rounded" id="themeToggleIcon">dark_mode</span>
-  </button>
+  <!-- Light/dark toggle removed per direct request (dark is the only
+       theme now) — this slot is earmarked for a future profile icon. -->
 </div>
 
 <!-- Prime-Video-style search: a header icon opens this full-width
@@ -1316,31 +1310,6 @@
 <script>
 (function () {
   "use strict";
-
-  // -- Theme (dark/light) -- data-theme itself is already set on <html>
-  // by the tiny inline script in <head> (before first paint); this fills
-  // in everything that needs the rest of the DOM — the toggle button's
-  // own icon/label and the PWA theme-color meta tag. The logo wordmark
-  // is plain text colored via CSS vars, so it needs no JS handling here.
-  const THEME_KEY = "smithflix-theme";
-  function getTheme() {
-    try { return localStorage.getItem(THEME_KEY) === "light" ? "light" : "dark"; } catch (e) { return "dark"; }
-  }
-  function applyTheme(theme) {
-    document.documentElement.dataset.theme = theme;
-    const meta = document.querySelector('meta[name="theme-color"]');
-    if (meta) meta.setAttribute("content", theme === "light" ? "#ece8e1" : "#141312");
-    const icon = document.getElementById("themeToggleIcon");
-    if (icon) icon.textContent = theme === "light" ? "light_mode" : "dark_mode";
-    const btn = document.getElementById("themeToggle");
-    if (btn) btn.setAttribute("aria-label", theme === "light" ? "Switch to dark mode" : "Switch to light mode");
-  }
-  function toggleTheme() {
-    const next = getTheme() === "light" ? "dark" : "light";
-    try { localStorage.setItem(THEME_KEY, next); } catch (e) { /* private browsing, etc. — just won't persist */ }
-    applyTheme(next);
-  }
-  applyTheme(getTheme());
 
   const IMG_BASE = "https://image.tmdb.org/t/p/";
   const POSTER_SIZE = "w342";
@@ -3667,7 +3636,6 @@
   })();
 
   document.getElementById("settingsToggle").addEventListener("click", () => navigate("#/settings"));
-  document.getElementById("themeToggle").addEventListener("click", toggleTheme);
 
   route();
 })();
