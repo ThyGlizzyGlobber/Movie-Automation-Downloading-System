@@ -893,13 +893,18 @@
     border: 1px solid var(--border); color: var(--text);
   }
   .home-hero-info-btn:active { background: var(--bg-card); }
+  /* Same hover treatment as .home-hero-mute-btn's own (opacity:1,
+     background:var(--bg-card)), per direct request. */
+  .home-hero-info-btn:hover { opacity: 1; background: var(--bg-card); }
   .home-hero-arrow {
     position: absolute; top: 50%; transform: translateY(-50%); z-index: 3;
     width: 44px; height: 44px; border-radius: 50%; border: none;
     background: color-mix(in srgb, var(--bg) 55%, transparent); color: var(--text);
     display: flex; align-items: center; justify-content: center; opacity: 0.7;
   }
-  .home-hero-arrow:hover { opacity: 1; background: color-mix(in srgb, var(--bg) 75%, transparent); }
+  /* Same hover treatment as .home-hero-mute-btn's own, per direct
+     request — was its own color-mix(var(--bg)) tint before. */
+  .home-hero-arrow:hover { opacity: 1; background: var(--bg-card); }
   .home-hero-arrow-left { left: 14px; }
   .home-hero-arrow-right { right: 14px; }
   /* Centered on the banner as a whole (not the text column) — matches
@@ -1160,6 +1165,12 @@
     box-shadow: 0 4px 14px rgba(0,0,0,0.35);
   }
   .downloads-fab .material-symbols-rounded { font-size: 28px; }
+  /* Same hover treatment as .home-hero-mute-btn's own, per direct
+     request — a no-op here in practice, since this FAB's own resting
+     background is already var(--bg-card) at full opacity (unlike the
+     mute button, which rests translucent/dimmed) — flagged, not
+     silently changed to something else. */
+  .downloads-fab:hover { opacity: 1; background: var(--bg-card); }
   .downloads-fab:active { opacity: 0.85; }
   /* Same-specificity tie with the UA's [hidden]{display:none} as
      .search-clear-btn above — without this, the class rule's own
