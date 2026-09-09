@@ -230,12 +230,16 @@
      without it. */
   body.has-hero #topbar .top-nav-link { color: var(--text); }
   body.has-hero #topbar .top-nav-link.active { color: var(--smithflix-charcoal); text-shadow: none; }
-  #backBtn, #settingsToggle, #themeToggle {
+  #backBtn, #searchToggleBtn, #settingsToggle, #themeToggle {
     flex: 0 0 auto; background: none; border: none; color: var(--text);
     font-size: 20px; padding: 6px 8px; border-radius: 8px; line-height: 1;
     display: flex; align-items: center; justify-content: center;
   }
-  #backBtn:active, #settingsToggle:active, #themeToggle:active { background: var(--bg-card); }
+  #backBtn:active, #searchToggleBtn:active, #settingsToggle:active, #themeToggle:active { background: var(--bg-card); }
+  /* Pushes this whole trailing icon group (search/settings/theme) to the
+     right edge, same job .search-input-wrap's margin-left:auto used to
+     do before search moved into its own overlay below. */
+  #searchToggleBtn { margin-left: auto; }
   #topbarLogo {
     flex: 0 0 auto; display: flex; align-items: center; min-width: 0;
   }
@@ -248,41 +252,55 @@
   }
   #topbarLogo .brand-word-smith { color: var(--text); }
   #topbarLogo .brand-word-flix { color: var(--smithflix-red); }
-  /* Always in the top bar (not a toggleable row) — half the viewport
-     width (capped so it doesn't become absurd on an ultra-wide monitor),
-     pinned to the right edge next to Settings/theme-toggle via
-     margin-left:auto (a centered version was tried and reverted — this
-     keeps the same width, just anchored right instead). flex-shrink is
-     left at its default (1), so it still narrows itself first rather
-     than overflowing if there isn't a full 50vw of room left after the
-     logo/nav-links group on a narrower window. */
-  .search-input-wrap { position: relative; flex: 0 1 50vw; max-width: 640px; min-width: 0; margin-left: auto; }
+  /* Prime-Video-style search overlay: the header icon (#searchToggleBtn)
+     toggles this rather than a field permanently sitting in the header.
+     Sits BELOW #topbar in the stack (z-index 9 vs. its 10) and starts
+     below it (top: var(--topbar-h)), not inset:0 — the header itself
+     stays fully visible/interactive and undimmed, matching Prime's own
+     treatment, with only the page content beneath it tinted and
+     blurred. Literal black tint (not var(--bg)), same "read as black
+     specifically" rule the hero/header scrims already follow. */
+  #searchOverlay {
+    position: fixed; top: var(--topbar-h, 64px); left: 0; right: 0; bottom: 0; z-index: 9;
+    background: rgba(0, 0, 0, 0.7); backdrop-filter: blur(10px);
+    /* align-items defaults to stretch — without flex-start here the
+       pill (an auto-height flex child) stretches to fill this overlay's
+       full remaining viewport height instead of sitting near the top at
+       its own content height. Confirmed live: without this the pill
+       rendered as a giant vertical capsule spanning most of the screen. */
+    display: flex; justify-content: center; align-items: flex-start;
+    padding: 28px var(--edge-inset) 0;
+  }
+  #searchOverlay[hidden] { display: none; }
+  .search-overlay-pill {
+    position: relative; width: 100%; max-width: 720px;
+    display: flex; align-items: center; gap: 10px;
+    background: var(--bg-card); border: 1px solid var(--border);
+    border-radius: 999px; padding: 12px 16px;
+    box-shadow: 0 8px 30px rgba(0, 0, 0, 0.5);
+  }
+  .search-overlay-pill:focus-within { outline: 2px solid var(--accent); }
+  .search-overlay-icon-btn {
+    flex: 0 0 auto; background: none; border: none; color: var(--text-dim);
+    display: flex; align-items: center; justify-content: center; font-size: 22px;
+  }
   #searchInput {
-    width: 100%; background: color-mix(in srgb, var(--bg-card) 65%, transparent);
-    border: 1px solid var(--border);
-    color: var(--text); padding: 9px 36px 9px 16px; border-radius: 999px; font-size: 15.5px;
+    flex: 1 1 auto; min-width: 0; width: 100%; background: none; border: none;
+    color: var(--text); font-size: 17px;
     -webkit-appearance: none; appearance: none;
-    /* A little visual definition against whatever's behind it — a hero
-       image on some pages, the plain header bar on others. */
-    box-shadow: 0 2px 10px color-mix(in srgb, var(--bg) 65%, transparent);
   }
-  #searchInput:focus { outline: 2px solid var(--accent); }
+  #searchInput:focus { outline: none; }
   #searchInput::-webkit-search-cancel-button { display: none; }
-  /* Search (default) and clear (once there's text) share the same slot
-     on the right side of the pill — never both shown at once, toggled by
-     updateSearchClearBtn(). */
-  .search-icon-btn, .search-clear-btn {
-    position: absolute; right: 4px; top: 50%; transform: translateY(-50%);
-    width: 26px; height: 26px; border-radius: 50%; background: none; border: none;
-    color: var(--text-dim); display: flex; align-items: center; justify-content: center;
+  .search-clear-btn {
+    flex: 0 0 auto; width: 26px; height: 26px; border-radius: 50%;
+    background: none; border: none; color: var(--text-dim); font-size: 15px; line-height: 1;
+    display: flex; align-items: center; justify-content: center;
   }
-  .search-icon-btn .material-symbols-rounded { font-size: 18px; }
-  .search-clear-btn { font-size: 15px; line-height: 1; }
   /* Same-specificity tie with the UA's [hidden]{display:none} — without
      this, source order lets the rule above win and the button shows even
      while hidden. */
-  .search-icon-btn[hidden], .search-clear-btn[hidden] { display: none; }
-  .search-icon-btn:active, .search-clear-btn:active { background: var(--bg-elevated); }
+  .search-clear-btn[hidden] { display: none; }
+  .search-overlay-icon-btn:active, .search-clear-btn:active { background: var(--bg-elevated); }
 
   .inline-search {
     display: block; width: 100%; background: var(--bg-card); border: 1px solid var(--border);
@@ -1171,19 +1189,29 @@
     <button class="top-nav-link" data-tab="movies">Movies</button>
     <button class="top-nav-link" data-tab="tv">TV Shows</button>
   </nav>
-  <div class="search-input-wrap">
-    <input id="searchInput" type="search" enterkeyhint="search" aria-label="Search movies and TV shows">
-    <button id="searchIconBtn" class="search-icon-btn" aria-label="Search">
-      <span class="material-symbols-rounded">search</span>
-    </button>
-    <button id="searchClearBtn" class="search-clear-btn" aria-label="Clear search" hidden>&#10005;</button>
-  </div>
+  <button id="searchToggleBtn" aria-label="Search" aria-expanded="false">
+    <span class="material-symbols-rounded">search</span>
+  </button>
   <button id="settingsToggle" aria-label="Settings">
     <span class="material-symbols-rounded">settings</span>
   </button>
   <button id="themeToggle" aria-label="Switch to light mode">
     <span class="material-symbols-rounded" id="themeToggleIcon">dark_mode</span>
   </button>
+</div>
+
+<!-- Prime-Video-style search: a header icon opens this full-width
+     overlay (dark tint + blur over the page below the header, header
+     itself stays put and undimmed) with a big centered search pill,
+     rather than a search field permanently sitting in the header. -->
+<div id="searchOverlay" hidden>
+  <div class="search-overlay-pill">
+    <button id="searchIconBtn" class="search-overlay-icon-btn" aria-label="Search">
+      <span class="material-symbols-rounded">search</span>
+    </button>
+    <input id="searchInput" type="search" enterkeyhint="search" aria-label="Search movies and TV shows">
+    <button id="searchClearBtn" class="search-clear-btn" aria-label="Clear search" hidden>&#10005;</button>
+  </div>
 </div>
 
 <main id="app"><div class="loading"><div class="spinner"></div></div></main>
@@ -3443,21 +3471,45 @@
     }
   }
 
-  // -- Search bar (permanently in the top bar) --
+  // -- Search (Prime-Video-style overlay, toggled from the header icon) --
 
   const searchInput = document.getElementById("searchInput");
   const searchIconBtn = document.getElementById("searchIconBtn");
   const searchClearBtn = document.getElementById("searchClearBtn");
+  const searchToggleBtn = document.getElementById("searchToggleBtn");
+  const searchOverlay = document.getElementById("searchOverlay");
+  function openSearchOverlay() {
+    searchOverlay.hidden = false;
+    searchToggleBtn.setAttribute("aria-expanded", "true");
+    searchInput.focus();
+  }
+  function closeSearchOverlay() {
+    searchOverlay.hidden = true;
+    searchToggleBtn.setAttribute("aria-expanded", "false");
+  }
   function submitSearch() {
-    if (searchInput.value.trim()) navigate(`#/search/${encodeURIComponent(searchInput.value.trim())}`);
+    if (searchInput.value.trim()) {
+      navigate(`#/search/${encodeURIComponent(searchInput.value.trim())}`);
+      closeSearchOverlay();
+    }
   }
-  // Search glass (empty field) and clear-x (once there's text) share one
-  // slot on the pill — exactly one of the two is ever shown.
+  // Clear-x only shows once there's text — the search glyph on the left
+  // is permanent chrome now (Prime's own pill keeps it there too), not a
+  // toggle-with-clear pair sharing one slot like the old inline bar had.
   function updateSearchClearBtn() {
-    const hasValue = !!searchInput.value;
-    searchClearBtn.hidden = !hasValue;
-    searchIconBtn.hidden = hasValue;
+    searchClearBtn.hidden = !searchInput.value;
   }
+  searchToggleBtn.addEventListener("click", () => {
+    if (searchOverlay.hidden) openSearchOverlay(); else closeSearchOverlay();
+  });
+  // Closes on a click anywhere in the dimmed backdrop, but not one that
+  // started inside the pill itself — e.currentTarget is always the
+  // overlay (listener is attached there), so this only fires for a
+  // direct backdrop click, same pattern as any other modal-dismiss.
+  searchOverlay.addEventListener("click", (e) => { if (e.target === searchOverlay) closeSearchOverlay(); });
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && !searchOverlay.hidden) closeSearchOverlay();
+  });
   searchInput.addEventListener("keydown", (e) => { if (e.key === "Enter") submitSearch(); });
   // type="search" also fires a native "search" event on Enter/the clear-x —
   // catches it even if a keydown listener alone doesn't (e.g. Safari's own
