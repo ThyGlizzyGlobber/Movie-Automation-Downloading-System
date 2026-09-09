@@ -227,6 +227,18 @@
     display: flex; align-items: center; justify-content: center;
   }
   #searchToggleBtn:active, #settingsToggle:active { background: var(--bg-card); }
+  /* Hover: a true circle (not the 8px-radius rounded-square the tap
+     state above uses), sized to match .top-nav-link.active's own
+     rendered height exactly (measured live: 35.5px) per direct
+     request — same white-fill/black-icon language as that active
+     pill (var(--smithflix-charcoal), not --bg-card/--text, so it's
+     theme-invariant like the pill is). Width matches height so it's a
+     circle, not an oval, despite the button's own asymmetric 6px/8px
+     padding. */
+  #searchToggleBtn:hover, #settingsToggle:hover {
+    background: #fff; color: var(--smithflix-charcoal);
+    border-radius: 50%; width: 35.5px; height: 35.5px; padding: 0;
+  }
   /* Pushes this whole trailing icon group (search/settings) to the
      right edge, same job .search-input-wrap's margin-left:auto used to
      do before search moved into its own overlay below. */
@@ -844,9 +856,10 @@
   .home-hero-info h1 { font-size: clamp(88px, 6vw + 58px, 128px); font-weight: 800; margin: 0 0 10px; line-height: 1.1; }
   .home-hero-badge {
     display: flex; align-items: center; gap: 6px; color: var(--status-complete);
-    font-size: 13.5px; font-weight: 700; margin-bottom: 10px;
+    font-size: 17px; font-weight: 800; margin-bottom: 10px;
   }
-  .home-hero-badge .material-symbols-rounded { font-size: 17px; }
+  /* 2pt larger than the badge's own text, per direct request. */
+  .home-hero-badge .material-symbols-rounded { font-size: 19px; }
   .home-hero-actions { display: flex; align-items: center; gap: 10px; margin-top: 16px; flex-wrap: wrap; }
   /* Explicit height (not padding-driven, like the shared .add-btn this
      overrides) so .home-hero-info-btn below can size its own circle to
