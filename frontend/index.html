@@ -65,12 +65,17 @@
     --safe-top: env(safe-area-inset-top, 0px);
     --safe-bottom: env(safe-area-inset-bottom, 0px);
     --row-gap: 10px;
-    /* Breathing room at the start/end of every row — where the first and
-       last poster sit — on top of main's own 14px edge padding, not a
-       replacement for it. Shared by .hscroll's own padding and the row
-       title's left margin below so the title lines up with the first
-       poster's new inset instead of sitting further left than it. */
-    --row-inset: 20px;
+    /* Left-aligns a row's title and first poster with the header/hero
+       column at --edge-inset, on top of #app's own 14px edge padding
+       this sits inside of (so the two track together if --edge-inset
+       ever changes again, rather than needing to stay in sync by hand —
+       was a flat, independent 20px before). Shared by .hscroll's own
+       left padding and the row title's left margin below. Deliberately
+       asymmetric: the right side is NOT mirrored at this same inset —
+       see .hscroll/.provider-row, which instead cancel #app's own right
+       padding so a row's content reaches the true viewport edge, per
+       direct request. */
+    --row-inset: calc(var(--edge-inset) - 14px);
     /* Poster card width scales continuously with viewport width (14vw)
        between a mobile floor and a desktop ceiling, rather than jumping
        between a handful of hand-picked breakpoint values — see .hscroll/
@@ -342,19 +347,27 @@
     /* overflow-x:auto forces overflow-y to compute as auto too (CSS spec —
        explicitly setting overflow-y:visible here wouldn't override that),
        which clips the top of a poster's hover scale-up below. Top padding
-       gives the scaled card room inside the box instead. Left/right
-       padding is the row's own breathing room (see --row-inset) — where
-       the first/last poster actually starts/ends, not just main's outer
-       14px edge padding. */
-    display: flex; gap: var(--row-gap); overflow-x: auto; padding: 8px var(--row-inset) 4px;
+       gives the scaled card room inside the box instead. Left padding is
+       the row's own breathing room (see --row-inset) — where the first
+       poster actually starts, lined up with the header. The right side
+       is deliberately NOT mirrored: margin-right cancels #app's own 14px
+       right padding so the scrollable track reaches the true viewport
+       edge instead, letting the last poster sit flush against it (or get
+       cut off mid-card while scrolling) — the same "there's more, keep
+       going" signal every other streaming app's own rows use, per direct
+       request. */
+    display: flex; gap: var(--row-gap); overflow-x: auto; padding: 8px 0 4px var(--row-inset);
+    margin-right: -14px;
     scroll-snap-type: x proximity; -webkit-overflow-scrolling: touch;
     /* Without this, scroll-snap-align:start on the first card fights the
        padding above: "start" alignment is measured against the snapport
        (scroll-padding, default 0), not the visual padding box, so the
        browser auto-scrolls the row on load just far enough to erase the
        left inset entirely. Matching scroll-padding to the visual padding
-       tells the snap logic the padded position *is* "start". */
-    scroll-padding-inline: var(--row-inset);
+       tells the snap logic the padded position *is* "start" — only the
+       left value matters now that the right side has no padding of its
+       own to protect. */
+    scroll-padding-inline: var(--row-inset) 0;
   }
 
   /* Desktop-only click-to-scroll arrows, overlaid on a row and only shown
@@ -441,12 +454,15 @@
   .grid .poster-card { width: auto; }
   .grid .poster-card img { width: 100%; height: auto; aspect-ratio: 2 / 3; }
 
-  /* Full-bleed: breaks out of main's 14px side padding so the row of
-     service icons spans the entire display edge to edge. */
+  /* Same asymmetric-inset treatment as .hscroll above, for the same
+     reason: left-aligned with the header at --row-inset, right side
+     cancels #app's own 14px padding (margin-right: -14px) instead of
+     mirroring it, so the grid actually gets the full remaining width to
+     lay chips into rather than stopping short at main's plain inset. */
   .provider-row {
     display: grid; grid-template-columns: repeat(auto-fit, minmax(84px, 1fr));
     gap: 16px 12px;
-    width: calc(100% + 28px); margin: 0 -14px; padding: 0 14px;
+    padding-left: var(--row-inset); margin-right: -14px;
   }
   .provider-chip {
     /* ~22% is the standard CSS approximation of Apple's App Store icon
