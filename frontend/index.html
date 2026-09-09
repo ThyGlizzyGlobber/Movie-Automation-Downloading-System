@@ -580,20 +580,31 @@
   .home-hero {
     position: relative; width: calc(100% + 28px);
     margin: calc(-1 * (var(--topbar-h, 64px) + 14px)) -14px 18px;
-    min-height: 420px; overflow: hidden; background: var(--bg-card);
+    min-height: 480px; overflow: hidden; background: var(--bg-card);
   }
   .home-hero-slide {
     position: absolute; inset: 0; opacity: 0; visibility: hidden; pointer-events: none;
     transition: opacity 0.6s ease;
   }
   .home-hero-slide.active { opacity: 1; visibility: visible; pointer-events: auto; z-index: 1; }
-  .home-hero-media { position: absolute; inset: 0; overflow: hidden; background: var(--bg-card); }
-  /* Sits ABOVE the video (z-index 2 vs. its 1) until wireHomeHero fades
-     it out a moment after the trailer's iframe is actually injected —
-     masking the YouTube embed's own brief native-control/loading flash
-     on first paint, which pointer-events:none alone doesn't hide since
-     it's a visual render, not a click target. Poster-only slides simply
-     never get that class added, so they're unaffected. */
+  /* Explicit z-index (not auto) so this — poster and video together —
+     forms its own stacking context: .home-hero-video-wrap's z-index
+     below then only has to outrank the poster <img> *within* this box,
+     not compete directly against .home-hero-fade/.home-hero-content at
+     the slide level. Without this, a tied z-index between the fade and
+     the video (both nested at different depths but landing in the same
+     effective stacking context) left the fade painting *below* the
+     video on real hero-width/video-width ratios — confirmed live: the
+     gradient simply never reached the video at all, reading as a flat
+     dark panel with a hard seam instead of a blend into it. */
+  .home-hero-media { position: absolute; inset: 0; overflow: hidden; background: var(--bg-card); z-index: 0; }
+  /* Sits ABOVE the video (z-index 2 vs. its 1, both scoped inside
+     .home-hero-media's own stacking context now) until wireHomeHero
+     fades it out a moment after the trailer's iframe is actually
+     injected — masking the YouTube embed's own brief native-control/
+     loading flash on first paint, which pointer-events:none alone
+     doesn't hide since it's a visual render, not a click target.
+     Poster-only slides simply never get that class added. */
   .home-hero-media img {
     position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; object-position: center top;
     z-index: 2; transition: opacity 0.6s ease;
@@ -613,18 +624,33 @@
   .home-hero-video-wrap iframe {
     position: absolute; inset: 0; width: 100%; height: 100%; border: none; pointer-events: none;
   }
+  /* Above .home-hero-media (z-index 1 vs. its 0) so it unambiguously
+     darkens the video too, not just the plain backdrop beside it —
+     Prime's own hero clearly keeps blending some darkness into the
+     video's own left portion, not just the poster area outside it.
+     Stops pushed noticeably further right than the poster-only hero
+     (.hero) ever needed — the video's own fixed (height-driven, not
+     hero-width-driven) box can end up covering anywhere from ~35% to
+     ~65% of the hero's width depending on viewport, so the fade has to
+     stay meaningfully opaque well past the halfway point on every
+     width, not just whatever one ratio looked right on a single test
+     viewport. */
   .home-hero-fade {
     position: absolute; inset: 0; z-index: 1;
     background:
-      linear-gradient(90deg, var(--bg) 0%, color-mix(in srgb, var(--bg) 85%, transparent) 25%, transparent 48%),
+      linear-gradient(90deg,
+        var(--bg) 0%,
+        color-mix(in srgb, var(--bg) 92%, transparent) 30%,
+        color-mix(in srgb, var(--bg) 55%, transparent) 55%,
+        transparent 78%),
       linear-gradient(180deg, transparent 55%, color-mix(in srgb, var(--bg) 65%, transparent) 85%, var(--bg) 100%);
   }
   .home-hero-content {
     position: relative; z-index: 2; display: flex; align-items: flex-end;
-    min-height: 420px; padding: 24px var(--edge-inset) 44px;
+    min-height: 480px; padding: 24px var(--edge-inset) 44px;
   }
   .home-hero-info { max-width: 560px; }
-  .home-hero-info h1 { font-size: 30px; font-weight: 800; margin: 0 0 10px; line-height: 1.1; }
+  .home-hero-info h1 { font-size: 36px; font-weight: 800; margin: 0 0 10px; line-height: 1.1; }
   .home-hero-badge {
     display: flex; align-items: center; gap: 6px; color: var(--status-complete);
     font-size: 13.5px; font-weight: 700; margin-bottom: 10px;
@@ -673,9 +699,14 @@
   }
   /* Muted by default (autoplay requires it anyway) — one button controls
      every currently-injected trailer iframe at once, via the YouTube
-     player's postMessage command API (enablejsapi=1 on the iframe src). */
+     player's postMessage command API (enablejsapi=1 on the iframe src).
+     top is offset past the topbar's own height, not a flat pixel value —
+     .home-hero bleeds up underneath the fixed topbar (same trick as
+     .hero), so a plain "20px from the hero's own top" landed this
+     *under* the topbar's settings/theme-toggle buttons instead of
+     visibly below them. */
   .home-hero-mute-btn {
-    position: absolute; top: 20px; right: var(--edge-inset); z-index: 3;
+    position: absolute; top: calc(var(--topbar-h, 64px) + 14px); right: var(--edge-inset); z-index: 3;
     width: 38px; height: 38px; border-radius: 50%; border: none;
     background: color-mix(in srgb, var(--bg) 55%, transparent); color: var(--text);
     display: flex; align-items: center; justify-content: center; opacity: 0.85;
@@ -683,8 +714,8 @@
   .home-hero-mute-btn:hover { opacity: 1; background: color-mix(in srgb, var(--bg) 75%, transparent); }
   .home-hero-mute-btn[hidden] { display: none; }
   @media (min-width: 640px) {
-    .home-hero, .home-hero-content { min-height: 520px; }
-    .home-hero-info h1 { font-size: 42px; }
+    .home-hero, .home-hero-content { min-height: 640px; }
+    .home-hero-info h1 { font-size: 52px; }
   }
 
   .crew-row { display: flex; gap: 22px; margin-top: 18px; flex-wrap: wrap; }
@@ -1423,13 +1454,35 @@
   const HERO_SLIDE_COUNT = 5;
   const HERO_TRAILER_COUNT = 2; // only the front slides ever get a background video
   const HERO_AUTOPLAY_MS = 7000;
-  // Long enough to mask the YouTube embed's own brief native-control/
-  // loading flash on first paint (the poster stays on top, unaffected by
-  // pointer-events:none since that's a visual render, not a click
-  // target) without leaving the poster up distractingly long once the
-  // trailer's genuinely playing underneath it.
-  const HERO_POSTER_HIDE_DELAY_MS = 1200;
   const HERO_CERT_REGION = "AU";
+
+  // Loads the real YouTube IFrame Player API once (idempotent — every
+  // caller across the app shares the one script tag/promise) so each
+  // trailer can be driven by actual player events instead of guesswork.
+  // A fixed setTimeout to "probably be playing by now" before revealing
+  // it was tried first and confirmed live to be unreliable — real
+  // network/YouTube-side load time varies, so a flat delay either
+  // reveals a still-loading/native-chrome player too early (exactly the
+  // "YouTube UI showing through" complaint) or leaves the poster up too
+  // long once it's genuinely playing. onStateChange's own PLAYING event
+  // is the one signal that's actually true regardless of how long
+  // loading took.
+  let ytApiPromise = null;
+  function loadYouTubeApi() {
+    if (ytApiPromise) return ytApiPromise;
+    ytApiPromise = new Promise((resolve) => {
+      if (window.YT && window.YT.Player) { resolve(window.YT); return; }
+      const previous = window.onYouTubeIframeAPIReady;
+      window.onYouTubeIframeAPIReady = () => {
+        if (previous) previous();
+        resolve(window.YT);
+      };
+      const tag = document.createElement("script");
+      tag.src = "https://www.youtube.com/iframe_api";
+      document.head.appendChild(tag);
+    });
+    return ytApiPromise;
+  }
 
   function homeHeroBadgeHtml(text) {
     return `<div class="home-hero-badge"><span class="material-symbols-rounded">campaign</span>${escapeHtml(text)}</div>`;
@@ -1563,24 +1616,19 @@
     heroEl.addEventListener("mouseleave", resetAutoplay);
     resetAutoplay();
 
-    // The YouTube embedded player listens for postMessage commands
-    // directly (no need to load the full IFrame Player API script) as
-    // long as its src carries enablejsapi=1 — a plain fire-and-forget
-    // postMessage, so a command sent before the player's internal
-    // listener is ready is simply dropped rather than erroring; the
-    // iframe's own "load" handler below resends the current mute state
-    // once it fires, which covers that gap in practice.
-    function ytCommand(iframe, func) {
-      try {
-        iframe.contentWindow.postMessage(JSON.stringify({ event: "command", func, args: [] }), "*");
-      } catch (err) { /* not ready yet — the next explicit toggle still reaches it */ }
-    }
-
+    // Real YT.Player instances (indices 0/1, matching HERO_TRAILER_COUNT)
+    // — not raw postMessage guessing — so mute state and the "is it
+    // actually playing yet" check below are both driven by the genuine
+    // player, not assumptions about its internal timing.
+    const heroPlayers = [];
     const muteBtn = document.getElementById("heroMuteBtn");
     function applyMuteState() {
       muteBtn.querySelector(".material-symbols-rounded").textContent = heroMuted ? "volume_off" : "volume_up";
       muteBtn.setAttribute("aria-label", heroMuted ? "Unmute trailer" : "Mute trailer");
-      heroEl.querySelectorAll(".home-hero-video-wrap iframe").forEach((f) => ytCommand(f, heroMuted ? "mute" : "unMute"));
+      heroPlayers.forEach((player) => {
+        if (!player) return;
+        if (heroMuted) player.mute(); else player.unMute();
+      });
     }
     muteBtn.addEventListener("click", () => { heroMuted = !heroMuted; applyMuteState(); });
 
@@ -1598,24 +1646,39 @@
         iframe.src = src;
         iframe.allow = "autoplay; encrypted-media";
         iframe.title = "Trailer";
-        // Only resync when the user has already unmuted (heroMuted false)
-        // — the URL's own mute=1 already covers the common default-muted
-        // case, so there's nothing to correct there, and skipping it
-        // avoids sending a postMessage command this early at all in the
-        // (far more common) case it isn't even needed. A real delay, not
-        // immediate-on-load, since the player's internal postMessage
-        // listener sending a command too early — right as it's still
-        // establishing autoplay — risked interrupting that sequence
-        // rather than just the mute state (confirmed live: the embed
-        // sat on its paused/suggestions screen instead of autoplaying
-        // once an on-load command was added here).
-        if (!heroMuted) iframe.addEventListener("load", () => setTimeout(() => ytCommand(iframe, "unMute"), 500));
         wrap.appendChild(iframe);
         muteBtn.hidden = false;
-        setTimeout(() => {
-          const poster = heroEl.querySelector(`.home-hero-slide[data-index="${i}"] img`);
-          if (poster) poster.classList.add("home-hero-poster-hidden");
-        }, HERO_POSTER_HIDE_DELAY_MS);
+        const YT = await loadYouTubeApi();
+        const poster = heroEl.querySelector(`.home-hero-slide[data-index="${i}"] img`);
+        heroPlayers[i] = new YT.Player(iframe, {
+          events: {
+            onReady: (e) => { if (!heroMuted) e.target.unMute(); },
+            // The one signal that's actually true, regardless of how
+            // long loading took — reveals the video only once real
+            // playback has genuinely started, so the poster keeps
+            // masking the player's own native-control/loading chrome
+            // for exactly as long as that chrome is actually showing,
+            // not a guessed fixed delay. A single PLAYING event isn't
+            // enough on its own, though — confirmed live that YouTube's
+            // player can report PLAYING once, optimistically, right as
+            // autoplay kicks off, then immediately drop back to
+            // buffering while more of the video loads; hiding the
+            // poster on that first blip re-exposed the exact loading
+            // chrome this is meant to mask. Debounced: only commits
+            // once the state is *still* PLAYING a moment later, and
+            // simply waits for the next PLAYING event (this handler
+            // fires on every state change) if it wasn't. */
+            onStateChange: (e) => {
+              if (e.data !== YT.PlayerState.PLAYING || !poster) return;
+              setTimeout(() => {
+                const player = heroPlayers[i];
+                if (player && player.getPlayerState() === YT.PlayerState.PLAYING) {
+                  poster.classList.add("home-hero-poster-hidden");
+                }
+              }, 600);
+            },
+          },
+        });
       } catch (err) { /* no trailer on file — the poster stays as the slide's art */ }
     });
 
