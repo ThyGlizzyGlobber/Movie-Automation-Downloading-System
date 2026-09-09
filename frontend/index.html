@@ -701,7 +701,7 @@
      blends into a lighter or grey one regardless of how dark that fade
      gets tuned, so a shadow that doesn't depend on the backdrop is the
      more robust fix. */
-  .detail-meta, .cert-badge, .detail-overview, .detail-cast-line {
+  .detail-meta, .cert-badge, .detail-overview, .detail-cast-line, .detail-overview-more-btn {
     text-shadow: 0 1px 4px color-mix(in srgb, var(--bg) 90%, transparent);
   }
   .detail-meta {
@@ -712,14 +712,25 @@
     font-size: 11px; font-weight: 700; padding: 1px 6px; border: 1px solid var(--text-dim);
     border-radius: 4px; color: var(--text-dim); line-height: 1.4;
   }
-  .detail-overview { margin-top: 8px; font-size: 15px; line-height: 1.5; color: var(--text); max-width: 640px; }
+  .detail-overview { margin-top: 8px; font-size: 17px; line-height: 1.5; color: var(--text); max-width: 640px; }
+  /* Same clamp/"More" pattern as .detail-panel-overview-text below —
+     the hero repeats the overview, so it gets the same overflow
+     treatment rather than always running full-length on the image. */
+  .detail-overview.clamped {
+    display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden;
+  }
+  .detail-overview-more-btn {
+    display: block; margin: 6px 0 0; padding: 0; background: none; border: none; color: var(--accent);
+    font-weight: 600; font-size: 13px; cursor: pointer;
+  }
+  .detail-overview-more-btn:hover { text-decoration: underline; }
   /* Matches the Prime screenshot's own "Cast: Name, Name, Name" line —
      just the first handful of names as plain #/person/{id} links, not
      the photo-card row (that one's still here too, further down the
      page — see castSectionHtml). Stacked under the overview by default
      (mobile/narrow) — .detail-overview-row below switches this to
      sitting alongside it once there's room, per direct request. */
-  .detail-cast-line { margin-top: 12px; font-size: 13.5px; color: var(--text-dim); max-width: 260px; }
+  .detail-cast-line { margin-top: 12px; font-size: 15px; color: var(--text-dim); max-width: 260px; }
   .detail-cast-line a { color: var(--text); }
   .detail-cast-line a:hover { text-decoration: underline; }
   /* Same 860px breakpoint as .settings-grid/.detail-poster above — the
@@ -729,7 +740,13 @@
      other narrow-viewport wrap. */
   @media (min-width: 860px) {
     .detail-overview-row { display: flex; align-items: flex-start; gap: 32px; margin-top: 8px; }
-    .detail-overview-row .detail-overview { flex: 1 1 auto; margin-top: 0; }
+    /* .detail-overview-col (overview text + its "More" button, stacked)
+       is the actual flex item here, not .detail-overview itself — the
+       button has to sit as a sibling below the clamped text rather than
+       inside it, so the two need a shared wrapper to grow together as
+       one flex item. */
+    .detail-overview-row .detail-overview-col { flex: 1 1 auto; }
+    .detail-overview-row .detail-overview { margin-top: 0; }
     /* margin-left:auto, not just flex:0 0 220px on its own — .detail-
        overview's own max-width:640px means it stops growing well short
        of a wide screen's real right edge, so without this the cast line
@@ -3195,7 +3212,10 @@
                 ${year ? `<span>${escapeHtml(year)}</span>` : ""}
               </div>
               <div class="detail-overview-row">
-                <div class="detail-overview">${escapeHtml(show.overview) || "<em>No synopsis available.</em>"}</div>
+                <div class="detail-overview-col">
+                  <div class="detail-overview clamped" id="heroOverviewText">${escapeHtml(show.overview) || "<em>No synopsis available.</em>"}</div>
+                  <button class="detail-overview-more-btn" id="heroMoreBtn" type="button">More</button>
+                </div>
                 ${castLineHtml(cast)}
               </div>
             </div>
@@ -3314,7 +3334,8 @@
 
       wireSubscribeArea();
       wireBulkArea();
-      wirePanelMore();
+      wireMoreToggle("heroOverviewText", "heroMoreBtn");
+      wireMoreToggle("panelOverviewText", "panelMoreBtn");
     } catch (err) {
       app.innerHTML = errorHtml(err.message);
     }
@@ -3441,16 +3462,17 @@
     `;
   }
 
-  // The "More"/"Less" expand toggle on detailPanelOverviewHtml's overview
-  // text. Hidden entirely when the overview is short enough that the
-  // 4-line clamp never actually truncates it — a visible "More" that
-  // toggles nothing on click read as a broken button, confirmed live.
-  // scrollHeight > clientHeight while still clamped is the real signal
-  // that there's hidden text (a plain line count would be wrong once
-  // font size/column width change the wrap).
-  function wirePanelMore() {
-    const btn = document.getElementById("panelMoreBtn");
-    const text = document.getElementById("panelOverviewText");
+  // The "More"/"Less" expand toggle shared by detailPanelOverviewHtml's
+  // overview text and the hero's own (duplicate) overview text. Hidden
+  // entirely when the overview is short enough that the 4-line clamp
+  // never actually truncates it — a visible "More" that toggles nothing
+  // on click read as a broken button, confirmed live. scrollHeight >
+  // clientHeight while still clamped is the real signal that there's
+  // hidden text (a plain line count would be wrong once font size/
+  // column width change the wrap).
+  function wireMoreToggle(textId, btnId) {
+    const btn = document.getElementById(btnId);
+    const text = document.getElementById(textId);
     if (!btn || !text) return;
     if (text.scrollHeight <= text.clientHeight + 1) {
       btn.hidden = true;
@@ -3620,7 +3642,10 @@
                 ${year ? `<span>${escapeHtml(year)}</span>` : ""}
               </div>
               <div class="detail-overview-row">
-                <div class="detail-overview">${escapeHtml(movie.overview) || "<em>No synopsis available.</em>"}</div>
+                <div class="detail-overview-col">
+                  <div class="detail-overview clamped" id="heroOverviewText">${escapeHtml(movie.overview) || "<em>No synopsis available.</em>"}</div>
+                  <button class="detail-overview-more-btn" id="heroMoreBtn" type="button">More</button>
+                </div>
                 ${castLineHtml(cast)}
               </div>
             </div>
@@ -3724,7 +3749,8 @@
         });
       }
       wireQualityButtons();
-      wirePanelMore();
+      wireMoreToggle("heroOverviewText", "heroMoreBtn");
+      wireMoreToggle("panelOverviewText", "panelMoreBtn");
     } catch (err) {
       app.innerHTML = errorHtml(err.message);
     }
