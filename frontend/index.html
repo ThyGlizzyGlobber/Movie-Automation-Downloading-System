@@ -413,6 +413,15 @@
     display: flex; gap: var(--row-gap); overflow-x: auto; padding: 8px 0 4px var(--row-inset);
     margin-right: -14px;
     scroll-snap-type: x proximity; -webkit-overflow-scrolling: touch;
+    /* Cross-browser scrollbar hiding — the ::-webkit-scrollbar rule
+       below only ever covered Chrome/Safari/Edge; Firefox (and old
+       Edge/IE) need these two instead, and without them Firefox's own
+       native scrollbar track reserved extra height at the bottom of
+       this row, which (since .hscroll-arrow's top:0/bottom:4px span —
+       see below — is measured against .hscroll-wrap's own real
+       height) shifted the hover arrow's vertically-centered position
+       down along with it — confirmed live. */
+    scrollbar-width: none; -ms-overflow-style: none;
     /* Without this, scroll-snap-align:start on the first card fights the
        padding above: "start" alignment is measured against the snapport
        (scroll-padding, default 0), not the visual padding box, so the
@@ -501,22 +510,34 @@
      whatever width that happens to be — and --poster-w's own vw-based
      scaling on top of that means even the *width* of a given column
      count keeps adjusting smoothly, not just the count itself. */
+  /* Same asymmetric-inset treatment as .hscroll/.provider-row (left
+     lined up with the header at --row-inset, right side cancels
+     main's own 14px padding instead of mirroring it) — per direct
+     request, category/provider-search/search-result/person-credit
+     pages (all of which render into this) should line up with Home's
+     own rows rather than sitting at main's plain 14px inset, which
+     this was doing before. */
   .grid {
     display: grid; grid-template-columns: repeat(auto-fill, minmax(var(--poster-w), 1fr));
     gap: 14px 10px;
+    padding-left: var(--row-inset); margin-right: -14px;
   }
   .grid .poster-card { width: auto; }
   .grid .poster-card img { width: 100%; height: auto; aspect-ratio: 2 / 3; }
 
-  /* Same asymmetric-inset treatment as .hscroll above, for the same
-     reason: left-aligned with the header at --row-inset, right side
-     cancels #app's own 14px padding (margin-right: -14px) instead of
-     mirroring it, so the grid actually gets the full remaining width to
-     lay chips into rather than stopping short at main's plain inset. */
+  /* Symmetric --row-inset on both sides (== --edge-inset, 64px, on
+     top of main's own 14px) — NOT .hscroll's asymmetric left-inset/
+     reach-the-true-edge treatment, despite starting from the same
+     left-aligned-with-the-header idea. This wraps to more rows
+     instead of scrolling, so there's no "more to scroll" affordance
+     to preserve on the right; the old margin-right:-14px just pushed
+     its last column past the header's own right inset instead,
+     visibly misaligned with it — confirmed live, fixed per direct
+     request. */
   .provider-row {
     display: grid; grid-template-columns: repeat(auto-fit, minmax(84px, 1fr));
     gap: 16px 12px;
-    padding-left: var(--row-inset); margin-right: -14px;
+    padding-left: var(--row-inset); padding-right: var(--row-inset);
   }
   .provider-chip {
     /* ~22% is the standard CSS approximation of Apple's App Store icon
@@ -531,12 +552,15 @@
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   }
 
-  .page-title { font-size: 21px; margin: 0 0 22px; }
+  /* margin-left: var(--row-inset), matching section.row h2's own left
+     edge, so a category/person page's heading lines up with Home's
+     row titles instead of sitting at main's plain 14px inset. */
+  .page-title { font-size: 21px; margin: 0 0 22px var(--row-inset); }
   /* Pulls up into .page-title's own bottom margin rather than stacking
      under it, so a title+subtitle pair (person filmography) reads as one
      tight header block instead of two evenly-spaced lines. */
   .page-title + .page-subtitle { margin-top: -14px; }
-  .page-subtitle { color: var(--text-dim); font-size: 14px; margin: 0 0 22px; }
+  .page-subtitle { color: var(--text-dim); font-size: 14px; margin: 0 0 22px var(--row-inset); }
 
   /* Invisible trigger an IntersectionObserver watches to auto-load the
      next page as the user scrolls near it — see wireInfiniteGrid(). Its
@@ -1063,6 +1087,14 @@
   @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.35; } }
 
   /* Requests list */
+  /* Symmetric --row-inset on top of main's own 14px (== --edge-inset,
+     64px, on both sides) rather than the asymmetric left-only/reach-
+     the-edge treatment .hscroll/.grid use — this is a plain vertical
+     list, not a horizontally-scrolling row, so there's no "reaches
+     the true edge" affordance to preserve on the right. Per direct
+     request to line other pages' content up with Home's own spacing,
+     which this sat inside of at main's plain 14px inset before. */
+  #requestsList { padding: 0 var(--row-inset); }
   .req-row {
     display: flex; align-items: center; justify-content: space-between; gap: 10px;
     padding: 14px 4px; border-bottom: 1px solid var(--border);
