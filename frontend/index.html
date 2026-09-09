@@ -669,7 +669,14 @@
     position: relative; z-index: 2; display: flex; gap: 24px; align-items: flex-end; flex-wrap: wrap;
     min-height: clamp(450px, 38vw, 720px); padding: 24px var(--edge-inset) 32px;
   }
-  .detail-action-col { flex: 0 0 auto; display: flex; flex-direction: column; align-items: center; gap: 12px; }
+  .detail-action-col {
+    flex: 0 0 auto; display: flex; flex-direction: column; align-items: center; gap: 12px;
+    /* The poster's own width, shared with .detail-action-col .add-btn
+       below (see its own comment) so the big Add to Plex/Add Show pill
+       always matches the poster sitting above it, at every breakpoint,
+       rather than tracking the two independently. */
+    --detail-poster-w: 130px;
+  }
   /* Score ring + add/subscribe-state icon share one row — per direct
      request, matching Prime's own icon row (a horizontal strip) more
      closely than the fully-stacked column this was before. */
@@ -678,7 +685,7 @@
     position: relative; border-radius: 10px; overflow: hidden;
     box-shadow: 0 8px 24px rgba(0,0,0,0.55);
   }
-  .detail-poster { width: 130px; height: 195px; object-fit: cover; background: var(--bg-card); display: block; }
+  .detail-poster { width: var(--detail-poster-w); height: 195px; object-fit: cover; background: var(--bg-card); display: block; }
   .detail-info { flex: 1 1 320px; min-width: 260px; padding-bottom: 2px; }
   .detail-info h1 { font-size: 28px; font-weight: 800; margin: 0 0 10px; line-height: 1.15; }
   .detail-info h1 .hero-year { font-weight: 400; color: var(--text-dim); }
@@ -717,16 +724,32 @@
   @media (min-width: 860px) {
     .detail-overview-row { display: flex; align-items: flex-start; gap: 32px; margin-top: 8px; }
     .detail-overview-row .detail-overview { flex: 1 1 auto; margin-top: 0; }
-    .detail-overview-row .detail-cast-line { flex: 0 0 220px; margin-top: 0; }
+    /* margin-left:auto, not just flex:0 0 220px on its own — .detail-
+       overview's own max-width:640px means it stops growing well short
+       of a wide screen's real right edge, so without this the cast line
+       just sat adjacent to wherever the overview text happened to end,
+       not out at the right side of the row. This pushes it flush to
+       the row's own right edge instead, independent of overview length
+       — the text inside stays left-aligned, only its box moves. */
+    .detail-overview-row .detail-cast-line { flex: 0 0 220px; margin-top: 0; margin-left: auto; }
   }
 
   /* Lower half of the detail page (below the hero) — a Prime-Video-style
-     "Related" row (plain rowHtml, no new CSS needed) followed by a
-     two-column grid of self-contained cards, reusing the same
-     card/border/radius language .settings-card already established.
-     Single column until there's room for two side by side, same 860px
+     "Related" row (plain rowHtml, no new CSS needed — .row/.hscroll
+     already left-align to the header via --row-inset, same as every
+     other carousel row) followed by a two-column grid of self-contained
+     cards, reusing the same card/border/radius language .settings-card
+     already established. Unlike a carousel row, this grid isn't meant to
+     bleed to the viewport edge on either side — it needs the SAME inset
+     as --row-inset gives the left edge, but mirrored on the right too,
+     so its cards line up with the header/hero column on both sides
+     rather than just sitting inside main's own bare 14px padding. Single
+     column until there's room for two side by side, same 860px
      breakpoint as .detail-overview-row above. */
-  .detail-panels-grid { display: flex; flex-direction: column; gap: 16px; margin-top: 28px; }
+  .detail-panels-grid {
+    display: flex; flex-direction: column; gap: 16px; margin-top: 28px;
+    padding: 0 calc(var(--edge-inset) - 14px);
+  }
   @media (min-width: 860px) {
     .detail-panels-grid { display: grid; grid-template-columns: 1fr 1fr; align-items: start; gap: 20px; }
   }
@@ -752,7 +775,7 @@
     font-size: 12px; padding: 3px 10px; border-radius: 999px; border: 1px solid var(--border);
     color: var(--text-dim);
   }
-  .detail-panel-overview-text { font-size: 14px; line-height: 1.5; color: var(--text); }
+  .detail-panel-overview-text { font-size: 16px; line-height: 1.5; color: var(--text); }
   .detail-panel-overview-text.clamped {
     display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden;
   }
@@ -829,9 +852,16 @@
      existing request/subscribe click handlers and ids verbatim (see
      renderMovie/renderShow), just sized up and set to the same white-
      pill look Prime's own Play button uses instead of this app's usual
-     accent-colored add-btn fill. */
+     accent-colored add-btn fill. Width matches the poster above it
+     (--detail-poster-w, see .detail-action-col) rather than being
+     driven by its own text/padding, per direct request — .add-btn's
+     shared nowrap/inline-flex is overridden here since a fixed width
+     narrower than "+ Add to Plex" needs to wrap onto a second line
+     instead of clipping. */
   .detail-action-col .add-btn {
-    height: 48px; padding: 0 28px; font-size: 16px; font-weight: 700;
+    width: var(--detail-poster-w); min-height: 48px; height: auto;
+    padding: 12px 14px; font-size: 16px; font-weight: 700;
+    white-space: normal; text-align: center; justify-content: center;
     background: #fff; color: var(--smithflix-charcoal); border: none;
   }
   /* .unsubscribe-link keeps its real id/click-handler (wireSubscribeArea
@@ -1216,8 +1246,11 @@
   @media (min-width: 860px) {
     /* .detail-hero-content's own min-height is already a fluid clamp()
        (matching .home-hero's), not a fixed size — no breakpoint jump
-       needed for it the way the old .hero-content had. */
-    .detail-poster { width: 200px; height: 300px; }
+       needed for it the way the old .hero-content had. Poster width
+       lives on --detail-poster-w (see .detail-action-col) so the add-btn
+       below picks up the same jump automatically. */
+    .detail-action-col { --detail-poster-w: 200px; }
+    .detail-poster { height: 300px; }
     .detail-info h1 { font-size: 32px; }
     .add-btn { padding: 14px 28px; font-size: 16px; }
   }
@@ -3017,7 +3050,7 @@
   function subscribeButtonHtml(subscription, isComingSoon) {
     if (!subscription) {
       return isComingSoon
-        ? `<button class="add-btn" id="subscribeBtn" disabled title="Not out digitally yet">+ Add Show</button>`
+        ? `<button class="add-btn" id="subscribeBtn" disabled title="Not out digitally yet">Coming Soon</button>`
         : `<button class="add-btn" id="subscribeBtn">+ Add Show</button>`;
     }
     if (subscription.status === "paused") {
@@ -3061,8 +3094,8 @@
       : "";
     return `
       <h2 class="section-heading">Bulk download</h2>
-      ${seriesBtn}
       ${seasonRows}
+      ${seriesBtn}
       <div id="bulkResult"></div>
     `;
   }
@@ -3357,12 +3390,20 @@
   }
 
   // The "More"/"Less" expand toggle on detailPanelOverviewHtml's overview
-  // text — plain class toggle, no scroll-height measuring, since the
-  // clamp is a fixed 4 lines either way.
+  // text. Hidden entirely when the overview is short enough that the
+  // 4-line clamp never actually truncates it — a visible "More" that
+  // toggles nothing on click read as a broken button, confirmed live.
+  // scrollHeight > clientHeight while still clamped is the real signal
+  // that there's hidden text (a plain line count would be wrong once
+  // font size/column width change the wrap).
   function wirePanelMore() {
     const btn = document.getElementById("panelMoreBtn");
     const text = document.getElementById("panelOverviewText");
     if (!btn || !text) return;
+    if (text.scrollHeight <= text.clientHeight + 1) {
+      btn.hidden = true;
+      return;
+    }
     btn.addEventListener("click", () => {
       const expanded = text.classList.toggle("expanded");
       text.classList.toggle("clamped", !expanded);
@@ -3514,7 +3555,7 @@
                 </button>
               </div>
               ${movie.is_coming_soon
-                ? `<button class="add-btn" id="addBtn" disabled title="Not out digitally yet">+ Add to Plex</button>`
+                ? `<button class="add-btn" id="addBtn" disabled title="Not out digitally yet">Coming Soon</button>`
                 : `<button class="add-btn" id="addBtn">+ Add to Plex</button>`}
             </div>
             <div class="detail-info">
