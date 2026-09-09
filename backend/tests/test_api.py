@@ -867,22 +867,36 @@ def test_get_person_detail_404s_on_unknown_person_id(client_and_deps):
 # ---------------------------------------------------------------------------
 
 
-def test_get_movie_trailer_returns_best_key(client_and_deps):
+def test_get_movie_trailer_returns_cached_file_url(client_and_deps, monkeypatch, tmp_path):
     client, _, tmdb, _, _, _ = client_and_deps
     tmdb._movie_videos = [{"site": "YouTube", "type": "Trailer", "official": True, "key": "abc123"}]
+    monkeypatch.setattr(
+        api.trailers, "ensure_downloaded", lambda media_type, tmdb_id, key: tmp_path / f"{media_type}-{tmdb_id}-{key}.mp4"
+    )
 
     response = client.get("/api/movies/693134/trailer")
 
     assert response.status_code == 200
-    assert response.json() == {"key": "abc123"}
+    assert response.json() == {"url": "/api/trailers/movie-693134-abc123.mp4"}
 
 
-def test_get_movie_trailer_returns_null_key_when_none_found(client_and_deps):
+def test_get_movie_trailer_returns_null_url_when_none_found(client_and_deps):
     client, _, _, _, _, _ = client_and_deps
     response = client.get("/api/movies/693134/trailer")
 
     assert response.status_code == 200
-    assert response.json() == {"key": None}
+    assert response.json() == {"url": None}
+
+
+def test_get_movie_trailer_returns_null_url_when_download_fails(client_and_deps, monkeypatch):
+    client, _, tmdb, _, _, _ = client_and_deps
+    tmdb._movie_videos = [{"site": "YouTube", "type": "Trailer", "official": True, "key": "abc123"}]
+    monkeypatch.setattr(api.trailers, "ensure_downloaded", lambda media_type, tmdb_id, key: None)
+
+    response = client.get("/api/movies/693134/trailer")
+
+    assert response.status_code == 200
+    assert response.json() == {"url": None}
 
 
 def test_get_movie_trailer_502s_on_upstream_error(client_and_deps):
@@ -894,14 +908,17 @@ def test_get_movie_trailer_502s_on_upstream_error(client_and_deps):
     assert response.status_code == 502
 
 
-def test_get_tv_trailer_returns_best_key(client_and_deps):
+def test_get_tv_trailer_returns_cached_file_url(client_and_deps, monkeypatch, tmp_path):
     client, _, tmdb, _, _, _ = client_and_deps
     tmdb._tv_videos = [{"site": "YouTube", "type": "Teaser", "official": True, "key": "xyz789"}]
+    monkeypatch.setattr(
+        api.trailers, "ensure_downloaded", lambda media_type, tmdb_id, key: tmp_path / f"{media_type}-{tmdb_id}-{key}.mp4"
+    )
 
     response = client.get("/api/tv/97546/trailer")
 
     assert response.status_code == 200
-    assert response.json() == {"key": "xyz789"}
+    assert response.json() == {"url": "/api/trailers/tv-97546-xyz789.mp4"}
 
 
 def test_get_tv_trailer_502s_on_upstream_error(client_and_deps):
@@ -911,6 +928,51 @@ def test_get_tv_trailer_502s_on_upstream_error(client_and_deps):
     response = client.get("/api/tv/97546/trailer")
 
     assert response.status_code == 502
+
+
+# ---------------------------------------------------------------------------
+# /api/trailers/{filename} — serves a cached hero trailer file
+# ---------------------------------------------------------------------------
+
+
+def test_get_trailer_file_serves_cached_file(client_and_deps, monkeypatch, tmp_path):
+    client, _, _, _, _, _ = client_and_deps
+    monkeypatch.setattr(api.config, "TRAILER_CACHE_DIR", tmp_path)
+    (tmp_path / "movie-693134-abc123.mp4").write_bytes(b"fake video bytes")
+
+    response = client.get("/api/trailers/movie-693134-abc123.mp4")
+
+    assert response.status_code == 200
+    assert response.content == b"fake video bytes"
+    assert response.headers["content-type"] == "video/mp4"
+
+
+def test_get_trailer_file_404s_when_missing(client_and_deps, monkeypatch, tmp_path):
+    client, _, _, _, _, _ = client_and_deps
+    monkeypatch.setattr(api.config, "TRAILER_CACHE_DIR", tmp_path)
+
+    response = client.get("/api/trailers/movie-693134-abc123.mp4")
+
+    assert response.status_code == 404
+
+
+@pytest.mark.parametrize(
+    "filename",
+    [
+        "../../etc/passwd",
+        "..%2f..%2fetc%2fpasswd",
+        "movie-693134-abc123.txt",
+        "movie-693134-abc123.mp4.exe",
+        "not-a-valid-name.mp4",
+    ],
+)
+def test_get_trailer_file_rejects_non_matching_filenames(client_and_deps, monkeypatch, tmp_path, filename):
+    client, _, _, _, _, _ = client_and_deps
+    monkeypatch.setattr(api.config, "TRAILER_CACHE_DIR", tmp_path)
+
+    response = client.get(f"/api/trailers/{filename}")
+
+    assert response.status_code == 404
 
 
 def test_tv_discover_coming_soon_passes_through_tmdb(client_and_deps):

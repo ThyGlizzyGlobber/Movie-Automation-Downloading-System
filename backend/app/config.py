@@ -302,3 +302,22 @@ MOVIE_LIBRARY_ROOT = Path(os.environ.get("MOVIE_LIBRARY_ROOT", "/movie-library")
 # path-namespace mismatch QBIT_TV_SAVE_PATH exists for, mirrored here for
 # movies. Unset by default for the same reason.
 QBIT_MOVIE_SAVE_PATH = os.environ.get("QBIT_MOVIE_SAVE_PATH")
+
+# -- Stage 14: home hero carousel trailers. --
+
+# Self-hosted cache for home hero trailer clips (trailers.py). Embedding
+# YouTube's own player left its "Cards" overlay showing through — a
+# creator-configured interactive layer that can appear at any timestamp,
+# tied to no player state and suppressible by no embed parameter or JS API
+# call — so instead the clip is downloaded once via yt-dlp and served
+# directly as a plain file, at the user's explicit request after this
+# limitation was explained. Same DB_PATH pattern/volume: resolves to
+# /app/data/trailers in Docker, reusing the backend-data volume already
+# mounted at /app/data rather than needing a new one.
+TRAILER_CACHE_DIR = Path(os.environ.get("TRAILER_CACHE_DIR", Path(__file__).resolve().parent.parent / "data" / "trailers"))
+
+# Most-recently-used trailer files to keep on disk; enforce_downloaded()
+# evicts the oldest beyond this on every new download.
+TRAILER_CACHE_MAX_FILES = int(os.environ.get("TRAILER_CACHE_MAX_FILES", "20"))
+
+TRAILER_DOWNLOAD_TIMEOUT_SECONDS = int(os.environ.get("TRAILER_DOWNLOAD_TIMEOUT_SECONDS", "45"))

@@ -5,14 +5,16 @@ origin. TMDB key and qBittorrent credentials never reach the browser: every
 route here is either a thin TMDB proxy or reads/writes the local job store."""
 
 import logging
+import re
 import shutil
 from contextlib import asynccontextmanager
 from dataclasses import asdict
 
 from fastapi import Depends, FastAPI, HTTPException, Request
+from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field, field_validator, model_validator
 
-from app import config
+from app import config, trailers
 from app.db import RequestRow, RequestStore, ShowRow
 from app.deploy import DeployError, run_git_pull
 from app.logging_config import configure_logging
@@ -29,6 +31,12 @@ from app.tmdb import TMDBClient, TMDBError, best_trailer_key, is_movie_coming_so
 from app.tv_resolve import resolve_show
 from app.tv_settings import resolve_tv_settings
 from app.worker import Worker
+
+# Cache filenames are always trailers.cached_trailer_path()'s own
+# "{media_type}-{tmdb_id}-{key}.mp4" shape — validated before ever touching
+# the filesystem so a crafted filename can't path-traverse out of
+# TRAILER_CACHE_DIR.
+_TRAILER_FILENAME_RE = re.compile(r"^[a-z]+-\d+-[\w-]+\.mp4$")
 
 configure_logging()
 logger = logging.getLogger("app.api")
@@ -377,15 +385,22 @@ def get_movie_trailer(tmdb_id: int, tmdb: TMDBClient = Depends(get_tmdb)) -> dic
     """Backs the home hero carousel's background video — a separate call
     from get_movie_detail rather than another append_to_response, since
     this is only ever fetched for the couple of hero slides that actually
-    need a trailer, not every movie the frontend touches. `key: null`
-    (never a 404) when nothing suitable is on file — a title with no
-    trailer is a normal, expected case, not an error the caller needs to
-    handle specially; it just falls back to a plain poster/backdrop."""
+    need a trailer, not every movie the frontend touches. `url: null`
+    (never a 404) when nothing suitable is on file or the download fails —
+    a title with no trailer is a normal, expected case, not an error the
+    caller needs to handle specially; it just falls back to a plain
+    poster/backdrop. Downloads and serves the clip from our own cache
+    (trailers.py) rather than embedding YouTube's player — see that
+    module's docstring for why."""
     try:
         videos = tmdb.get_movie_videos(tmdb_id)
     except TMDBError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
-    return {"key": best_trailer_key(videos)}
+    key = best_trailer_key(videos)
+    if key is None:
+        return {"url": None}
+    path = trailers.ensure_downloaded("movie", tmdb_id, key)
+    return {"url": f"/api/trailers/{path.name}" if path else None}
 
 
 # -- Stage 14: TV browse surface — the show equivalent of the movie routes
@@ -489,7 +504,24 @@ def get_tv_trailer(tmdb_id: int, tmdb: TMDBClient = Depends(get_tmdb)) -> dict:
         videos = tmdb.get_tv_videos(tmdb_id)
     except TMDBError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
-    return {"key": best_trailer_key(videos)}
+    key = best_trailer_key(videos)
+    if key is None:
+        return {"url": None}
+    path = trailers.ensure_downloaded("tv", tmdb_id, key)
+    return {"url": f"/api/trailers/{path.name}" if path else None}
+
+
+@app.get("/api/trailers/{filename}")
+def get_trailer_file(filename: str) -> FileResponse:
+    """Serves a cached hero-carousel trailer downloaded by trailers.py.
+    Filename is regex-whitelisted before it ever reaches the filesystem —
+    it's a path segment taken straight from the URL."""
+    if not _TRAILER_FILENAME_RE.match(filename):
+        raise HTTPException(status_code=404, detail="trailer not found")
+    path = config.TRAILER_CACHE_DIR / filename
+    if not path.is_file():
+        raise HTTPException(status_code=404, detail="trailer not found")
+    return FileResponse(path, media_type="video/mp4")
 
 
 @app.get("/api/person/{person_id}")
