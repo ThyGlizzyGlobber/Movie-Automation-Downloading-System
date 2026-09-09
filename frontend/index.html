@@ -148,22 +148,15 @@
     backdrop-filter: blur(10px);
   }
   /* Hero-topped pages (see body.has-hero, set in setChrome): the header
-     becomes a true see-through gradient scrim instead of a blurred bar,
-     so the hero image itself is genuinely visible underneath the logo/
-     search/settings row, not just color-matched to it. No blur — blurring
-     would obscure the hero art this is meant to reveal. The gradient (not flat
-     transparency) keeps icon/text contrast readable regardless of what's
-     in the backdrop image right behind them. */
+     carries no background of its own at all at the top of the page —
+     no gradient scrim, no blur — per direct request to remove that
+     state entirely. The hero's own top fade now carries icon/text
+     legibility instead (see .home-hero-fade's top layer, matching its
+     bottom fade's distance at half the opacity). Once scrolled past
+     the hero (.scrolled below) it's over ordinary rows instead, so it
+     gets its normal frosted fill there. */
   body.has-hero #topbar {
-    /* Literal black, not var(--bg) — same "read as black specifically,
-       not the theme's own background color" rule the hero fades below
-       already follow, so the header blends into the same black the hero
-       itself fades into rather than reading as its own separate tinted
-       bar. Carries icon/text legibility on its own now (stronger than
-       the original 0.44 top stop) — the text-shadow that used to be a
-       second, independent line of defense was removed per direct
-       request, so this can't lean on that as a backup anymore. */
-    background: linear-gradient(to bottom, rgba(0,0,0,0.65) 0%, transparent 100%);
+    background: transparent;
     backdrop-filter: none;
     transition: background 0.2s ease;
   }
@@ -214,11 +207,9 @@
      other page, where the background is always a flat, predictable app
      color — but that same dim tone is close enough to a light or
      mid-grey hero image's own tones that it can nearly disappear there,
-     leaning entirely on the header's own background gradient for
-     contrast now that the text-shadow every hero-page header element
-     used to get has been removed per direct request (a stronger 0.65
-     gradient top-stop, see body.has-hero #topbar above, is meant to
-     carry that on its own). Full-strength --text on hero pages instead.
+     leaning entirely on the hero's own top fade for contrast now (see
+     .home-hero-fade's top layer — #topbar itself carries no background
+     of its own here any more). Full-strength --text on hero pages instead.
      The active link needs its own repeat here even though
      .top-nav-link.active above already sets its own color: this
      selector's #topbar id outweighs that plain two-class one, so
@@ -755,24 +746,32 @@
      below (a slide-level sibling that paints above the *entire* media
      box, poster and video-wrap alike — see the .home-hero-slide.active
      stacking-context comment above) already reaches over the trailer
-     too, so a second one here would just double up. #topbar's own
-     gradient (see body.has-hero #topbar above) is untouched — never
-     part of this. */
+     too, so a second one here would just double up. */
   .home-hero-video-wrap::before {
     content: ""; position: absolute; inset: 0; z-index: 2;
   }
-  /* Bottom fade into the page's own black beneath the hero, matching
-     Prime Video's own hero banners (confirmed against several of
-     their real posters side by side). The matching left-to-right
-     fade lives on .home-hero-media img itself now (a mask, not a
-     layer here) — see its own comment for why a hero-relative overlay
-     here couldn't work for every image position. */
+  /* Bottom fade into the page's own black beneath the hero, plus a top
+     fade carrying icon/text legibility for #topbar now that it no
+     longer supplies its own gradient scrim over the hero (removed per
+     direct request — this replaces it). The top fade is the bottom
+     one's own curve mirrored top-to-bottom at half the peak opacity
+     (0.5/0.325 vs. 1/0.65) but the *same* 0%/20%/50% distances, per
+     direct request to match it exactly apart from the opacity. The
+     matching left-to-right fade lives on .home-hero-media img itself
+     now (a mask, not a layer here) — see its own comment for why a
+     hero-relative overlay here couldn't work for every image
+     position. */
   .home-hero-fade {
     position: absolute; inset: 0; z-index: 1;
-    background-image: linear-gradient(to top,
-      rgba(0, 0, 0, 1) 0%,
-      rgba(0, 0, 0, 0.65) 20%,
-      rgba(0, 0, 0, 0) 50%);
+    background-image:
+      linear-gradient(to bottom,
+        rgba(0, 0, 0, 0.5) 0%,
+        rgba(0, 0, 0, 0.325) 20%,
+        rgba(0, 0, 0, 0) 50%),
+      linear-gradient(to top,
+        rgba(0, 0, 0, 1) 0%,
+        rgba(0, 0, 0, 0.65) 20%,
+        rgba(0, 0, 0, 0) 50%);
   }
   .home-hero-content {
     position: relative; z-index: 2; display: flex; align-items: flex-end;
