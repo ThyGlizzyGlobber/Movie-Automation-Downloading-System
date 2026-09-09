@@ -17,7 +17,13 @@
 <link rel="icon" type="image/png" sizes="512x512" href="/icon-512.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@600;700;800&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<!-- Inter previously stopped at 600 — every font-weight:700/800
+     declaration on body text (the hero title among many others) was
+     silently font-matching down to that 600 face (or faux-bolding it)
+     instead of actually rendering bold/extra-bold, since no heavier
+     Inter face was ever loaded. Added 700/800 to cover every weight
+     this file actually declares. -->
+<link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@600;700;800&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@48,700,1,0" rel="stylesheet">
 <style>
   /* Smithflix brand palette — charcoal ground + a cool blue accent,
@@ -680,6 +686,16 @@
      video on real hero-width/video-width ratios — confirmed live: the
      gradient simply never reached the video at all, reading as a flat
      dark panel with a hard seam instead of a blend into it. */
+  /* An <a>, not a <div>, per direct request — clicking the poster or
+     the trailer itself goes straight to the title's own page, same
+     href as the actions row's own info button. Safe to make the whole
+     box clickable despite containing the video: both
+     .home-hero-video-wrap and the <video> inside it are already
+     pointer-events:none (unrelated reasons — see their own comments),
+     so a click anywhere over them passes straight through to this
+     anchor instead of being swallowed. .home-hero-content's own
+     buttons/text sit in a separate sibling above this in paint order,
+     so clicks there still hit those first, unaffected. */
   .home-hero-media { position: absolute; inset: 0; overflow: hidden; background: #000; z-index: 0; }
   /* Sits ABOVE the video (z-index 2 vs. its 1, both scoped inside
      .home-hero-media's own stacking context now) until wireHomeHero
@@ -1761,10 +1777,10 @@
     const ctaIcon = onPlex ? "play_arrow" : "add";
     const ctaLabel = onPlex ? "Watch on Plex" : "Add to Plex";
     return `<div class="home-hero-slide${index === 0 ? " active" : ""}" data-index="${index}">
-      <div class="home-hero-media">
+      <a class="home-hero-media" href="${href}" aria-label="${title}">
         <img src="${backdrop}" alt="" loading="${index === 0 ? "eager" : "lazy"}">
         <div class="home-hero-video-wrap" id="heroVideoWrap${index}"></div>
-      </div>
+      </a>
       <div class="home-hero-fade"></div>
       <div class="home-hero-content">
         <div class="home-hero-info">
