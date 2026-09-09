@@ -648,7 +648,7 @@
        viewport width it's already at the old desktop height (640px) and
        keeps growing a bit further before capping, so a genuinely wide
        desktop window gets a taller hero than either old fixed value. */
-    min-height: clamp(480px, 42vw, 780px); overflow: hidden; background: #000;
+    min-height: clamp(450px, 38vw, 720px); overflow: hidden; background: #000;
   }
   .home-hero-slide {
     position: absolute; inset: 0; opacity: 0; visibility: hidden; pointer-events: none;
@@ -736,7 +736,7 @@
        actual visible content height resolves to), so this repeats the
        identical clamp() rather than a shared variable so each is
        independently readable, matching the rest of the file's style. */
-    min-height: clamp(480px, 42vw, 780px); padding: 24px var(--edge-inset) 44px;
+    min-height: clamp(450px, 38vw, 720px); padding: 24px var(--edge-inset) 44px;
   }
   /* Widened from a fixed 560px — necessary once the title itself
      roughly doubled (see .home-hero-info h1 below): unchanged, that box
