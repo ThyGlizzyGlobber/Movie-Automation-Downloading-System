@@ -694,37 +694,24 @@
     transform: scale(1.28);
   }
   /* ============================================================
-     Hero gradient system — rebuilt from scratch (previous version
-     accumulated too many one-off patches to individual numbers, each
-     fixing one reported problem in isolation). Same three jobs as
-     before, now each one a single, independent, clearly-scoped layer
-     rather than numbers threaded through several rules:
+     Hero gradient system. Two jobs, each a single independent layer:
 
      1. TEXT SCRIM (horizontal) — darkens behind the title/badge/CTA
         column so it reads over any backdrop. Poster slides can afford
         a wider, stronger scrim (there's no trailer to protect); video
         slides get a tighter, lighter one so it doesn't wash out the
         clip itself.
-     2. HEADER-SEAM BRIDGE (vertical, confined to the text-column
-        width via background-size) — the fixed header (untouched here,
-        see body.has-hero #topbar above) fades from ~0.65 to fully
-        transparent over its own ~64px height. Without a matching
-        layer just below it, that transparent edge lands right next to
-        this fade's own transparent middle, and two independently
-        fully-transparent regions meeting at the same seam reads as a
-        bright, undarkened gap — confirmed live, twice. This layer
-        holds real opacity out past 64px before tapering, so the two
-        never both go slack at once. It's confined to the text-column
-        width (not full-bleed) specifically so it never reaches into a
-        playing trailer — confirmed live that a full-width version
-        visibly dimmed a real chunk of the video itself.
-     3. BOTTOM VIGNETTE (vertical, full width) — fades to literal #000
+     2. BOTTOM VIGNETTE (vertical, full width) — fades to literal #000
         for the last stretch so the hero blends into the page's own
         black background below it, rather than a poster/video's real
         colors cutting off hard against it.
 
+     No separate layer bridges the fixed header's own fade into this
+     one — removed per direct request. #topbar's own gradient (see
+     body.has-hero #topbar above) is untouched either way.
+
      The video's own left-edge blend (.home-hero-video-wrap::before,
-     just above) is a separate, fourth piece — it solves a different
+     just above) is a separate, third piece — it solves a different
      problem (masking the video box's own hard edge and any baked-in
      letterboxing), stays scoped to the video box itself regardless of
      viewport width, and is unaffected by anything below. Deliberately
@@ -746,16 +733,11 @@
         rgba(0,0,0,0.55) 20%,
         rgba(0,0,0,0.2) 38%,
         transparent 54%),
-      /* 2. Header-seam bridge — px, not %: the header's own height is a
-         fixed value, not proportional to the hero's, so the layer
-         standing in for it shouldn't be either. Confined to the left
-         50% by background-size below. */
-      linear-gradient(180deg, rgba(0,0,0,0.5) 0px, rgba(0,0,0,0.45) 90px, transparent 160px),
-      /* 3. Bottom vignette */
+      /* 2. Bottom vignette */
       linear-gradient(180deg, transparent 55%, rgba(0,0,0,0.55) 82%, #000 100%);
-    background-size: 100% 100%, 50% 100%, 100% 100%;
+    background-size: 100% 100%, 100% 100%;
   }
-  /* Same three-layer system, tuned lighter/tighter throughout so it
+  /* Same two-layer system, tuned lighter/tighter throughout so it
      never smears over the trailer itself ("too much black fade...
      makes the trailer impossible to see" / "dimming it by a lot" —
      both confirmed live against this exact rule before). Only applied
@@ -769,26 +751,21 @@
         rgba(0,0,0,0.38) 12%,
         rgba(0,0,0,0.1) 24%,
         transparent 34%),
-      linear-gradient(180deg, rgba(0,0,0,0.4) 0px, rgba(0,0,0,0.35) 80px, transparent 140px),
       linear-gradient(180deg, transparent 58%, rgba(0,0,0,0.5) 82%, #000 100%);
-    background-size: 100% 100%, 38% 100%, 100% 100%;
+    background-size: 100% 100%, 100% 100%;
   }
   /* Per direct request: no horizontal text scrim at all below the
      hero's own mobile breakpoint (see the min-width:640px block
-     further down) — just the header-seam bridge and bottom vignette,
-     same widths/opacities as their desktop counterparts above. */
+     further down) — just the bottom vignette, same as its desktop
+     counterpart above. */
   @media (max-width: 639px) {
     .home-hero-fade {
-      background-image:
-        linear-gradient(180deg, rgba(0,0,0,0.5) 0px, rgba(0,0,0,0.45) 90px, transparent 160px),
-        linear-gradient(180deg, transparent 55%, rgba(0,0,0,0.55) 82%, #000 100%);
-      background-size: 50% 100%, 100% 100%;
+      background-image: linear-gradient(180deg, transparent 55%, rgba(0,0,0,0.55) 82%, #000 100%);
+      background-size: 100% 100%;
     }
     .home-hero-slide.home-hero-has-video .home-hero-fade {
-      background-image:
-        linear-gradient(180deg, rgba(0,0,0,0.4) 0px, rgba(0,0,0,0.35) 80px, transparent 140px),
-        linear-gradient(180deg, transparent 58%, rgba(0,0,0,0.5) 82%, #000 100%);
-      background-size: 38% 100%, 100% 100%;
+      background-image: linear-gradient(180deg, transparent 58%, rgba(0,0,0,0.5) 82%, #000 100%);
+      background-size: 100% 100%;
     }
   }
   .home-hero-content {
