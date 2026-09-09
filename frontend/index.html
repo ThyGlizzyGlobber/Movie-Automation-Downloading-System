@@ -857,7 +857,10 @@
      a bit more of its own edges than strictly needed, but that's a
      smaller cost than visible black bars. History: 1.28 originally,
      eased to 1.18 per direct request ("allowing for the zoom in to
-     zoom out a bit"), then back up to 1.25 per a later direct request.
+     zoom out a bit"), up to 1.25 per a later direct request, then
+     1.35 per a further direct request — shared by all three hero
+     carousels (Home/Movies/TV all reuse this same rule now), so one
+     change here covers all of them.
      The left fade itself is the wrap's own mask-image now (see its
      comment above), not this element's — a mask combined with a
      transform on the *same* element left a hard, still-partially-
@@ -873,7 +876,7 @@
      live with a real video file. */
   .home-hero-video-wrap video {
     display: block; height: 100%; width: auto; border: none; pointer-events: none;
-    transform: scale(1.25);
+    transform: scale(1.35);
     opacity: 0; transition: opacity 0.6s ease;
   }
   .home-hero-video-wrap video.home-hero-video-visible { opacity: 1; }
