@@ -625,10 +625,11 @@
      poster aligned with top of viewport"). */
   .detail-hero {
     position: relative; width: calc(100% + 28px); overflow: hidden;
-    /* Bottom margin bumped 18px -> 40px — the crew row (crewRowHtml,
-       right after this in the page flow) read as cramped underneath
-       the action column's own button, almost like part of it rather
-       than a separate section below, confirmed live. */
+    /* Bottom margin bumped 18px -> 40px — whatever sits right after
+       this in the page flow (the Related row, or the old crew row
+       before it moved into the Creators and Cast card) read as cramped
+       underneath the action column's own button, almost like part of
+       it rather than a separate section below, confirmed live. */
     margin: calc(-1 * (var(--topbar-h, 64px) + 14px)) -14px 40px;
     padding-top: calc(var(--topbar-h, 64px) + 14px);
     min-height: clamp(450px, 38vw, 720px);
@@ -718,6 +719,73 @@
     .detail-overview-row .detail-overview { flex: 1 1 auto; margin-top: 0; }
     .detail-overview-row .detail-cast-line { flex: 0 0 220px; margin-top: 0; }
   }
+
+  /* Lower half of the detail page (below the hero) — a Prime-Video-style
+     "Related" row (plain rowHtml, no new CSS needed) followed by a
+     two-column grid of self-contained cards, reusing the same
+     card/border/radius language .settings-card already established.
+     Single column until there's room for two side by side, same 860px
+     breakpoint as .detail-overview-row above. */
+  .detail-panels-grid { display: flex; flex-direction: column; gap: 16px; margin-top: 28px; }
+  @media (min-width: 860px) {
+    .detail-panels-grid { display: grid; grid-template-columns: 1fr 1fr; align-items: start; gap: 20px; }
+  }
+  .detail-panels-col { display: flex; flex-direction: column; gap: 16px; }
+  .detail-panel {
+    background: var(--bg-card); border: 1px solid var(--border); border-radius: 14px;
+    padding: 18px 18px 20px;
+  }
+  /* Whatever heading starts a card (the title-repeat h2 below, or a
+     .section-heading reused from elsewhere, e.g. relocated bulkAreaHtml)
+     shouldn't carry its own top margin once it's the first thing in the
+     card — .section-heading's 20px top margin assumes it's following
+     other content, which isn't true here. */
+  .detail-panel > :first-child { margin-top: 0; }
+
+  /* Left column's first card repeats the title/genres/overview — Prime
+     does this too (the same overview text shown twice on the page is
+     deliberate, confirmed against their own layout), so this isn't
+     read as a mistake once it's styled as its own separate card. */
+  .detail-panel-title { font-size: 20px; font-weight: 800; margin: 0 0 10px; }
+  .detail-panel-tags { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; }
+  .detail-panel-tag {
+    font-size: 12px; padding: 3px 10px; border-radius: 999px; border: 1px solid var(--border);
+    color: var(--text-dim);
+  }
+  .detail-panel-overview-text { font-size: 14px; line-height: 1.5; color: var(--text); }
+  .detail-panel-overview-text.clamped {
+    display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden;
+  }
+  .detail-panel-more-btn {
+    margin: 6px 0 0; padding: 0; background: none; border: none; color: var(--accent);
+    font-weight: 600; font-size: 13px; cursor: pointer;
+  }
+  .detail-panel-more-btn:hover { text-decoration: underline; }
+
+  /* "Creators and Cast" card — Directors/Producers/Cast/Studio, each a
+     labeled row of comma-separated person links. Replaces the old
+     crewRowHtml row that used to sit directly under the hero. */
+  .creators-row { margin-top: 12px; font-size: 14px; }
+  .creators-row:first-of-type { margin-top: 0; }
+  .creators-row .label { color: var(--text-dim); font-size: 12px; margin-bottom: 2px; }
+  .creators-row .value a { color: var(--text); }
+  .creators-row .value a:hover { text-decoration: underline; }
+
+  /* "Details" card — real fields only (certification/original language/
+     release status); no fabricated content-advisory or subtitle data,
+     since there's no source for either in this app. */
+  .details-list { display: flex; flex-direction: column; gap: 10px; }
+  .details-row { display: flex; justify-content: space-between; gap: 12px; font-size: 14px; }
+  .details-row .label { color: var(--text-dim); }
+  .details-row .value { color: var(--text); text-align: right; }
+
+  /* Page footer — sits after the cast carousel, the very bottom of the
+     detail page. Reuses the header's own wordmark markup/colors
+     (#topbarLogo .brand-wordmark) rather than a new logo treatment. */
+  .detail-footer { margin-top: 56px; padding: 32px 0 40px; text-align: center; }
+  .detail-footer .brand-wordmark { font-family: var(--font-display); font-weight: 800; font-size: 28px; }
+  .detail-footer .brand-word-smith { color: var(--text); }
+  .detail-footer .brand-word-flix { color: var(--accent); }
 
   /* Score ring: rounded stroke ends (matching the site's own pill
      language everywhere else — a plain conic-gradient div, the previous
@@ -1110,11 +1178,14 @@
     .home-hero-info-btn, .home-hero-mute-btn { width: 56px; height: 56px; font-size: 22px; }
   }
 
-  .crew-row { display: flex; gap: 22px; margin-top: 18px; flex-wrap: wrap; }
-  .crew-name { font-weight: 600; font-size: 14px; }
-  .crew-job { font-size: 12.5px; color: var(--text-dim); }
-
-  .cast-section { margin-top: 8px; }
+  /* Scoped override, not the global --cast-w default (see :root) — this
+     row alone scales up so a common desktop viewport shows exactly 9
+     people at once, per direct request; every other consumer of
+     --cast-w (there are none currently, but the variable stays global
+     for any future one) keeps the smaller default. Now the very last
+     content element on the page (see renderMovie/renderShow), so it
+     gets more breathing room above it than the old 8px. */
+  .cast-section { --cast-w: clamp(90px, 10vw, 150px); margin-top: 32px; }
   .cast-card { flex: 0 0 auto; width: var(--cast-w); }
   .cast-card img {
     width: var(--cast-w); height: var(--cast-w); border-radius: 50%; object-fit: cover;
@@ -1735,9 +1806,9 @@
   });
 
   const listRequests = () => api(`/api/requests`);
-  const createRequest = (tmdb_id, query) => api(`/api/requests`, {
+  const createRequest = (tmdb_id, query, minResolution) => api(`/api/requests`, {
     method: "POST", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ tmdb_id, query: query || null }),
+    body: JSON.stringify({ tmdb_id, query: query || null, min_resolution: minResolution || null }),
   });
   const getRequest = (id) => api(`/api/requests/${id}`);
   const cancelRequest = (id) => api(`/api/requests/${id}/cancel`, { method: "POST" });
@@ -3010,7 +3081,6 @@
 
       const backdrop = backdropUrl(show.backdrop_path);
       const cast = show.credits?.cast;
-      const crew = show.credits?.crew;
       const isEndedOrCanceled = show.status === "Ended" || show.status === "Canceled";
       const seasons = (show.seasons || []).filter((s) => s.season_number > 0);
       const year = yearOf(show.first_air_date);
@@ -3046,9 +3116,19 @@
             </div>
           </div>
         </div>
-        ${crewRowHtml(crew)}
-        <div id="bulkArea">${bulkAreaHtml(isEndedOrCanceled, seasons)}</div>
+        ${rowHtml("Related", show.recommendations?.results || [], "tv")}
+        <div class="detail-panels-grid">
+          <div class="detail-panels-col">
+            <div class="detail-panel">${detailPanelOverviewHtml(show)}</div>
+            <div class="detail-panel">${creatorsAndCastHtml(show, cast)}</div>
+          </div>
+          <div class="detail-panels-col">
+            <div class="detail-panel"><div id="bulkArea">${bulkAreaHtml(isEndedOrCanceled, seasons)}</div></div>
+            <div class="detail-panel">${detailsCardHtml(show, tvCertificationOf(show), true)}</div>
+          </div>
+        </div>
         ${castSectionHtml(cast)}
+        ${detailFooterHtml()}
       `;
 
       function refreshSubscribeAreas() {
@@ -3149,6 +3229,7 @@
 
       wireSubscribeArea();
       wireBulkArea();
+      wirePanelMore();
     } catch (err) {
       app.innerHTML = errorHtml(err.message);
     }
@@ -3196,6 +3277,27 @@
     return withCert ? withCert.certification : "";
   }
 
+  // TV's own shape for the same idea (content_ratings, not release_dates
+  // — see tmdb.py's get_tv comment) — same US region as certificationOf
+  // above, for the new "Details" card.
+  function tvCertificationOf(show) {
+    const usEntry = (show.content_ratings?.results || []).find((r) => r.iso_3166_1 === "US");
+    return usEntry ? usEntry.rating : "";
+  }
+
+  // ISO-639-1 -> readable name (TMDB's original_language is just the
+  // code, e.g. "en"/"ja") — the browser's own Intl API already knows
+  // this, no hand-maintained lookup table to keep in sync with whatever
+  // codes TMDB happens to use.
+  function languageNameOf(code) {
+    if (!code) return "";
+    try {
+      return new Intl.DisplayNames(["en"], { type: "language" }).of(code) || code;
+    } catch {
+      return code;
+    }
+  }
+
   // "Drama, Mystery, and Sci-Fi & Fantasy" — TMDB's own genre-line style,
   // shown inline in .detail-meta instead of a separate row of pill badges.
   function genreLine(genres) {
@@ -3236,23 +3338,108 @@
     return `<div class="detail-cast-line">Cast: ${names}</div>`;
   }
 
-  function crewRowHtml(crew) {
-    const director = (crew || []).find((c) => c.job === "Director");
-    const writerJobs = new Set(["Screenplay", "Writer", "Story"]);
-    const items = [];
-    if (director) items.push({ name: director.name, job: "Director" });
-    const seen = new Set(items.map((i) => i.name));
-    for (const c of crew || []) {
-      if (items.length >= 4) break;
-      if (writerJobs.has(c.job) && !seen.has(c.name)) {
-        seen.add(c.name);
-        items.push({ name: c.name, job: "Writer" });
-      }
-    }
-    if (!items.length) return "";
-    return `<div class="crew-row">${items
-      .map((i) => `<div><div class="crew-name">${escapeHtml(i.name)}</div><div class="crew-job">${i.job}</div></div>`)
-      .join("")}</div>`;
+  // Left column's first card — title/genre tags/overview(+"More" expand),
+  // matching the Prime screenshot's own layout exactly. The overview
+  // repeats what's already in the hero above — deliberate, per direct
+  // request ("Prime video did this and we should keep it"). No cast line
+  // here — it's already the "Cast" row in the Creators and Cast card
+  // right below this one, per direct request not to list it twice.
+  function detailPanelOverviewHtml(item) {
+    const title = escapeHtml(item.title || item.name || item.original_title || item.original_name || "");
+    const tags = (item.genres || []).map((g) => `<span class="detail-panel-tag">${escapeHtml(g.name)}</span>`).join("");
+    const overview = escapeHtml(item.overview) || "<em>No synopsis available.</em>";
+    return `
+      <h2 class="detail-panel-title">${title}</h2>
+      ${tags ? `<div class="detail-panel-tags">${tags}</div>` : ""}
+      <div class="detail-panel-overview-text clamped" id="panelOverviewText">${overview}</div>
+      <button class="detail-panel-more-btn" id="panelMoreBtn" type="button">More</button>
+    `;
+  }
+
+  // The "More"/"Less" expand toggle on detailPanelOverviewHtml's overview
+  // text — plain class toggle, no scroll-height measuring, since the
+  // clamp is a fixed 4 lines either way.
+  function wirePanelMore() {
+    const btn = document.getElementById("panelMoreBtn");
+    const text = document.getElementById("panelOverviewText");
+    if (!btn || !text) return;
+    btn.addEventListener("click", () => {
+      const expanded = text.classList.toggle("expanded");
+      text.classList.toggle("clamped", !expanded);
+      btn.textContent = expanded ? "Less" : "More";
+    });
+  }
+
+  // Left column's second card — replaces the old crewRowHtml row that
+  // used to sit directly under the hero (that info now lives here
+  // instead, per direct request: "the director and writer text... needs
+  // to be removed as they will be tagged in this section").
+  function creatorsAndCastHtml(item, cast) {
+    const crew = item.credits?.crew;
+    const directors = (crew || []).filter((c) => c.job === "Director");
+    const producers = (crew || []).filter((c) => c.job === "Producer" || c.job === "Executive Producer");
+    const castTop = (cast || []).slice(0, 6);
+    const studio = (item.production_companies || [])[0]?.name;
+    const rows = [];
+    if (directors.length) rows.push(["Directors", directors]);
+    if (producers.length) rows.push(["Producers", producers]);
+    if (castTop.length) rows.push(["Cast", castTop]);
+    const peopleRowHtml = ([label, people]) => `
+      <div class="creators-row">
+        <div class="label">${label}</div>
+        <div class="value">${people.map((p) => `<a href="#/person/${p.id}">${escapeHtml(p.name)}</a>`).join(", ")}</div>
+      </div>`;
+    return `
+      <h2 class="section-heading">Creators and Cast</h2>
+      ${rows.map(peopleRowHtml).join("")}
+      ${studio ? `<div class="creators-row"><div class="label">Studio</div><div class="value">${escapeHtml(studio)}</div></div>` : ""}
+    `;
+  }
+
+  // Right column's bottom card (both movie and TV) — real fields only;
+  // no fabricated content-advisory or subtitle data, since there's no
+  // way for this app to know what's actually in a downloaded file.
+  function detailsCardHtml(item, cert, isTv) {
+    const rows = [];
+    if (cert) rows.push(["Certification", cert]);
+    const lang = languageNameOf(item.original_language);
+    if (lang) rows.push(["Original Language", lang]);
+    const status = isTv ? item.status : (item.is_coming_soon ? "Coming Soon" : "Released");
+    if (status) rows.push(["Release Status", status]);
+    if (!rows.length) return "";
+    return `
+      <h2 class="section-heading">Details</h2>
+      <div class="details-list">
+        ${rows.map(([label, value]) => `<div class="details-row"><span class="label">${escapeHtml(label)}</span><span class="value">${escapeHtml(value)}</span></div>`).join("")}
+      </div>
+    `;
+  }
+
+  // Right column's top card for a movie — TV gets its existing
+  // bulkAreaHtml relocated here instead (see renderShow). A movie has no
+  // per-season bulk flow, so this is a different, still-real feature: a
+  // per-request floor override that actually changes what the worker
+  // will accept for this one request (see worker.py's _run_one), not
+  // just a label — per direct request ("still render it, just offer
+  // something different... a shortcut to downloading a specific
+  // resolution").
+  function movieQualityButtonsHtml() {
+    return `
+      <h2 class="section-heading">Download</h2>
+      <button class="bulk-btn" id="quality4kBtn" data-min-resolution="2160p">Download 4K</button>
+      <button class="bulk-btn" id="quality1080Btn" data-min-resolution="1080p">Download 1080p</button>
+      <div id="qualityResult"></div>
+    `;
+  }
+
+  // Page footer — the very bottom of the detail page, after the cast
+  // carousel. Reuses the header logo's own wordmark markup/colors
+  // (#topbarLogo .brand-wordmark) via the same classes, scoped under
+  // .detail-footer for its own (larger, centered) sizing.
+  function detailFooterHtml() {
+    return `<div class="detail-footer">
+      <span class="brand-wordmark"><span class="brand-word-smith">smith</span><span class="brand-word-flix">flix</span></span>
+    </div>`;
   }
 
   function castSectionHtml(cast) {
@@ -3306,7 +3493,6 @@
       const backdrop = backdropUrl(movie.backdrop_path);
       const certification = certificationOf(movie);
       const cast = movie.credits?.cast;
-      const crew = movie.credits?.crew;
       const year = yearOf(movie.release_date);
 
       app.innerHTML = `
@@ -3347,8 +3533,19 @@
           </div>
         </div>
         <div id="addResult"></div>
-        ${crewRowHtml(crew)}
+        ${rowHtml("Related", movie.recommendations?.results || [], "movie")}
+        <div class="detail-panels-grid">
+          <div class="detail-panels-col">
+            <div class="detail-panel">${detailPanelOverviewHtml(movie)}</div>
+            <div class="detail-panel">${creatorsAndCastHtml(movie, cast)}</div>
+          </div>
+          <div class="detail-panels-col">
+            <div class="detail-panel">${movieQualityButtonsHtml()}</div>
+            <div class="detail-panel">${detailsCardHtml(movie, certification, false)}</div>
+          </div>
+        </div>
         ${castSectionHtml(cast)}
+        ${detailFooterHtml()}
       `;
 
       // Coming Soon titles render the button disabled (see the markup
@@ -3394,6 +3591,46 @@
           }
         });
       }
+
+      // The two quality-shortcut buttons (right column, top card) are
+      // independent of each other and of the main Add to Plex button
+      // above — each disables/relabels only itself on success, sharing
+      // one status box below (same pattern as wireBulkArea's shared
+      // #bulkResult for its own series/season buttons).
+      function wireQualityButtons() {
+        const resultBox = document.getElementById("qualityResult");
+        document.querySelectorAll("#quality4kBtn, #quality1080Btn").forEach((btn) => {
+          if (movie.is_coming_soon) { btn.disabled = true; return; }
+          btn.addEventListener("click", async () => {
+            btn.disabled = true;
+            const originalText = btn.textContent;
+            btn.textContent = "Adding…";
+            try {
+              const req = await createRequest(Number(id), movie.title, btn.dataset.minResolution);
+              btn.textContent = "Added";
+              resultBox.innerHTML = `<div class="add-confirm" id="qualityConfirm">
+                ${statusPillHtml(req.status)}
+                <span>We'll grab the best copy automatically.</span>
+              </div>`;
+              const poll = setInterval(async () => {
+                try {
+                  const updated = await getRequest(req.id);
+                  const confirmEl = document.getElementById("qualityConfirm");
+                  if (!confirmEl) { clearInterval(poll); return; }
+                  confirmEl.innerHTML = `${statusPillHtml(updated.status)}<span>${statusFollowupText(updated)}</span>`;
+                  if (!NON_TERMINAL.has(updated.status)) clearInterval(poll);
+                } catch (e) { clearInterval(poll); }
+              }, 4000);
+            } catch (err) {
+              btn.disabled = false;
+              btn.textContent = originalText;
+              resultBox.innerHTML = `<div class="add-confirm">Couldn't add that: ${escapeHtml(err.message)}</div>`;
+            }
+          });
+        });
+      }
+      wireQualityButtons();
+      wirePanelMore();
     } catch (err) {
       app.innerHTML = errorHtml(err.message);
     }

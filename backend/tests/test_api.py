@@ -337,6 +337,22 @@ def test_create_request_persists_and_enqueues(client_and_deps):
     assert worker.enqueued == [body["id"]]
 
 
+def test_create_request_persists_resolution_override(client_and_deps):
+    client, store, _, _, _, _ = client_and_deps
+    response = client.post("/api/requests", json={"tmdb_id": 693134, "min_resolution": "2160p"})
+
+    assert response.status_code == 201
+    body = response.json()
+    assert store.get_request(body["id"]).min_resolution == "2160p"
+
+
+def test_create_request_rejects_unknown_resolution(client_and_deps):
+    client, _, _, _, _, _ = client_and_deps
+    response = client.post("/api/requests", json={"tmdb_id": 693134, "min_resolution": "8k"})
+
+    assert response.status_code == 422
+
+
 def test_create_request_404s_on_unknown_tmdb_id(client_and_deps):
     client, _, tmdb, _, _, _ = client_and_deps
     tmdb._raise_on_get_movie = True

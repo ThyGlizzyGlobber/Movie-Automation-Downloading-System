@@ -24,6 +24,23 @@ def test_create_request_starts_queued():
     assert row.created_at == row.updated_at
 
 
+def test_create_request_defaults_to_no_resolution_override():
+    store = _store()
+    row = store.create_request(tmdb_id=693134, title="Dune: Part Two", release_year=2024, query=None)
+
+    assert row.min_resolution is None
+
+
+def test_create_request_persists_resolution_override():
+    store = _store()
+    row = store.create_request(
+        tmdb_id=693134, title="Dune: Part Two", release_year=2024, query=None, min_resolution="2160p"
+    )
+
+    assert row.min_resolution == "2160p"
+    assert store.get_request(row.id).min_resolution == "2160p"
+
+
 def test_get_request_missing_returns_none():
     store = _store()
     assert store.get_request(999) is None

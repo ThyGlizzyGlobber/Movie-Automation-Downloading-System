@@ -94,6 +94,16 @@ class SearchRequest(BaseModel):
 class CreateRequest(BaseModel):
     tmdb_id: int
     query: str | None = None
+    # Per-request floor override — the detail page's "Download 4K"/
+    # "Download 1080p" shortcuts. None = use the global pipeline setting.
+    min_resolution: str | None = None
+
+    @field_validator("min_resolution")
+    @classmethod
+    def _known_resolution(cls, v: str | None) -> str | None:
+        if v is not None and not is_valid_min_resolution(v):
+            raise ValueError(f"min_resolution must be one of {VALID_MIN_RESOLUTIONS}")
+        return v
 
 
 class RetentionSettings(BaseModel):
@@ -590,6 +600,7 @@ def create_request(
         title=identity.title,
         release_year=identity.release_year,
         query=body.query,
+        min_resolution=body.min_resolution,
     )
     worker.enqueue(row.id)
     return RequestOut.from_row(row)

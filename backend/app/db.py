@@ -60,6 +60,13 @@ class RequestRow:
     # what actually needs cleaning up.
     source_cleanup_status: str | None = None
     source_cleanup_next_attempt_at: str | None = None
+    # Per-request floor override (movie requests only, from the detail
+    # page's "Download 4K"/"Download 1080p" shortcuts) — a canonical
+    # min_resolution phrase (see config.RESOLUTION_TIERS) applied on top
+    # of the global pipeline settings for this one request. NULL means
+    # "use the global default", same as every row created before this
+    # existed.
+    min_resolution: str | None = None
 
     @classmethod
     def _from_row(cls, row: sqlite3.Row) -> "RequestRow":
@@ -81,6 +88,7 @@ class RequestRow:
             season_range_end=row["season_range_end"],
             source_cleanup_status=row["source_cleanup_status"],
             source_cleanup_next_attempt_at=row["source_cleanup_next_attempt_at"],
+            min_resolution=row["min_resolution"],
         )
 
 
@@ -180,6 +188,7 @@ class RequestStore:
             self._ensure_column(
                 "requests", "source_cleanup_next_attempt_at", "source_cleanup_next_attempt_at TEXT"
             )
+            self._ensure_column("requests", "min_resolution", "min_resolution TEXT")
 
             # Stage 12: the standing subscription. One row per subscribed
             # show — a UNIQUE tmdb_id stops two subscriptions to the same
@@ -243,13 +252,20 @@ class RequestStore:
 
     # -- requests --
 
-    def create_request(self, tmdb_id: int, title: str, release_year: int | None, query: str | None) -> RequestRow:
+    def create_request(
+        self,
+        tmdb_id: int,
+        title: str,
+        release_year: int | None,
+        query: str | None,
+        min_resolution: str | None = None,
+    ) -> RequestRow:
         now = _now()
         with self._lock:
             cur = self._conn.execute(
-                "INSERT INTO requests (query, tmdb_id, title, release_year, status, created_at, updated_at) "
-                "VALUES (?, ?, ?, ?, 'queued', ?, ?)",
-                (query, tmdb_id, title, release_year, now, now),
+                "INSERT INTO requests (query, tmdb_id, title, release_year, status, min_resolution, "
+                "created_at, updated_at) VALUES (?, ?, ?, ?, 'queued', ?, ?, ?)",
+                (query, tmdb_id, title, release_year, min_resolution, now, now),
             )
             self._conn.commit()
             row_id = cur.lastrowid

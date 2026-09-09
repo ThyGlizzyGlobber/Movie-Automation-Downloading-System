@@ -148,10 +148,11 @@ class TMDBClient:
         return self._get("/search/movie", params)
 
     def get_movie(self, tmdb_id: int) -> dict:
-        # append_to_response folds cast/crew and per-region certifications
-        # into the one call the detail view needs (Stage 4 addendum: cast,
-        # crew, and a certification badge on the movie detail page).
-        return self._get(f"/movie/{tmdb_id}", {"append_to_response": "credits,release_dates"})
+        # append_to_response folds cast/crew, per-region certifications,
+        # and recommendations into the one call the detail view needs
+        # (Stage 4 addendum: cast, crew, and a certification badge on the
+        # movie detail page; later addendum: a "Related" row).
+        return self._get(f"/movie/{tmdb_id}", {"append_to_response": "credits,release_dates,recommendations"})
 
     def get_alternative_titles(self, tmdb_id: int) -> list[dict]:
         data = self._get(f"/movie/{tmdb_id}/alternative_titles")
@@ -261,8 +262,9 @@ class TMDBClient:
         # content_ratings folds in the show's own per-country age ratings
         # (TV's equivalent of a movie's release_dates.certification) —
         # the home hero carousel's AU rating badge reads this straight off
-        # this same call, no separate request.
-        return self._get(f"/tv/{tmdb_id}", {"append_to_response": "credits,content_ratings"})
+        # this same call, no separate request. recommendations backs the
+        # detail page's "Related" row.
+        return self._get(f"/tv/{tmdb_id}", {"append_to_response": "credits,content_ratings,recommendations"})
 
     def get_person(self, person_id: int) -> dict:
         # append_to_response folds their whole filmography (movies + TV)

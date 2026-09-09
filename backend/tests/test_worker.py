@@ -150,6 +150,34 @@ def test_run_one_marks_downloading_and_captures_hash():
     assert reloaded.result["score"]["composite"] > 0
 
 
+def test_run_one_movie_without_override_rejects_release_below_global_floor():
+    store = RequestStore(":memory:")
+    row = store.create_request(tmdb_id=693134, title="Dune: Part Two", release_year=2024, query=None)
+    qbt = FakeQBTClient(
+        results_by_variant={"Dune: Part Two": [_result(fileName="Dune.Part.Two.2024.1080p.WEB.mkv")]}
+    )
+    worker = Worker(store, FakeTMDBClient(), qbt)
+
+    asyncio.run(worker._run_one(row.id))
+
+    assert store.get_request(row.id).status == "no qualifying results"
+
+
+def test_run_one_movie_resolution_override_allows_release_below_global_floor():
+    store = RequestStore(":memory:")
+    row = store.create_request(
+        tmdb_id=693134, title="Dune: Part Two", release_year=2024, query=None, min_resolution="1080p"
+    )
+    qbt = FakeQBTClient(
+        results_by_variant={"Dune: Part Two": [_result(fileName="Dune.Part.Two.2024.1080p.WEB.mkv")]}
+    )
+    worker = Worker(store, FakeTMDBClient(), qbt)
+
+    asyncio.run(worker._run_one(row.id))
+
+    assert store.get_request(row.id).status == "downloading"
+
+
 def test_run_one_marks_no_qualifying_results():
     store = RequestStore(":memory:")
     row = store.create_request(tmdb_id=693134, title="Dune: Part Two", release_year=2024, query=None)

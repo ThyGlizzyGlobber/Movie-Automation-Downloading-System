@@ -95,6 +95,7 @@ had no automatic organize step at all — `organize_movie()` was Stage
 """
 
 import asyncio
+import dataclasses
 import logging
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -241,6 +242,11 @@ class Worker:
         await asyncio.to_thread(self.store.update_status, request_id, "searching")
         try:
             settings = await asyncio.to_thread(resolve_pipeline_settings, self.store)
+            if row.media_type == "movie" and row.min_resolution:
+                # Per-request floor override from the detail page's
+                # "Download 4K"/"Download 1080p" shortcuts — applies only
+                # to this one request, never touches the global settings.
+                settings = dataclasses.replace(settings, min_resolution=row.min_resolution)
             if row.media_type == "episode":
                 identity = await asyncio.to_thread(resolve_show, row.tmdb_id, self.tmdb)
                 result = await asyncio.to_thread(

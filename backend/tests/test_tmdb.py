@@ -428,7 +428,7 @@ def test_get_tv_requests_credits_and_content_ratings_append():
     result = client.get_tv(1)
 
     assert captured["path"] == "/tv/1"
-    assert captured["params"] == {"append_to_response": "credits,content_ratings"}
+    assert captured["params"] == {"append_to_response": "credits,content_ratings,recommendations"}
     assert result["name"] == "Lanterns"
 
 
