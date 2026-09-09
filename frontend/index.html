@@ -535,15 +535,19 @@
   }
   .grid .poster-card { width: auto; }
   .grid .poster-card img { width: 100%; height: auto; aspect-ratio: 2 / 3; }
-  /* Actor/person credit page only — symmetric padding-right instead
-     of .grid's own reach-the-true-edge margin-right:-14px, per direct
-     request (this grid's last column was flush against the true
-     viewport edge, unlike every other edge-aligned element on the
-     page, which all stop at the header's own right inset). A smaller
-     --poster-w (only redefined here, not globally) keeps the same
-     column density despite the narrower available width, rather than
-     just dropping a column at any given viewport width. */
-  .grid.person-grid {
+  /* Actor/person credit and category/genre/provider-browse pages
+     (gridSectionHtml's own .grid, shared by renderCategory and
+     renderProvider's browse view) only — symmetric padding-right
+     instead of .grid's own reach-the-true-edge margin-right:-14px,
+     per direct request (this grid's last column was flush against the
+     true viewport edge, unlike every other edge-aligned element on
+     the page, which all stop at the header's own right inset). A
+     smaller --poster-w (only redefined here, not globally — Search's
+     own plain .grid keeps the original reach-the-edge treatment,
+     wasn't asked to change) keeps the same column density despite the
+     narrower available width, rather than just dropping a column at
+     any given viewport width. */
+  .grid.person-grid, .grid.category-grid {
     --poster-w: clamp(104px, 12vw, 210px);
     padding-right: var(--row-inset); margin-right: 0;
   }
@@ -2557,7 +2561,7 @@
   function gridSectionHtml(gridId, sentinelId, data, mediaType, emptyMessage) {
     const results = data.results || [];
     return `
-      <div class="grid" id="${gridId}">${results.map((it) => posterCard(it, mediaType)).join("")}</div>
+      <div class="grid category-grid" id="${gridId}">${results.map((it) => posterCard(it, mediaType)).join("")}</div>
       ${!results.length && emptyMessage ? emptyHtml(emptyMessage) : ""}
       <div class="grid-sentinel" id="${sentinelId}"><div class="spinner" hidden></div></div>
     `;
