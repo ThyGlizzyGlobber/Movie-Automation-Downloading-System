@@ -180,14 +180,17 @@
      longer floating over the hero at all (.scrolled, toggled in JS by
      comparing .hero's own position to the header's height), it's just
      floating over ordinary rows instead, so it fades in to a flatter,
-     more legible fill: a near-opaque black frosted glass, not the
-     see-through hero gradient above — literal black, same "read as
-     black specifically" rule as everything else on this hero, rather
-     than var(--bg) (a warm-tinted charcoal in this theme). Stronger
-     blur than the base non-hero #topbar's 10px — this is meant to read
-     as genuinely frosted, not just a tinted bar, per direct request. */
+     more legible fill: a black frosted glass, not the see-through hero
+     gradient above — literal black, same "read as black specifically"
+     rule as everything else on this hero, rather than var(--bg) (a
+     warm-tinted charcoal in this theme). Kept genuinely translucent
+     (not near-opaque, confirmed live that reads as a flat bar with the
+     blur barely registering) so the blur has actual scrolled content
+     behind it to visibly soften — per direct follow-up request. Stronger
+     blur than the base non-hero #topbar's 10px either way, so it still
+     reads as frosted rather than just a dimmed bar. */
   body.has-hero.scrolled #topbar {
-    background: rgba(0, 0, 0, 0.85);
+    background: rgba(0, 0, 0, 0.55);
     backdrop-filter: blur(20px);
   }
   body.has-hero #topbar #backBtn,
