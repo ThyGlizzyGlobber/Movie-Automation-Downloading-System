@@ -769,17 +769,31 @@
      waiting on its trailer fetch, or never gets one, keeps the
      poster-only fade above. */
   .home-hero-slide.home-hero-has-video .home-hero-fade {
-    background:
+    background-image:
       linear-gradient(90deg,
         rgba(0,0,0,0.85) 0%,
         rgba(0,0,0,0.45) 14%,
         rgba(0,0,0,0.12) 26%,
         transparent 36%),
-      /* Same fixed-px top-tint fix as the poster-only fade above (see its
-         comment), lighter and shorter-reaching for the same reason the
-         horizontal stops above are lighter than the poster-only ones —
-         this sits over the trailer too, not just the text column. */
-      linear-gradient(180deg, rgba(0,0,0,0.45) 0px, rgba(0,0,0,0.4) 100px, transparent 170px, rgba(0,0,0,0.55) 82%, #000 100%);
+      /* The header-seam top-tint fix (see the poster-only fade's own
+         comment above for the underlying problem) was full-width here
+         at first, same as the poster-only version — but confirmed live
+         that reached well down into the video's own visible area, badly
+         dimming a real chunk of the trailer itself, not just bridging
+         the header seam ("removes the tint that covers the whole
+         trailer" — direct follow-up request). The video box runs nearly
+         the hero's full height, so even a fade tapering out by 170px
+         covers a real fraction of it. background-size confines this
+         layer to the left ~45% (comfortably past the horizontal fade's
+         own 36% falloff above, short of where the video box typically
+         starts) so it only ever touches the text column — the video's
+         own top edge relies on .home-hero-video-wrap::before's existing
+         edge blend instead, same as it always has. */
+      linear-gradient(180deg, rgba(0,0,0,0.45) 0px, rgba(0,0,0,0.4) 100px, transparent 170px),
+      linear-gradient(180deg, transparent 60%, rgba(0,0,0,0.55) 82%, #000 100%);
+    background-repeat: no-repeat;
+    background-size: 100% 100%, 45% 100%, 100% 100%;
+    background-position: left top, left top, left top;
   }
   /* Per direct request: no horizontal/left fade at all below the hero's
      own mobile breakpoint (see the min-width:640px block further down)
@@ -793,8 +807,18 @@
     .home-hero-fade {
       background: linear-gradient(180deg, rgba(0,0,0,0.55) 0px, rgba(0,0,0,0.5) 120px, transparent 200px, rgba(0,0,0,0.65) 80%, #000 100%);
     }
+    /* Same left-only confinement as the desktop version above, and for
+       the same reason — see its comment. No horizontal layer to combine
+       it with here (mobile has-video slides drop that entirely, per the
+       "no left fade gradient in mobile viewport" rule further up), just
+       this confined top-seam patch plus the full-width bottom fade. */
     .home-hero-slide.home-hero-has-video .home-hero-fade {
-      background: linear-gradient(180deg, rgba(0,0,0,0.45) 0px, rgba(0,0,0,0.4) 100px, transparent 170px, rgba(0,0,0,0.55) 82%, #000 100%);
+      background-image:
+        linear-gradient(180deg, rgba(0,0,0,0.45) 0px, rgba(0,0,0,0.4) 100px, transparent 170px),
+        linear-gradient(180deg, transparent 60%, rgba(0,0,0,0.55) 82%, #000 100%);
+      background-repeat: no-repeat;
+      background-size: 45% 100%, 100% 100%;
+      background-position: left top, left top;
     }
   }
   .home-hero-content {
