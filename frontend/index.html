@@ -1997,23 +1997,17 @@
   window.addEventListener("resize", updateTopbarHeight);
   if (document.fonts && document.fonts.ready) document.fonts.ready.then(updateTopbarHeight);
 
-  // The header's see-through hero scrim (body.has-hero, see its CSS) is
-  // specifically for reading over the hero image — once the hero has
-  // scrolled up far enough that it no longer reaches the header at all,
-  // .scrolled fades the header in to a flatter, more opaque fill instead
-  // (see body.has-hero.scrolled #topbar). Checked directly against the
-  // hero's own real position rather than a guessed scroll-distance
-  // constant, since hero height varies a little page to page. Matches
-  // either hero class — .hero (Movies/TV landing + detail pages) or
-  // .home-hero (Home's own carousel, a separate class since it's a
-  // whole different carousel/video layout) — confirmed live that
-  // checking only .hero left .scrolled permanently false on Home, since
-  // querySelector(".hero") never matches there at all. A no-op (and
-  // harmless) on any page with neither.
+  // .scrolled fades the header in to a flatter, more opaque fill (see
+  // body.has-hero.scrolled #topbar) as soon as the page scrolls at
+  // all, including while still over the hero itself — per direct
+  // request, replacing an earlier version that waited until the hero
+  // had scrolled up far enough to no longer reach the header at all
+  // (a hero.getBoundingClientRect() check). A small threshold, not a
+  // flat scrollY>0, avoids flickering the state on trackpad rubber-
+  // banding right at the top. Toggling this on a hero-less page is
+  // harmless — nothing but the has-hero variants above key off it.
   function updateTopbarScrolled() {
-    const hero = document.querySelector(".hero, .home-hero");
-    const pastHero = !!hero && hero.getBoundingClientRect().bottom <= topbarEl.offsetHeight;
-    document.body.classList.toggle("scrolled", pastHero);
+    document.body.classList.toggle("scrolled", window.scrollY > 4);
   }
   window.addEventListener("scroll", updateTopbarScrolled, { passive: true });
   window.addEventListener("hashchange", () => setTimeout(updateTopbarScrolled, 0));
