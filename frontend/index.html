@@ -693,132 +693,102 @@
     position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; border: none; pointer-events: none;
     transform: scale(1.28);
   }
-  /* A dedicated fade scoped to the video box's own left edge, and now
-     the ONLY thing responsible for blending video into the surrounding
-     black — the page-wide .home-hero-fade below is scoped to the text
-     column and goes fully transparent well before the video begins (per
-     direct feedback that it was smearing over the trailer itself), and
-     once the video is playing the poster it would otherwise blend from
-     is hidden site-wide anyway (see home-hero-poster-hidden), so there's
-     nothing behind that gap to blend with — just flat background. This
-     rule is what actually has to meet the video's own visible edge, so
-     it's scoped to the video box itself (always lines up regardless of
-     how wide the hero happens to be, since the box is height-driven,
-     not hero-width-driven) and reaches meaningfully into it. An earlier,
-     much narrower version of this (16% of the box) read as a hard cut
-     rather than a blend — confirmed live; the previous "keep it narrow"
-     reasoning was actually about the outer page-wide fade overreaching
-     into the trailer, not this one, which was never the problem. */
+  /* ============================================================
+     Hero gradient system — rebuilt from scratch (previous version
+     accumulated too many one-off patches to individual numbers, each
+     fixing one reported problem in isolation). Same three jobs as
+     before, now each one a single, independent, clearly-scoped layer
+     rather than numbers threaded through several rules:
+
+     1. TEXT SCRIM (horizontal) — darkens behind the title/badge/CTA
+        column so it reads over any backdrop. Poster slides can afford
+        a wider, stronger scrim (there's no trailer to protect); video
+        slides get a tighter, lighter one so it doesn't wash out the
+        clip itself.
+     2. HEADER-SEAM BRIDGE (vertical, confined to the text-column
+        width via background-size) — the fixed header (untouched here,
+        see body.has-hero #topbar above) fades from ~0.65 to fully
+        transparent over its own ~64px height. Without a matching
+        layer just below it, that transparent edge lands right next to
+        this fade's own transparent middle, and two independently
+        fully-transparent regions meeting at the same seam reads as a
+        bright, undarkened gap — confirmed live, twice. This layer
+        holds real opacity out past 64px before tapering, so the two
+        never both go slack at once. It's confined to the text-column
+        width (not full-bleed) specifically so it never reaches into a
+        playing trailer — confirmed live that a full-width version
+        visibly dimmed a real chunk of the video itself.
+     3. BOTTOM VIGNETTE (vertical, full width) — fades to literal #000
+        for the last stretch so the hero blends into the page's own
+        black background below it, rather than a poster/video's real
+        colors cutting off hard against it.
+
+     The video's own left-edge blend (.home-hero-video-wrap::before,
+     just above) is a separate, fourth piece — it solves a different
+     problem (masking the video box's own hard edge and any baked-in
+     letterboxing), stays scoped to the video box itself regardless of
+     viewport width, and is unaffected by anything below. Deliberately
+     literal black throughout (not var(--bg), a warm charcoal in this
+     theme) — per direct request, the fade should read as black
+     specifically, not "the theme's own background color." */
   .home-hero-video-wrap::before {
     content: ""; position: absolute; inset: 0; z-index: 2;
     background: linear-gradient(90deg, #000 0%, rgba(0,0,0,0.8) 12%, rgba(0,0,0,0.4) 26%, transparent 42%);
   }
-  /* Above .home-hero-media (z-index 1 vs. its 0) so it unambiguously
-     darkens the poster/video too, not just sitting beside it. Confined
-     to the left ~56%/bottom, not smeared across the whole banner —
-     matching a real Prime Video poster-only slide (its own fade is only
-     there to keep the title/CTA column legible, not to darken art the
-     user is meant to actually look at), and per direct "too much black
-     fade, blend at the edges" feedback on the video slides below, which
-     this same base rule fed into before being dialed back this hard.
-     The bottom stop is literal #000, not just a high-opacity black —
-     confirmed live that anything short of fully opaque left a visible
-     seam against the page's own true-black background right below the
-     hero. Deliberately literal black elsewhere too (not var(--bg), a
-     dark charcoal in this theme, not true black) — per earlier direct
-     request: the fade should read as black specifically, not "the
-     theme's own background color." */
   .home-hero-fade {
     position: absolute; inset: 0; z-index: 1;
-    background:
+    background-repeat: no-repeat;
+    background-position: left top;
+    background-image:
+      /* 1. Text scrim */
       linear-gradient(90deg,
-        rgba(0,0,0,0.92) 0%,
-        rgba(0,0,0,0.75) 22%,
-        rgba(0,0,0,0.35) 40%,
-        transparent 56%),
-      /* The first three stops here are px, not %, deliberately — #topbar's
-         own gradient (a separate layer, overlapping the hero's own top
-         since .home-hero bleeds up underneath the fixed header) fades to
-         fully transparent by its own fixed ~64px height, and this layer
-         used to *also* fade out on almost exactly the same schedule (both
-         reaching zero within about 100px of the top) rather than actually
-         holding through it — the two curves declining together still
-         left a real trough of combined opacity right around the header's
-         own edge (roughly 0.65→0 and 0.35→0 compositing down to ~0.13,
-         not the "picks up where the header leaves off" it was meant to
-         be) — confirmed live, still visible, after the first attempt at
-         this fix. This version holds near its starting opacity out to
-         120px — well past where the header's own contribution has
-         already hit zero — before it starts tapering, so there's no
-         point where both layers are fading out at once. Fixed px, not %,
-         for the same reason as before: the header's height doesn't scale
-         with the hero's own height either, so neither should the tint
-         standing in for it (the later stops stay %, scaling with the
-         hero's own height as before). */
-      linear-gradient(180deg, rgba(0,0,0,0.55) 0px, rgba(0,0,0,0.5) 120px, transparent 200px, rgba(0,0,0,0.65) 80%, #000 100%);
+        rgba(0,0,0,0.88) 0%,
+        rgba(0,0,0,0.55) 20%,
+        rgba(0,0,0,0.2) 38%,
+        transparent 54%),
+      /* 2. Header-seam bridge — px, not %: the header's own height is a
+         fixed value, not proportional to the hero's, so the layer
+         standing in for it shouldn't be either. Confined to the left
+         50% by background-size below. */
+      linear-gradient(180deg, rgba(0,0,0,0.5) 0px, rgba(0,0,0,0.45) 90px, transparent 160px),
+      /* 3. Bottom vignette */
+      linear-gradient(180deg, transparent 55%, rgba(0,0,0,0.55) 82%, #000 100%);
+    background-size: 100% 100%, 50% 100%, 100% 100%;
   }
-  /* A trailer is actual content the user is meant to watch, not just
-     background art — the poster-only fade above was still eating well
-     into it ("too much black fade... makes the trailer impossible to
-     see"). This override keeps the same idea (darken the left/bottom
-     for the text column) but pulls the stops in tight against the
-     video's own left edge instead of reaching across most of the
-     banner, so it reads as an edge blend rather than a wash over the
-     whole clip. Only applied once wireHomeHero confirms a video
-     actually attached (home-hero-has-video) — a slide that's still
-     waiting on its trailer fetch, or never gets one, keeps the
-     poster-only fade above. */
+  /* Same three-layer system, tuned lighter/tighter throughout so it
+     never smears over the trailer itself ("too much black fade...
+     makes the trailer impossible to see" / "dimming it by a lot" —
+     both confirmed live against this exact rule before). Only applied
+     once wireHomeHero confirms a video actually attached
+     (home-hero-has-video) — a slide still waiting on its trailer
+     fetch, or that never gets one, keeps the poster-only fade above. */
   .home-hero-slide.home-hero-has-video .home-hero-fade {
     background-image:
       linear-gradient(90deg,
-        rgba(0,0,0,0.85) 0%,
-        rgba(0,0,0,0.45) 14%,
-        rgba(0,0,0,0.12) 26%,
-        transparent 36%),
-      /* The header-seam top-tint fix (see the poster-only fade's own
-         comment above for the underlying problem) was full-width here
-         at first, same as the poster-only version — but confirmed live
-         that reached well down into the video's own visible area, badly
-         dimming a real chunk of the trailer itself, not just bridging
-         the header seam ("removes the tint that covers the whole
-         trailer" — direct follow-up request). The video box runs nearly
-         the hero's full height, so even a fade tapering out by 170px
-         covers a real fraction of it. background-size confines this
-         layer to the left ~45% (comfortably past the horizontal fade's
-         own 36% falloff above, short of where the video box typically
-         starts) so it only ever touches the text column — the video's
-         own top edge relies on .home-hero-video-wrap::before's existing
-         edge blend instead, same as it always has. */
-      linear-gradient(180deg, rgba(0,0,0,0.45) 0px, rgba(0,0,0,0.4) 100px, transparent 170px),
-      linear-gradient(180deg, transparent 60%, rgba(0,0,0,0.55) 82%, #000 100%);
-    background-repeat: no-repeat;
-    background-size: 100% 100%, 45% 100%, 100% 100%;
-    background-position: left top, left top, left top;
+        rgba(0,0,0,0.78) 0%,
+        rgba(0,0,0,0.38) 12%,
+        rgba(0,0,0,0.1) 24%,
+        transparent 34%),
+      linear-gradient(180deg, rgba(0,0,0,0.4) 0px, rgba(0,0,0,0.35) 80px, transparent 140px),
+      linear-gradient(180deg, transparent 58%, rgba(0,0,0,0.5) 82%, #000 100%);
+    background-size: 100% 100%, 38% 100%, 100% 100%;
   }
-  /* Per direct request: no horizontal/left fade at all below the hero's
-     own mobile breakpoint (see the min-width:640px block further down)
-     — just the vertical bottom fade each rule above already carries for
-     the text/CTA area's own legibility. Doesn't touch
-     .home-hero-video-wrap::before, the video's own edge blend — that's
-     solving a different problem (hiding letterboxing/blending the clip
-     into the surrounding black), not framing text, and stays needed at
-     every width. */
+  /* Per direct request: no horizontal text scrim at all below the
+     hero's own mobile breakpoint (see the min-width:640px block
+     further down) — just the header-seam bridge and bottom vignette,
+     same widths/opacities as their desktop counterparts above. */
   @media (max-width: 639px) {
     .home-hero-fade {
-      background: linear-gradient(180deg, rgba(0,0,0,0.55) 0px, rgba(0,0,0,0.5) 120px, transparent 200px, rgba(0,0,0,0.65) 80%, #000 100%);
+      background-image:
+        linear-gradient(180deg, rgba(0,0,0,0.5) 0px, rgba(0,0,0,0.45) 90px, transparent 160px),
+        linear-gradient(180deg, transparent 55%, rgba(0,0,0,0.55) 82%, #000 100%);
+      background-size: 50% 100%, 100% 100%;
     }
-    /* Same left-only confinement as the desktop version above, and for
-       the same reason — see its comment. No horizontal layer to combine
-       it with here (mobile has-video slides drop that entirely, per the
-       "no left fade gradient in mobile viewport" rule further up), just
-       this confined top-seam patch plus the full-width bottom fade. */
     .home-hero-slide.home-hero-has-video .home-hero-fade {
       background-image:
-        linear-gradient(180deg, rgba(0,0,0,0.45) 0px, rgba(0,0,0,0.4) 100px, transparent 170px),
-        linear-gradient(180deg, transparent 60%, rgba(0,0,0,0.55) 82%, #000 100%);
-      background-repeat: no-repeat;
-      background-size: 45% 100%, 100% 100%;
-      background-position: left top, left top;
+        linear-gradient(180deg, rgba(0,0,0,0.4) 0px, rgba(0,0,0,0.35) 80px, transparent 140px),
+        linear-gradient(180deg, transparent 58%, rgba(0,0,0,0.5) 82%, #000 100%);
+      background-size: 38% 100%, 100% 100%;
     }
   }
   .home-hero-content {
