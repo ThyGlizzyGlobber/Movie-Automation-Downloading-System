@@ -732,12 +732,16 @@
      edges) outside the visible box instead. There's no way to detect a
      given trailer's real embedded aspect from CSS, so this is one fixed
      factor tuned for the common 2.35:1-in-16:9 case — a trailer with no
-     letterboxing at all loses a bit more of its own edges than strictly
-     needed, but that's a smaller cost than visible black bars. Eased
-     back from an earlier, heavier 1.28 per direct request ("allowing
-     for the zoom in to zoom out a bit") — still enough to fully hide
-     the common case, just with a little less cropped off a trailer
-     that has no letterboxing to begin with. */
+     letterboxing at all loses a bit more of its own edges than
+     strictly needed, but that's a smaller cost than visible black
+     bars. History: 1.28 originally, eased to 1.18 per direct request
+     ("allowing for the zoom in to zoom out a bit"), then back up to
+     1.25 per a later direct request.
+     The left fade is the poster img's own mask-image, verbatim (same
+     calc() distance off the same clamp()) — applied here too per
+     direct request so the trailer blends into the same black on the
+     left the poster already does, rather than the fade only holding
+     up for the few seconds the poster itself is shown. */
   /* Invisible until wireHomeHero explicitly reveals it (.home-hero-
      video-visible, toggled in lockstep with the poster's own hide/
      reveal) — a paused, merely-buffered <video> still renders its own
@@ -749,8 +753,16 @@
      be visible at all — confirmed live with a real video file. */
   .home-hero-video-wrap video {
     position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; border: none; pointer-events: none;
-    transform: scale(1.18);
+    transform: scale(1.25);
     opacity: 0; transition: opacity 0.6s ease;
+    mask-image: linear-gradient(90deg,
+      transparent 0,
+      rgba(0, 0, 0, 0.35) calc(0.4 * clamp(450px, 38vw, 720px)),
+      black clamp(450px, 38vw, 720px));
+    -webkit-mask-image: linear-gradient(90deg,
+      transparent 0,
+      rgba(0, 0, 0, 0.35) calc(0.4 * clamp(450px, 38vw, 720px)),
+      black clamp(450px, 38vw, 720px));
   }
   .home-hero-video-wrap video.home-hero-video-visible { opacity: 1; }
   /* .home-hero-video-wrap::before stays empty — the poster gradient
