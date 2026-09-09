@@ -1945,6 +1945,47 @@
     }));
     heroEl.addEventListener("mouseenter", () => { scheduleToken++; clearSchedule(); });
     heroEl.addEventListener("mouseleave", scheduleAdvance);
+
+    // Scrolling away from the top pauses whatever trailer is currently
+    // playing and fades back to its poster — per direct request, a
+    // trailer playing on for a hero that's scrolled off-screen just
+    // wastes bandwidth/CPU on something nobody's looking at.
+    // deactivateSlide already pauses+rewinds (firing the video's own
+    // "pause" listener, which reveals the poster), and scheduleAdvance
+    // — called again once scrolled back to the top — runs the exact
+    // same poster-lead-in-then-play sequence a freshly activated slide
+    // gets, so "wait 3s then play from the beginning" falls out of the
+    // existing schedule rather than needing its own separate timer.
+    // Same 4px threshold as updateTopbarScrolled's own, so both agree
+    // on what "at the top" means.
+    // Self-removing once this particular hero's own heroEl is no
+    // longer in the document — unlike the mouseenter/mouseleave pair
+    // above (element-scoped, so they're garbage-collected along with
+    // heroEl whenever Home re-renders), a plain window scroll listener
+    // added fresh on every wireHomeHero() call would otherwise keep
+    // piling up across repeat visits to Home, each stale copy still
+    // reacting to scrolls and reaching into whatever elements the
+    // *current* mount's ids now resolve to (heroMuteSlot0 etc. get
+    // reused across mounts).
+    let heroScrolledAway = false;
+    function updateHeroScrollState() {
+      if (!heroEl.isConnected) {
+        window.removeEventListener("scroll", updateHeroScrollState);
+        return;
+      }
+      const scrolledAway = window.scrollY > 4;
+      if (scrolledAway === heroScrolledAway) return;
+      heroScrolledAway = scrolledAway;
+      if (scrolledAway) {
+        scheduleToken++;
+        clearSchedule();
+        deactivateSlide(index);
+      } else {
+        scheduleAdvance();
+      }
+    }
+    window.addEventListener("scroll", updateHeroScrollState, { passive: true });
+
     scheduleAdvance();
 
     items.slice(0, HERO_TRAILER_COUNT).forEach(async (item, i) => {
