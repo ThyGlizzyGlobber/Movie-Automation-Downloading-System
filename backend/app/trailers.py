@@ -25,7 +25,7 @@ def cached_trailer_path(media_type: str, tmdb_id: int, key: str) -> Path:
 def ensure_downloaded(media_type: str, tmdb_id: int, key: str) -> Path | None:
     """Return the local file for this trailer, downloading it first if needed.
 
-    Video and audio capped at 720p/m4a are fetched as separate streams and
+    Video and audio capped at 1080p/m4a are fetched as separate streams and
     merged into one mp4 by ffmpeg (installed in the Dockerfile for exactly
     this) — a progressive, already-merged format was tried first to avoid
     needing ffmpeg at all, but confirmed live (2026-09-09) that YouTube no
@@ -41,7 +41,7 @@ def ensure_downloaded(media_type: str, tmdb_id: int, key: str) -> Path | None:
 
     config.TRAILER_CACHE_DIR.mkdir(parents=True, exist_ok=True)
     ydl_opts = {
-        "format": "bestvideo[height<=720]+bestaudio/best[height<=720]/best",
+        "format": "bestvideo[height<=1080]+bestaudio/best[height<=1080]/best",
         "merge_output_format": "mp4",
         "outtmpl": str(dest),
         "quiet": True,
