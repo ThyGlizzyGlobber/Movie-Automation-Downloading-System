@@ -466,6 +466,40 @@ def get_tv_detail(tmdb_id: int, store: RequestStore = Depends(get_store), tmdb: 
     }
 
 
+@app.get("/api/person/{person_id}")
+def get_person_detail(person_id: int, tmdb: TMDBClient = Depends(get_tmdb)) -> dict:
+    """A cast member's filmography — backs the "click an actor" detail
+    page. Only what the frontend actually needs: name/photo plus a
+    deduped, newest-first credits list (each item already carrying its
+    own media_type, so the frontend's existing posterCard() works on it
+    unchanged, same as any other mixed movie/TV list in this app).
+
+    Deduped on (id, media_type) — TMDB's combined_credits can list the
+    same title more than once for a recurring/guest role across an
+    actor's episodic appearances, which would otherwise show as a
+    duplicate poster."""
+    try:
+        person = tmdb.get_person(person_id)
+    except TMDBError as exc:
+        raise HTTPException(status_code=404, detail=f"person_id {person_id} not found") from exc
+    cast = person.get("combined_credits", {}).get("cast", [])
+    seen: set[tuple] = set()
+    credits = []
+    for c in sorted(cast, key=lambda c: c.get("release_date") or c.get("first_air_date") or "", reverse=True):
+        key = (c.get("id"), c.get("media_type"))
+        if key in seen:
+            continue
+        seen.add(key)
+        credits.append(c)
+    return {
+        "id": person.get("id"),
+        "name": person.get("name"),
+        "profile_path": person.get("profile_path"),
+        "known_for_department": person.get("known_for_department"),
+        "credits": credits,
+    }
+
+
 @app.post("/api/tv/search")
 def search_tv(
     body: SearchRequest, store: RequestStore = Depends(get_store), tmdb: TMDBClient = Depends(get_tmdb)

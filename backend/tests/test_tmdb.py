@@ -431,6 +431,23 @@ def test_get_tv_requests_credits_append():
     assert result["name"] == "Lanterns"
 
 
+def test_get_person_requests_combined_credits_append():
+    client = TMDBClient(api_key="test-key")
+    captured = {}
+
+    def fake_get(path, params=None):
+        captured["path"] = path
+        captured["params"] = params
+        return {"id": 1, "name": "Jason Sudeikis"}
+
+    client._get = fake_get
+    result = client.get_person(1)
+
+    assert captured["path"] == "/person/1"
+    assert captured["params"] == {"append_to_response": "combined_credits"}
+    assert result["name"] == "Jason Sudeikis"
+
+
 def test_get_tv_season_returns_episode_list():
     client = TMDBClient(api_key="test-key")
 

@@ -29,16 +29,63 @@ SHOW = {
     "number_of_seasons": 1,
 }
 
+PERSON = {
+    "id": 8293,
+    "name": "Jason Sudeikis",
+    "profile_path": "/sudeikis.jpg",
+    "known_for_department": "Acting",
+    "combined_credits": {
+        "cast": [
+            {
+                "id": 693134,
+                "media_type": "movie",
+                "title": "Dune: Part Two",
+                "release_date": "2024-03-01",
+                "poster_path": "/dune.jpg",
+                "character": "Someone",
+            },
+            {
+                "id": 97546,
+                "media_type": "tv",
+                "name": "Ted Lasso",
+                "first_air_date": "2020-08-14",
+                "poster_path": "/tedlasso.jpg",
+                "character": "Ted Lasso",
+            },
+            # A duplicate (id, media_type) pair — TMDB really does list the
+            # same show twice for a recurring role split across guest and
+            # regular billing — which get_person_detail's dedup must collapse.
+            {
+                "id": 97546,
+                "media_type": "tv",
+                "name": "Ted Lasso",
+                "first_air_date": "2020-08-14",
+                "poster_path": "/tedlasso.jpg",
+                "character": "Ted Lasso (guest)",
+            },
+        ]
+    },
+}
+
 
 class FakeTMDBClient:
     def __init__(
-        self, search_results=None, movie=None, raise_on_get_movie=False, tv_search_results=None, raise_on_get_tv=False
+        self,
+        search_results=None,
+        movie=None,
+        raise_on_get_movie=False,
+        tv_search_results=None,
+        raise_on_get_tv=False,
+        person=None,
+        raise_on_get_person=False,
     ):
         self._search_results = search_results if search_results is not None else [MOVIE]
         self._movie = movie or MOVIE
         self._raise_on_get_movie = raise_on_get_movie
         self._tv_search_results = tv_search_results if tv_search_results is not None else [SHOW]
         self._raise_on_get_tv = raise_on_get_tv
+        self._person = person or PERSON
+        self._raise_on_get_person = raise_on_get_person
 
     def search_movie(self, query, year=None):
         return {"results": self._search_results}
@@ -107,6 +154,15 @@ class FakeTMDBClient:
 
     def get_tv_season(self, tmdb_id, season_number):
         return []
+
+    # -- person filmography --
+
+    def get_person(self, person_id):
+        if self._raise_on_get_person:
+            from app.tmdb import TMDBError
+
+            raise TMDBError("not found")
+        return dict(self._person, id=person_id)
 
 
 class FakeQBTClient:
@@ -740,6 +796,44 @@ def test_get_movie_detail_404s_on_unknown_tmdb_id(client_and_deps):
     tmdb._raise_on_get_movie = True
 
     response = client.get("/api/movies/999999")
+
+    assert response.status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# /api/person/{person_id} — a cast member's filmography
+# ---------------------------------------------------------------------------
+
+
+def test_get_person_detail_returns_name_and_credits(client_and_deps):
+    client, _, _, _, _, _ = client_and_deps
+    response = client.get("/api/person/8293")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["name"] == "Jason Sudeikis"
+    assert body["profile_path"] == "/sudeikis.jpg"
+    # Three raw cast entries in, two distinct (id, media_type) pairs out.
+    assert len(body["credits"]) == 2
+    assert {c["id"] for c in body["credits"]} == {693134, 97546}
+
+
+def test_get_person_detail_dedupes_repeated_title_and_sorts_newest_first(client_and_deps):
+    client, _, _, _, _, _ = client_and_deps
+    response = client.get("/api/person/8293")
+
+    credits = response.json()["credits"]
+    # Dune: Part Two (2024) is newer than Ted Lasso (2020) — and Ted Lasso's
+    # duplicate guest-billing entry must have been collapsed away entirely.
+    assert [c["id"] for c in credits] == [693134, 97546]
+    assert len([c for c in credits if c["id"] == 97546]) == 1
+
+
+def test_get_person_detail_404s_on_unknown_person_id(client_and_deps):
+    client, _, tmdb, _, _, _ = client_and_deps
+    tmdb._raise_on_get_person = True
+
+    response = client.get("/api/person/999999")
 
     assert response.status_code == 404
 

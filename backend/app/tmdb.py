@@ -230,6 +230,12 @@ class TMDBClient:
     def get_tv(self, tmdb_id: int) -> dict:
         return self._get(f"/tv/{tmdb_id}", {"append_to_response": "credits"})
 
+    def get_person(self, person_id: int) -> dict:
+        # append_to_response folds their whole filmography (movies + TV)
+        # into the one call — same "one call, not N" pattern get_movie/
+        # get_tv already use for their own credits.
+        return self._get(f"/person/{person_id}", {"append_to_response": "combined_credits"})
+
     def get_tv_season(self, tmdb_id: int, season_number: int) -> list[dict]:
         """Episode list (each carrying `episode_number`/`air_date`) for one
         season — the data `tv_resolve.py`'s show-checking logic diffs

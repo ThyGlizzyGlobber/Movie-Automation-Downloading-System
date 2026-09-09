@@ -71,6 +71,10 @@
        .grid below. Scaled down slightly from an earlier 140/275px pass
        per feedback that the cards were reading a touch too large. */
     --poster-w: clamp(120px, 14vw, 240px);
+    /* Same continuous-scaling idea as --poster-w, just a smaller range —
+       a circular cast photo reads fine noticeably smaller than a poster,
+       and the row would otherwise dominate the page at desktop widths. */
+    --cast-w: clamp(64px, 7vw, 104px);
   }
   :root[data-theme="light"] {
     --bg: #ece8e1;
@@ -445,6 +449,11 @@
   }
 
   .page-title { font-size: 21px; margin: 0 0 22px; }
+  /* Pulls up into .page-title's own bottom margin rather than stacking
+     under it, so a title+subtitle pair (person filmography) reads as one
+     tight header block instead of two evenly-spaced lines. */
+  .page-title + .page-subtitle { margin-top: -14px; }
+  .page-subtitle { color: var(--text-dim); font-size: 14px; margin: 0 0 22px; }
 
   /* Invisible trigger an IntersectionObserver watches to auto-load the
      next page as the user scrolls near it — see wireInfiniteGrid(). Its
@@ -557,11 +566,12 @@
   .crew-job { font-size: 12.5px; color: var(--text-dim); }
 
   .cast-section { margin-top: 8px; }
-  .cast-card { flex: 0 0 auto; width: 88px; }
+  .cast-card { flex: 0 0 auto; width: var(--cast-w); }
   .cast-card img {
-    width: 88px; height: 88px; border-radius: 50%; object-fit: cover;
+    width: var(--cast-w); height: var(--cast-w); border-radius: 50%; object-fit: cover;
     background: var(--bg-card); display: block;
   }
+  .cast-card:hover .cast-name { color: var(--accent); }
   .cast-card .cast-name {
     font-size: 12.5px; font-weight: 600; margin-top: 6px; text-align: center;
     display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
@@ -1129,6 +1139,7 @@
   const getDiscoverByGenre = (id, page) => api(`/api/discover/genre/${id}?page=${page || 1}`);
   const getComingSoon = (page) => api(`/api/discover/coming-soon?page=${page || 1}`);
   const getMovie = (id) => api(`/api/movies/${id}`);
+  const getPerson = (id) => api(`/api/person/${id}`);
   const postSearch = (query, providerId) => api(`/api/search`, {
     method: "POST", headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ query, provider_id: providerId || null }),
@@ -1529,6 +1540,7 @@
     { re: /^#\/tv\/watching$/, handler: renderWatching },
     { re: /^#\/tv\/provider\/(\d+)\/(.*)$/, handler: (m) => renderProvider(m[1], decodeURIComponent(m[2]), "tv") },
     { re: /^#\/tv\/(\d+)$/, handler: (m) => renderShow(m[1]) },
+    { re: /^#\/person\/(\d+)$/, handler: (m) => renderPerson(m[1]) },
     { re: /^#\/requests$/, handler: renderRequests },
     { re: /^#\/search\/(.*)$/, handler: (m) => renderSearch(decodeURIComponent(m[1])) },
     { re: /^#\/settings$/, handler: renderSettings },
@@ -2238,17 +2250,40 @@
     if (!top.length) return "";
     const cards = top
       .map(
-        (c) => `<div class="cast-card">
+        (c) => `<a class="cast-card" href="#/person/${c.id}">
           <img src="${c.profile_path ? IMG_BASE + "w185" + c.profile_path : PLACEHOLDER_POSTER}" alt="" loading="lazy">
           <div class="cast-name">${escapeHtml(c.name)}</div>
           <div class="cast-character">${escapeHtml(c.character || "")}</div>
-        </div>`
+        </a>`
       )
       .join("");
     return `<section class="cast-section row">
       <h2 class="section-heading">Top Billed Cast</h2>
       ${hscrollHtml(cards)}
     </section>`;
+  }
+
+  // A cast member's own page — their filmography, reusing the exact same
+  // posterCard/.grid this app already uses for every other mixed movie/TV
+  // list, since /api/person/{id} already tags each credit with its own
+  // media_type (see api.py's get_person_detail).
+  async function renderPerson(id) {
+    setChrome({ title: "", showBack: true, activeTab: null });
+    app.innerHTML = loadingHtml();
+    try {
+      const person = await getPerson(id);
+      document.title = `${person.name || ""} — Smithflix`;
+      const count = person.credits.length;
+      app.innerHTML = `
+        <h1 class="page-title">${escapeHtml(person.name || "Unknown")}</h1>
+        <div class="page-subtitle">${count} result${count === 1 ? "" : "s"} with ${escapeHtml(person.name || "this person")}</div>
+        ${count
+          ? `<div class="grid">${person.credits.map((c) => posterCard(c, c.media_type)).join("")}</div>`
+          : emptyHtml("No filmography found.")}
+      `;
+    } catch (err) {
+      app.innerHTML = errorHtml(err.message, "#/home");
+    }
   }
 
   async function renderMovie(id) {
