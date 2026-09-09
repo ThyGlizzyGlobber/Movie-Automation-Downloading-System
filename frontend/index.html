@@ -709,19 +709,43 @@
      negative space on the left" on a wide desktop window (direct
      report) — reverted per a later direct request, since that
      independent width also meant the video's own left-edge mask
-     fade (see the video's own comment below) started at a totally
-     different x-position than the poster's own (native-aspect-driven)
-     fade above it, leaving a gap neither fade actually covered where
-     the two handed off. Auto-width guarantees they now share the same
-     edge, at the cost of reintroducing the negative-space tradeoff.
+     fade started at a totally different x-position than the poster's
+     own (native-aspect-driven) fade above it, leaving a gap neither
+     fade actually covered where the two handed off. Auto-width
+     guarantees they now share the same edge, at the cost of
+     reintroducing the negative-space tradeoff.
      transform: scale() on the video below is paint-only and doesn't
      factor into this box's own layout size — it's sized off the
      video's true native aspect ratio regardless of zoom level, and
      the zoomed overflow gets clipped by this box's own
-     overflow:hidden, same crop mechanism as before. */
+     overflow:hidden, same crop mechanism as before.
+     The left-fade mask lives HERE, on the wrap, not on the video
+     itself — confirmed live with a real downloaded trailer (native
+     2.35:1, no baked-in letterboxing) that masking the video directly
+     left a hard, still-partially-opaque edge instead of a clean fade
+     to transparent. Root cause: mask-image is evaluated in an
+     element's own local coordinate space and THEN the whole masked
+     result gets transformed — scale(1.25) on the video zooms that
+     already-masked output outward from center, pushing the mask's
+     true "transparent" starting point (meant to sit at the video's
+     left edge) off past this wrap's own clipping boundary, so a
+     different, already-partway-faded point of the gradient ends up at
+     the actual visible edge instead. The wrap has no transform of its
+     own, so masking it instead — after the scaled video is clipped
+     into it — keeps the mask's coordinate space undistorted. The
+     poster img never had this problem since it has no transform to
+     begin with. */
   .home-hero-video-wrap {
     position: absolute; top: 0; right: 0; height: 100%; width: auto;
     overflow: hidden; z-index: 1; pointer-events: none;
+    mask-image: linear-gradient(90deg,
+      transparent 0,
+      rgba(0, 0, 0, 0.35) calc(0.4 * clamp(450px, 38vw, 720px)),
+      black clamp(450px, 38vw, 720px));
+    -webkit-mask-image: linear-gradient(90deg,
+      transparent 0,
+      rgba(0, 0, 0, 0.35) calc(0.4 * clamp(450px, 38vw, 720px)),
+      black clamp(450px, 38vw, 720px));
   }
   /* A lot of trailers are cut at a wider cinematic aspect (e.g. 2.35:1)
      but delivered inside a plain 16:9 frame, with the difference baked
@@ -743,32 +767,23 @@
      smaller cost than visible black bars. History: 1.28 originally,
      eased to 1.18 per direct request ("allowing for the zoom in to
      zoom out a bit"), then back up to 1.25 per a later direct request.
-     The left fade is the poster img's own mask-image, verbatim (same
-     calc() distance off the same clamp()) — applied here too per
-     direct request so the trailer blends into the same black on the
-     left the poster already does, rather than the fade only holding
-     up for the few seconds the poster itself is shown. */
+     The left fade itself is the wrap's own mask-image now (see its
+     comment above), not this element's — a mask combined with a
+     transform on the *same* element left a hard, still-partially-
+     opaque edge instead of a clean fade, confirmed live. */
   /* Invisible until wireHomeHero explicitly reveals it (.home-hero-
      video-visible, toggled in lockstep with the poster's own hide/
      reveal) — a paused, merely-buffered <video> still renders its own
      first frame once it has enough data, with or without play() ever
      being called, so relying only on the (now partially transparent,
-     see the poster img's own mask-image comment) poster sitting on
-     top let that buffered frame bleed through the poster's own faded
-     region during the lead-in, well before the trailer was meant to
-     be visible at all — confirmed live with a real video file. */
+     see the wrap's own mask-image comment) poster/wrap sitting on top
+     let that buffered frame bleed through during the lead-in, well
+     before the trailer was meant to be visible at all — confirmed
+     live with a real video file. */
   .home-hero-video-wrap video {
     display: block; height: 100%; width: auto; border: none; pointer-events: none;
     transform: scale(1.25);
     opacity: 0; transition: opacity 0.6s ease;
-    mask-image: linear-gradient(90deg,
-      transparent 0,
-      rgba(0, 0, 0, 0.35) calc(0.4 * clamp(450px, 38vw, 720px)),
-      black clamp(450px, 38vw, 720px));
-    -webkit-mask-image: linear-gradient(90deg,
-      transparent 0,
-      rgba(0, 0, 0, 0.35) calc(0.4 * clamp(450px, 38vw, 720px)),
-      black clamp(450px, 38vw, 720px));
   }
   .home-hero-video-wrap video.home-hero-video-visible { opacity: 1; }
   /* .home-hero-video-wrap::before stays empty — the poster gradient
