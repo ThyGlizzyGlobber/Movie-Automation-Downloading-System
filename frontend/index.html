@@ -187,15 +187,16 @@
      mid-grey hero image's own tones that it can nearly disappear there
      regardless of shadow strength. Full-strength --text on hero pages
      instead. The active link needs its own repeat here even though
-     .top-nav-link.active above already sets --accent: this selector's
-     #topbar id outweighs that plain two-class one, so without a same-
-     specificity override here the active link's red text would get
-     silently overridden back to the same neutral --text every inactive
-     link gets — its charcoal pill background is the only thing that'd
-     still look right. Every page a nav link actually points to (home,
-     movies, tv) is a hero page, so this isn't a rare edge case. */
+     .top-nav-link.active above already sets its own color: this
+     selector's #topbar id outweighs that plain two-class one, so
+     without a same-specificity override here the active link's text
+     would get silently overridden back to the same neutral --text
+     every inactive link gets — its white pill background is the only
+     thing that'd still look right. Every page a nav link actually
+     points to (home, movies, tv) is a hero page, so this isn't a rare
+     edge case. */
   body.has-hero #topbar .top-nav-link { color: var(--text); }
-  body.has-hero #topbar .top-nav-link.active { color: var(--accent); }
+  body.has-hero #topbar .top-nav-link.active { color: var(--smithflix-charcoal); }
   #backBtn, #settingsToggle, #themeToggle {
     flex: 0 0 auto; background: none; border: none; color: var(--text);
     font-size: 20px; padding: 6px 8px; border-radius: 8px; line-height: 1;
@@ -287,11 +288,14 @@
     color: var(--text-dim); background: none; border: none;
   }
   .top-nav-link:hover { color: var(--text); background: var(--bg-card); }
-  /* Same pill language as .storage-indicator/.status-pill — a charcoal
-     (--bg-card) fill with accent-red text, readable against any hero
-     image behind it, so the hero-specific override below no longer
-     needs its own color trick. */
-  .top-nav-link.active { color: var(--accent); background: var(--bg-card); }
+  /* Same pill language as .storage-indicator/.status-pill — a fixed
+     white fill with the site's own "black" token (--smithflix-charcoal,
+     the same #141312 already used as --accent-text in dark theme) for
+     text, deliberately theme-invariant rather than --bg-card/--text
+     (which would go charcoal-on-cream in dark mode) — a consistent,
+     branded high-contrast chip in either theme, readable against any
+     hero image behind it. */
+  .top-nav-link.active { color: var(--smithflix-charcoal); background: #fff; }
 
   section.row { margin-bottom: 26px; }
   section.row h2 {
