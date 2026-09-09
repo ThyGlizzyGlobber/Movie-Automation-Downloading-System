@@ -3466,22 +3466,25 @@
   // overview text and the hero's own (duplicate) overview text. Hidden
   // entirely when the overview is short enough that the 4-line clamp
   // never actually truncates it — a visible "More" that toggles nothing
-  // on click read as a broken button, confirmed live. scrollHeight >
-  // clientHeight while still clamped is the real signal that there's
-  // hidden text (a plain line count would be wrong once font size/
-  // column width change the wrap).
-  // Buffer is half a line's height, not a flat 1px — a real (non-
-  // truncated) overview still showed the button in practice: with a
-  // fractional line-height (17px * 1.5 = 25.5px/line here), sub-pixel
-  // rounding alone can put scrollHeight a couple px past clientHeight
-  // even when nothing is actually clipped. Genuine overflow is at least
-  // a full extra line, well past this buffer, so it still detects fine.
+  // on click read as a broken button, confirmed live.
+  // Comparing scrollHeight against clientHeight WHILE the element is
+  // still -webkit-line-clamp'd (an earlier version of this function did
+  // that, with a buffer to allow for sub-pixel rounding) turned out to
+  // still misfire on real, non-truncated text — scrollHeight on an
+  // already-clamped -webkit-box element isn't a reliably exact "true
+  // content height" across engines, buffer or not. This instead measures
+  // directly: briefly drop the clamp to read the text's real, un-clamped
+  // height, then restore it before ever painting — genuinely more
+  // content than the clamped box shows is the only thing that counts.
   function wireMoreToggle(textId, btnId) {
     const btn = document.getElementById(btnId);
     const text = document.getElementById(textId);
     if (!btn || !text) return;
-    const lineHeight = parseFloat(getComputedStyle(text).lineHeight) || 0;
-    if (text.scrollHeight <= text.clientHeight + lineHeight / 2) {
+    const clampedHeight = text.clientHeight;
+    text.classList.remove("clamped");
+    const fullHeight = text.scrollHeight;
+    text.classList.add("clamped");
+    if (fullHeight <= clampedHeight + 1) {
       btn.hidden = true;
       return;
     }
