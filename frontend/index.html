@@ -749,16 +749,25 @@
      puts real image content under that same stretch, so the fade
      blends it into the title-text column exactly where it needs to
      either way, with one fixed gradient rather than something that
-     has to react per-image. */
+     has to react per-image.
+     The horizontal fade's stops are absolute lengths (calc() off the
+     same clamp() as .home-hero's own min-height), not percentages —
+     a plain 90deg gradient's percentages run against the box's WIDTH,
+     which would make the fade's reach balloon on a wide desktop
+     window even though the request was a fixed multiple of the
+     *bottom* fade's own distance (which runs against HEIGHT, so it
+     already tracks the hero's own fluid height correctly). Per direct
+     request: fully solid at the left edge, transparent by 2x the
+     bottom fade's full-black-to-clear span (2 * 50% of the hero's
+     height == exactly one hero-height's worth of horizontal
+     distance). */
   .home-hero-fade {
     position: absolute; inset: 0; z-index: 1;
     background-image:
       linear-gradient(90deg,
-        rgba(0, 0, 0, 0.95) 0%,
-        rgba(0, 0, 0, 0.85) 15%,
-        rgba(0, 0, 0, 0.55) 35%,
-        rgba(0, 0, 0, 0.15) 55%,
-        rgba(0, 0, 0, 0) 70%),
+        rgba(0, 0, 0, 1) 0,
+        rgba(0, 0, 0, 0.65) calc(0.4 * clamp(450px, 38vw, 720px)),
+        rgba(0, 0, 0, 0) clamp(450px, 38vw, 720px)),
       linear-gradient(to top,
         rgba(0, 0, 0, 1) 0%,
         rgba(0, 0, 0, 0.65) 20%,
