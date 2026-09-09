@@ -639,7 +639,13 @@
        to match, leaving a subtly warm tint showing wherever nothing else
        covers it (before a slide's art loads, or the gap beside a video
        before its own edge-blend). */
-    min-height: 480px; overflow: hidden; background: #000;
+    /* Fluid, not a single min-width:640px jump — per direct request
+       that the whole hero scale responsively, not just step between two
+       fixed heights. Floor matches the old mobile height; by ~1310px
+       viewport width it's already at the old desktop height (640px) and
+       keeps growing a bit further before capping, so a genuinely wide
+       desktop window gets a taller hero than either old fixed value. */
+    min-height: clamp(480px, 42vw, 780px); overflow: hidden; background: #000;
   }
   .home-hero-slide {
     position: absolute; inset: 0; opacity: 0; visibility: hidden; pointer-events: none;
@@ -666,15 +672,25 @@
     z-index: 2; transition: opacity 0.6s ease;
   }
   .home-hero-media img.home-hero-poster-hidden { opacity: 0; }
-  /* Right-anchored at the hero's own native video ratio (height-driven,
-     width auto via aspect-ratio) rather than the old cover-both-
-     dimensions trick — that cropped into the trailer to fill the whole
-     hero; this instead shows it in full, at its real aspect ratio,
-     scaled to the hero's height and pinned to the right edge, matching
-     Prime's own hero treatment. The full-bleed backdrop <img> above
-     still covers the rest of the hero on either side of it. */
+  /* Right-anchored, height matching the hero's own (now-fluid) height —
+     width is its own fluid value now, not a fixed aspect-ratio derived
+     purely from that height. A pure 16:9-from-height box left a lot of
+     empty width between the text column and the video on a genuinely
+     wide desktop window ("too much negative space on the left" — direct
+     report) — the box's own height only grows so far (see .home-hero's
+     clamp above), so a height-only-driven width plateaus early on wide
+     viewports even as there's plainly more room for the video to use.
+     This clamp instead grows the box's width with the viewport directly:
+     the floor is close to what the old 16:9-from-480px-height box gave
+     (so mobile/tablet barely changes), but the ceiling reaches well
+     past what 16:9-from-780px-height (the new max hero height) would
+     ever give, so a wide window visibly narrows that gap. object-fit:
+     cover on the <video> below fills whatever shape results without
+     distortion, same as it always did — cover doesn't care that the box
+     is no longer a clean 16:9 rectangle. The full-bleed backdrop <img>
+     above still covers the rest of the hero on either side of it. */
   .home-hero-video-wrap {
-    position: absolute; top: 0; right: 0; height: 100%; aspect-ratio: 16 / 9;
+    position: absolute; top: 0; right: 0; height: 100%; width: clamp(700px, 68vw, 1800px);
     overflow: hidden; z-index: 1; pointer-events: none;
   }
   /* A lot of trailers are cut at a wider cinematic aspect (e.g. 2.35:1)
@@ -688,10 +704,14 @@
      given trailer's real embedded aspect from CSS, so this is one fixed
      factor tuned for the common 2.35:1-in-16:9 case — a trailer with no
      letterboxing at all loses a bit more of its own edges than strictly
-     needed, but that's a smaller cost than visible black bars. */
+     needed, but that's a smaller cost than visible black bars. Eased
+     back from an earlier, heavier 1.28 per direct request ("allowing
+     for the zoom in to zoom out a bit") — still enough to fully hide
+     the common case, just with a little less cropped off a trailer
+     that has no letterboxing to begin with. */
   .home-hero-video-wrap video {
     position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; border: none; pointer-events: none;
-    transform: scale(1.28);
+    transform: scale(1.18);
   }
   /* All hero gradients removed per direct request — starting fresh.
      .home-hero-video-wrap::before and .home-hero-fade stay in the
@@ -708,10 +728,29 @@
   }
   .home-hero-content {
     position: relative; z-index: 2; display: flex; align-items: flex-end;
-    min-height: 480px; padding: 24px var(--edge-inset) 44px;
+    /* Same fluid height as .home-hero itself — the two have always
+       needed to track each other exactly (this is what the hero's
+       actual visible content height resolves to), so this repeats the
+       identical clamp() rather than a shared variable so each is
+       independently readable, matching the rest of the file's style. */
+    min-height: clamp(480px, 42vw, 780px); padding: 24px var(--edge-inset) 44px;
   }
-  .home-hero-info { max-width: 560px; }
-  .home-hero-info h1 { font-size: 44px; font-weight: 800; margin: 0 0 10px; line-height: 1.1; }
+  /* Widened from a fixed 560px — necessary once the title itself
+     roughly doubled (see .home-hero-info h1 below): unchanged, that box
+     would only fit a handful of characters per line at the new size.
+     Grows more modestly than the title/video do, though — some wrapping
+     onto a second line is normal for a hero title at this size (Prime's
+     own does the same for longer titles), and growing this as
+     aggressively as the video box widens risked the two visually
+     colliding, since they're independently positioned (this in normal
+     flow, the video position:absolute; right:0) rather than sharing a
+     flex row that would naturally keep them apart. */
+  .home-hero-info { max-width: clamp(560px, 45vw, 760px); }
+  /* ~2x the old fixed 44px/64px sizes, per direct request, and fluid
+     rather than a single min-width:640px jump between them — floor is
+     exactly double the old mobile size, ceiling exactly double the old
+     desktop size, scaling smoothly by viewport width between. */
+  .home-hero-info h1 { font-size: clamp(88px, 6vw + 58px, 128px); font-weight: 800; margin: 0 0 10px; line-height: 1.1; }
   .home-hero-badge {
     display: flex; align-items: center; gap: 6px; color: var(--status-complete);
     font-size: 13.5px; font-weight: 700; margin-bottom: 10px;
@@ -786,9 +825,13 @@
   }
   .home-hero-mute-btn:hover { opacity: 1; background: color-mix(in srgb, var(--bg) 75%, transparent); }
   .home-hero-mute-btn[hidden] { display: none; }
+  /* Hero height and title size used to step here at 640px — both are
+     fluid clamp()s on their own base rules now (see .home-hero,
+     .home-hero-content, .home-hero-info h1 above), so this breakpoint
+     only has the button sizing left, which is a deliberate two-step
+     jump rather than something that needs to track viewport width
+     continuously. */
   @media (min-width: 640px) {
-    .home-hero, .home-hero-content { min-height: 640px; }
-    .home-hero-info h1 { font-size: 64px; }
     .home-hero-actions .add-btn { height: 56px; padding: 0 32px; font-size: 17px; }
     .home-hero-info-btn { width: 56px; height: 56px; font-size: 22px; }
   }
