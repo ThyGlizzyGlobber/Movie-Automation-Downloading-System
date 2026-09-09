@@ -649,25 +649,28 @@
   }
   /* Above .home-hero-media (z-index 1 vs. its 0) so it unambiguously
      darkens the poster/video too, not just sitting beside it. Confined
-     to roughly the left third/bottom, not smeared across the whole
-     banner — matching a real Prime Video poster-only slide (its own
-     fade is only there to keep the title/CTA column legible, not to
-     darken art the user is meant to actually look at), and per direct
-     "too much black fade, blend at the edges" feedback on the video
-     slides below, which this same base rule fed into before being
-     dialed back this hard. Deliberately literal black (not var(--bg),
-     a dark charcoal in this theme, not true black) — per earlier direct
+     to the left ~56%/bottom, not smeared across the whole banner —
+     matching a real Prime Video poster-only slide (its own fade is only
+     there to keep the title/CTA column legible, not to darken art the
+     user is meant to actually look at), and per direct "too much black
+     fade, blend at the edges" feedback on the video slides below, which
+     this same base rule fed into before being dialed back this hard.
+     The bottom stop is literal #000, not just a high-opacity black —
+     confirmed live that anything short of fully opaque left a visible
+     seam against the page's own true-black background right below the
+     hero. Deliberately literal black elsewhere too (not var(--bg), a
+     dark charcoal in this theme, not true black) — per earlier direct
      request: the fade should read as black specifically, not "the
      theme's own background color." */
   .home-hero-fade {
     position: absolute; inset: 0; z-index: 1;
     background:
       linear-gradient(90deg,
-        rgba(0,0,0,0.9) 0%,
-        rgba(0,0,0,0.6) 18%,
-        rgba(0,0,0,0.2) 34%,
-        transparent 44%),
-      linear-gradient(180deg, transparent 55%, rgba(0,0,0,0.55) 85%, rgba(0,0,0,0.85) 100%);
+        rgba(0,0,0,0.92) 0%,
+        rgba(0,0,0,0.75) 22%,
+        rgba(0,0,0,0.35) 40%,
+        transparent 56%),
+      linear-gradient(180deg, transparent 42%, rgba(0,0,0,0.65) 80%, #000 100%);
   }
   /* A trailer is actual content the user is meant to watch, not just
      background art — the poster-only fade above was still eating well
@@ -687,7 +690,7 @@
         rgba(0,0,0,0.45) 14%,
         rgba(0,0,0,0.12) 26%,
         transparent 36%),
-      linear-gradient(180deg, transparent 60%, rgba(0,0,0,0.4) 88%, rgba(0,0,0,0.7) 100%);
+      linear-gradient(180deg, transparent 48%, rgba(0,0,0,0.55) 82%, #000 100%);
   }
   .home-hero-content {
     position: relative; z-index: 2; display: flex; align-items: flex-end;
