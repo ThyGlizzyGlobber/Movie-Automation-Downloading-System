@@ -701,42 +701,48 @@
       black clamp(450px, 38vw, 720px));
   }
   .home-hero-media img.home-hero-poster-hidden { opacity: 0; }
-  /* Right-anchored, height matching the hero's own (now-fluid) height —
-     width is its own fluid value now, not a fixed aspect-ratio derived
-     purely from that height. A pure 16:9-from-height box left a lot of
-     empty width between the text column and the video on a genuinely
-     wide desktop window ("too much negative space on the left" — direct
-     report) — the box's own height only grows so far (see .home-hero's
-     clamp above), so a height-only-driven width plateaus early on wide
-     viewports even as there's plainly more room for the video to use.
-     This clamp instead grows the box's width with the viewport directly:
-     the floor is close to what the old 16:9-from-480px-height box gave
-     (so mobile/tablet barely changes), but the ceiling reaches well
-     past what 16:9-from-780px-height (the new max hero height) would
-     ever give, so a wide window visibly narrows that gap. object-fit:
-     cover on the <video> below fills whatever shape results without
-     distortion, same as it always did — cover doesn't care that the box
-     is no longer a clean 16:9 rectangle. The full-bleed backdrop <img>
-     above still covers the rest of the hero on either side of it. */
+  /* Right-anchored, width auto (shrink-to-fit its own content — valid
+     for an absolutely positioned box with only one of left/right set)
+     so it's determined by the <video> element's own real rendered box,
+     not an independent formula. Previously a fluid clamp() instead,
+     specifically to avoid a pure 16:9-from-height box's "too much
+     negative space on the left" on a wide desktop window (direct
+     report) — reverted per a later direct request, since that
+     independent width also meant the video's own left-edge mask
+     fade (see the video's own comment below) started at a totally
+     different x-position than the poster's own (native-aspect-driven)
+     fade above it, leaving a gap neither fade actually covered where
+     the two handed off. Auto-width guarantees they now share the same
+     edge, at the cost of reintroducing the negative-space tradeoff.
+     transform: scale() on the video below is paint-only and doesn't
+     factor into this box's own layout size — it's sized off the
+     video's true native aspect ratio regardless of zoom level, and
+     the zoomed overflow gets clipped by this box's own
+     overflow:hidden, same crop mechanism as before. */
   .home-hero-video-wrap {
-    position: absolute; top: 0; right: 0; height: 100%; width: clamp(700px, 68vw, 1800px);
+    position: absolute; top: 0; right: 0; height: 100%; width: auto;
     overflow: hidden; z-index: 1; pointer-events: none;
   }
   /* A lot of trailers are cut at a wider cinematic aspect (e.g. 2.35:1)
      but delivered inside a plain 16:9 frame, with the difference baked
      in as literal black letterboxing bars — object-fit: cover alone
-     can't crop that out, since the video's *reported* dimensions are
-     still 16:9 and cover only kicks in when the box and content ratios
-     actually differ. A uniform zoom, clipped by the wrap's own
-     overflow:hidden, pushes those bars (and a little of the left/right
-     edges) outside the visible box instead. There's no way to detect a
-     given trailer's real embedded aspect from CSS, so this is one fixed
-     factor tuned for the common 2.35:1-in-16:9 case — a trailer with no
-     letterboxing at all loses a bit more of its own edges than
-     strictly needed, but that's a smaller cost than visible black
-     bars. History: 1.28 originally, eased to 1.18 per direct request
-     ("allowing for the zoom in to zoom out a bit"), then back up to
-     1.25 per a later direct request.
+     can't crop that out on its own, since the video's *reported*
+     dimensions are still 16:9 and cover only kicks in when the box and
+     content ratios actually differ (now that this box is itself sized
+     off the video's own true aspect ratio, box and content always
+     match, so cover would never fire — dropped, no longer doing
+     anything). A uniform zoom, clipped by the wrap's own
+     overflow:hidden (a normal-flow, non-absolute child now, so it
+     drives that wrap's own shrink-to-fit width instead of being forced
+     to fill an independently-sized box), pushes those bars (and a
+     little of the left/right edges) outside the visible box instead.
+     There's no way to detect a given trailer's real embedded aspect
+     from CSS, so this is one fixed factor tuned for the common
+     2.35:1-in-16:9 case — a trailer with no letterboxing at all loses
+     a bit more of its own edges than strictly needed, but that's a
+     smaller cost than visible black bars. History: 1.28 originally,
+     eased to 1.18 per direct request ("allowing for the zoom in to
+     zoom out a bit"), then back up to 1.25 per a later direct request.
      The left fade is the poster img's own mask-image, verbatim (same
      calc() distance off the same clamp()) — applied here too per
      direct request so the trailer blends into the same black on the
@@ -752,7 +758,7 @@
      region during the lead-in, well before the trailer was meant to
      be visible at all — confirmed live with a real video file. */
   .home-hero-video-wrap video {
-    position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; border: none; pointer-events: none;
+    display: block; height: 100%; width: auto; border: none; pointer-events: none;
     transform: scale(1.25);
     opacity: 0; transition: opacity 0.6s ease;
     mask-image: linear-gradient(90deg,
