@@ -143,7 +143,7 @@
     /* --edge-inset left/right — same shared inset as the downloads FAB/
        storage pill and the home hero's own text column, so they all
        line up on the same vertical edge. */
-    padding: calc(10px + var(--safe-top)) var(--edge-inset) 10px;
+    padding: calc(22px + var(--safe-top)) var(--edge-inset) 16px;
     background: color-mix(in srgb, var(--bg) 92%, transparent);
     backdrop-filter: blur(10px);
   }
@@ -230,24 +230,27 @@
      edge case. */
   body.has-hero #topbar .top-nav-link { color: var(--text); }
   body.has-hero #topbar .top-nav-link.active { color: var(--smithflix-charcoal); }
-  #backBtn, #searchToggleBtn, #settingsToggle {
+  #searchToggleBtn, #settingsToggle {
     flex: 0 0 auto; background: none; border: none; color: var(--text);
     font-size: 20px; padding: 6px 8px; border-radius: 8px; line-height: 1;
     display: flex; align-items: center; justify-content: center;
   }
-  #backBtn:active, #searchToggleBtn:active, #settingsToggle:active { background: var(--bg-card); }
+  #searchToggleBtn:active, #settingsToggle:active { background: var(--bg-card); }
   /* Pushes this whole trailing icon group (search/settings) to the
      right edge, same job .search-input-wrap's margin-left:auto used to
      do before search moved into its own overlay below. */
   #searchToggleBtn { margin-left: auto; }
   #topbarLogo {
-    flex: 0 0 auto; display: flex; align-items: center; min-width: 0;
+    /* margin-right (on top of #topbar's shared gap:10px) widens the
+       logo-to-nav gap specifically, without touching the uniform gap
+       between the other topbar icons. */
+    flex: 0 0 auto; display: flex; align-items: center; min-width: 0; margin-right: 22px;
   }
   /* Real text, not an image, colored via the same CSS vars as everything
      else — no separate SVG asset to keep in sync with the brand
      palette. */
   #topbarLogo .brand-wordmark {
-    font-family: var(--font-display); font-weight: 800; font-size: 26px; line-height: 1;
+    font-family: var(--font-display); font-weight: 800; font-size: 34px; line-height: 1;
   }
   #topbarLogo .brand-word-smith { color: var(--text); }
   #topbarLogo .brand-word-flix { color: var(--accent); }
@@ -1204,7 +1207,10 @@
 <body>
 
 <div id="topbar">
-  <button id="backBtn" style="display:none" aria-label="Back">&larr;</button>
+  <!-- Back button removed entirely per direct request (was a
+       conditionally-shown #backBtn here, toggled by each route's own
+       setChrome({showBack}) call) — those calls still pass showBack,
+       silently ignored now rather than scrubbed from every call site. -->
   <a id="topbarLogo" href="#/home" aria-label="Smithflix home">
     <span class="brand-wordmark"><span class="brand-word-smith">smith</span><span class="brand-word-flix">flix</span></span>
   </a>
@@ -1895,7 +1901,6 @@
   // -- Router --
 
   const app = document.getElementById("app");
-  const backBtn = document.getElementById("backBtn");
   let activePollTimer = null;
   // Which show groups are expanded on the Requests page — a plain Set
   // rather than per-row DOM state, since loadRequests() rebuilds the
@@ -1914,9 +1919,8 @@
   // The search bar lives permanently in the top bar now (not a toggled
   // row), so there's no on-screen title left to set — `title` still
   // updates the browser tab/PWA title instead.
-  function setChrome({ title, showBack, activeTab, hasHero }) {
+  function setChrome({ title, activeTab, hasHero }) {
     document.title = title ? `${title} — Smithflix` : "Smithflix";
-    backBtn.style.display = showBack ? "" : "none";
     document.querySelectorAll(".tab, .top-nav-link").forEach((t) => {
       t.classList.toggle("active", t.dataset.tab === activeTab);
     });
@@ -1963,7 +1967,6 @@
 
   const SECTION_HASH = { home: "#/home", movies: "#/movies", tv: "#/tv" };
   function navigate(hash) { window.location.hash = hash; }
-  backBtn.addEventListener("click", () => window.history.back());
 
   document.querySelectorAll(".tab, .top-nav-link").forEach((t) => {
     t.addEventListener("click", () => navigate(SECTION_HASH[t.dataset.tab] || "#/movies"));
