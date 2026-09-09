@@ -86,9 +86,10 @@
        downloads/storage pills — so they all line up on the same edge.
        Deliberately NOT used by row-inset/content rows (.hscroll/.grid),
        which stay full-bleed by their own separate design. Matches
-       Prime Video's own wider storefront-header margin, bumped up from
-       an earlier, tighter 32px pass. */
-    --edge-inset: 48px;
+       Prime Video's own wider storefront-header margin, bumped up first
+       from an earlier, tighter 32px pass, then again from 48px per
+       direct request for more breathing room. */
+    --edge-inset: 64px;
   }
   :root[data-theme="light"] {
     --bg: #ece8e1;
