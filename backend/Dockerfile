@@ -6,8 +6,14 @@ WORKDIR /app
 # real `git` CLI (via SSH, using the mounted deploy key) against the
 # deployed-copy clone — not a Python git library, so the binary has to
 # actually be here.
+# ffmpeg: trailers.py's yt-dlp download needs it to mux separate
+# video/audio streams into one file — confirmed live (2026-09-09) that
+# YouTube no longer serves a pre-merged/progressive format for most
+# videos at a usable resolution, so a format string that avoided ffmpeg
+# on purpose just failed outright ("Requested format is not available")
+# on every real trailer. Merging is the only reliable path now.
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends git openssh-client \
+    && apt-get install -y --no-install-recommends git openssh-client ffmpeg \
     && rm -rf /var/lib/apt/lists/*
 
 # The deployed-copy clone at /repo is bind-mounted from the NAS host, so its
