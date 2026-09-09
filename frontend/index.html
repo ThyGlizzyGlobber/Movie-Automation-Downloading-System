@@ -627,22 +627,25 @@
   .home-hero-video-wrap video {
     position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; border: none; pointer-events: none;
   }
-  /* A second, dedicated fade scoped to the video box's own left edge —
-     the page-wide .home-hero-fade below still does most of the work,
-     but its gradient stops are percentages *of the whole hero*, while
-     the video's own width is fixed (height-driven, not hero-width-
-     driven); confirmed live that on a real viewport the two just don't
-     line up neatly enough for the outer fade alone to fully blend right
-     at the video's own seam. This one is scoped to the video box
-     itself, so it always blends its own left edge regardless of how
-     wide the hero happens to be. Deliberately narrow — just enough to
-     blend the seam itself, not eat into the video's own visible area;
-     a wider first pass at this darkened a large chunk of the trailer
-     itself, which was worse for actually watching it than the hard
-     edge it was meant to soften. */
+  /* A dedicated fade scoped to the video box's own left edge, and now
+     the ONLY thing responsible for blending video into the surrounding
+     black — the page-wide .home-hero-fade below is scoped to the text
+     column and goes fully transparent well before the video begins (per
+     direct feedback that it was smearing over the trailer itself), and
+     once the video is playing the poster it would otherwise blend from
+     is hidden site-wide anyway (see home-hero-poster-hidden), so there's
+     nothing behind that gap to blend with — just flat background. This
+     rule is what actually has to meet the video's own visible edge, so
+     it's scoped to the video box itself (always lines up regardless of
+     how wide the hero happens to be, since the box is height-driven,
+     not hero-width-driven) and reaches meaningfully into it. An earlier,
+     much narrower version of this (16% of the box) read as a hard cut
+     rather than a blend — confirmed live; the previous "keep it narrow"
+     reasoning was actually about the outer page-wide fade overreaching
+     into the trailer, not this one, which was never the problem. */
   .home-hero-video-wrap::before {
     content: ""; position: absolute; inset: 0; z-index: 2;
-    background: linear-gradient(90deg, #000 0%, rgba(0,0,0,0.6) 6%, transparent 16%);
+    background: linear-gradient(90deg, #000 0%, rgba(0,0,0,0.8) 12%, rgba(0,0,0,0.4) 26%, transparent 42%);
   }
   /* Above .home-hero-media (z-index 1 vs. its 0) so it unambiguously
      darkens the poster/video too, not just sitting beside it. Confined
