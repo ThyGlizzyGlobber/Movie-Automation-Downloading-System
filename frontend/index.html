@@ -687,6 +687,12 @@
   }
   .detail-poster { width: var(--detail-poster-w); height: 195px; object-fit: cover; background: var(--bg-card); display: block; }
   .detail-info { flex: 1 1 320px; min-width: 260px; padding-bottom: 2px; }
+  /* Netflix/Prime Video/Apple TV+/etc. "Original" badge — a finished
+     wordmark image (see originalBadgeHtml), so no text styling needed
+     here, just sizing/spacing. Height fixed, width left to scale
+     naturally since each service's own wordmark has a different aspect
+     ratio; omitted entirely (no gap) when there's no match. */
+  .detail-original-badge { display: block; height: 22px; margin-bottom: 8px; }
   .detail-info h1 { font-size: 28px; font-weight: 800; margin: 0 0 10px; line-height: 1.15; }
   .detail-info h1 .hero-year { font-weight: 400; color: var(--text-dim); }
   /* This dim-toned text (genre/runtime/certification/overview/cast) sits
@@ -1268,6 +1274,15 @@
   .bulk-btn.primary { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
   .bulk-btn:active { opacity: 0.85; }
   .bulk-btn[disabled] { color: var(--text-dim); opacity: 0.6; }
+  /* Hover matches the header's own #searchToggleBtn/#settingsToggle
+     treatment (white fill, charcoal content) for consistency across the
+     site, per direct request — beats .bulk-btn.primary's own accent
+     fill on specificity (3 class-level selectors vs. 2), so "Download
+     complete series" (always accent blue at rest now, not just when the
+     show has ended) still gets the same white hover as every other
+     button here. :not([disabled]) so a disabled button doesn't flash
+     this on hover. */
+  .bulk-btn:not([disabled]):hover { background: #fff; color: var(--smithflix-charcoal); border-color: #fff; }
   .season-list { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; }
   .season-row {
     display: flex; align-items: center; justify-content: space-between; gap: 10px;
@@ -1279,6 +1294,9 @@
   }
   .season-btn:active { background: color-mix(in srgb, var(--accent) 18%, transparent); }
   .season-btn[disabled] { color: var(--text-dim); border-color: var(--border); }
+  /* Same header-icon-matched hover as .bulk-btn above, for consistency
+     across every download button in this card. */
+  .season-btn:not([disabled]):hover { background: #fff; color: var(--smithflix-charcoal); border-color: #fff; }
 
   /* Status pills, shared between detail confirm + requests list */
   .status-pill {
@@ -1715,6 +1733,40 @@
         <div class="provider-chip"><img src="/icons/${cp.icon}" alt=""></div>
         <div class="provider-label">${escapeHtml(cp.name)}</div>
       </a>`).join("");
+  }
+
+  // Detail-page "Netflix Original"/"Prime Video Original"/etc. badge —
+  // a separate lookup from CURATED_PROVIDERS above: that one is keyed by
+  // TMDB's watch-provider ids (which service you can currently stream a
+  // title on), this one matches by name against TV's own `networks`
+  // field or a movie's `production_companies`, TMDB's closest signal for
+  // which service actually produced the title. Name-based, not
+  // id-based — a network/company id can't be verified without a live
+  // TMDB lookup, and a wrong id would silently mis-badge or hide one.
+  // Icons are the user's own finished wordmark badges (frontend/icons/
+  // originals/), not the plain service marks CURATED_PROVIDERS uses.
+  const ORIGINALS_BADGES = [
+    { names: ["Netflix"], icon: "netflix-original.png", label: "Netflix Original" },
+    { names: ["Prime Video", "Amazon Studios", "Amazon MGM Studios"], icon: "prime-video-original.png", label: "Prime Video Original" },
+    { names: ["Apple TV+", "Apple TV Plus", "Apple Original Films", "Apple Studios"], icon: "apple-tv-original.png", label: "Apple TV+ Original" },
+    { names: ["HBO", "HBO Max", "Max"], icon: "max-original.png", label: "Max Original" },
+    { names: ["Disney+", "Disney Plus"], icon: "disney-plus-original.png", label: "Disney+ Original" },
+    { names: ["Hulu"], icon: "hulu-original.png", label: "Hulu Original" },
+    { names: ["Paramount+", "Paramount Plus"], icon: "paramount-plus-original.png", label: "Paramount+ Original" },
+    { names: ["Peacock"], icon: "peacock-original.png", label: "Peacock Original" },
+  ];
+
+  // isTv reads `item.networks` (TV's own field); a movie has no
+  // equivalent, so `item.production_companies` is the best available
+  // proxy there instead. First match wins — co-productions spanning
+  // multiple known services are rare enough not to need a priority
+  // scheme beyond ORIGINALS_BADGES' own list order.
+  function originalBadgeHtml(item, isTv) {
+    const sources = (isTv ? item.networks : item.production_companies) || [];
+    const names = new Set(sources.map((s) => s.name));
+    const match = ORIGINALS_BADGES.find((b) => b.names.some((n) => names.has(n)));
+    if (!match) return "";
+    return `<img class="detail-original-badge" src="/icons/originals/${match.icon}" alt="${escapeHtml(match.label)}">`;
   }
 
   // Curated genre rows (Netflix/Prime-style "Comedies", "Action", etc.) —
@@ -3082,8 +3134,8 @@
   // subscribed — the backend anchors a one-off download to a paused show
   // record on first use if it needs to (see api.py's bulk_download_show),
   // so there's nothing to gate here on subscription state any more.
-  function bulkAreaHtml(isEndedOrCanceled, seasons) {
-    const seriesBtn = `<button class="bulk-btn ${isEndedOrCanceled ? "primary" : ""}" id="bulkSeriesBtn">Download complete series</button>`;
+  function bulkAreaHtml(seasons) {
+    const seriesBtn = `<button class="bulk-btn primary" id="bulkSeriesBtn">Download complete series</button>`;
     const seasonRows = seasons.length
       ? `<div class="season-list">${seasons.map((s) => `
           <div class="season-row">
@@ -3114,7 +3166,6 @@
 
       const backdrop = backdropUrl(show.backdrop_path);
       const cast = show.credits?.cast;
-      const isEndedOrCanceled = show.status === "Ended" || show.status === "Canceled";
       const seasons = (show.seasons || []).filter((s) => s.season_number > 0);
       const year = yearOf(show.first_air_date);
 
@@ -3136,6 +3187,7 @@
               <div id="unsubscribeArea">${unsubscribeLinkHtml(subscription)}</div>
             </div>
             <div class="detail-info">
+              ${originalBadgeHtml(show, true)}
               <h1>${escapeHtml(show.name || show.original_name)}${year ? ` <span class="hero-year">(${year})</span>` : ""}</h1>
               <div class="detail-meta">
                 ${show.status ? `<span class="cert-badge">${escapeHtml(show.status)}</span>` : ""}
@@ -3156,7 +3208,7 @@
             <div class="detail-panel">${creatorsAndCastHtml(show, cast)}</div>
           </div>
           <div class="detail-panels-col">
-            <div class="detail-panel"><div id="bulkArea">${bulkAreaHtml(isEndedOrCanceled, seasons)}</div></div>
+            <div class="detail-panel"><div id="bulkArea">${bulkAreaHtml(seasons)}</div></div>
             <div class="detail-panel">${detailsCardHtml(show, tvCertificationOf(show), true)}</div>
           </div>
         </div>
@@ -3168,7 +3220,7 @@
         document.getElementById("subscribeButtonArea").innerHTML = subscribeButtonHtml(subscription, show.is_coming_soon);
         document.getElementById("unsubscribeArea").innerHTML = unsubscribeLinkHtml(subscription);
         document.getElementById("stateIconArea").innerHTML = stateIconHtml(subscription, show.is_coming_soon);
-        document.getElementById("bulkArea").innerHTML = bulkAreaHtml(isEndedOrCanceled, seasons);
+        document.getElementById("bulkArea").innerHTML = bulkAreaHtml(seasons);
         wireSubscribeArea();
         wireBulkArea();
       }
@@ -3559,6 +3611,7 @@
                 : `<button class="add-btn" id="addBtn">+ Add to Plex</button>`}
             </div>
             <div class="detail-info">
+              ${originalBadgeHtml(movie, false)}
               <h1>${escapeHtml(movie.title || movie.original_title)}${year ? ` <span class="hero-year">(${year})</span>` : ""}</h1>
               <div class="detail-meta">
                 ${certification ? `<span class="cert-badge">${escapeHtml(certification)}</span>` : ""}
