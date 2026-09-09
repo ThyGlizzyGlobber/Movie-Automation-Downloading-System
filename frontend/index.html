@@ -635,7 +635,7 @@
      wide the hero happens to be. */
   .home-hero-video-wrap::before {
     content: ""; position: absolute; inset: 0; z-index: 2;
-    background: linear-gradient(90deg, var(--bg) 0%, color-mix(in srgb, var(--bg) 60%, transparent) 20%, transparent 45%);
+    background: linear-gradient(90deg, #000 0%, rgba(0,0,0,0.85) 22%, rgba(0,0,0,0.4) 38%, transparent 60%);
   }
   /* Above .home-hero-media (z-index 1 vs. its 0) so it unambiguously
      darkens the video too, not just the plain backdrop beside it —
@@ -648,16 +648,24 @@
      stay meaningfully opaque well past the halfway point on every
      width, not just whatever one ratio looked right on a single test
      viewport. */
+  /* Deliberately literal black (not var(--bg), which is a dark charcoal
+     in this theme, not true black) — per direct request: the hero fade
+     should read as black specifically, not "the theme's own background
+     color," even though every other dark surface in the app is
+     intentionally charcoal via --bg. Pushed harder than a first pass at
+     this (higher opacity at every stop, transparent point moved from
+     90% out to 96%) since that one still let the video's edge read
+     through visibly on a real viewport. */
   .home-hero-fade {
     position: absolute; inset: 0; z-index: 1;
     background:
       linear-gradient(90deg,
-        var(--bg) 0%,
-        color-mix(in srgb, var(--bg) 95%, transparent) 25%,
-        color-mix(in srgb, var(--bg) 78%, transparent) 45%,
-        color-mix(in srgb, var(--bg) 45%, transparent) 65%,
-        transparent 90%),
-      linear-gradient(180deg, transparent 55%, color-mix(in srgb, var(--bg) 65%, transparent) 85%, var(--bg) 100%);
+        #000 0%,
+        rgba(0,0,0,0.98) 30%,
+        rgba(0,0,0,0.9) 50%,
+        rgba(0,0,0,0.6) 72%,
+        transparent 96%),
+      linear-gradient(180deg, transparent 50%, rgba(0,0,0,0.6) 82%, #000 100%);
   }
   .home-hero-content {
     position: relative; z-index: 2; display: flex; align-items: flex-end;
@@ -1601,7 +1609,46 @@
     const heroEl = document.getElementById("homeHero");
     if (!heroEl) return;
     let index = 0;
-    let heroMuted = true;
+    // Real YT.Player instances (indices 0/1, matching HERO_TRAILER_COUNT)
+    // — not raw postMessage guessing — so mute state and the "is it
+    // actually playing yet" check below are both driven by the genuine
+    // player, not assumptions about its internal timing. No separate
+    // "heroMuted" flag: each player's own isMuted() is the single source
+    // of truth, per-slide, on purpose — every player is muted the
+    // instant it's created and every time a slide becomes active again,
+    // regardless of whatever an earlier visit to it left behind (per
+    // explicit request: always muted by default, never carried over
+    // between titles in the carousel).
+    const heroPlayers = [];
+    const muteBtn = document.getElementById("heroMuteBtn");
+
+    // Only ever shows/enables the mute button for a slide that actually
+    // has a trailer *and* a player that's finished initializing — a
+    // poster-only slide (past HERO_TRAILER_COUNT, or one with no trailer
+    // on file) has nothing for it to control, and a still-constructing
+    // player can't reliably answer isMuted() yet.
+    function setMuteButtonIcon(muted) {
+      muteBtn.querySelector(".material-symbols-rounded").textContent = muted ? "volume_off" : "volume_up";
+      muteBtn.setAttribute("aria-label", muted ? "Unmute trailer" : "Mute trailer");
+    }
+    function refreshMuteButton() {
+      const player = heroPlayers[index];
+      if (!player || !player.isMuted) { muteBtn.hidden = true; return; }
+      muteBtn.hidden = false;
+      setMuteButtonIcon(player.isMuted());
+    }
+    muteBtn.addEventListener("click", () => {
+      const player = heroPlayers[index];
+      if (!player) return;
+      const wasMuted = player.isMuted();
+      if (wasMuted) player.unMute(); else player.mute();
+      // Sets the icon from the toggle just performed, not a fresh
+      // isMuted() read straight after — confirmed live that YT.Player's
+      // mute()/unMute() aren't guaranteed to be reflected by isMuted()
+      // the instant they're called, which left the button's own label
+      // one click stale when it re-queried immediately afterward.
+      setMuteButtonIcon(!wasMuted);
+    });
 
     function showSlide(newIndex) {
       index = ((newIndex % items.length) + items.length) % items.length;
@@ -1611,6 +1658,14 @@
       heroEl.querySelectorAll(".home-hero-dot").forEach((el) => {
         el.classList.toggle("active", Number(el.dataset.index) === index);
       });
+      // Defensive, not just cosmetic: a background trailer (pre-loaded
+      // but not currently shown) must never be the one making sound,
+      // and the slide becoming active always starts muted too — see the
+      // no-carried-over-mute-state note above.
+      heroPlayers.forEach((player, i) => { if (player && i !== index) player.mute(); });
+      const activePlayer = heroPlayers[index];
+      if (activePlayer) activePlayer.mute();
+      refreshMuteButton();
     }
 
     function resetAutoplay() {
@@ -1630,22 +1685,6 @@
     heroEl.addEventListener("mouseleave", resetAutoplay);
     resetAutoplay();
 
-    // Real YT.Player instances (indices 0/1, matching HERO_TRAILER_COUNT)
-    // — not raw postMessage guessing — so mute state and the "is it
-    // actually playing yet" check below are both driven by the genuine
-    // player, not assumptions about its internal timing.
-    const heroPlayers = [];
-    const muteBtn = document.getElementById("heroMuteBtn");
-    function applyMuteState() {
-      muteBtn.querySelector(".material-symbols-rounded").textContent = heroMuted ? "volume_off" : "volume_up";
-      muteBtn.setAttribute("aria-label", heroMuted ? "Unmute trailer" : "Mute trailer");
-      heroPlayers.forEach((player) => {
-        if (!player) return;
-        if (heroMuted) player.mute(); else player.unMute();
-      });
-    }
-    muteBtn.addEventListener("click", () => { heroMuted = !heroMuted; applyMuteState(); });
-
     items.slice(0, HERO_TRAILER_COUNT).forEach(async (item, i) => {
       const isTv = item.__mediaType === "tv";
       try {
@@ -1661,12 +1700,41 @@
         iframe.allow = "autoplay; encrypted-media";
         iframe.title = "Trailer";
         wrap.appendChild(iframe);
-        muteBtn.hidden = false;
         const YT = await loadYouTubeApi();
         const poster = heroEl.querySelector(`.home-hero-slide[data-index="${i}"] img`);
         heroPlayers[i] = new YT.Player(iframe, {
           events: {
-            onReady: (e) => { if (!heroMuted) e.target.unMute(); },
+            // Always muted on (re)creation, no exceptions — matches
+            // every player starting muted the instant it's built, same
+            // as showSlide's own "no carried-over mute state" rule.
+            onReady: (e) => {
+              e.target.mute();
+              if (i === index) refreshMuteButton();
+              // YouTube's own suggested-video end-screen/Cards overlay
+              // is a *content* overlay, not a player-state change — it
+              // can render while getPlayerState() still reports PLAYING
+              // the whole time, which is exactly why the onStateChange
+              // guard below never caught it even though it correctly
+              // handles every real state transition (buffering, a true
+              // "ended" before loop=1 wraps it, etc.). There's no
+              // official embed parameter or API call that suppresses
+              // it — confirmed against YouTube's own documented
+              // Player API surface. The one thing that reliably works
+              // is never letting playback *reach* the last few seconds
+              // that trigger it: poll time remaining, and proactively
+              // seek back to the start first.
+              const guardId = setInterval(() => {
+                try {
+                  const duration = e.target.getDuration();
+                  const t = e.target.getCurrentTime();
+                  if (duration > 0 && duration - t < 6) {
+                    if (poster) poster.classList.remove("home-hero-poster-hidden");
+                    e.target.seekTo(0, true);
+                  }
+                } catch (err) { /* not ready for these calls yet — next tick retries */ }
+              }, 2000);
+              heroEndGuardTimers.push(guardId);
+            },
             // The one signal that's actually true, regardless of how
             // long loading took — reveals the video only once real
             // playback has genuinely started, so the poster keeps
@@ -1677,15 +1745,12 @@
             // live that a single PLAYING event isn't enough on its own
             // (YouTube's player can report it once, optimistically,
             // right as autoplay kicks off, then immediately drop back
-            // to buffering while more loads) and that a looping single-
-            // video playlist (loop=1&playlist=<sameKey>) shows its own
-            // brief end-card/channel-branding flash *every* time it
-            // wraps around, not only on first load — so any state other
-            // than PLAYING (buffering, ended-about-to-loop, cued,
+            // to buffering while more loads) — so any state other than
+            // PLAYING (buffering, a seek's own brief stall, cued,
             // paused) puts the poster straight back up, and PLAYING
             // only actually reveals the video once a getPlayerState()
             // re-check 600ms later still agrees, filtering out that
-            // first optimistic blip. */
+            // first optimistic blip.
             onStateChange: (e) => {
               if (!poster) return;
               if (e.data !== YT.PlayerState.PLAYING) {
@@ -1729,6 +1794,13 @@
   const app = document.getElementById("app");
   const backBtn = document.getElementById("backBtn");
   let activePollTimer = null;
+  // Home hero's per-trailer "seek back before YouTube's own end-screen
+  // gets a chance to show" guards (see wireHomeHero) — plural, unlike
+  // activePollTimer, since up to HERO_TRAILER_COUNT of these can run at
+  // once alongside the hero's own single autoplay timer. Cleared the
+  // same place activePollTimer is, so navigating away from Home stops
+  // them same as everything else that polls.
+  let heroEndGuardTimers = [];
   // Which show groups are expanded on the Requests page — a plain Set
   // rather than per-row DOM state, since loadRequests() rebuilds the
   // whole list's innerHTML on every 5s poll and would otherwise silently
@@ -1741,6 +1813,8 @@
     // poll) share the same handle namespace in every major browser, so
     // clearing both is a safe no-op for whichever one wasn't actually used.
     if (activePollTimer) { clearInterval(activePollTimer); clearTimeout(activePollTimer); activePollTimer = null; }
+    heroEndGuardTimers.forEach((id) => clearInterval(id));
+    heroEndGuardTimers = [];
   }
 
   // The search bar lives permanently in the top bar now (not a toggled
