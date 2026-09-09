@@ -1738,37 +1738,13 @@
     return `<section class="row">${heading}${hscrollHtml(cards)}</section>`;
   }
 
-  // Simplified hero for curated landing pages (Home, Movies, TV) — reuses
-  // .hero/.hero-content/backdropUrl() verbatim, the same shape
-  // renderMovie/renderShow use for their detail-page hero, just without
-  // the poster/season/subscribe controls: title, a short overview, one
-  // "More Info" link into the detail route.
-  function homeHeroHtml(item, mediaType) {
-    if (!item) return "";
-    const isTv = mediaType === "tv";
-    const title = escapeHtml(item.title || item.name || item.original_title || item.original_name || "");
-    const backdrop = backdropUrl(item.backdrop_path);
-    const raw = item.overview || "";
-    const overview = raw.length > 220 ? raw.slice(0, 220).trim() + "…" : raw;
-    const href = isTv ? `#/tv/${item.id}` : `#/movies/${item.id}`;
-    return `<div class="hero" style="${backdrop ? `background-image:url('${backdrop}')` : ""}">
-      <div class="hero-content">
-        <div class="detail-info">
-          <h1>${title}</h1>
-          <div class="detail-overview">${escapeHtml(overview)}</div>
-          <div class="hero-actions" style="margin-top:14px">
-            <a class="add-btn" href="${href}">More Info</a>
-          </div>
-        </div>
-      </div>
-    </div>`;
-  }
-
   // -- Home hero carousel (Prime-Video-storefront style): several
   //    trending items, only the front couple ever carrying a background
-  //    trailer video, cycling with dots/arrows/autoplay. Separate from
-  //    homeHeroHtml above, which the Movies/TV landing pages still use
-  //    unchanged (a single static-backdrop hero, no carousel). --
+  //    trailer video, cycling with dots/arrows/autoplay. Home, Movies, and
+  //    TV all use this same carousel now (movie-only/TV-only trending
+  //    items on the latter two, per direct request) — .hero/.hero-content
+  //    (below) are the *detail*-page hero's own classes now, unrelated to
+  //    this one. --
 
   const HERO_SLIDE_COUNT = 5;
   const HERO_TRAILER_COUNT = 2; // only the front slides ever get a background video
@@ -2656,8 +2632,16 @@
       const byKey = {};
       jobs.forEach((j, i) => { byKey[j.key] = results[i]; });
 
+      // Same carousel Home uses, verbatim (homeHeroCarouselHtml/
+      // wireHomeHero, not the plain single-backdrop homeHeroHtml Movies/
+      // TV used before) — per direct request, just fed movie-only
+      // trending items instead of Home's own mixed movie+TV list.
+      const heroItems = tagMediaType(byKey.trending.results || [], "movie")
+        .filter((it) => it.backdrop_path)
+        .slice(0, HERO_SLIDE_COUNT);
+
       app.innerHTML = `
-        ${homeHeroHtml(byKey.trending.results?.[0], "movie")}
+        ${homeHeroCarouselHtml(heroItems)}
         ${rowHtml("Trending Movies", byKey.trending.results || [], "movie", "#/movies/trending")}
         ${rowHtml("Popular", byKey.popular.results || [], "movie", "#/movies/popular")}
         ${rowHtml("New Releases", byKey.comingSoon.results || [], "movie", "#/movies/coming-soon")}
@@ -2674,6 +2658,7 @@
           `#/movies/provider/${p.id}/${encodeURIComponent(p.name)}`
         )).join("")}
       `;
+      wireHomeHero(heroItems);
     } catch (err) {
       app.innerHTML = errorHtml(err.message, "#/movies");
     }
@@ -2767,8 +2752,16 @@
       const byKey = {};
       jobs.forEach((j, i) => { byKey[j.key] = results[i]; });
 
+      // Same carousel Home uses, verbatim (homeHeroCarouselHtml/
+      // wireHomeHero, not the plain single-backdrop homeHeroHtml Movies/
+      // TV used before) — per direct request, just fed TV-only trending
+      // items instead of Home's own mixed movie+TV list.
+      const heroItems = tagMediaType(byKey.trending.results || [], "tv")
+        .filter((it) => it.backdrop_path)
+        .slice(0, HERO_SLIDE_COUNT);
+
       app.innerHTML = `
-        ${homeHeroHtml(byKey.trending.results?.[0], "tv")}
+        ${homeHeroCarouselHtml(heroItems)}
         ${watchingRowsHtml(byKey.watchingShows || [])}
         ${rowHtml("Trending TV Shows", byKey.trending.results || [], "tv", "#/tv/trending")}
         ${rowHtml("Popular", byKey.popular.results || [], "tv", "#/tv/popular")}
@@ -2786,6 +2779,7 @@
           `#/tv/provider/${p.id}/${encodeURIComponent(p.name)}`
         )).join("")}
       `;
+      wireHomeHero(heroItems);
     } catch (err) {
       app.innerHTML = errorHtml(err.message, "#/tv");
     }
