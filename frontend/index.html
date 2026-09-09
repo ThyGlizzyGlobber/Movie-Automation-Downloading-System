@@ -167,11 +167,11 @@
        not the theme's own background color" rule the hero fades below
        already follow, so the header blends into the same black the hero
        itself fades into rather than reading as its own separate tinted
-       bar. text-shadow below is a second, independent line of defense
-       for icon/text legibility (it doesn't rely on the backdrop being
-       dark at all), so this doesn't have to carry contrast on its own
-       against a bright hero — it's mainly here for the blend. */
-    background: linear-gradient(to bottom, rgba(0,0,0,0.44) 0%, transparent 100%);
+       bar. Carries icon/text legibility on its own now (stronger than
+       the original 0.44 top stop) — the text-shadow that used to be a
+       second, independent line of defense was removed per direct
+       request, so this can't lean on that as a backup anymore. */
+    background: linear-gradient(to bottom, rgba(0,0,0,0.65) 0%, transparent 100%);
     backdrop-filter: none;
     transition: background 0.2s ease;
   }
@@ -218,28 +218,16 @@
     background: transparent;
     backdrop-filter: none;
   }
-  body.has-hero #topbar #backBtn,
-  body.has-hero #topbar #topbarLogo,
-  body.has-hero #topbar .top-nav-link,
-  body.has-hero #topbar #settingsToggle,
-  body.has-hero #topbar #themeToggle {
-    /* A tight near-solid shadow right against the glyph, plus a softer
-       wider one — a single soft blur (the original approach) reads fine
-       against a plain dark image but washes out against a busy or
-       light/grey one, since a wide, low-opacity blur barely darkens the
-       pixels directly behind each letter. The tight layer is what
-       actually does the work; the soft one just keeps the edge from
-       looking cut-out. */
-    text-shadow:
-      0 1px 2px color-mix(in srgb, var(--bg) 95%, transparent),
-      0 1px 8px color-mix(in srgb, var(--bg) 85%, transparent);
-  }
   /* Inactive nav-link color is intentionally muted (--text-dim) on every
      other page, where the background is always a flat, predictable app
      color — but that same dim tone is close enough to a light or
-     mid-grey hero image's own tones that it can nearly disappear there
-     regardless of shadow strength. Full-strength --text on hero pages
-     instead. The active link needs its own repeat here even though
+     mid-grey hero image's own tones that it can nearly disappear there,
+     leaning entirely on the header's own background gradient for
+     contrast now that the text-shadow every hero-page header element
+     used to get has been removed per direct request (a stronger 0.65
+     gradient top-stop, see body.has-hero #topbar above, is meant to
+     carry that on its own). Full-strength --text on hero pages instead.
+     The active link needs its own repeat here even though
      .top-nav-link.active above already sets its own color: this
      selector's #topbar id outweighs that plain two-class one, so
      without a same-specificity override here the active link's text
@@ -247,14 +235,9 @@
      every inactive link gets — its white pill background is the only
      thing that'd still look right. Every page a nav link actually
      points to (home, movies, tv) is a hero page, so this isn't a rare
-     edge case. Also cancels the dark text-shadow every hero-page nav
-     link gets below (for light text against an unpredictable hero
-     image) — with dark charcoal text sitting on its own solid white
-     pill, that shadow only ever showed up as an unwanted dark halo
-     hugging the pill, and the white fill already guarantees contrast
-     without it. */
+     edge case. */
   body.has-hero #topbar .top-nav-link { color: var(--text); }
-  body.has-hero #topbar .top-nav-link.active { color: var(--smithflix-charcoal); text-shadow: none; }
+  body.has-hero #topbar .top-nav-link.active { color: var(--smithflix-charcoal); }
   #backBtn, #searchToggleBtn, #settingsToggle, #themeToggle {
     flex: 0 0 auto; background: none; border: none; color: var(--text);
     font-size: 20px; padding: 6px 8px; border-radius: 8px; line-height: 1;
@@ -609,14 +592,16 @@
   .detail-info h1 { font-size: 21px; margin: 0 0 6px; line-height: 1.2; }
   .detail-info h1 .hero-year { font-weight: 400; color: var(--text-dim); }
   /* This dim-toned text (genre/runtime/certification/tagline/overview)
-     sits directly on the hero image itself — same reasoning as the
-     header's own text-shadow: --text-dim can read fine against .hero::
-     after's overlay over a typical dark still, but blends into a lighter
-     or grey one regardless of how dark that overlay gets tuned, so a
-     shadow that doesn't depend on the backdrop is the more robust fix.
-     Harmless where these classes are instead used on a page's plain flat
-     background (e.g. the Overview section below a movie/show's hero) —
-     a matching-color shadow there is imperceptible. */
+     sits directly on the hero image itself: --text-dim can read fine
+     against .hero::after's overlay over a typical dark still, but
+     blends into a lighter or grey one regardless of how dark that
+     overlay gets tuned, so a shadow that doesn't depend on the backdrop
+     is the more robust fix. Harmless where these classes are instead
+     used on a page's plain flat background (e.g. the Overview section
+     below a movie/show's hero) — a matching-color shadow there is
+     imperceptible. (The top header used a similar shadow for the same
+     reason, removed per direct request in favor of a stronger
+     background gradient alone carrying contrast there instead.) */
   .detail-meta, .cert-badge, .detail-overview, .tagline, .score-label {
     text-shadow: 0 1px 4px color-mix(in srgb, var(--bg) 90%, transparent);
   }
@@ -781,6 +766,22 @@
         rgba(0,0,0,0.12) 26%,
         transparent 36%),
       linear-gradient(180deg, transparent 48%, rgba(0,0,0,0.55) 82%, #000 100%);
+  }
+  /* Per direct request: no horizontal/left fade at all below the hero's
+     own mobile breakpoint (see the min-width:640px block further down)
+     — just the vertical bottom fade each rule above already carries for
+     the text/CTA area's own legibility. Doesn't touch
+     .home-hero-video-wrap::before, the video's own edge blend — that's
+     solving a different problem (hiding letterboxing/blending the clip
+     into the surrounding black), not framing text, and stays needed at
+     every width. */
+  @media (max-width: 639px) {
+    .home-hero-fade {
+      background: linear-gradient(180deg, transparent 42%, rgba(0,0,0,0.65) 80%, #000 100%);
+    }
+    .home-hero-slide.home-hero-has-video .home-hero-fade {
+      background: linear-gradient(180deg, transparent 48%, rgba(0,0,0,0.55) 82%, #000 100%);
+    }
   }
   .home-hero-content {
     position: relative; z-index: 2; display: flex; align-items: flex-end;
