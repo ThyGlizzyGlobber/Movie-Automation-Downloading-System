@@ -193,6 +193,32 @@
     background: rgba(0, 0, 0, 0.55);
     backdrop-filter: blur(20px);
   }
+  /* While the search overlay (below) is open, #topbar needs to match its
+     tint — it sits above and outside the overlay itself (so it stays
+     reachable/undimmed as chrome, per the overlay's own design), but
+     without this it kept whatever background its other states already
+     gave it (the hero gradient scrim, or scrolled frosted glass),
+     staying see-through to the sharp, unblurred hero behind it while
+     everything below it was dimmed and blurred — confirmed live, still
+     visible even after matching #searchOverlay's own rgba(0,0,0,0.7):
+     two stacked backdrop-filter elements (this one sitting right above
+     the overlay, which is ALSO backdrop-filter'd) don't reliably
+     compose in every render pipeline, so #topbar's own blur ended up
+     doing much less visible work than the overlay's — confirmed by the
+     computed style correctly reporting the intended values while the
+     rendered header still looked distinctly less tinted than the panel
+     below it. Solid enough on its own (0.92, not 0.7) that the header
+     reads as a consistent, uniformly dark bar regardless of whether its
+     own blur actually composes with what's behind it. Each variant
+     below matches (a search-open class added to) an existing #topbar
+     background rule's own selector, so it's specific enough to actually
+     override that rule rather than losing the cascade to it. */
+  body.search-open #topbar,
+  body.has-hero.search-open #topbar,
+  body.has-hero.scrolled.search-open #topbar {
+    background: rgba(0, 0, 0, 0.92);
+    backdrop-filter: blur(10px);
+  }
   body.has-hero #topbar #backBtn,
   body.has-hero #topbar #topbarLogo,
   body.has-hero #topbar .top-nav-link,
@@ -3480,11 +3506,19 @@
   const searchOverlay = document.getElementById("searchOverlay");
   function openSearchOverlay() {
     searchOverlay.hidden = false;
+    // #topbar itself sits above the overlay and outside it, so it needs
+    // its own signal to pick up the same tint (see body.search-open
+    // #topbar) — without this it kept whatever background its other
+    // states (hero gradient, scrolled frosted glass) already gave it,
+    // staying see-through to the sharp, unblurred hero behind it while
+    // everything below it in the overlay was dimmed and blurred.
+    document.body.classList.add("search-open");
     searchToggleBtn.setAttribute("aria-expanded", "true");
     searchInput.focus();
   }
   function closeSearchOverlay() {
     searchOverlay.hidden = true;
+    document.body.classList.remove("search-open");
     searchToggleBtn.setAttribute("aria-expanded", "false");
   }
   function submitSearch() {
