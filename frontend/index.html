@@ -719,7 +719,16 @@
   .detail-overview.clamped {
     display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden;
   }
-  .detail-overview-more-btn {
+  /* display:block, NOT [hidden] — an explicit display value on this
+     rule was silently overriding wireMoreToggle's own btn.hidden=true
+     (author CSS always beats the UA stylesheet's [hidden]{display:none}
+     regardless of selector specificity), so the button never actually
+     disappeared even once the JS correctly decided to hide it. Scoping
+     display:block to :not([hidden]) lets the attribute win again, same
+     as .detail-panel-more-btn (which never had this problem only
+     because it happens to rely on a <button>'s own default display
+     instead of setting one explicitly). */
+  .detail-overview-more-btn:not([hidden]) {
     display: block; margin: 6px 0 0; padding: 0; background: none; border: none; color: var(--accent);
     font-weight: 600; font-size: 13px; cursor: pointer;
   }
@@ -3466,25 +3475,15 @@
   // overview text and the hero's own (duplicate) overview text. Hidden
   // entirely when the overview is short enough that the 4-line clamp
   // never actually truncates it — a visible "More" that toggles nothing
-  // on click read as a broken button, confirmed live.
-  // Comparing scrollHeight against clientHeight WHILE the element is
-  // still -webkit-line-clamp'd (an earlier version of this function did
-  // that, with a buffer to allow for sub-pixel rounding) turned out to
-  // still misfire on real, non-truncated text — scrollHeight on an
-  // already-clamped -webkit-box element isn't a reliably exact "true
-  // content height" across engines, buffer or not. This instead measures
-  // directly: briefly drop the clamp to read the text's real, un-clamped
-  // height, then restore it before ever painting — genuinely more
-  // content than the clamped box shows is the only thing that counts.
+  // on click read as a broken button, confirmed live. scrollHeight >
+  // clientHeight while still clamped is the real signal that there's
+  // hidden text (a plain line count would be wrong once font size/
+  // column width change the wrap).
   function wireMoreToggle(textId, btnId) {
     const btn = document.getElementById(btnId);
     const text = document.getElementById(textId);
     if (!btn || !text) return;
-    const clampedHeight = text.clientHeight;
-    text.classList.remove("clamped");
-    const fullHeight = text.scrollHeight;
-    text.classList.add("clamped");
-    if (fullHeight <= clampedHeight + 1) {
+    if (text.scrollHeight <= text.clientHeight + 1) {
       btn.hidden = true;
       return;
     }
