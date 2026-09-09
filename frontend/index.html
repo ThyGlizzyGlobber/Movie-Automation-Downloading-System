@@ -624,6 +624,19 @@
   .home-hero-video-wrap iframe {
     position: absolute; inset: 0; width: 100%; height: 100%; border: none; pointer-events: none;
   }
+  /* A second, dedicated fade scoped to the video box's own left edge —
+     the page-wide .home-hero-fade below still does most of the work,
+     but its gradient stops are percentages *of the whole hero*, while
+     the video's own width is fixed (height-driven, not hero-width-
+     driven); confirmed live that on a real viewport the two just don't
+     line up neatly enough for the outer fade alone to fully blend right
+     at the video's own seam. This one is scoped to the video box
+     itself, so it always blends its own left edge regardless of how
+     wide the hero happens to be. */
+  .home-hero-video-wrap::before {
+    content: ""; position: absolute; inset: 0; z-index: 2;
+    background: linear-gradient(90deg, var(--bg) 0%, color-mix(in srgb, var(--bg) 60%, transparent) 20%, transparent 45%);
+  }
   /* Above .home-hero-media (z-index 1 vs. its 0) so it unambiguously
      darkens the video too, not just the plain backdrop beside it —
      Prime's own hero clearly keeps blending some darkness into the
@@ -640,9 +653,10 @@
     background:
       linear-gradient(90deg,
         var(--bg) 0%,
-        color-mix(in srgb, var(--bg) 92%, transparent) 30%,
-        color-mix(in srgb, var(--bg) 55%, transparent) 55%,
-        transparent 78%),
+        color-mix(in srgb, var(--bg) 95%, transparent) 25%,
+        color-mix(in srgb, var(--bg) 78%, transparent) 45%,
+        color-mix(in srgb, var(--bg) 45%, transparent) 65%,
+        transparent 90%),
       linear-gradient(180deg, transparent 55%, color-mix(in srgb, var(--bg) 65%, transparent) 85%, var(--bg) 100%);
   }
   .home-hero-content {
@@ -1658,18 +1672,26 @@
             // playback has genuinely started, so the poster keeps
             // masking the player's own native-control/loading chrome
             // for exactly as long as that chrome is actually showing,
-            // not a guessed fixed delay. A single PLAYING event isn't
-            // enough on its own, though — confirmed live that YouTube's
-            // player can report PLAYING once, optimistically, right as
-            // autoplay kicks off, then immediately drop back to
-            // buffering while more of the video loads; hiding the
-            // poster on that first blip re-exposed the exact loading
-            // chrome this is meant to mask. Debounced: only commits
-            // once the state is *still* PLAYING a moment later, and
-            // simply waits for the next PLAYING event (this handler
-            // fires on every state change) if it wasn't. */
+            // not a guessed fixed delay. Bidirectional and re-checked on
+            // *every* state change, not just the first one: confirmed
+            // live that a single PLAYING event isn't enough on its own
+            // (YouTube's player can report it once, optimistically,
+            // right as autoplay kicks off, then immediately drop back
+            // to buffering while more loads) and that a looping single-
+            // video playlist (loop=1&playlist=<sameKey>) shows its own
+            // brief end-card/channel-branding flash *every* time it
+            // wraps around, not only on first load — so any state other
+            // than PLAYING (buffering, ended-about-to-loop, cued,
+            // paused) puts the poster straight back up, and PLAYING
+            // only actually reveals the video once a getPlayerState()
+            // re-check 600ms later still agrees, filtering out that
+            // first optimistic blip. */
             onStateChange: (e) => {
-              if (e.data !== YT.PlayerState.PLAYING || !poster) return;
+              if (!poster) return;
+              if (e.data !== YT.PlayerState.PLAYING) {
+                poster.classList.remove("home-hero-poster-hidden");
+                return;
+              }
               setTimeout(() => {
                 const player = heroPlayers[i];
                 if (player && player.getPlayerState() === YT.PlayerState.PLAYING) {
