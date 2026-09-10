@@ -48,7 +48,13 @@
        layering) are deliberately untouched — this is scoped to the
        page background specifically, not every dark surface in the app. */
     --smithflix-charcoal: #000000;
-    --smithflix-charcoal-card: #201e1c;
+    /* Blended toward --smithflix-accent (a fixed 9% mix) rather than a
+       standalone warm-toned hex — per direct request to have every
+       actual charcoal surface (this, --bg-elevated, --border) lean
+       cool/blue like the accent instead of warm, tied to the accent
+       itself so they stay in sync if it ever changes. --smithflix-
+       charcoal above is deliberately excluded (see its own comment). */
+    --smithflix-charcoal-card: color-mix(in srgb, var(--smithflix-accent) 9%, #201e1c);
     --smithflix-accent: #b4c5e4;
     /* Near-white with just enough of the board's own cream cast to not
        read as flatly pure white — the hero carousel's active dot. */
@@ -58,14 +64,18 @@
     --font-body: 'Inter', -apple-system, BlinkMacSystemFont, "Helvetica Neue", Arial, sans-serif;
 
     --bg: var(--smithflix-charcoal);
-    --bg-elevated: #1a1816;
+    --bg-elevated: color-mix(in srgb, var(--smithflix-accent) 9%, #1a1816);
     --bg-card: var(--smithflix-charcoal-card);
     --text: var(--smithflix-cream);
     --text-dim: #a39a8b;
     --accent: var(--smithflix-accent);
     --accent-text: #141312;
     --accent-secondary: #3d52d5;
-    --border: #332f2b;
+    /* Higher than the other two charcoal surfaces' 9% — #332f2b's own
+       warm bias is stronger, so an equal mix barely moved the needle
+       (confirmed live: R/G/B landed within 1 unit of each other, still
+       reading as neutral rather than blue-leaning). */
+    --border: color-mix(in srgb, var(--smithflix-accent) 15%, #332f2b);
     --status-queued: #6b7280;
     --status-searching: #3b82f6;
     --status-downloading: #a855f7;
@@ -305,7 +315,7 @@
   .search-overlay-pill {
     position: relative; width: 100%; max-width: 720px;
     display: flex; align-items: center; gap: 10px;
-    background: var(--bg-card); border: 1px solid var(--border);
+    background: var(--bg-card);
     border-radius: 999px; padding: 12px 16px;
     box-shadow: 0 8px 30px rgba(0, 0, 0, 0.5);
   }
