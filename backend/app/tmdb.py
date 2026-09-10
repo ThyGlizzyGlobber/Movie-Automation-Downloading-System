@@ -149,10 +149,17 @@ class TMDBClient:
 
     def get_movie(self, tmdb_id: int) -> dict:
         # append_to_response folds cast/crew, per-region certifications,
-        # and recommendations into the one call the detail view needs
-        # (Stage 4 addendum: cast, crew, and a certification badge on the
-        # movie detail page; later addendum: a "Related" row).
-        return self._get(f"/movie/{tmdb_id}", {"append_to_response": "credits,release_dates,recommendations"})
+        # recommendations, and watch providers into the one call the
+        # detail view needs (Stage 4 addendum: cast, crew, and a
+        # certification badge on the movie detail page; later addendum:
+        # a "Related" row; later addendum: a movie has no `networks`
+        # field the way a TV show does, so the frontend's originals
+        # badge falls back to this for titles where the actual credited
+        # production company isn't the streamer — e.g. a Lionsgate-made
+        # film Netflix only holds exclusive distribution rights to).
+        return self._get(
+            f"/movie/{tmdb_id}", {"append_to_response": "credits,release_dates,recommendations,watch/providers"}
+        )
 
     def get_alternative_titles(self, tmdb_id: int) -> list[dict]:
         data = self._get(f"/movie/{tmdb_id}/alternative_titles")

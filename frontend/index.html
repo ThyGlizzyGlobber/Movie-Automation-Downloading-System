@@ -681,18 +681,24 @@
      request, matching Prime's own icon row (a horizontal strip) more
      closely than the fully-stacked column this was before. */
   .detail-icon-row { display: flex; align-items: center; gap: 10px; }
+  /* Service icon (Netflix/Prime Video/Apple TV+/etc.) — sits left of the
+     score ring in the icon row, matching its 48px height exactly (see
+     originalServiceIconHtml for the same is-this-an-original detection
+     this used to drive a wordmark badge above the title instead, per
+     direct request to move it here as a plain app icon). Same squircle
+     treatment as the home page's own .provider-chip, for consistency.
+     Omitted entirely (no gap) when there's no match. */
+  .detail-provider-icon {
+    width: 48px; height: 48px; border-radius: 22%; overflow: hidden; flex: 0 0 auto;
+    background: var(--bg-card); border: 1px solid var(--border);
+  }
+  .detail-provider-icon img { width: 100%; height: 100%; object-fit: cover; display: block; }
   .detail-poster-wrap {
     position: relative; border-radius: 10px; overflow: hidden;
     box-shadow: 0 8px 24px rgba(0,0,0,0.55);
   }
   .detail-poster { width: var(--detail-poster-w); height: 195px; object-fit: cover; background: var(--bg-card); display: block; }
   .detail-info { flex: 1 1 320px; min-width: 260px; padding-bottom: 2px; }
-  /* Netflix/Prime Video/Apple TV+/etc. "Original" badge — a finished
-     wordmark image (see originalBadgeHtml), so no text styling needed
-     here, just sizing/spacing. Height fixed, width left to scale
-     naturally since each service's own wordmark has a different aspect
-     ratio; omitted entirely (no gap) when there's no match. */
-  .detail-original-badge { display: block; height: 16px; margin-bottom: 14px; }
   .detail-info h1 { font-size: 34px; font-weight: 800; margin: 0 0 10px; line-height: 1.15; }
   .detail-info h1 .hero-year { font-weight: 400; color: var(--text-dim); }
   /* This dim-toned text (genre/runtime/certification/overview/cast) sits
@@ -1761,38 +1767,51 @@
       </a>`).join("");
   }
 
-  // Detail-page "Netflix Original"/"Prime Video Original"/etc. badge —
-  // a separate lookup from CURATED_PROVIDERS above: that one is keyed by
-  // TMDB's watch-provider ids (which service you can currently stream a
-  // title on), this one matches by name against TV's own `networks`
-  // field or a movie's `production_companies`, TMDB's closest signal for
-  // which service actually produced the title. Name-based, not
-  // id-based — a network/company id can't be verified without a live
-  // TMDB lookup, and a wrong id would silently mis-badge or hide one.
-  // Icons are the user's own finished wordmark badges (frontend/icons/
-  // originals/), not the plain service marks CURATED_PROVIDERS uses.
-  const ORIGINALS_BADGES = [
-    { names: ["Netflix"], icon: "netflix-original.png", label: "Netflix Original" },
-    { names: ["Prime Video", "Amazon Studios", "Amazon MGM Studios"], icon: "prime-video-original.png", label: "Prime Video Original" },
-    { names: ["Apple TV+", "Apple TV Plus", "Apple Original Films", "Apple Studios"], icon: "apple-tv-original.png", label: "Apple TV+ Original" },
-    { names: ["HBO", "HBO Max", "Max"], icon: "max-original.png", label: "Max Original" },
-    { names: ["Disney+", "Disney Plus"], icon: "disney-plus-original.png", label: "Disney+ Original" },
-    { names: ["Hulu"], icon: "hulu-original.png", label: "Hulu Original" },
-    { names: ["Paramount+", "Paramount Plus"], icon: "paramount-plus-original.png", label: "Paramount+ Original" },
-    { names: ["Peacock"], icon: "peacock-original.png", label: "Peacock Original" },
+  // Detail-page service icon (sits left of the score ring, see
+  // .detail-provider-icon) — a separate lookup from CURATED_PROVIDERS
+  // above: that one is keyed by TMDB's watch-provider ids (which service
+  // you can currently stream a title on) and drives the home page's own
+  // chips; this one matches by name against TV's own `networks` field or
+  // a movie's `production_companies`/`watch/providers`, TMDB's closest
+  // signal for which service actually originated the title. Name-based,
+  // not id-based — a network/company id can't be verified without a
+  // live TMDB lookup, and a wrong id would silently mis-match or hide
+  // one. Reuses CURATED_PROVIDERS' own plain app-icon files (frontend/
+  // icons/) rather than a separate asset set, per direct request to show
+  // the same icon here instead of a wordmark badge above the title.
+  const ORIGINAL_SERVICE_MATCH = [
+    { names: ["Netflix"], icon: "netflix.png", label: "Netflix Original" },
+    { names: ["Prime Video", "Amazon Studios", "Amazon MGM Studios"], icon: "prime-video.png", label: "Prime Video Original" },
+    { names: ["Apple TV", "Apple TV+", "Apple TV Plus", "Apple Original Films", "Apple Studios"], icon: "apple-tv.png", label: "Apple TV+ Original" },
+    { names: ["HBO", "HBO Max", "Max"], icon: "max.png", label: "Max Original" },
+    { names: ["Disney+", "Disney Plus"], icon: "disney-plus.png", label: "Disney+ Original" },
+    { names: ["Hulu"], icon: "hulu.png", label: "Hulu Original" },
+    { names: ["Paramount+", "Paramount Plus"], icon: "paramount-plus.png", label: "Paramount+ Original" },
+    { names: ["Peacock"], icon: "peacock.png", label: "Peacock Original" },
   ];
 
-  // isTv reads `item.networks` (TV's own field); a movie has no
-  // equivalent, so `item.production_companies` is the best available
-  // proxy there instead. First match wins — co-productions spanning
-  // multiple known services are rare enough not to need a priority
-  // scheme beyond ORIGINALS_BADGES' own list order.
-  function originalBadgeHtml(item, isTv) {
-    const sources = (isTv ? item.networks : item.production_companies) || [];
-    const names = new Set(sources.map((s) => s.name));
-    const match = ORIGINALS_BADGES.find((b) => b.names.some((n) => names.has(n)));
+  // isTv reads `item.networks` (TV's own field) — confirmed against
+  // TMDB directly for several real shows and it's reliable on its own.
+  // A movie has no such field; `production_companies` is the obvious
+  // proxy but it's the CREDITED production company, not necessarily the
+  // streamer — confirmed live against a real title (a Lionsgate-produced
+  // film where Netflix only holds exclusive distribution rights):
+  // production_companies never mentions Netflix at all. watch/providers'
+  // US flatrate list is what actually reveals that, so it's a fallback
+  // for movies specifically, checked only when the studio credit itself
+  // didn't already match. First match wins — co-productions/multi-
+  // service overlaps are rare enough not to need a priority scheme
+  // beyond ORIGINAL_SERVICE_MATCH's own list order.
+  function originalServiceIconHtml(item, isTv) {
+    const names = new Set(((isTv ? item.networks : item.production_companies) || []).map((s) => s.name));
+    let match = ORIGINAL_SERVICE_MATCH.find((b) => b.names.some((n) => names.has(n)));
+    if (!match && !isTv) {
+      const flatrate = item["watch/providers"]?.results?.US?.flatrate || [];
+      const providerNames = new Set(flatrate.map((p) => p.provider_name));
+      match = ORIGINAL_SERVICE_MATCH.find((b) => b.names.some((n) => providerNames.has(n)));
+    }
     if (!match) return "";
-    return `<img class="detail-original-badge" src="/icons/originals/${match.icon}" alt="${escapeHtml(match.label)}">`;
+    return `<div class="detail-provider-icon" title="${escapeHtml(match.label)}"><img src="/icons/${match.icon}" alt="${escapeHtml(match.label)}"></div>`;
   }
 
   // Curated genre rows (Netflix/Prime-style "Comedies", "Action", etc.) —
@@ -3206,6 +3225,7 @@
                 ${show.on_plex ? `<div class="on-plex-badge">On Plex</div>` : ""}
               </div>
               <div class="detail-icon-row">
+                ${originalServiceIconHtml(show, true)}
                 ${scoreRowHtml(show.vote_average)}
                 <div id="stateIconArea">${stateIconHtml(subscription, show.is_coming_soon)}</div>
               </div>
@@ -3213,7 +3233,6 @@
               <div id="unsubscribeArea">${unsubscribeLinkHtml(subscription)}</div>
             </div>
             <div class="detail-info">
-              ${originalBadgeHtml(show, true)}
               <h1>${escapeHtml(show.name || show.original_name)}${year ? ` <span class="hero-year">(${year})</span>` : ""}</h1>
               <div class="detail-meta">
                 ${show.status ? `<span class="cert-badge">${escapeHtml(show.status)}</span>` : ""}
@@ -3630,6 +3649,7 @@
                 ${movie.on_plex ? `<div class="on-plex-badge">On Plex</div>` : ""}
               </div>
               <div class="detail-icon-row">
+                ${originalServiceIconHtml(movie, false)}
                 ${scoreRowHtml(movie.vote_average)}
                 <button class="detail-state-icon" id="stateIcon"
                   title="${movie.is_coming_soon ? "Not out digitally yet" : "Add to Plex"}"
@@ -3642,7 +3662,6 @@
                 : `<button class="add-btn" id="addBtn">+ Add to Plex</button>`}
             </div>
             <div class="detail-info">
-              ${originalBadgeHtml(movie, false)}
               <h1>${escapeHtml(movie.title || movie.original_title)}${year ? ` <span class="hero-year">(${year})</span>` : ""}</h1>
               <div class="detail-meta">
                 ${certification ? `<span class="cert-badge">${escapeHtml(certification)}</span>` : ""}
