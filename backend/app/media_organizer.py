@@ -41,6 +41,15 @@ class MediaOrganizerError(RuntimeError):
     pass
 
 
+class NoVideoFileError(MediaOrganizerError):
+    """A completed torrent contains no file matching `VIDEO_EXTENSIONS` at
+    all — the same shape as a fake-release payload (filler .txt/.jpg plus a
+    disguised .exe, no real video) rather than an ordinary organize failure.
+    A distinct subclass so worker.py's callers can treat this one specific
+    case as "purge the torrent outright", not just "downloaded, not
+    filed"."""
+
+
 def _sanitize(name: str) -> str:
     """Strips characters that are unsafe (or, over an SMB-mapped share,
     merely inconvenient) in a filename/folder component — a colon in
@@ -79,9 +88,10 @@ def select_video_file(
 ) -> Path:
     """The largest file with a known video extension in a completed
     torrent, skipping anything whose name carries a whole "sample" token.
-    Raises `MediaOrganizerError` if the torrent is gone or nothing
-    qualifies — "fail safe, not best guess": never guess at a non-video
-    file just because it happens to be present.
+    Raises `MediaOrganizerError` if the torrent is gone, or the more
+    specific `NoVideoFileError` if it's present but nothing qualifies —
+    "fail safe, not best guess": never guess at a non-video file just
+    because it happens to be present.
 
     `qbit_root`/`local_root` translate qBittorrent's own reported
     `save_path` into this container's filesystem namespace (see
@@ -102,7 +112,7 @@ def select_video_file(
         and not has_token(Path(f["name"]).stem, "sample")
     ]
     if not candidates:
-        raise MediaOrganizerError(
+        raise NoVideoFileError(
             f"no non-sample video file found among {len(files)} file(s) in torrent {torrent_hash!r}"
         )
 
@@ -231,10 +241,10 @@ def organize_pack(show_identity: ShowIdentity, torrent_hash: str, qbt: QBTClient
     it actually turns out to carry," not a fixed count this function
     checks against (Stage 13's "accept what's actually there" resolution
     of its own "partial pack" open decision). Raises `MediaOrganizerError`
-    only if the torrent itself is gone, or literally nothing in it is
-    recognizable as an episode — the caller-side result maps that onto
-    the request's own `"downloaded, not filed"` status, same as
-    `organize_episode`.
+    if the torrent itself is gone, or the more specific `NoVideoFileError`
+    if literally nothing in it is recognizable as an episode — worker.py
+    treats that specific case as grounds to purge the torrent outright,
+    same as `select_video_file`'s own single-episode equivalent.
 
     Returns one `(season, episode, target_path)` tuple per file actually
     placed; the caller (worker.py) is what maps this back onto per-episode
@@ -250,11 +260,13 @@ def organize_pack(show_identity: ShowIdentity, torrent_hash: str, qbt: QBTClient
     base = translate_qbit_save_path(save_path, config.QBIT_TV_SAVE_PATH, config.TV_LIBRARY_ROOT)
     files = qbt.torrent_files(torrent_hash)
     placed: list[tuple[int, int, Path]] = []
+    any_video_file = False
     for f in files:
         name = f["name"]
         path = Path(name)
         if path.suffix.lower() not in config.VIDEO_EXTENSIONS or has_token(path.stem, "sample"):
             continue
+        any_video_file = True
         identity_pair = extract_episode_identity(tokenize(path.stem))
         if identity_pair is None:
             logger.info("organize_pack: skipping %r — no recognizable episode token", name)
@@ -267,6 +279,14 @@ def organize_pack(show_identity: ShowIdentity, torrent_hash: str, qbt: QBTClient
         placed.append((season, episode, target))
 
     if not placed:
+        if not any_video_file:
+            raise NoVideoFileError(
+                f"no video file at all among {len(files)} file(s) in torrent {torrent_hash!r}"
+            )
+        # Real video file(s) present, just none this app's naming parser
+        # could pin to a season/episode — a genuine "can't file this yet"
+        # case (unusual release naming), not a fake-release signal, so it
+        # stays recoverable ("downloaded, not filed") rather than purged.
         raise MediaOrganizerError(
             f"no recognizable episode files found among {len(files)} file(s) in torrent {torrent_hash!r}"
         )

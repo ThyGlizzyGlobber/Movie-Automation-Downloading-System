@@ -7,6 +7,7 @@ import pytest
 from app import config
 from app.media_organizer import (
     MediaOrganizerError,
+    NoVideoFileError,
     build_episode_path,
     build_movie_path,
     find_existing_episode_file,
@@ -131,6 +132,25 @@ def test_select_video_file_raises_when_torrent_not_found():
 def test_select_video_file_raises_when_nothing_qualifies():
     qbt = FakeQBTClient("/downloads", [{"name": "Lanterns.S01E01.nfo", "size": 1000}])
     with pytest.raises(MediaOrganizerError):
+        select_video_file(qbt, "abc123")
+
+
+def test_select_video_file_raises_no_video_file_error_specifically_when_nothing_qualifies():
+    """A torrent with zero video-extension files at all (a filler .txt/.jpg
+    plus a disguised .exe, the real-world fake-release shape confirmed live
+    2026-09-14) raises the specific `NoVideoFileError` subclass, not just
+    the generic `MediaOrganizerError` — worker.py keys off this specific
+    type to purge the torrent outright rather than leaving it as
+    "downloaded, not filed"."""
+    qbt = FakeQBTClient(
+        "/downloads",
+        [
+            {"name": "release.exe", "size": 964_900_000},
+            {"name": "site.jpg", "size": 38_000},
+            {"name": "readme.txt", "size": 848},
+        ],
+    )
+    with pytest.raises(NoVideoFileError):
         select_video_file(qbt, "abc123")
 
 
@@ -512,6 +532,45 @@ def test_organize_pack_raises_when_nothing_recognizable(tmp_path, monkeypatch):
     )
     with pytest.raises(MediaOrganizerError):
         organize_pack(LANTERNS, "abc123", qbt)
+
+
+def test_organize_pack_raises_no_video_file_error_when_zero_video_files(tmp_path, monkeypatch):
+    """Same fake-release shape as select_video_file's own test — zero
+    video-extension files anywhere in the pack raises the specific
+    `NoVideoFileError`, which worker.py treats as grounds to purge the
+    torrent outright."""
+    monkeypatch.setattr(config, "TV_LIBRARY_ROOT", tmp_path / "library")
+    qbt = FakeQBTClient(
+        str(tmp_path),
+        [
+            {"name": "Lanterns.S01.COMPLETE.nfo", "size": 3},
+            {"name": "readme.txt", "size": 3},
+        ],
+    )
+    with pytest.raises(NoVideoFileError):
+        organize_pack(LANTERNS, "abc123", qbt)
+
+
+def test_organize_pack_raises_plain_error_not_no_video_file_error_when_video_files_are_just_unparseable(
+    tmp_path, monkeypatch
+):
+    """A real video file that's present but whose name this app's parser
+    can't pin to a season/episode (unusual release naming) is a genuine
+    "can't file this yet" case, not a fake-release signal — must raise
+    plain `MediaOrganizerError`, never the `NoVideoFileError` subclass,
+    so worker.py leaves it recoverable ("downloaded, not filed") instead
+    of deleting someone's real download."""
+    monkeypatch.setattr(config, "TV_LIBRARY_ROOT", tmp_path / "library")
+    downloads = tmp_path / "downloads"
+    downloads.mkdir(parents=True)
+    (downloads / "some_weirdly_named_video.mkv").write_bytes(b"real video, unparseable name")
+    qbt = FakeQBTClient(
+        str(downloads),
+        [{"name": "some_weirdly_named_video.mkv", "size": 30}],
+    )
+    with pytest.raises(MediaOrganizerError) as exc_info:
+        organize_pack(LANTERNS, "abc123", qbt)
+    assert not isinstance(exc_info.value, NoVideoFileError)
 
 
 def test_organize_pack_translates_qbit_container_path_when_configured(tmp_path, monkeypatch):

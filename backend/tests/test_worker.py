@@ -537,6 +537,37 @@ def test_check_downloading_marks_episode_downloaded_not_filed_when_organize_fail
     assert reloaded.error_message is not None
 
 
+def test_check_downloading_purges_episode_torrent_with_no_video_file_at_all(tmp_path, monkeypatch):
+    """Same fake-release protection as the movie-level test, for a single
+    episode request: no real video file anywhere in the torrent -> purge
+    it and its files, land on "cancelled", not "downloaded, not filed"."""
+    monkeypatch.setattr(config, "TV_LIBRARY_ROOT", tmp_path / "library")
+    store = RequestStore(":memory:")
+    show = store.create_show(tmdb_id=95350, title="Lanterns")
+    row = store.create_episode_request(
+        tmdb_id=95350, show_id=show.id, title="Lanterns", season_number=1, episode_number=1
+    )
+    store.update_status(row.id, "downloading", result={"torrent_hash": "aaaa"})
+    qbt = FakeQBTClient(
+        torrent_states={"aaaa": {"progress": 1.0, "save_path": str(tmp_path)}},
+        torrent_files={
+            "aaaa": [
+                {"name": "release.exe", "size": 964_900_000},
+                {"name": "site.jpg", "size": 38_000},
+                {"name": "readme.txt", "size": 848},
+            ]
+        },
+    )
+    worker = Worker(store, FakeTMDBClient(), qbt)
+
+    asyncio.run(worker._check_downloading())
+
+    reloaded = store.get_request(row.id)
+    assert reloaded.status == "cancelled"
+    assert reloaded.error_message is not None
+    assert qbt.deleted == [("aaaa", True)]
+
+
 def test_check_downloading_translates_qbit_container_path_before_organizing(tmp_path, monkeypatch):
     """The real bug this reproduces: qBittorrent and this backend run as
     separate containers, each bind-mounting the identical host folder
@@ -612,6 +643,37 @@ def test_check_downloading_marks_movie_downloaded_not_filed_when_organize_fails(
     reloaded = store.get_request(row.id)
     assert reloaded.status == "downloaded, not filed"
     assert reloaded.error_message is not None
+
+
+def test_check_downloading_purges_movie_torrent_with_no_video_file_at_all(tmp_path, monkeypatch):
+    """Real-world case, confirmed live 2026-09-14: a torrent whose release
+    name looked completely clean got added, but contained no actual video
+    file — just filler (.txt, .jpg) and a disguised .exe padded to look
+    like real content. Rather than sitting forever as "downloaded, not
+    filed" with the payload still on disk, this torrent (and its files)
+    must be deleted outright and the request marked "cancelled"."""
+    monkeypatch.setattr(config, "MOVIE_LIBRARY_ROOT", tmp_path / "library")
+    store = RequestStore(":memory:")
+    row = store.create_request(tmdb_id=693134, title="Dune: Part Two", release_year=2024, query=None)
+    store.update_status(row.id, "downloading", result={"torrent_hash": "aaaa"})
+    qbt = FakeQBTClient(
+        torrent_states={"aaaa": {"progress": 1.0, "save_path": str(tmp_path)}},
+        torrent_files={
+            "aaaa": [
+                {"name": "release.exe", "size": 964_900_000},
+                {"name": "site.jpg", "size": 38_000},
+                {"name": "readme.txt", "size": 848},
+            ]
+        },
+    )
+    worker = Worker(store, FakeTMDBClient(), qbt)
+
+    asyncio.run(worker._check_downloading())
+
+    reloaded = store.get_request(row.id)
+    assert reloaded.status == "cancelled"
+    assert reloaded.error_message is not None
+    assert qbt.deleted == [("aaaa", True)]
 
 
 def test_check_downloading_translates_qbit_container_path_before_organizing_movie(tmp_path, monkeypatch):
@@ -838,6 +900,35 @@ def test_check_downloading_marks_pack_downloaded_not_filed_when_organize_fails(t
     reloaded = store.get_request(row.id)
     assert reloaded.status == "downloaded, not filed"
     assert reloaded.error_message is not None
+
+
+def test_check_downloading_purges_pack_torrent_with_no_video_file_at_all(tmp_path, monkeypatch):
+    """Same fake-release protection, for a season/complete-series pack
+    request: no real video file anywhere in the pack -> purge it and its
+    files, land on "cancelled", not "downloaded, not filed"."""
+    monkeypatch.setattr(config, "TV_LIBRARY_ROOT", tmp_path / "library")
+    store = RequestStore(":memory:")
+    show = store.create_show(tmdb_id=95350, title="Lanterns")
+    row = store.create_pack_request(tmdb_id=95350, show_id=show.id, title="Lanterns", season_number=1)
+    store.update_status(row.id, "downloading", result={"torrent_hash": "cccc"})
+    qbt = FakeQBTClient(
+        torrent_states={"cccc": {"progress": 1.0, "save_path": str(tmp_path)}},
+        torrent_files={
+            "cccc": [
+                {"name": "release.exe", "size": 964_900_000},
+                {"name": "site.jpg", "size": 38_000},
+                {"name": "readme.txt", "size": 848},
+            ]
+        },
+    )
+    worker = Worker(store, FakeTMDBClient(), qbt)
+
+    asyncio.run(worker._check_downloading())
+
+    reloaded = store.get_request(row.id)
+    assert reloaded.status == "cancelled"
+    assert reloaded.error_message is not None
+    assert qbt.deleted == [("cccc", True)]
 
 
 def test_check_downloading_marks_pack_downloaded_not_filed_when_source_path_does_not_exist(tmp_path, monkeypatch):

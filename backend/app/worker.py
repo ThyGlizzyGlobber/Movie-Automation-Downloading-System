@@ -104,6 +104,7 @@ from app import config, plex
 from app.db import NON_TERMINAL_STATUSES, RequestStore, ShowEpisodeRow, ShowRow
 from app.media_organizer import (
     MediaOrganizerError,
+    NoVideoFileError,
     find_existing_episode_file,
     organize_episode,
     organize_movie,
@@ -378,6 +379,11 @@ class Worker:
             target_path = await asyncio.to_thread(
                 organize_episode, identity, row.season_number, row.episode_number, source_path
             )
+        except NoVideoFileError:
+            message = await self._purge_no_video_torrent(torrent_hash, label)
+            logger.warning("request %d (%s) downloading -> cancelled (%s)", row.id, label, message)
+            await asyncio.to_thread(self.store.update_status, row.id, "cancelled", error_message=message)
+            return
         except (MediaOrganizerError, TMDBError, OSError) as exc:
             logger.warning("request %d (%s) downloading -> downloaded, not filed (%s)", row.id, label, exc)
             await asyncio.to_thread(
@@ -415,6 +421,11 @@ class Worker:
                 select_video_file, self.qbt, torrent_hash, config.QBIT_MOVIE_SAVE_PATH, config.MOVIE_LIBRARY_ROOT
             )
             target_path = await asyncio.to_thread(organize_movie, identity, source_path)
+        except NoVideoFileError:
+            message = await self._purge_no_video_torrent(torrent_hash, label)
+            logger.warning("request %d (%s) downloading -> cancelled (%s)", row.id, label, message)
+            await asyncio.to_thread(self.store.update_status, row.id, "cancelled", error_message=message)
+            return
         except (MediaOrganizerError, TMDBError, OSError) as exc:
             logger.warning("request %d (%s) downloading -> downloaded, not filed (%s)", row.id, label, exc)
             await asyncio.to_thread(
@@ -447,6 +458,11 @@ class Worker:
         try:
             identity = await asyncio.to_thread(resolve_show, row.tmdb_id, self.tmdb)
             placed = await asyncio.to_thread(organize_pack, identity, torrent_hash, self.qbt)
+        except NoVideoFileError:
+            message = await self._purge_no_video_torrent(torrent_hash, label)
+            logger.warning("pack request %d (%s) downloading -> cancelled (%s)", row.id, label, message)
+            await asyncio.to_thread(self.store.update_status, row.id, "cancelled", error_message=message)
+            return
         except (MediaOrganizerError, TMDBError, OSError) as exc:
             logger.warning("pack request %d (%s) downloading -> downloaded, not filed (%s)", row.id, label, exc)
             await asyncio.to_thread(self.store.update_status, row.id, "downloaded, not filed", error_message=str(exc))
@@ -491,6 +507,21 @@ class Worker:
             [torrent_hash],
             self._next_cleanup_attempt_at(),
         )
+
+    async def _purge_no_video_torrent(self, torrent_hash: str, label: str) -> str:
+        """A completed torrent with no real video file in it at all is the
+        same shape as a fake/malicious release (filler .txt/.jpg plus a
+        disguised .exe — confirmed live, 2026-09-14) rather than an
+        ordinary organize failure worth leaving on disk for later. Purges
+        the torrent and its downloaded files outright instead of leaving
+        them sitting in "downloaded, not filed" limbo, and returns the
+        message the caller stores on the request row."""
+        try:
+            await asyncio.to_thread(self.qbt.delete_torrent, torrent_hash, True)
+            logger.warning("request (%s): no video file at all — purged as a likely fake release", label)
+        except Exception:
+            logger.exception("request (%s): no video file at all, but purging the torrent failed", label)
+        return "No video file found in torrent (fake/malicious release) — torrent and files removed automatically"
 
     def _next_cleanup_attempt_at(self) -> str:
         return (datetime.now(timezone.utc) + timedelta(seconds=config.SOURCE_CLEANUP_DELAY_SECONDS)).isoformat()
