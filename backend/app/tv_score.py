@@ -11,9 +11,7 @@ episode. Pass two (quality score) needs no TV-specific version at all:
 `score.py`'s `rank_candidates`/`score_candidate` are reused completely
 unchanged by pipeline.py's `download_episode()`."""
 
-import re
-
-from app.normalize import normalize_text, tokenize
+from app.normalize import extract_episode_identity, normalize_text, tokenize
 from app.pipeline_settings import PipelineSettings
 from app.score import (
     matches_any_variant,
@@ -24,31 +22,11 @@ from app.score import (
 )
 from app.tv_resolve import ShowIdentity
 
-_SEASON_EPISODE_RE = re.compile(r"^s(\d{1,2})e(\d{1,3})$")
-_SEASON_ONLY_RE = re.compile(r"^s(\d{1,2})$")
-_EPISODE_ONLY_RE = re.compile(r"^e(\d{1,3})$")
-
-
-def extract_episode_identity(tokens: list[str]) -> tuple[int, int] | None:
-    """Pulls a concrete (season, episode) pair out of a filename's own
-    tokens, for Stage 13's `media_organizer.organize_pack` — unlike
-    `has_episode_token` (checks whether tokens carry one *specific*,
-    already-known episode), this discovers whichever episode a pack's
-    individual file actually represents, from the file's own name. Same
-    two shapes `has_episode_token` recognizes — a contiguous "s01e04"
-    token, or adjacent "s01"/"e04" tokens — first match wins; `None` if
-    neither shape is present (a sample, .nfo, subtitle sidecar, or any
-    other file organize_pack should skip rather than guess at)."""
-    for token in tokens:
-        match = _SEASON_EPISODE_RE.match(token)
-        if match:
-            return int(match.group(1)), int(match.group(2))
-    for i in range(len(tokens) - 1):
-        season_match = _SEASON_ONLY_RE.match(tokens[i])
-        episode_match = _EPISODE_ONLY_RE.match(tokens[i + 1])
-        if season_match and episode_match:
-            return int(season_match.group(1)), int(episode_match.group(1))
-    return None
+# extract_episode_identity now lives in normalize.py (score.py needs it
+# too, for passes_not_a_tv_episode_filter, and importing it from here
+# would be circular since this module imports from score.py) — re-
+# exported under this same name so existing callers (media_organizer.py's
+# `from app.tv_score import extract_episode_identity`) are unaffected.
 
 
 def has_episode_token(tokens: list[str], season: int, episode: int) -> bool:

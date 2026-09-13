@@ -36,6 +36,38 @@ def has_token(text: str, token: str) -> bool:
     return normalize_text(token) in tokenize(text)
 
 
+_SEASON_EPISODE_RE = re.compile(r"^s(\d{1,2})e(\d{1,3})$")
+_SEASON_ONLY_RE = re.compile(r"^s(\d{1,2})$")
+_EPISODE_ONLY_RE = re.compile(r"^e(\d{1,3})$")
+
+
+def extract_episode_identity(tokens: list[str]) -> tuple[int, int] | None:
+    """Pulls a concrete (season, episode) pair out of a filename's own
+    already-tokenized tokens, if one is present — a contiguous "s01e04"
+    token, or adjacent "s01"/"e04" tokens, first match wins; `None` if
+    neither shape appears anywhere. Two independent callers: Stage 13's
+    `media_organizer.organize_pack` (which episode a pack's individual
+    file represents) and score.py's `passes_not_a_tv_episode_filter`
+    (whether a *movie* candidate is actually shaped like a TV episode at
+    all — same title, wrong kind of thing, confirmed live: a movie
+    search for "Mayday" (2026) turned up an episode of the unrelated
+    long-running documentary series of the same name, 2026-09-14). Lives
+    here rather than in tv_score.py so score.py (movies) can reuse it
+    without importing from tv_score.py, which itself imports from
+    score.py — this module sits below both, with no dependency on
+    either."""
+    for token in tokens:
+        match = _SEASON_EPISODE_RE.match(token)
+        if match:
+            return int(match.group(1)), int(match.group(2))
+    for i in range(len(tokens) - 1):
+        season_match = _SEASON_ONLY_RE.match(tokens[i])
+        episode_match = _EPISODE_ONLY_RE.match(tokens[i + 1])
+        if season_match and episode_match:
+            return int(season_match.group(1)), int(episode_match.group(1))
+    return None
+
+
 def token_overlap(a: str, b: str) -> set[str]:
     """Set of normalized tokens shared between two strings, ignoring order
     and duplicates. Used for title-relevance gating."""

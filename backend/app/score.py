@@ -8,13 +8,14 @@ from dataclasses import dataclass
 from urllib.parse import urlparse
 
 from app import config
-from app.normalize import normalize_text, tokenize
+from app.normalize import extract_episode_identity, normalize_text, tokenize
 from app.pipeline_settings import PipelineSettings
 from app.resolve import MediaIdentity
 
 _YEAR_TOKEN_RE = re.compile(r"^(19|20)\d{2}$")
 _INFOHASH_RE = re.compile(r"btih:([a-zA-Z0-9]+)")
 _LOCAL_HOSTS = {"127.0.0.1", "localhost", "0.0.0.0", "::1"}
+_SOLO_SEASON_RE = re.compile(r"^s\d{1,2}$")
 
 
 # ---------------------------------------------------------------------------
@@ -151,6 +152,25 @@ def passes_non_video_filter(tokens: list[str]) -> bool:
     return not any(normalize_text(blocked) in tokens for blocked in config.NON_VIDEO_BLOCKLIST)
 
 
+def passes_not_a_tv_episode_filter(tokens: list[str]) -> bool:
+    """Rejects a movie candidate whose filename is actually shaped like TV
+    content — a whole "s01e04"-style episode token (contiguous or split
+    across two adjacent tokens), or a standalone "s01"-style season token
+    (a season/complete-series pack) — same title, wrong kind of thing.
+    Confirmed live: a movie search for "Mayday" (2026) turned up an
+    episode of the unrelated long-running documentary series of the same
+    name (2026-09-14) — `matches_any_variant` alone can't tell those
+    apart, since the release name carries the exact title as a whole
+    token same as the real movie would. A genuine movie release never
+    carries either shape, so their presence here is a dead giveaway of
+    exactly this cross-media title collision — distinct from
+    `passes_non_video_filter`'s job of catching an archive/executable
+    marker."""
+    if extract_episode_identity(tokens) is not None:
+        return False
+    return not any(_SOLO_SEASON_RE.match(token) for token in tokens)
+
+
 def passes_relevance_gate(file_name: str, identity: MediaIdentity, settings: PipelineSettings | None = None) -> bool:
     settings = settings or PipelineSettings.from_config()
     tokens = tokenize(file_name)
@@ -163,6 +183,7 @@ def passes_relevance_gate(file_name: str, identity: MediaIdentity, settings: Pip
         )
         and passes_cam_filter(tokens)
         and passes_non_video_filter(tokens)
+        and passes_not_a_tv_episode_filter(tokens)
     )
 
 

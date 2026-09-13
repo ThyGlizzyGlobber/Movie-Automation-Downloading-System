@@ -192,6 +192,34 @@ def test_passes_relevance_gate_rejects_exe():
     assert passes_relevance_gate("Dune.Part.Two.2024.2160p.REMUX.exe", DUNE) is False
 
 
+def test_passes_relevance_gate_rejects_tv_episode_of_a_same_titled_show():
+    # Confirmed live 2026-09-14: a movie search for "Mayday" (2026) turned
+    # up an episode of an unrelated, long-running documentary series of
+    # the exact same title — matches_any_variant alone can't tell them
+    # apart, since the episode's own release name carries "Mayday" as a
+    # whole token same as the real movie would.
+    mayday = MediaIdentity(
+        tmdb_id=1137844, title="Mayday", original_title="Mayday", release_year=2026, variants=["Mayday"]
+    )
+    assert passes_relevance_gate("Mayday.S26E04.Crash.Landing.2160p.WEB-DL.mkv", mayday) is False
+    assert passes_relevance_gate("Mayday.S26.E04.Crash.Landing.2160p.WEB-DL.mkv", mayday) is False
+
+
+def test_passes_relevance_gate_rejects_tv_season_pack_of_a_same_titled_show():
+    mayday = MediaIdentity(
+        tmdb_id=1137844, title="Mayday", original_title="Mayday", release_year=2026, variants=["Mayday"]
+    )
+    assert passes_relevance_gate("Mayday.S26.COMPLETE.2160p.WEB-DL.mkv", mayday) is False
+
+
+def test_passes_relevance_gate_still_accepts_a_real_movie_release():
+    # The new filter shouldn't collide with ordinary movie naming — no
+    # release ever legitimately carries a standalone "s01"-style token.
+    assert passes_relevance_gate("Mayday.2026.2160p.WEB-DL.mkv", MediaIdentity(
+        tmdb_id=1137844, title="Mayday", original_title="Mayday", release_year=2026, variants=["Mayday"]
+    )) is True
+
+
 # ---------------------------------------------------------------------------
 # Resolution floor — a setting, not a fixed gate. Lowering it is what
 # enables "fall back to 1080p if nothing at 4K qualifies."
