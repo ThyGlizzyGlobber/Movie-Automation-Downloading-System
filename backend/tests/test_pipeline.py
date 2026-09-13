@@ -784,7 +784,14 @@ def test_download_pack_season_falls_back_to_second_query_shape():
 
     assert result.status == "added"
     assert result.query_used == "Lanterns S01 COMPLETE"
-    assert qbt.searched_variants == ["Lanterns Season 01", "Lanterns S01 COMPLETE"]
+    # All four season-pack query shapes are searched now (not stopping
+    # once one has results).
+    assert qbt.searched_variants == [
+        "Lanterns Season 01",
+        "Lanterns S01 COMPLETE",
+        "Lanterns Season 1",
+        "Lanterns S01",
+    ]
 
 
 def test_download_pack_season_searches_unscoped_but_adds_under_tv_category():
@@ -792,10 +799,47 @@ def test_download_pack_season_searches_unscoped_but_adds_under_tv_category():
 
     download_pack(LANTERNS, "season", qbt, season=1)
 
-    # Both season-pack query shapes are searched now (not stopping once
-    # one has results), so both queries show up here even though only one
-    # actually returned anything.
-    assert qbt.searched_categories == ["all", "all"]
+    # All four season-pack query shapes are searched now (not stopping
+    # once one has results), so all four show up here even though only
+    # one actually returned anything.
+    assert qbt.searched_categories == ["all", "all", "all", "all"]
+
+
+def test_download_pack_season_finds_a_pack_only_the_bare_season_query_surfaces():
+    """The actual reported bug, reproduced end to end: a real, correctly-
+    labeled 1080p season pack for The Mentalist S01 was never returned by
+    either of the two original query strings at all (confirmed live via
+    qBittorrent's own search, 2026-09-14) — only a bare "S01"-style query
+    (no "Season"/"COMPLETE" qualifier) surfaced it, while the narrower
+    queries only turned up a worse 720p pack. The pipeline must pick the
+    1080p one despite it only being reachable via the broader query."""
+    qbt = FakeQBTClient(
+        results_by_variant={
+            "Lanterns Season 01": [
+                _pack_result(fileName="Lanterns.Season.01.BDRip.720p.mkv", fileUrl="magnet:?xt=urn:btih:AAAA")
+            ],
+            "Lanterns S01": [
+                _pack_result(
+                    fileName="Lanterns (2026) Season 1 S01 (1080p BluRay x265)", fileUrl="magnet:?xt=urn:btih:BBBB"
+                )
+            ],
+        }
+    )
+    settings = PipelineSettings(
+        category="tv",
+        min_resolution="480p",
+        min_size_gb=config.MIN_SIZE_GB,
+        max_size_gb=config.MAX_SIZE_GB,
+        language_allowlist=(),
+        language_blocklist=(),
+    )
+
+    result = download_pack(LANTERNS, "season", qbt, settings, season=1)
+
+    assert result.status == "added"
+    assert result.query_used == "Lanterns S01"
+    assert result.winner["fileName"] == "Lanterns (2026) Season 1 S01 (1080p BluRay x265)"
+    assert qbt.added == [("magnet:?xt=urn:btih:BBBB", "tv")]
 
 
 def test_download_pack_season_rejects_a_real_single_episode_result():

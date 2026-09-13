@@ -34,14 +34,29 @@ def episode_query(title_variant: str, season: int, episode: int) -> str:
 
 
 def season_pack_queries(title_variant: str, season: int) -> list[str]:
-    """Stage 13: two query shapes tried for one season-pack search, mirroring
-    real indexer conventions for a whole-season release ("Show Season 01" vs
-    "Show S01 COMPLETE") — a plain S01-only query would also match every
-    single-episode release for the season, which is exactly what the
-    per-episode pipeline already handles; a pack search wants a query that
-    at least *suggests* the pack shape, even though the real filtering still
-    happens in pack_score.py's pass-one gate, not here."""
-    return [f"{title_variant} Season {season:02d}", f"{title_variant} S{season:02d} COMPLETE"]
+    """Four query shapes tried for one season-pack search. Originally just
+    two ("Show Season 01" / "Show S01 COMPLETE"), deliberately avoiding a
+    bare "S01"-only query since that also matches every single-episode
+    release for the season. Confirmed live (2026-09-14) that restraint
+    actively missed a real, correctly-labeled 1080p season pack for The
+    Mentalist S01: qBittorrent's search plugins don't do lenient full-text
+    matching the way a human browsing a tracker's own search box does —
+    neither of the two original literal query strings surfaced a torrent
+    named "...Season 1 S01 (1080p BluRay...)" at all, even though a plain
+    "the mentalist season 1" search found it immediately.
+
+    The single-episode-release concern the original comment raised is a
+    non-issue in practice: pack_score.py's `passes_season_pack_gate`
+    already rejects anything carrying an episode token regardless of which
+    query surfaced it, so a broader, noisier net here only costs one more
+    search call (pipeline.py now searches every query shape and merges
+    results anyway — see `_search_pack_queries`), never a wrong result."""
+    return [
+        f"{title_variant} Season {season:02d}",
+        f"{title_variant} S{season:02d} COMPLETE",
+        f"{title_variant} Season {season}",
+        f"{title_variant} S{season:02d}",
+    ]
 
 
 def series_pack_query(title_variant: str) -> str:
@@ -52,11 +67,20 @@ def season_range_pack_queries(title_variant: str, start: int, end: int) -> list[
     """Stage 14.x: query shapes for a release bundling seasons `start`
     through `end` inclusive (`start < end`) — e.g. a "Reacher S01-S03"
     torrent covering every season aired so far while a later season is
-    still airing. Mirrors `season_pack_queries`'s "try a couple of
-    real-world naming conventions" approach, extended to a range; the
-    real filtering happens in `pack_score.py`'s pass-one gate, same as
-    every other pack query here."""
-    return [f"{title_variant} S{start:02d}-S{end:02d}", f"{title_variant} Seasons {start}-{end}"]
+    still airing. Mirrors `season_pack_queries`'s broadened set of
+    real-world naming conventions (non-zero-padded numbering included) for
+    the same confirmed-live reason: qBittorrent's search plugins don't do
+    lenient full-text matching, so a query missing a release's actual
+    formatting can simply never surface it, no matter how correct the
+    pass-one gate would have been. The real filtering happens in
+    `pack_score.py`'s pass-one gate, same as every other pack query
+    here."""
+    return [
+        f"{title_variant} S{start:02d}-S{end:02d}",
+        f"{title_variant} Seasons {start}-{end}",
+        f"{title_variant} S{start}-S{end}",
+        f"{title_variant} Season {start}-{end}",
+    ]
 
 
 def _cutoff_date(now: datetime | None, buffer_hours: float) -> str:

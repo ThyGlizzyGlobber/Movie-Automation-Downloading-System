@@ -115,24 +115,53 @@ def test_resolve_show_requests_credits_append():
 # ---------------------------------------------------------------------------
 
 
-def test_season_pack_queries_returns_two_shapes_zero_padded():
-    assert season_pack_queries("Lanterns", 1) == ["Lanterns Season 01", "Lanterns S01 COMPLETE"]
+def test_season_pack_queries_returns_four_shapes_zero_padded():
+    assert season_pack_queries("Lanterns", 1) == [
+        "Lanterns Season 01",
+        "Lanterns S01 COMPLETE",
+        "Lanterns Season 1",
+        "Lanterns S01",
+    ]
 
 
 def test_season_pack_queries_double_digit_season():
-    assert season_pack_queries("Lanterns", 12) == ["Lanterns Season 12", "Lanterns S12 COMPLETE"]
+    assert season_pack_queries("Lanterns", 12) == [
+        "Lanterns Season 12",
+        "Lanterns S12 COMPLETE",
+        "Lanterns Season 12",
+        "Lanterns S12",
+    ]
+
+
+def test_season_pack_queries_includes_a_bare_season_token_query():
+    # Confirmed live 2026-09-14: a real, correctly-labeled 1080p season
+    # pack for The Mentalist S01 was never surfaced by either of the two
+    # original query shapes at all — only a bare "S01"-style query found
+    # it. pack_score.py's gate still correctly rejects single-episode
+    # results this broader query also picks up.
+    assert "Lanterns S01" in season_pack_queries("Lanterns", 1)
 
 
 def test_series_pack_query_builds_complete_series_suffix():
     assert series_pack_query("Lanterns") == "Lanterns complete series"
 
 
-def test_season_range_pack_queries_returns_two_shapes_zero_padded():
-    assert season_range_pack_queries("Lanterns", 1, 3) == ["Lanterns S01-S03", "Lanterns Seasons 1-3"]
+def test_season_range_pack_queries_returns_four_shapes_zero_padded():
+    assert season_range_pack_queries("Lanterns", 1, 3) == [
+        "Lanterns S01-S03",
+        "Lanterns Seasons 1-3",
+        "Lanterns S1-S3",
+        "Lanterns Season 1-3",
+    ]
 
 
 def test_season_range_pack_queries_double_digit_seasons():
-    assert season_range_pack_queries("Lanterns", 10, 12) == ["Lanterns S10-S12", "Lanterns Seasons 10-12"]
+    assert season_range_pack_queries("Lanterns", 10, 12) == [
+        "Lanterns S10-S12",
+        "Lanterns Seasons 10-12",
+        "Lanterns S10-S12",
+        "Lanterns Season 10-12",
+    ]
 
 
 def test_aired_episode_numbers_excludes_unaired_and_missing_air_dates():
