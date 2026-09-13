@@ -17,10 +17,12 @@ doesn't fit that assumption is a named, documented gap, same style as
 Stage 2's cam-tag gap."""
 
 import errno
+import json
 import logging
 import os
 import re
 import shutil
+import subprocess
 from pathlib import Path, PurePosixPath
 
 from app import config
@@ -35,6 +37,7 @@ logger = logging.getLogger("app.media_organizer")
 
 _FS_UNSAFE_RE = re.compile(r'[\\/:*?"<>|]')
 _WS_RE = re.compile(r"\s+")
+_COVER_NAME_RE = re.compile(r"\b(cover|poster|folder|fanart|banner)\b", re.IGNORECASE)
 
 
 class MediaOrganizerError(RuntimeError):
@@ -184,6 +187,94 @@ def build_movie_path(identity: MediaIdentity, filename: str) -> Path:
     return config.MOVIE_LIBRARY_ROOT / folder / filename
 
 
+def _embedded_artwork_stream_indices(source: Path) -> list[int]:
+    """ffprobe's stream list for `source`, filtered down to whichever
+    indices are embedded cover art specifically — never a subtitle-font
+    attachment (many foreign-language releases rely on those to render
+    styled subs correctly in players that support it; stripping them would
+    be a real regression, not a cleanup). Two real shapes: a video stream
+    flagged `disposition.attached_pic` — the standard "this is really just
+    a picture" signal ffmpeg itself uses for cover art in mp3/mp4/mkv
+    alike, confirmed live to be exactly what ffmpeg's own `-attach`
+    produces for an image file even in an MKV container, not a distinct
+    `attachment`-type stream — or, as a defensive fallback for a muxer
+    that classifies things differently, a genuine `attachment`-type
+    stream whose mimetype is an image *and* whose filename actually looks
+    like cover art (cover/poster/folder/fanart/banner) rather than, say, a
+    font. Returns an empty list — never raises — on any ffprobe failure
+    or on a source with nothing to strip;
+    either way the caller's answer is the same: fall back to a plain
+    hardlink rather than block organizing the file over this."""
+    try:
+        result = subprocess.run(
+            [
+                "ffprobe",
+                "-v",
+                "error",
+                "-print_format",
+                "json",
+                "-show_entries",
+                "stream=index,codec_type:stream_tags=mimetype,filename:stream_disposition=attached_pic",
+                str(source),
+            ],
+            capture_output=True,
+            text=True,
+            timeout=config.FFPROBE_TIMEOUT_SECONDS,
+        )
+        streams = json.loads(result.stdout or "{}").get("streams", [])
+    except (OSError, subprocess.TimeoutExpired, json.JSONDecodeError) as exc:
+        logger.warning("ffprobe failed on %r (%s); skipping embedded-artwork check", str(source), exc)
+        return []
+
+    indices = []
+    for stream in streams:
+        disposition = stream.get("disposition", {})
+        tags = stream.get("tags", {})
+        if stream.get("codec_type") == "video" and disposition.get("attached_pic") == 1:
+            indices.append(stream["index"])
+        elif stream.get("codec_type") == "attachment":
+            mimetype = str(tags.get("mimetype", "")).lower()
+            filename = str(tags.get("filename", ""))
+            if mimetype.startswith("image/") and _COVER_NAME_RE.search(filename):
+                indices.append(stream["index"])
+    return indices
+
+
+def _strip_embedded_artwork(source: Path, target: Path, strip_indices: list[int]) -> bool:
+    """Re-muxes `source` into `target`, dropping the given stream indices
+    (embedded cover art) and stream-copying every other stream byte-for-
+    byte (`-c copy`, no re-encode/no quality loss — near-instant even on a
+    huge file, since nothing is actually decoded). Written to a temp file
+    in target's own directory first and only renamed into place once
+    ffmpeg exits clean, so a failed or interrupted run never leaves a
+    half-written file sitting at the real target path. Returns False —
+    never raises — on any ffmpeg failure, the same "fall back to a plain
+    hardlink rather than block organizing" philosophy as the probe step
+    above."""
+    # The extension has to be the real last suffix, not buried before a
+    # generic ".tmp" — ffmpeg infers its output muxer from the filename
+    # extension, and a name ending in plain ".tmp" makes it refuse to
+    # start at all ("Unable to choose an output format"), confirmed live
+    # by this file's own test suite.
+    tmp = target.with_name(f".{target.stem}.stripping.tmp{target.suffix}")
+    cmd = ["ffmpeg", "-y", "-i", str(source), "-map", "0"]
+    for index in strip_indices:
+        cmd += ["-map", f"-0:{index}"]
+    cmd += ["-c", "copy", "-map_metadata", "0", str(tmp)]
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=config.FFMPEG_STRIP_TIMEOUT_SECONDS)
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        logger.warning("ffmpeg failed stripping embedded artwork from %r (%s)", str(source), exc)
+        tmp.unlink(missing_ok=True)
+        return False
+    if result.returncode != 0:
+        logger.warning("ffmpeg failed stripping embedded artwork from %r: %s", str(source), result.stderr[-2000:])
+        tmp.unlink(missing_ok=True)
+        return False
+    os.replace(tmp, target)
+    return True
+
+
 def _link_or_copy(source: Path, target: Path) -> None:
     """Hardlinks `source` into `target` — the same safe pattern Sonarr/
     Radarr rely on: qBittorrent's own copy keeps seeding, untouched, while
@@ -195,9 +286,25 @@ def _link_or_copy(source: Path, target: Path) -> None:
     Stage 11's own validation: macOS's SMB client raises `ENOTSUP` for a
     same-share link, not `EXDEV`, a real gap this fallback didn't originally
     cover). Idempotent: re-organizing an already-placed episode replaces the
-    existing link/copy rather than failing on FileExistsError."""
+    existing link/copy rather than failing on FileExistsError.
+
+    Stage 15: when `source` carries embedded cover art (a custom scene-
+    release poster baked into the container itself, not a separate image
+    file — Plex reads this straight off the file and displays it over
+    TMDB's own artwork), a hardlink can't fix that since it's the exact
+    same bytes. Re-muxes into `target` instead, stripping only the
+    artwork stream(s) and copying everything else (video/audio/real
+    subtitles/fonts) untouched. Only takes this path when something to
+    strip is actually found and the remux succeeds; any other file keeps
+    the zero-cost hardlink it always got."""
     if target.exists() or target.is_symlink():
         target.unlink()
+
+    strip_indices = _embedded_artwork_stream_indices(source)
+    if strip_indices and _strip_embedded_artwork(source, target, strip_indices):
+        logger.info("stripped %d embedded-artwork stream(s) from %r while organizing", len(strip_indices), str(source))
+        return
+
     try:
         os.link(source, target)
     except OSError as exc:

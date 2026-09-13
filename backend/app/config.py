@@ -321,3 +321,22 @@ TRAILER_CACHE_DIR = Path(os.environ.get("TRAILER_CACHE_DIR", Path(__file__).reso
 TRAILER_CACHE_MAX_FILES = int(os.environ.get("TRAILER_CACHE_MAX_FILES", "20"))
 
 TRAILER_DOWNLOAD_TIMEOUT_SECONDS = int(os.environ.get("TRAILER_DOWNLOAD_TIMEOUT_SECONDS", "45"))
+
+# -- Stage 15: strip embedded cover-art from organized files. --
+
+# Some scene releases embed a custom cover image directly inside the video
+# container (an mp4/mkv "attached picture" stream, or an MKV attachment
+# tagged as an image) — Plex's scanner reads this straight from the file
+# itself, so it shows up as the item's poster/art regardless of what TMDB
+# metadata Plex would otherwise use, and no external image file needs to
+# exist alongside it for that to happen. media_organizer.py's ffprobe
+# check (read-only, near-instant even on a huge file) needs its own
+# timeout distinct from the actual ffmpeg remux below.
+FFPROBE_TIMEOUT_SECONDS = int(os.environ.get("FFPROBE_TIMEOUT_SECONDS", "15"))
+
+# The actual strip is a stream-copy remux (`-c copy`, no re-encode) of
+# every stream except the detected embedded-artwork one(s) — no decoding
+# happens, so even a large file finishes in well under a minute in
+# practice, but this is a real file-sized operation (unlike the ffprobe
+# read above), hence the far more generous ceiling.
+FFMPEG_STRIP_TIMEOUT_SECONDS = int(os.environ.get("FFMPEG_STRIP_TIMEOUT_SECONDS", "600"))

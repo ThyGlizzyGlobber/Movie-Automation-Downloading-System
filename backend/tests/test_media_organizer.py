@@ -1,5 +1,7 @@
 import errno
+import json
 import os
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -443,6 +445,99 @@ def test_organize_movie_is_idempotent_when_rerun(tmp_path, monkeypatch):
     target = organize_movie(DUNE, source)
 
     assert target.read_bytes() == b"second"
+
+
+# ---------------------------------------------------------------------------
+# _link_or_copy — Stage 15: stripping embedded cover art (an ffmpeg
+# "attached picture" video stream) at organize time, real ffmpeg-generated
+# media rather than fake byte content, since this specifically exercises
+# ffprobe/ffmpeg subprocess behavior that fake content can't.
+# ---------------------------------------------------------------------------
+
+
+def _ffprobe_streams(path: Path) -> list[dict]:
+    result = subprocess.run(
+        [
+            "ffprobe", "-v", "error", "-print_format", "json",
+            "-show_entries", "stream=codec_type:stream_tags=mimetype,filename:stream_disposition=attached_pic",
+            str(path),
+        ],
+        capture_output=True,
+        text=True,
+        timeout=15,
+    )
+    return json.loads(result.stdout).get("streams", [])
+
+
+def _make_plain_video(path: Path) -> None:
+    subprocess.run(
+        [
+            "ffmpeg", "-y", "-f", "lavfi", "-i", "testsrc=duration=1:size=64x64:rate=1",
+            "-c:v", "libx264", "-pix_fmt", "yuv420p", str(path),
+        ],
+        capture_output=True,
+        timeout=30,
+        check=True,
+    )
+
+
+def _make_video_with_embedded_cover_art(path: Path, tmp_path: Path) -> None:
+    """Confirmed live: ffmpeg's own `-attach` mechanism for an *image*
+    file in an MKV container surfaces to ffprobe as a `video`-type stream
+    with `disposition.attached_pic == 1` — the same convention mp4/m4a
+    cover art uses — not as a distinct `attachment`-type stream (ffmpeg
+    reserves that classification for non-image attachments like subtitle
+    fonts). This exercises `_embedded_artwork_stream_indices`'s
+    `attached_pic` branch, the one that actually fires for real embedded
+    cover art regardless of container."""
+    base = tmp_path / "_base.mkv"
+    cover = tmp_path / "_cover.jpg"
+    _make_plain_video(base)
+    subprocess.run(
+        ["ffmpeg", "-y", "-f", "lavfi", "-i", "color=c=red:s=32x32", "-frames:v", "1", str(cover)],
+        capture_output=True,
+        timeout=15,
+        check=True,
+    )
+    subprocess.run(
+        [
+            "ffmpeg", "-y", "-i", str(base),
+            "-attach", str(cover), "-metadata:s:t:0", "mimetype=image/jpeg", "-metadata:s:t:0", "filename=cover.jpg",
+            "-c", "copy", str(path),
+        ],
+        capture_output=True,
+        timeout=30,
+        check=True,
+    )
+
+
+def test_organize_movie_strips_embedded_cover_art_but_keeps_the_real_video_stream(tmp_path, monkeypatch):
+    monkeypatch.setattr(config, "MOVIE_LIBRARY_ROOT", tmp_path / "library")
+    source = tmp_path / "Some.Scene.Release.2024.mkv"
+    _make_video_with_embedded_cover_art(source, tmp_path)
+    assert any(s.get("disposition", {}).get("attached_pic") == 1 for s in _ffprobe_streams(source))  # sanity check
+
+    target = organize_movie(DUNE, source)
+
+    streams = _ffprobe_streams(target)
+    assert not any(s.get("disposition", {}).get("attached_pic") == 1 for s in streams)
+    assert any(
+        s.get("codec_type") == "video" and s.get("disposition", {}).get("attached_pic") != 1 for s in streams
+    )  # the real video survived, not just stripped to nothing
+    assert os.stat(source).st_ino != os.stat(target).st_ino  # a remux happened, not a hardlink of the tainted file
+
+
+def test_organize_movie_still_hardlinks_a_real_video_with_no_embedded_artwork(tmp_path, monkeypatch):
+    """Confirms the new ffprobe check doesn't make every organize call pay
+    for a needless remux — a normal video with nothing to strip still gets
+    the original zero-cost hardlink."""
+    monkeypatch.setattr(config, "MOVIE_LIBRARY_ROOT", tmp_path / "library")
+    source = tmp_path / "Some.Clean.Release.2024.mkv"
+    _make_plain_video(source)
+
+    target = organize_movie(DUNE, source)
+
+    assert os.stat(source).st_ino == os.stat(target).st_ino
 
 
 # ---------------------------------------------------------------------------
