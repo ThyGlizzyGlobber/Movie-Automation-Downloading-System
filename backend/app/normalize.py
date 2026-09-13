@@ -103,30 +103,55 @@ def titles_match(a: str, b: str) -> bool:
 #    shape doesn't depend on what kind of thing it is. --
 
 _SUBTITLE_SEPARATORS = (":", " - ")
-MAX_VARIANTS = 4
+MAX_VARIANTS = 5
 
 
-def _title_without_subtitle(title: str) -> str | None:
+def _title_subtitle_split(title: str) -> tuple[str, str] | None:
+    """Splits `title` on its first recognized subtitle separator into
+    (head, tail), or `None` if no separator is present. Which side is
+    actually the searchable, distinctive part of the title depends on
+    the specific title and isn't something this can know algorithmically
+    — "Dune: Part Two" wants its head ("Dune"), but "Special Ops:
+    Lioness" wants its tail ("Lioness"), the actual show name, not the
+    franchise-label prefix. Confirmed live (2026-09-14): only ever
+    generating the head meant "Lioness" was never tried as a search
+    variant at all, and the pipeline settled for a worse release its
+    other variants (the full title, or the equally head-only "Special
+    Ops" fallback) happened to find, missing a real 2160p release a
+    plain "Lioness" search found easily. `generate_variants` now adds
+    both sides as separate variant candidates rather than guessing which
+    one matters — pipeline.py searches every variant and merges the
+    results (never stopping at the first that finds anything), so
+    including a weaker variant alongside a stronger one only costs one
+    extra search call, never a worse outcome."""
     for sep in _SUBTITLE_SEPARATORS:
         if sep in title:
-            head = title.split(sep, 1)[0].strip()
-            if head and head != title:
-                return head
+            head, tail = title.split(sep, 1)
+            head, tail = head.strip(), tail.strip()
+            if head and tail and head != title:
+                return head, tail
     return None
 
 
 def generate_variants(title: str, original_title: str, release_year: int | None) -> list[str]:
     """Up to MAX_VARIANTS ranked queries: canonical title, original_title
-    (if different), title without subtitle, title+year. Deduplicated on
-    normalized form, original ranking order preserved."""
+    (if different), title without subtitle, subtitle without title,
+    title+year. Deduplicated on normalized form, original ranking order
+    preserved."""
     candidates = [title]
 
     if normalize_text(original_title) != normalize_text(title):
         candidates.append(original_title)
 
-    subtitle_free = _title_without_subtitle(title)
-    if subtitle_free and normalize_text(subtitle_free) not in {normalize_text(c) for c in candidates}:
-        candidates.append(subtitle_free)
+    split = _title_subtitle_split(title)
+    if split:
+        head, tail = split
+        seen_so_far = {normalize_text(c) for c in candidates}
+        if normalize_text(head) not in seen_so_far:
+            candidates.append(head)
+            seen_so_far.add(normalize_text(head))
+        if normalize_text(tail) not in seen_so_far:
+            candidates.append(tail)
 
     if release_year:
         candidates.append(f"{title} {release_year}")

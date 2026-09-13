@@ -100,6 +100,37 @@ def _search_variant(
     return exclude_existing(deduped, existing_hashes)
 
 
+def _merge_variant_candidates(variants: list[str], search_one_variant) -> list[dict]:
+    """Searches every variant — not stopping at the first that finds
+    anything — and returns the combined, deduped candidate pool, each
+    candidate tagged with which variant's search actually found it
+    (`_variant_used`, read back off the eventual winner for the result's
+    own audit trail).
+
+    Confirmed live (2026-09-14): stopping at the first variant with any
+    result at all missed a real 2160p release. "Special Ops: Lioness"
+    S01 existed at 2160p on this household's own trackers, but the show's
+    official title search (and the old, backwards subtitle-split fallback
+    "Special Ops" — see normalize.py's `generate_variants`) never actually
+    found it, while a plain "Lioness" search easily did. Different
+    variants' literal query text can surface genuinely different,
+    non-overlapping subsets of the same real release pool on a given
+    indexer/plugin — only combining every variant's results before
+    ranking reliably finds the actual best available quality, not just
+    whatever the first variant that found *anything* happened to turn
+    up. The real cost: up to `len(variants)` sequential search calls
+    (each up to `SEARCH_CEILING_SECONDS`) instead of stopping early — a
+    deliberate trade of slower per-request search time for not silently
+    settling on worse quality."""
+    combined: list[dict] = []
+    for variant in variants:
+        for candidate in search_one_variant(variant):
+            tagged = dict(candidate)
+            tagged["_variant_used"] = variant
+            combined.append(tagged)
+    return dedup_candidates(combined)
+
+
 def _candidates_that_fit(ranked: list[tuple[dict, Score]], free_space_bytes: int) -> list[tuple[dict, Score]]:
     """Every candidate (best-ranked first) whose size is known to fit in
     the space qBittorrent reports free — not just the top one, so a failed
@@ -208,45 +239,38 @@ def download(
     identity = resolve(tmdb_id, tmdb_client)
     existing_hashes = qbt.existing_torrent_hashes()
     free_space_bytes = qbt.free_space_bytes()
-    any_candidates = False
-    last_failed_attempt: DownloadResult | None = None
 
-    for variant in identity.variants:
-        candidates = _search_variant(qbt, variant, identity, existing_hashes, settings)
-        if not candidates:
-            continue
-        any_candidates = True
+    candidates = _merge_variant_candidates(
+        identity.variants, lambda variant: _search_variant(qbt, variant, identity, existing_hashes, settings)
+    )
+    if not candidates:
+        return DownloadResult(status="no qualifying results", identity=identity)
 
-        fitting, attempt = _rank_and_add(qbt, candidates, free_space_bytes, settings.category, existing_hashes)
-        if not fitting or attempt is None:
-            continue  # every candidate for this variant is too large for available space
+    fitting, attempt = _rank_and_add(qbt, candidates, free_space_bytes, settings.category, existing_hashes)
+    if not fitting or attempt is None:
+        return DownloadResult(status="insufficient free space", identity=identity)
 
-        if attempt.succeeded:
-            return DownloadResult(
-                status="added",
-                identity=identity,
-                variant_used=variant,
-                winner=attempt.winner,
-                score=attempt.score,
-                candidates_considered=len(candidates),
-                torrent_hash=attempt.torrent_hash,
-            )
-
-        last_failed_attempt = DownloadResult(
-            status="add failed",
+    variant_used = attempt.winner.get("_variant_used")
+    if attempt.succeeded:
+        return DownloadResult(
+            status="added",
             identity=identity,
-            variant_used=variant,
+            variant_used=variant_used,
             winner=attempt.winner,
             score=attempt.score,
             candidates_considered=len(candidates),
-            error=attempt.error,
+            torrent_hash=attempt.torrent_hash,
         )
 
-    if last_failed_attempt is not None:
-        return last_failed_attempt
-
-    status = "insufficient free space" if any_candidates else "no qualifying results"
-    return DownloadResult(status=status, identity=identity)
+    return DownloadResult(
+        status="add failed",
+        identity=identity,
+        variant_used=variant_used,
+        winner=attempt.winner,
+        score=attempt.score,
+        candidates_considered=len(candidates),
+        error=attempt.error,
+    )
 
 
 def _search_episode_variant(
@@ -294,15 +318,15 @@ def find_best_episode_candidate(
     existing_hashes = qbt.existing_torrent_hashes()
     free_space_bytes = qbt.free_space_bytes()
 
-    for variant in identity.variants:
-        candidates = _search_episode_variant(qbt, variant, identity, season, episode, existing_hashes, settings)
-        if not candidates:
-            continue
-        ranked = rank_candidates(candidates)
-        fitting = _candidates_that_fit(ranked, free_space_bytes)
-        if fitting:
-            return fitting[0]
-    return None
+    candidates = _merge_variant_candidates(
+        identity.variants,
+        lambda variant: _search_episode_variant(qbt, variant, identity, season, episode, existing_hashes, settings),
+    )
+    if not candidates:
+        return None
+    ranked = rank_candidates(candidates)
+    fitting = _candidates_that_fit(ranked, free_space_bytes)
+    return fitting[0] if fitting else None
 
 
 def download_episode(
@@ -323,49 +347,45 @@ def download_episode(
     settings = settings or PipelineSettings.from_config()
     existing_hashes = qbt.existing_torrent_hashes()
     free_space_bytes = qbt.free_space_bytes()
-    any_candidates = False
-    last_failed_attempt: EpisodeDownloadResult | None = None
 
-    for variant in identity.variants:
-        candidates = _search_episode_variant(qbt, variant, identity, season, episode, existing_hashes, settings)
-        if not candidates:
-            continue
-        any_candidates = True
+    candidates = _merge_variant_candidates(
+        identity.variants,
+        lambda variant: _search_episode_variant(qbt, variant, identity, season, episode, existing_hashes, settings),
+    )
+    if not candidates:
+        return EpisodeDownloadResult(status="no qualifying results", identity=identity, season=season, episode=episode)
 
-        fitting, attempt = _rank_and_add(qbt, candidates, free_space_bytes, config.TV_CATEGORY, existing_hashes)
-        if not fitting or attempt is None:
-            continue
+    fitting, attempt = _rank_and_add(qbt, candidates, free_space_bytes, config.TV_CATEGORY, existing_hashes)
+    if not fitting or attempt is None:
+        return EpisodeDownloadResult(
+            status="insufficient free space", identity=identity, season=season, episode=episode
+        )
 
-        if attempt.succeeded:
-            return EpisodeDownloadResult(
-                status="added",
-                identity=identity,
-                season=season,
-                episode=episode,
-                variant_used=variant,
-                winner=attempt.winner,
-                score=attempt.score,
-                candidates_considered=len(candidates),
-                torrent_hash=attempt.torrent_hash,
-            )
-
-        last_failed_attempt = EpisodeDownloadResult(
-            status="add failed",
+    variant_used = attempt.winner.get("_variant_used")
+    if attempt.succeeded:
+        return EpisodeDownloadResult(
+            status="added",
             identity=identity,
             season=season,
             episode=episode,
-            variant_used=variant,
+            variant_used=variant_used,
             winner=attempt.winner,
             score=attempt.score,
             candidates_considered=len(candidates),
-            error=attempt.error,
+            torrent_hash=attempt.torrent_hash,
         )
 
-    if last_failed_attempt is not None:
-        return last_failed_attempt
-
-    status = "insufficient free space" if any_candidates else "no qualifying results"
-    return EpisodeDownloadResult(status=status, identity=identity, season=season, episode=episode)
+    return EpisodeDownloadResult(
+        status="add failed",
+        identity=identity,
+        season=season,
+        episode=episode,
+        variant_used=variant_used,
+        winner=attempt.winner,
+        score=attempt.score,
+        candidates_considered=len(candidates),
+        error=attempt.error,
+    )
 
 
 def _search_pack_queries(
@@ -374,13 +394,19 @@ def _search_pack_queries(
     gate,
     existing_hashes: set[str],
     settings: PipelineSettings,
-) -> tuple[str | None, list[dict]]:
-    """Tries each query string in turn (first non-empty result set wins) —
-    a season pack gets two real-world query shapes tried per variant
-    (`tv_resolve.season_pack_queries`); a series pack just the one
-    (`series_pack_query`). Same trust/gate/viability/dedup/exclude
+) -> list[dict]:
+    """Searches every query string for one variant — not stopping at the
+    first with results — and returns the combined, deduped pool, each
+    candidate tagged with the literal query that found it (`_query_used`,
+    read back off the eventual winner). A season pack gets two real-world
+    query shapes tried per variant (`tv_resolve.season_pack_queries`); a
+    series pack just the one (`series_pack_query`). Same "combine
+    everything, rank across the whole pool" reasoning as
+    `_merge_variant_candidates` above, one level lower (query shape within
+    one variant, rather than variant itself) — same trust/gate/viability
     pipeline as every other search helper here, parameterized on which
     pack gate (`gate`) applies."""
+    combined: list[dict] = []
     for query in queries:
         raw_results = qbt.search(query, category="all")
         trustworthy = [r for r in raw_results if is_trustworthy(r)]
@@ -388,9 +414,11 @@ def _search_pack_queries(
         viable = [r for r in relevant if passes_viability_gate(r, settings)]
         deduped = dedup_candidates(viable)
         candidates = exclude_existing(deduped, existing_hashes)
-        if candidates:
-            return query, candidates
-    return None, []
+        for candidate in candidates:
+            tagged = dict(candidate)
+            tagged["_query_used"] = query
+            combined.append(tagged)
+    return dedup_candidates(combined)
 
 
 def download_pack(
@@ -424,9 +452,8 @@ def download_pack(
     settings = settings or PipelineSettings.from_config()
     existing_hashes = qbt.existing_torrent_hashes()
     free_space_bytes = qbt.free_space_bytes()
-    any_candidates = False
-    last_failed_attempt: PackDownloadResult | None = None
 
+    combined: list[dict] = []
     for variant in identity.variants:
         if scope == "season":
             queries = season_pack_queries(variant, season)
@@ -444,46 +471,52 @@ def download_pack(
             def gate(file_name: str) -> bool:
                 return passes_series_pack_gate(file_name, identity, settings)
 
-        query_used, candidates = _search_pack_queries(qbt, queries, gate, existing_hashes, settings)
-        if not candidates:
-            continue
-        any_candidates = True
+        for candidate in _search_pack_queries(qbt, queries, gate, existing_hashes, settings):
+            tagged = dict(candidate)
+            tagged.setdefault("_variant_used", variant)
+            combined.append(tagged)
 
-        fitting, attempt = _rank_and_add(qbt, candidates, free_space_bytes, config.TV_CATEGORY, existing_hashes)
-        if not fitting or attempt is None:
-            continue
+    candidates = dedup_candidates(combined)
+    if not candidates:
+        return PackDownloadResult(
+            status="no qualifying results", identity=identity, scope=scope, season=season,
+            season_range_end=season_range_end,
+        )
 
-        if attempt.succeeded:
-            return PackDownloadResult(
-                status="added",
-                identity=identity,
-                scope=scope,
-                season=season,
-                season_range_end=season_range_end,
-                variant_used=variant,
-                query_used=query_used,
-                winner=attempt.winner,
-                score=attempt.score,
-                candidates_considered=len(candidates),
-                torrent_hash=attempt.torrent_hash,
-            )
+    fitting, attempt = _rank_and_add(qbt, candidates, free_space_bytes, config.TV_CATEGORY, existing_hashes)
+    if not fitting or attempt is None:
+        return PackDownloadResult(
+            status="insufficient free space", identity=identity, scope=scope, season=season,
+            season_range_end=season_range_end,
+        )
 
-        last_failed_attempt = PackDownloadResult(
-            status="add failed",
+    variant_used = attempt.winner.get("_variant_used")
+    query_used = attempt.winner.get("_query_used")
+    if attempt.succeeded:
+        return PackDownloadResult(
+            status="added",
             identity=identity,
             scope=scope,
             season=season,
             season_range_end=season_range_end,
-            variant_used=variant,
+            variant_used=variant_used,
             query_used=query_used,
             winner=attempt.winner,
             score=attempt.score,
             candidates_considered=len(candidates),
-            error=attempt.error,
+            torrent_hash=attempt.torrent_hash,
         )
 
-    if last_failed_attempt is not None:
-        return last_failed_attempt
-
-    status = "insufficient free space" if any_candidates else "no qualifying results"
-    return PackDownloadResult(status=status, identity=identity, scope=scope, season=season, season_range_end=season_range_end)
+    return PackDownloadResult(
+        status="add failed",
+        identity=identity,
+        scope=scope,
+        season=season,
+        season_range_end=season_range_end,
+        variant_used=variant_used,
+        query_used=query_used,
+        winner=attempt.winner,
+        score=attempt.score,
+        candidates_considered=len(candidates),
+        error=attempt.error,
+    )

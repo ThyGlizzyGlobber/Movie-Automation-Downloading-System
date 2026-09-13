@@ -53,7 +53,11 @@ def test_resolve_show_includes_original_name_when_different():
     assert identity.variants == ["Attack on Titan", "進撃の巨人"]
 
 
-def test_resolve_show_drops_subtitle_for_a_variant():
+def test_resolve_show_generates_both_sides_of_a_subtitle_split_as_variants():
+    # Both "Star Trek" (head) and "Discovery" (tail) are real, commonly-used
+    # ways to search for this show — generating only the head would have
+    # missed "Discovery" entirely, the same gap that let a "Special Ops:
+    # Lioness" search never try "Lioness" alone (confirmed live 2026-09-14).
     client = TMDBClient(api_key="test-key")
     client._get = lambda path, params=None: {
         "id": 789,
@@ -63,7 +67,7 @@ def test_resolve_show_drops_subtitle_for_a_variant():
 
     identity = resolve_show(789, client)
 
-    assert identity.variants == ["Star Trek: Discovery", "Star Trek"]
+    assert identity.variants == ["Star Trek: Discovery", "Star Trek", "Discovery"]
 
 
 def test_resolve_show_captures_first_air_year():

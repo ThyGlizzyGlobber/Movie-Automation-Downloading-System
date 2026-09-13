@@ -95,6 +95,34 @@ def test_download_adds_winner_from_first_variant_that_has_candidates():
     assert qbt.ensured_categories == ["movies"]
 
 
+def test_download_picks_the_best_candidate_across_variants_not_just_the_first_variants_own_best():
+    """The actual end-to-end fix, not just variant generation in isolation:
+    confirmed live 2026-09-14, a movie/show search settled for a worse
+    release because it stopped at the first variant that found *anything*,
+    never comparing against what a later variant's search would have
+    found. A 1080p result under the canonical title and a 2160p result
+    only found via the subtitle-free "Dune" variant must both be
+    considered together, with the 2160p one winning regardless of which
+    variant happened to find it first."""
+    qbt = FakeQBTClient(
+        results_by_variant={
+            "Dune: Part Two": [_result(fileName="Dune.Part.Two.2024.1080p.WEB.mkv", fileUrl="magnet:?xt=urn:btih:AAAA")],
+            "Dune": [_result(fileName="Dune.Part.Two.2024.2160p.REMUX.mkv", fileUrl="magnet:?xt=urn:btih:BBBB")],
+        }
+    )
+
+    result = download(693134, FakeTMDBClient(), qbt)
+
+    assert result.status == "added"
+    assert result.variant_used == "Dune"
+    assert result.winner["fileName"] == "Dune.Part.Two.2024.2160p.REMUX.mkv"
+    assert qbt.added == [("magnet:?xt=urn:btih:BBBB", "movies")]
+    # Both variants were actually searched — the win came from comparing
+    # across them, not from stopping once the first one found anything.
+    assert "Dune: Part Two" in qbt.searched_variants
+    assert "Dune" in qbt.searched_variants
+
+
 def test_download_searches_unscoped_but_still_adds_under_the_configured_category():
     """A real, live-caught bug (Stage 12's Lanterns S01E03 validation): at
     least one real, enabled qBittorrent search plugin (sktorrent) returns
@@ -109,7 +137,7 @@ def test_download_searches_unscoped_but_still_adds_under_the_configured_category
     result = download(693134, FakeTMDBClient(), qbt)
 
     assert result.status == "added"
-    assert qbt.searched_categories == ["all"]
+    assert qbt.searched_categories == ["all", "all", "all", "all"]  # every variant now searched, not just the first hit
     assert qbt.added == [("magnet:?xt=urn:btih:AAAA", "movies")]
 
 
@@ -125,7 +153,10 @@ def test_download_falls_back_to_next_variant_when_first_has_no_candidates():
 
     assert result.status == "added"
     assert result.variant_used == "Dune"
-    assert qbt.searched_variants == ["Dune: Part Two", "Dune"]
+    # Every variant now gets searched (not stopping at the first hit), so
+    # the fallback still wins by merged ranking, but the full variant list
+    # is what's actually queried.
+    assert qbt.searched_variants == ["Dune: Part Two", "Dune", "Part Two", "Dune: Part Two 2024"]
 
 
 def test_download_no_qualifying_results_when_every_variant_comes_up_empty():
@@ -487,6 +518,39 @@ def test_download_episode_adds_winner_from_first_variant_that_has_candidates():
     assert qbt.ensured_categories == ["tv"]
 
 
+def test_download_episode_picks_the_best_candidate_across_variants():
+    """The actual reported bug, reproduced end to end: a show titled
+    "Prefix: DistinctiveName" (e.g. "Special Ops: Lioness") only turns up
+    a lower-quality release under its official/prefix-only variants, while
+    the show's real distinctive-name variant (found via generate_variants'
+    tail-side fix) turns up a real 2160p release — the pipeline must pick
+    the 2160p one, not settle for whichever variant it happened to search
+    first."""
+    show = ShowIdentity(
+        tmdb_id=1234,
+        title="Special Ops: Lioness",
+        original_title="Special Ops: Lioness",
+        variants=["Special Ops: Lioness", "Special Ops", "Lioness"],
+    )
+    qbt = FakeQBTClient(
+        results_by_variant={
+            "Special Ops: Lioness S01E01": [
+                _episode_result(fileName="Special.Ops.Lioness.S01E01.1080p.WEB.mkv", fileUrl="magnet:?xt=urn:btih:AAAA")
+            ],
+            "Lioness S01E01": [
+                _episode_result(fileName="Lioness.S01E01.2160p.AMZN.WEB-DL.mkv", fileUrl="magnet:?xt=urn:btih:BBBB")
+            ],
+        }
+    )
+
+    result = download_episode(show, 1, 1, qbt)
+
+    assert result.status == "added"
+    assert result.variant_used == "Lioness"
+    assert result.winner["fileName"] == "Lioness.S01E01.2160p.AMZN.WEB-DL.mkv"
+    assert qbt.added == [("magnet:?xt=urn:btih:BBBB", "tv")]
+
+
 def test_download_episode_searches_unscoped_but_still_adds_under_tv_category():
     """Same real bug as `download()`'s equivalent test above — a real
     plugin (sktorrent) returned zero results when scoped to `category="tv"`
@@ -728,7 +792,10 @@ def test_download_pack_season_searches_unscoped_but_adds_under_tv_category():
 
     download_pack(LANTERNS, "season", qbt, season=1)
 
-    assert qbt.searched_categories == ["all"]
+    # Both season-pack query shapes are searched now (not stopping once
+    # one has results), so both queries show up here even though only one
+    # actually returned anything.
+    assert qbt.searched_categories == ["all", "all"]
 
 
 def test_download_pack_season_rejects_a_real_single_episode_result():
