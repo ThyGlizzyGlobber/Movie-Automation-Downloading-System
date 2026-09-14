@@ -1,68 +1,48 @@
-// Temporary visual-verification harness for Part A2's primitives — sample
-// data only, no API calls. Replaced by real routing/pages in a later step.
-import StatusPill from './components/StatusPill'
-import LoadingState from './components/LoadingState'
-import ErrorState from './components/ErrorState'
-import EmptyState from './components/EmptyState'
-import PosterCard from './components/PosterCard'
-import ProviderChips from './components/ProviderChips'
+// Temporary smoke-test harness for Part A5's API client — calls the real
+// backend (via Vite's dev proxy) and dumps raw responses so the hand-written
+// types can be checked against what actually comes back. Replaced by real
+// routing/pages in a later step.
+import { useEffect, useState } from 'react'
+import { getHealth, getStorage } from './api/system'
+import { getDiscoverPopular } from './api/movies'
+import { getTvDiscoverPopular } from './api/tv'
+import { listRequests } from './api/requests'
+import { getPipelineSettings, getTvSettings } from './api/settings'
+import { getPlexStatus } from './api/plex'
 
-const SAMPLE_STATUSES = [
-  'queued',
-  'searching',
-  'downloading',
-  'complete',
-  'no qualifying results',
-  'insufficient free space',
-  'failed',
-  'cancelled',
-]
+function Probe({ name, fn }: { name: string; fn: () => Promise<unknown> }) {
+  const [state, setState] = useState<{ ok: boolean; data: unknown } | null>(null)
 
-const SAMPLE_POSTERS = [
-  { id: 1, title: 'Sample Movie One', poster_path: null, on_plex: true },
-  { id: 2, title: 'Sample Movie Two, With A Longer Title That Wraps', poster_path: null, on_plex: false },
-]
+  useEffect(() => {
+    fn()
+      .then((data) => setState({ ok: true, data }))
+      .catch((err) => setState({ ok: false, data: String(err) }))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  return (
+    <section style={{ marginBottom: 24 }}>
+      <h3 style={{ fontFamily: 'var(--font-display)' }}>
+        {name} {state && (state.ok ? '✅' : '❌')}
+      </h3>
+      <pre style={{ background: 'var(--bg-card)', padding: 12, borderRadius: 8, overflow: 'auto', maxHeight: 300 }}>
+        {state ? JSON.stringify(state.data, null, 2) : 'loading…'}
+      </pre>
+    </section>
+  )
+}
 
 function App() {
   return (
-    <div style={{ padding: 40, display: 'flex', flexDirection: 'column', gap: 32 }}>
-      <section>
-        <h2 style={{ fontFamily: 'var(--font-display)' }}>StatusPill</h2>
-        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-          {SAMPLE_STATUSES.map((s) => (
-            <StatusPill key={s} status={s} />
-          ))}
-        </div>
-      </section>
-
-      <section>
-        <h2 style={{ fontFamily: 'var(--font-display)' }}>PosterCard</h2>
-        <div style={{ display: 'flex', gap: 16, width: 300 }}>
-          {SAMPLE_POSTERS.map((item) => (
-            <PosterCard key={item.id} item={item} mediaType="movie" />
-          ))}
-        </div>
-      </section>
-
-      <section>
-        <h2 style={{ fontFamily: 'var(--font-display)' }}>ProviderChips</h2>
-        <ProviderChips hrefPrefix="#/movies/provider" />
-      </section>
-
-      <section>
-        <h2 style={{ fontFamily: 'var(--font-display)' }}>LoadingState</h2>
-        <LoadingState />
-      </section>
-
-      <section>
-        <h2 style={{ fontFamily: 'var(--font-display)' }}>ErrorState</h2>
-        <ErrorState message="Sample error message" retryHref="#/home" />
-      </section>
-
-      <section>
-        <h2 style={{ fontFamily: 'var(--font-display)' }}>EmptyState</h2>
-        <EmptyState message="Nothing here yet." />
-      </section>
+    <div style={{ padding: 40 }}>
+      <Probe name="getHealth" fn={getHealth} />
+      <Probe name="getStorage" fn={getStorage} />
+      <Probe name="getDiscoverPopular" fn={() => getDiscoverPopular(1)} />
+      <Probe name="getTvDiscoverPopular" fn={() => getTvDiscoverPopular(1)} />
+      <Probe name="listRequests" fn={() => listRequests()} />
+      <Probe name="getPipelineSettings" fn={getPipelineSettings} />
+      <Probe name="getTvSettings" fn={getTvSettings} />
+      <Probe name="getPlexStatus" fn={getPlexStatus} />
     </div>
   )
 }

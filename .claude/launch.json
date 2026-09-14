@@ -6,6 +6,19 @@
       "runtimeExecutable": "npm",
       "runtimeArgs": ["--prefix", "frontend", "run", "dev", "--", "--host"],
       "port": 5173
+    },
+    {
+      "name": "backend-dev",
+      "runtimeExecutable": "/Volumes/Bejay/BRJ Concepts/Movie Automation Downloading System/backend/.venv/bin/uvicorn",
+      "runtimeArgs": [
+        "app.api:app",
+        "--reload",
+        "--app-dir",
+        "/Volumes/Bejay/BRJ Concepts/Movie Automation Downloading System/backend",
+        "--port",
+        "8000"
+      ],
+      "port": 8000
     }
   ]
 }
