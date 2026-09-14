@@ -8,5 +8,7 @@ export interface ShowOut {
   status: 'watching' | 'paused'
   created_at: string
   last_checked_at: string | null
+  // Part J1 — populated once at subscribe time.
+  poster_path: string | null
   latest_request: RequestOut | null
 }

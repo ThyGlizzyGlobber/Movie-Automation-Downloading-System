@@ -1,0 +1,239 @@
+/* Symmetric --row-inset on top of main's own 14px (== --edge-inset on
+   both sides) rather than the asymmetric left-only/reach-the-edge
+   treatment .hscroll/.grid use — this is a plain vertical list, not a
+   horizontally-scrolling row, so there's no "reaches the true edge"
+   affordance to preserve on the right. Lines up with every other page's
+   own spacing. */
+#requestsList {
+  padding: 0 var(--row-inset);
+}
+/* flex-wrap (mobile's own concern, per Part H — three action pills
+   easily lose the fight for space against poster+title+date on a narrow
+   phone width) lets .req-actions drop to its own full-width line under
+   .req-main rather than forcing .req-main down to a near-zero width that
+   wraps its date text one word per line. .req-main's 160px flex-basis is
+   what actually triggers that drop at the right width, instead of the
+   two fighting over space indefinitely as both shrink. */
+.req-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+  padding: 14px 4px;
+  border-bottom: 1px solid var(--border);
+}
+.req-poster {
+  flex: 0 0 auto;
+  width: 40px;
+  height: 60px;
+  border-radius: 6px;
+  object-fit: cover;
+  background: var(--bg-card);
+}
+.req-main {
+  min-width: 0;
+  flex: 1 1 160px;
+}
+.req-title {
+  display: block;
+  font-size: 15.5px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.req-title:active {
+  opacity: 0.7;
+}
+.req-sub {
+  font-size: 12.5px;
+  color: var(--text-dim);
+  margin-top: 3px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.req-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 8px;
+  flex: 0 1 auto;
+  margin-left: auto;
+}
+
+/* Requests list grouping (Part J3): a show's episode/pack requests
+   collapse into one row with an expand arrow, itself drilling down into
+   a per-season expandable group before reaching individual episodes —
+   Show -> Season -> Episode, instead of one flat row per episode
+   cluttering the page. Movies stay ungrouped. The header row itself
+   toggles on click; the title link and toggle button both stop
+   propagation so navigating/toggling don't fire both at once. Nesting a
+   second .req-group-children inside a season group doubles the left
+   padding automatically, which is the point — it reads as a third
+   indent level under the show. */
+.req-group-header {
+  cursor: pointer;
+}
+.req-group-header:active {
+  background: var(--bg-card);
+}
+.req-group-toggle-btn {
+  flex: 0 0 auto;
+  width: 22px;
+  height: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  color: var(--text-dim);
+  font-size: 11px;
+}
+.req-group-children {
+  padding-left: 30px;
+}
+.req-child-row {
+  padding: 10px 4px;
+}
+.req-child-row .req-title {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text-dim);
+}
+
+.cancel-btn {
+  font-size: 12.5px;
+  font-weight: 600;
+  padding: 5px 12px;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--status-nospace);
+  border: 1px solid var(--status-nospace);
+}
+.cancel-btn:active {
+  background: color-mix(in srgb, var(--status-nospace) 18%, transparent);
+}
+.cancel-btn[disabled] {
+  opacity: 0.5;
+}
+/* A finished download's "Cancel" is really "delete" — a plain circular X
+   reads simpler than a text pill for that. */
+.req-delete-btn {
+  flex: 0 0 auto;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: none;
+  border: none;
+  color: var(--status-nospace);
+  font-size: 15px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.req-delete-btn:active {
+  background: color-mix(in srgb, var(--status-nospace) 18%, transparent);
+}
+.req-delete-btn[disabled] {
+  opacity: 0.5;
+}
+
+/* Floating above the tab bar, bottom-right — shares the same slot
+   DownloadsFab uses everywhere else, since the two never appear together
+   (DownloadsFab hides itself on this exact route). */
+.clear-requests-fab {
+  position: fixed;
+  right: var(--edge-inset);
+  bottom: calc(84px + var(--safe-bottom));
+  z-index: 9;
+}
+.retention-menu-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 8;
+}
+.split-btn {
+  display: flex;
+  align-items: stretch;
+  background: var(--bg-card);
+  border: 1px solid var(--status-nospace);
+  border-radius: 999px;
+  overflow: hidden;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
+}
+.split-btn-main {
+  background: none;
+  border: none;
+  color: var(--status-nospace);
+  font-size: 13.5px;
+  font-weight: 600;
+  padding: 10px 16px;
+  white-space: nowrap;
+}
+.split-btn-main[disabled] {
+  opacity: 0.6;
+}
+.split-btn-divider {
+  width: 1px;
+  background: var(--status-nospace);
+  opacity: 0.35;
+  margin: 8px 0;
+}
+.split-btn-arrow {
+  background: none;
+  border: none;
+  color: var(--status-nospace);
+  font-size: 12px;
+  padding: 10px 14px;
+  display: flex;
+  align-items: center;
+}
+.split-btn-main:active,
+.split-btn-arrow:active {
+  background: color-mix(in srgb, var(--status-nospace) 18%, transparent);
+}
+
+.retention-menu {
+  position: absolute;
+  z-index: 9;
+  right: 0;
+  bottom: calc(100% + 8px);
+  min-width: 200px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+}
+.retention-option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: none;
+  color: var(--text);
+  font-size: 14px;
+  padding: 11px 14px;
+  border-bottom: 1px solid var(--border);
+}
+.retention-option:last-child {
+  border-bottom: none;
+}
+.retention-option:active {
+  background: var(--bg-card);
+}
+.retention-option .check {
+  color: var(--accent);
+  font-weight: 700;
+}
+
+@media (min-width: 860px) {
+  .clear-requests-fab {
+    bottom: 28px;
+  }
+}

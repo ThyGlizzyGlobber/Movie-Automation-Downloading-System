@@ -12,6 +12,7 @@ import TvLandingPage from '../features/tv/TvLandingPage'
 import ShowDetailPage from '../features/tv/ShowDetailPage'
 import SearchPage from '../features/search/SearchPage'
 import PersonPage from '../features/person/PersonPage'
+import RequestsPage from '../features/requests/RequestsPage'
 import {
   getComingSoon,
   getDiscoverByGenre,
@@ -87,7 +88,7 @@ export const router = createHashRouter([
 
       { path: 'person/:id', element: <PersonPage /> },
       { path: 'search/:query', element: <SearchPage /> },
-      { path: 'requests', element: <ComingSoon label="Requests" /> },
+      { path: 'requests', element: <RequestsPage /> },
       { path: 'account', element: <AccountPage /> },
       {
         path: 'settings',

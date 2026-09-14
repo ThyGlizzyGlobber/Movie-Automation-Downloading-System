@@ -35,6 +35,13 @@ export interface RequestOut {
   // Part K1/K3 — "upgrade"/"overwrite"/null, drives the queue's
   // "Redownload" tag.
   redownload_mode: RedownloadMode | null
+  // Part J1 — denormalized at creation time, null for rows created before
+  // this existed or when TMDB has no poster on file.
+  poster_path: string | null
+  // Part J2 — qBittorrent's live progress fraction (0.0-1.0), refreshed
+  // on every download-watcher poll while status === 'downloading'; null
+  // before the first poll and for any row never in that status.
+  download_progress: number | null
 }
 
 // api.py:271-291
