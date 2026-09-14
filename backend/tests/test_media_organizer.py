@@ -125,6 +125,34 @@ def test_select_video_file_handles_subfolder_relative_names():
     assert str(result) == "/downloads/Lanterns S01E01/Lanterns.S01E01.mkv"
 
 
+def test_select_video_file_finds_the_main_title_in_a_bdmv_remux_release():
+    """Confirmed live: "Tron.Legacy.2010.2160p.BDMV.Remux...-DaTmoSX"'s real
+    payload is BDMV/STREAM/00000.m2ts, plus other much-smaller playlist
+    items for extras/trailers — .m2ts missing from VIDEO_EXTENSIONS made
+    this look like "no video file at all" and got the whole torrent purged
+    as a fake release. The existing largest-file heuristic is otherwise
+    sufficient here: the main feature is always by far the largest stream."""
+    qbt = FakeQBTClient(
+        "/downloads",
+        [
+            {
+                "name": "Tron.Legacy.2010.2160p.BDMV.Remux.DV.HDR.HEVC.TrueHD.7.1-DaTmoSX/BDMV/STREAM/00000.m2ts",
+                "size": 60_000_000_000,
+            },
+            {
+                "name": "Tron.Legacy.2010.2160p.BDMV.Remux.DV.HDR.HEVC.TrueHD.7.1-DaTmoSX/BDMV/STREAM/00001.m2ts",
+                "size": 200_000_000,
+            },
+            {
+                "name": "Tron.Legacy.2010.2160p.BDMV.Remux.DV.HDR.HEVC.TrueHD.7.1-DaTmoSX/BDMV/index.bdmv",
+                "size": 1000,
+            },
+        ],
+    )
+    result = select_video_file(qbt, "abc123")
+    assert result.name == "00000.m2ts"
+
+
 def test_select_video_file_raises_when_torrent_not_found():
     qbt = FakeQBTClient("/downloads", [], info=False)
     with pytest.raises(MediaOrganizerError):

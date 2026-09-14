@@ -221,7 +221,14 @@ QBIT_TV_SAVE_PATH = os.environ.get("QBIT_TV_SAVE_PATH")
 # Extensions media_organizer.select_video_file() will consider an episode's
 # real video file. Anything else in a torrent (.nfo, .srt, .txt) is
 # ignored outright, not just deprioritized.
-VIDEO_EXTENSIONS = frozenset({".mkv", ".mp4", ".avi", ".m4v", ".ts", ".wmv", ".mov"})
+#
+# .m2ts is the Blu-ray/BDMV stream extension (BDMV/STREAM/00000.m2ts) —
+# confirmed live: a "Tron.Legacy.2010.2160p.BDMV.Remux...-DaTmoSX" release's
+# actual video payload was an .m2ts file, missing this extension made
+# select_video_file() see zero candidates, and the resulting NoVideoFileError
+# got the whole torrent purged as a fake release even though it was a
+# legitimate, complete BDMV remux.
+VIDEO_EXTENSIONS = frozenset({".mkv", ".mp4", ".avi", ".m4v", ".ts", ".m2ts", ".wmv", ".mov"})
 
 # -- Stage 12: subscriptions, scheduling & per-episode dedup. --
 
