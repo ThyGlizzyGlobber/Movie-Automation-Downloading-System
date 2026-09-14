@@ -12,6 +12,13 @@ export function packScopeLabel(r: RequestOut): string {
   return `Season ${r.season_number}`
 }
 
+// The Watching list's second pill — what a show's most recent episode/
+// pack request actually covers, e.g. "S03E12" or "Season 4".
+export function latestRequestLabel(r: RequestOut): string {
+  if (r.media_type === 'episode') return `S${pad2(r.season_number!)}E${pad2(r.episode_number!)}`
+  return packScopeLabel(r)
+}
+
 // A standalone row's full label/href — movies (always standalone) and
 // any episode/pack row that somehow has no show_id to group under.
 export function requestLabelAndHref(r: RequestOut): { label: string; href: string } {

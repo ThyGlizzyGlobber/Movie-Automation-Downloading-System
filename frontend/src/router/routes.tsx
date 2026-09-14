@@ -10,6 +10,7 @@ import MoviesLandingPage from '../features/movies/MoviesLandingPage'
 import MovieDetailPage from '../features/movies/MovieDetailPage'
 import TvLandingPage from '../features/tv/TvLandingPage'
 import ShowDetailPage from '../features/tv/ShowDetailPage'
+import WatchingPage from '../features/tv/WatchingPage'
 import SearchPage from '../features/search/SearchPage'
 import PersonPage from '../features/person/PersonPage'
 import RequestsPage from '../features/requests/RequestsPage'
@@ -66,7 +67,7 @@ export const router = createHashRouter([
       { path: 'movies/:id', element: <MovieDetailPage /> },
 
       { path: 'tv', element: <TvLandingPage /> },
-      { path: 'tv/watching', element: <ComingSoon label="Watching" /> },
+      { path: 'tv/watching', element: <WatchingPage /> },
       {
         path: 'tv/trending',
         element: <CategoryPage title="Trending TV Shows" mediaType="tv" fetchPage={getTvDiscoverTrending} queryKey={['tv', 'trending', 'all']} />,
