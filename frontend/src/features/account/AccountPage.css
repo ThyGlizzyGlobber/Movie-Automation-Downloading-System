@@ -1,0 +1,59 @@
+.account-page {
+  display: flex;
+  justify-content: center;
+  padding-top: 40px;
+}
+.account-card {
+  width: 100%;
+  max-width: 340px;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+.account-avatar {
+  font-size: 64px;
+  color: var(--text-dim);
+}
+.account-username {
+  font-family: var(--font-display);
+  font-size: 22px;
+  margin: 8px 0 2px;
+}
+.account-role {
+  color: var(--accent);
+  font-size: 13px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin: 0 0 24px;
+}
+.account-actions {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 12px;
+}
+.account-button {
+  width: 100%;
+  padding: 12px 20px;
+  border-radius: 10px;
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.account-button.secondary {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  color: var(--text);
+}
+.account-button.danger {
+  background: none;
+  border: 1px solid var(--status-nospace);
+  color: var(--status-nospace);
+}
+.account-button:disabled {
+  opacity: 0.6;
+  cursor: default;
+}

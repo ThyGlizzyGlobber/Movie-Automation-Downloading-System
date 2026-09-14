@@ -1,0 +1,122 @@
+#topbar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: calc(25px + var(--safe-top)) var(--edge-inset) 25px;
+  background: color-mix(in srgb, var(--bg) 92%, transparent);
+  backdrop-filter: blur(10px);
+}
+/* Hero-topped pages: no background of its own at all at the top of the
+   page — the hero's own top fade carries icon/text legibility instead.
+   Applies once a page opts in via useSetHasHero(true) (none built yet). */
+body.has-hero #topbar {
+  background: transparent;
+  backdrop-filter: none;
+  transition: background 0.2s ease;
+}
+body.has-hero.scrolled #topbar {
+  background: rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(20px);
+}
+body.search-open #topbar,
+body.has-hero.search-open #topbar,
+body.has-hero.scrolled.search-open #topbar {
+  background: transparent;
+  backdrop-filter: none;
+}
+body.has-hero #topbar .top-nav-link {
+  color: var(--text);
+}
+body.has-hero #topbar .top-nav-link.active {
+  color: var(--smithflix-charcoal);
+}
+
+#searchToggleBtn,
+#accountToggle,
+#settingsToggle {
+  flex: 0 0 auto;
+  background: none;
+  border: none;
+  color: var(--text);
+  font-size: 20px;
+  width: 35.5px;
+  height: 35.5px;
+  border-radius: 8px;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+#searchToggleBtn:active,
+#accountToggle:active,
+#settingsToggle:active {
+  background: var(--bg-card);
+}
+#searchToggleBtn:hover,
+#accountToggle:hover,
+#settingsToggle:hover,
+body.search-open #searchToggleBtn,
+#accountToggle.active,
+#settingsToggle.active {
+  background: #fff;
+  color: var(--smithflix-charcoal);
+  border-radius: 50%;
+}
+#searchToggleBtn {
+  margin-left: auto;
+}
+
+#topbarLogo {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  margin-right: 22px;
+}
+#topbarLogo .brand-wordmark {
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: 34px;
+  line-height: 1;
+}
+#topbarLogo .brand-word-smith {
+  color: var(--text);
+}
+#topbarLogo .brand-word-flix {
+  color: var(--accent);
+}
+
+.top-nav-links {
+  display: none;
+}
+.top-nav-link {
+  padding: 8px 14px;
+  border-radius: 999px;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text-dim);
+  background: none;
+  border: none;
+}
+.top-nav-link:hover {
+  color: var(--text);
+  background: var(--bg-card);
+}
+.top-nav-link.active {
+  color: var(--smithflix-charcoal);
+  background: #fff;
+}
+
+@media (min-width: 860px) {
+  .top-nav-links {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    flex: 0 0 auto;
+  }
+}

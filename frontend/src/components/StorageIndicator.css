@@ -1,0 +1,47 @@
+.storage-indicator {
+  position: fixed;
+  left: var(--edge-inset);
+  bottom: calc(84px + var(--safe-bottom));
+  z-index: 9;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 11px 18px 11px 14px;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
+}
+.storage-indicator-icon {
+  font-size: 20px;
+  color: var(--text);
+  flex: 0 0 auto;
+}
+.storage-indicator-bar {
+  width: 48px;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--bg-elevated);
+  overflow: hidden;
+  flex: 0 0 auto;
+}
+.storage-indicator-fill {
+  display: block;
+  height: 100%;
+  width: 0%;
+  border-radius: 999px;
+  background: var(--accent-secondary);
+  transition: width 0.3s ease;
+}
+.storage-indicator-pct {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text);
+  white-space: nowrap;
+}
+
+@media (min-width: 860px) {
+  .storage-indicator {
+    bottom: 28px;
+  }
+}

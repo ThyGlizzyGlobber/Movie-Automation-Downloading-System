@@ -51,6 +51,23 @@ button {
   font-family: inherit;
 }
 
+/* Top padding compensates for #topbar being fixed/out-of-flow (--topbar-h
+   is measured and kept in sync by Topbar.tsx). Applied unconditionally,
+   including on hero-topped pages — only the hero's own background needs
+   to reach behind the header, not main's other content. 130px bottom
+   clears the tab bar plus the floating downloads FAB/storage indicator
+   above it. No max-width — the row-based layout fills the real browser
+   width edge to edge (Prime/Netflix-style), not centered with gaps. */
+main {
+  padding: calc(var(--topbar-h, 64px) + 14px) 14px calc(130px + var(--safe-bottom));
+  min-height: 60vh;
+}
+@media (min-width: 860px) {
+  main {
+    padding-bottom: 40px;
+  }
+}
+
 /* Shared by any status dot still in motion (searching/downloading) and
    the loading spinner below. */
 @keyframes pulse {
