@@ -10,6 +10,7 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
   { key: 'retention', label: 'Retention', icon: 'auto_delete' },
   { key: 'connections', label: 'Connections', icon: 'cable' },
   { key: 'plex', label: 'Plex Server', icon: 'dns' },
+  { key: 'remote-access', label: 'Remote Access', icon: 'lock' },
   { key: 'activity', label: 'Activity Dashboard', icon: 'insights' },
   { key: 'updates', label: 'Updates', icon: 'system_update' },
 ]

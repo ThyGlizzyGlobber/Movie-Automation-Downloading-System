@@ -397,6 +397,28 @@ class RequestStore:
                 )
                 """
             )
+            # Frontend migration Part G4 — a plain append-only log an admin
+            # can actually check once this instance is internet-facing.
+            # Scoped to genuinely security-relevant events, not every
+            # settings change (Pipeline/TV-schedule/Retention tuning isn't
+            # a security event) — login success/failure, Plex server
+            # link/switch/unlink, Connections (TMDB/qBittorrent
+            # credential) changes, Remote Access toggles, and deploy
+            # triggers. `detail` is a short human-readable string, not
+            # structured JSON — this is read by a person, not parsed back.
+            self._conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS auth_events (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    event_type TEXT NOT NULL,
+                    plex_user_id TEXT,
+                    username TEXT,
+                    ip_address TEXT,
+                    detail TEXT,
+                    created_at TEXT NOT NULL
+                )
+                """
+            )
             self._conn.commit()
 
     def _ensure_column(self, table: str, column: str, ddl: str) -> None:
@@ -1076,6 +1098,42 @@ class RequestStore:
             cur = self._conn.execute("DELETE FROM sessions WHERE is_admin = 0")
             self._conn.commit()
             return cur.rowcount
+
+    def delete_all_sessions(self) -> int:
+        """Part G4's admin "revoke all sessions" action, for if a device
+        is ever lost — literally everyone, the calling admin's own
+        current session included (unlike delete_non_admin_sessions
+        above): the next request from any device, including this one,
+        gets a clean 401 and has to sign back in through Plex again."""
+        with self._lock:
+            cur = self._conn.execute("DELETE FROM sessions")
+            self._conn.commit()
+            return cur.rowcount
+
+    def record_auth_event(
+        self,
+        event_type: str,
+        plex_user_id: str | None = None,
+        username: str | None = None,
+        ip_address: str | None = None,
+        detail: str | None = None,
+    ) -> None:
+        with self._lock:
+            self._conn.execute(
+                "INSERT INTO auth_events (event_type, plex_user_id, username, ip_address, detail, created_at) "
+                "VALUES (?, ?, ?, ?, ?, ?)",
+                (event_type, plex_user_id, username, ip_address, detail, _now()),
+            )
+            self._conn.commit()
+
+    def list_auth_events(self, limit: int = 50, offset: int = 0) -> list[dict]:
+        rows = self._conn.execute(
+            "SELECT * FROM auth_events ORDER BY id DESC LIMIT ? OFFSET ?", (limit, offset)
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+    def count_auth_events(self) -> int:
+        return self._conn.execute("SELECT COUNT(*) FROM auth_events").fetchone()[0]
 
     # -- setup bootstrap (frontend migration Part G1) --
 

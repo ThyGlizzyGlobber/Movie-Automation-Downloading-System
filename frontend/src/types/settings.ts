@@ -85,3 +85,27 @@ export interface ActivityOut {
   total: number
   user_stats: RequesterStat[]
 }
+
+// GET/PUT /api/settings/remote-access (Part G2) — mirrors api.py's
+// RemoteAccessSettings/RemoteAccessIn.
+export interface RemoteAccessSettings {
+  remote_access_enabled: boolean
+  public_domain: string | null
+}
+
+// GET /api/admin/audit-log (Part G4) — mirrors api.py's AuditEventOut/
+// AuditLogOut.
+export interface AuditEvent {
+  id: number
+  event_type: string
+  plex_user_id: string | null
+  username: string | null
+  ip_address: string | null
+  detail: string | null
+  created_at: string
+}
+
+export interface AuditLogOut {
+  events: AuditEvent[]
+  total: number
+}

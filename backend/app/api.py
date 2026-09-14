@@ -23,6 +23,9 @@ from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter, Depends, FastAPI, HTTPException, Request, Response
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field, field_validator, model_validator
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
+from slowapi.util import get_remote_address
 
 from app import config, trailers
 from app.db import RequestRow, RequestStore, SessionRow, ShowRow
@@ -61,6 +64,19 @@ SESSION_TTL_DAYS = 14
 
 def _new_session_expiry() -> str:
     return (datetime.now(timezone.utc) + timedelta(days=SESSION_TTL_DAYS)).isoformat()
+
+
+def _cookie_secure(store: RequestStore) -> bool:
+    """Part G4 — the `Secure` flag genuinely requires HTTPS, which this
+    app never terminates itself (a reverse proxy does, per Part G3); the
+    admin's own `remote_access_enabled` toggle is what tells the backend
+    that HTTPS is actually in front of it. `False` (LAN-only, plain HTTP)
+    by default, same as `remote_access_enabled` itself."""
+    return bool(store.get_settings().get("remote_access_enabled"))
+
+
+def _client_ip(request: Request) -> str | None:
+    return request.client.host if request.client else None
 
 
 @asynccontextmanager
@@ -128,6 +144,20 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="The Family Downloader", lifespan=lifespan)
+
+# Frontend migration Part G4 — rate limiting on the routes an internet
+# attacker would actually script against once remote access is enabled:
+# /api/auth/login/* (credential-guessing-shaped, even though "credential"
+# here just means "does this Plex account have access") and /api/setup/*
+# (the bootstrap race Part G1's LAN restriction already narrows, this is
+# the second layer). In-memory, per-process — genuinely fine at household
+# scale (one backend process, no multi-worker deployment), not meant to
+# survive a restart. 20/minute is generous enough that no normal user
+# interaction (including a slow multi-attempt login) ever brushes it,
+# while still bounding a scripted attacker to a rate that isn't useful.
+limiter = Limiter(key_func=get_remote_address)
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 
 def get_store(request: Request) -> RequestStore:
@@ -1227,8 +1257,11 @@ def plex_status(linker: PlexLinker = Depends(get_plex_linker)) -> dict:
 
 
 @app.post("/api/plex/unlink", dependencies=[Depends(require_admin)])
-def unlink_plex(linker: PlexLinker = Depends(get_plex_linker)) -> dict:
+def unlink_plex(
+    request: Request, linker: PlexLinker = Depends(get_plex_linker), store: RequestStore = Depends(get_store)
+) -> dict:
     linker.unlink()
+    store.record_auth_event("plex_unlinked", ip_address=_client_ip(request))
     return linker.status()
 
 
@@ -1259,6 +1292,7 @@ class SelectPlexServerRequest(BaseModel):
 
 @app.put("/api/plex/server")
 def select_plex_server(
+    request: Request,
     body: SelectPlexServerRequest,
     response: Response,
     store: RequestStore = Depends(get_store),
@@ -1304,6 +1338,11 @@ def select_plex_server(
     # session's access grant was checked against the *old* server and
     # must be re-validated via a fresh login against the new one.
     store.delete_non_admin_sessions()
+    store.record_auth_event(
+        "plex_server_selected",
+        ip_address=_client_ip(request),
+        detail=f"linked to {match['name']}",
+    )
 
     if session is None:
         try:
@@ -1320,6 +1359,7 @@ def select_plex_server(
                 value=session_id,
                 httponly=True,
                 samesite="strict",
+                secure=_cookie_secure(store),
                 max_age=SESSION_TTL_DAYS * 24 * 3600,
                 path="/",
             )
@@ -1335,7 +1375,8 @@ def select_plex_server(
 
 
 @app.post("/api/auth/login/start")
-async def start_login(login: LoginSession = Depends(get_login_session)) -> dict:
+@limiter.limit("20/minute")
+async def start_login(request: Request, login: LoginSession = Depends(get_login_session)) -> dict:
     try:
         auth_url = await login.start()
     except PlexError as exc:
@@ -1344,7 +1385,9 @@ async def start_login(login: LoginSession = Depends(get_login_session)) -> dict:
 
 
 @app.get("/api/auth/login/status")
+@limiter.limit("20/minute")
 def login_status(
+    request: Request,
     response: Response,
     login: LoginSession = Depends(get_login_session),
     store: RequestStore = Depends(get_store),
@@ -1361,8 +1404,20 @@ def login_status(
             value=session_id,
             httponly=True,
             samesite="strict",
+            secure=_cookie_secure(store),
             max_age=SESSION_TTL_DAYS * 24 * 3600,
             path="/",
+        )
+        store.record_auth_event(
+            "login_success",
+            plex_user_id=user.plex_user_id,
+            username=user.username,
+            ip_address=_client_ip(request),
+            detail="admin" if user.is_admin else "user",
+        )
+    elif status["error"]:
+        store.record_auth_event(
+            "login_failure", ip_address=_client_ip(request), detail=status["error"]
         )
     return {
         "pending": status["pending"],
@@ -1463,7 +1518,8 @@ def _update_tmdb_key(body: SetupTmdbRequest, store: RequestStore) -> dict:
 
 
 @app.put("/api/setup/tmdb", dependencies=[Depends(require_setup_token)])
-def setup_tmdb(body: SetupTmdbRequest, store: RequestStore = Depends(get_store)) -> dict:
+@limiter.limit("20/minute")
+def setup_tmdb(request: Request, body: SetupTmdbRequest, store: RequestStore = Depends(get_store)) -> dict:
     return _update_tmdb_key(body, store)
 
 
@@ -1483,7 +1539,8 @@ def _test_qbt_connection(body: SetupQbtRequest) -> dict:
 
 
 @app.post("/api/setup/qbittorrent/test", dependencies=[Depends(require_setup_token)])
-def setup_qbt_test(body: SetupQbtRequest) -> dict:
+@limiter.limit("20/minute")
+def setup_qbt_test(request: Request, body: SetupQbtRequest) -> dict:
     return _test_qbt_connection(body)
 
 
@@ -1501,7 +1558,8 @@ def _update_qbt_connection(body: SetupQbtRequest, store: RequestStore) -> dict:
 
 
 @app.put("/api/setup/qbittorrent", dependencies=[Depends(require_setup_token)])
-def setup_qbt(body: SetupQbtRequest, store: RequestStore = Depends(get_store)) -> dict:
+@limiter.limit("20/minute")
+def setup_qbt(request: Request, body: SetupQbtRequest, store: RequestStore = Depends(get_store)) -> dict:
     return _update_qbt_connection(body, store)
 
 
@@ -1512,8 +1570,10 @@ def setup_qbt(body: SetupQbtRequest, store: RequestStore = Depends(get_store)) -
 
 
 @admin_router.put("/api/settings/tmdb")
-def update_tmdb_settings(body: SetupTmdbRequest, store: RequestStore = Depends(get_store)) -> dict:
-    return _update_tmdb_key(body, store)
+def update_tmdb_settings(request: Request, body: SetupTmdbRequest, store: RequestStore = Depends(get_store)) -> dict:
+    result = _update_tmdb_key(body, store)
+    store.record_auth_event("tmdb_key_changed", ip_address=_client_ip(request))
+    return result
 
 
 @admin_router.post("/api/settings/qbittorrent/test")
@@ -1522,8 +1582,60 @@ def test_qbt_settings(body: SetupQbtRequest) -> dict:
 
 
 @admin_router.put("/api/settings/qbittorrent")
-def update_qbt_settings(body: SetupQbtRequest, store: RequestStore = Depends(get_store)) -> dict:
-    return _update_qbt_connection(body, store)
+def update_qbt_settings(request: Request, body: SetupQbtRequest, store: RequestStore = Depends(get_store)) -> dict:
+    result = _update_qbt_connection(body, store)
+    store.record_auth_event("qbt_connection_changed", ip_address=_client_ip(request))
+    return result
+
+
+# -- Remote access (frontend migration Part G2) — informational/config,
+#    not network automation (this app can't itself open a router port):
+#    displays the configured public URL back to the admin, and drives
+#    _cookie_secure() above. Defaults to False/None, same "opt-in,
+#    admin-only, after the fact" principle Part G1's LAN-only setup
+#    restriction exists to protect in the first place — an admin can only
+#    ever reach this toggle once they're already authenticated, which
+#    itself required completing setup from the LAN. --
+
+
+class RemoteAccessSettings(BaseModel):
+    remote_access_enabled: bool
+    public_domain: str | None = None
+
+
+class RemoteAccessIn(BaseModel):
+    remote_access_enabled: bool
+    public_domain: str | None = None
+
+    @field_validator("public_domain")
+    @classmethod
+    def _blank_to_none(cls, v: str | None) -> str | None:
+        return v.strip() or None if v is not None else None
+
+
+@admin_router.get("/api/settings/remote-access")
+def get_remote_access_settings(store: RequestStore = Depends(get_store)) -> RemoteAccessSettings:
+    settings = store.get_settings()
+    return RemoteAccessSettings(
+        remote_access_enabled=bool(settings.get("remote_access_enabled")),
+        public_domain=settings.get("public_domain"),
+    )
+
+
+@admin_router.put("/api/settings/remote-access")
+def update_remote_access_settings(
+    request: Request, body: RemoteAccessIn, store: RequestStore = Depends(get_store)
+) -> RemoteAccessSettings:
+    store.update_settings(
+        {"remote_access_enabled": body.remote_access_enabled, "public_domain": body.public_domain}
+    )
+    store.record_auth_event(
+        "remote_access_toggled",
+        ip_address=_client_ip(request),
+        detail=("enabled" if body.remote_access_enabled else "disabled")
+        + (f" ({body.public_domain})" if body.public_domain else ""),
+    )
+    return RemoteAccessSettings(remote_access_enabled=body.remote_access_enabled, public_domain=body.public_domain)
 
 
 @app.get("/api/health")
@@ -1624,8 +1736,47 @@ def admin_activity(limit: int = 50, offset: int = 0, store: RequestStore = Depen
     )
 
 
+# -- Frontend migration Part G4: the audit log an admin can actually
+#    check once this instance is internet-facing, and the "a device was
+#    lost" panic button. --
+
+
+class AuditEventOut(BaseModel):
+    id: int
+    event_type: str
+    plex_user_id: str | None
+    username: str | None
+    ip_address: str | None
+    detail: str | None
+    created_at: str
+
+
+class AuditLogOut(BaseModel):
+    events: list[AuditEventOut]
+    total: int
+
+
+@admin_router.get("/api/admin/audit-log")
+def get_audit_log(limit: int = 50, offset: int = 0, store: RequestStore = Depends(get_store)) -> AuditLogOut:
+    limit = min(max(limit, 1), 200)
+    offset = max(offset, 0)
+    events = store.list_auth_events(limit=limit, offset=offset)
+    return AuditLogOut(events=[AuditEventOut(**e) for e in events], total=store.count_auth_events())
+
+
+@admin_router.post("/api/admin/revoke-sessions")
+def revoke_all_sessions(request: Request, store: RequestStore = Depends(get_store)) -> dict:
+    """For if a device is ever lost — literally every signed-in session,
+    including the one making this call (see delete_all_sessions's own
+    docstring). The frontend's next authenticated request 401s and falls
+    back to the login screen, same as any other expired session."""
+    count = store.delete_all_sessions()
+    store.record_auth_event("sessions_revoked", ip_address=_client_ip(request), detail=f"{count} session(s)")
+    return {"revoked": count}
+
+
 @admin_router.post("/api/admin/deploy")
-def deploy() -> dict:
+def deploy(request: Request, store: RequestStore = Depends(get_store)) -> dict:
     """Runs exactly `git pull --ff-only` against the deployed-copy clone —
     see app/deploy.py. No parameters ever accepted. Originally gated only
     by the Settings panel's hidden long-press control with no real auth
@@ -1633,9 +1784,14 @@ def deploy() -> dict:
     command) — now admin-only (frontend migration Part C3), on top of
     that same fixed-command bound."""
     try:
-        return run_git_pull()
+        result = run_git_pull()
     except DeployError as exc:
+        store.record_auth_event("deploy_failed", ip_address=_client_ip(request), detail=str(exc))
         raise HTTPException(status_code=502, detail=str(exc)) from exc
+    store.record_auth_event(
+        "deploy_triggered", ip_address=_client_ip(request), detail=f"now at {result.get('commit')}"
+    )
+    return result
 
 
 # Wires the default-deny routers onto the app — see this module's own

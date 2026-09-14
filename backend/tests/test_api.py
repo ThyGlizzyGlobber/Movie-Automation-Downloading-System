@@ -2308,6 +2308,236 @@ def test_select_plex_server_during_bootstrap_also_signs_the_admin_in(tmp_path, m
         }
 
 
+# ---------------------------------------------------------------------------
+# Frontend migration Part G4 — remote-access hardening: the Remote Access
+# settings panel, the Secure-cookie flag it drives, "revoke all sessions",
+# the audit log, and rate limiting on /api/auth/* + /api/setup/*.
+# ---------------------------------------------------------------------------
+
+
+def test_get_remote_access_defaults_to_disabled(client_and_deps):
+    client, _, _, _, _, _ = client_and_deps
+
+    response = client.get("/api/settings/remote-access")
+
+    assert response.status_code == 200
+    assert response.json() == {"remote_access_enabled": False, "public_domain": None}
+
+
+def test_remote_access_requires_admin(non_admin_client):
+    client, _, _, _, _, _ = non_admin_client
+
+    response = client.get("/api/settings/remote-access")
+
+    assert response.status_code == 403
+
+
+def test_set_remote_access_persists_and_reads_back(client_and_deps):
+    client, store, _, _, _, _ = client_and_deps
+
+    response = client.put(
+        "/api/settings/remote-access",
+        json={"remote_access_enabled": True, "public_domain": "smithflix.example.com"},
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {"remote_access_enabled": True, "public_domain": "smithflix.example.com"}
+    assert store.get_settings()["remote_access_enabled"] is True
+    assert store.get_settings()["public_domain"] == "smithflix.example.com"
+
+
+def test_set_remote_access_blanks_a_whitespace_only_domain_to_none(client_and_deps):
+    client, store, _, _, _, _ = client_and_deps
+
+    response = client.put(
+        "/api/settings/remote-access", json={"remote_access_enabled": False, "public_domain": "   "}
+    )
+
+    assert response.status_code == 200
+    assert response.json()["public_domain"] is None
+    assert store.get_settings()["public_domain"] is None
+
+
+def test_session_cookie_is_not_secure_by_default(client_and_deps):
+    client, _, _, _, _, _ = client_and_deps
+    login_session = api_state_login_session(client)
+    login_session._status = {
+        "pending": False,
+        "result": {"plex_user_id": "cookie-user", "username": "cookie-user", "is_admin": False},
+        "error": None,
+    }
+
+    response = client.get("/api/auth/login/status")
+
+    set_cookie = response.headers.get("set-cookie", "")
+    assert "session_id=" in set_cookie
+    assert "Secure" not in set_cookie
+
+
+def test_session_cookie_is_secure_once_remote_access_is_enabled(client_and_deps):
+    client, store, _, _, _, _ = client_and_deps
+    store.update_settings({"remote_access_enabled": True})
+    login_session = api_state_login_session(client)
+    login_session._status = {
+        "pending": False,
+        "result": {"plex_user_id": "cookie-user-2", "username": "cookie-user-2", "is_admin": False},
+        "error": None,
+    }
+
+    response = client.get("/api/auth/login/status")
+
+    assert "Secure" in response.headers.get("set-cookie", "")
+
+
+def test_revoke_all_sessions_requires_admin(non_admin_client):
+    client, _, _, _, _, _ = non_admin_client
+
+    response = client.post("/api/admin/revoke-sessions")
+
+    assert response.status_code == 403
+
+
+def test_revoke_all_sessions_signs_out_every_session_including_the_caller(client_and_deps):
+    client, store, _, _, _, _ = client_and_deps
+    other = store.upsert_user("other-user", "other", False)
+    store.create_session(
+        "other-session", other.plex_user_id, other.username, False,
+        (datetime.now(timezone.utc) + timedelta(days=1)).isoformat(),
+    )
+
+    response = client.post("/api/admin/revoke-sessions")
+
+    assert response.status_code == 200
+    assert response.json()["revoked"] >= 2
+    assert store.get_session("other-session") is None
+    # The admin's own session (the fixture's own cookie) is gone too.
+    assert client.get("/api/auth/session").status_code == 401
+
+
+def test_audit_log_requires_admin(non_admin_client):
+    client, _, _, _, _, _ = non_admin_client
+
+    response = client.get("/api/admin/audit-log")
+
+    assert response.status_code == 403
+
+
+def test_audit_log_records_login_success_and_failure(client_and_deps):
+    client, _, _, _, _, _ = client_and_deps
+    login_session = api_state_login_session(client)
+
+    login_session._status = {
+        "pending": False,
+        "result": {"plex_user_id": "audit-user", "username": "audit-user", "is_admin": False},
+        "error": None,
+    }
+    client.get("/api/auth/login/status")
+
+    login_session._status = {"pending": False, "result": None, "error": "no access"}
+    client.get("/api/auth/login/status")
+
+    # The login flow above replaced the client's cookie with the (non-admin)
+    # audit-user's own session, via a real Set-Cookie response header — which
+    # httpx's cookie jar stores against the TestClient's actual host, distinct
+    # from the domain-less cookie the fixture set directly. Deleting by name
+    # first (matches every domain) avoids ending up with both cookies present
+    # at once, which is ambiguous about which one a request actually sends.
+    client.cookies.delete(api.SESSION_COOKIE_NAME)
+    client.cookies.set(api.SESSION_COOKIE_NAME, "test-admin-session")
+    response = client.get("/api/admin/audit-log")
+
+    assert response.status_code == 200
+    body = response.json()
+    event_types = [e["event_type"] for e in body["events"]]
+    assert "login_success" in event_types
+    assert "login_failure" in event_types
+    failure_event = next(e for e in body["events"] if e["event_type"] == "login_failure")
+    assert failure_event["detail"] == "no access"
+    success_event = next(e for e in body["events"] if e["event_type"] == "login_success")
+    assert success_event["username"] == "audit-user"
+
+
+def test_audit_log_records_remote_access_toggle(client_and_deps):
+    client, _, _, _, _, _ = client_and_deps
+
+    client.put("/api/settings/remote-access", json={"remote_access_enabled": True, "public_domain": None})
+
+    events = client.get("/api/admin/audit-log").json()["events"]
+    assert any(e["event_type"] == "remote_access_toggled" and "enabled" in e["detail"] for e in events)
+
+
+def test_audit_log_records_connections_changes(client_and_deps, monkeypatch):
+    client, _, _, _, _, _ = client_and_deps
+    monkeypatch.setattr(config, "TMDB_API_KEY", None)
+    monkeypatch.setattr(api.config, "_QBIT_HOST_ENV", None)
+
+    client.put("/api/settings/tmdb", json={"api_key": "a-new-key"})
+    client.put(
+        "/api/settings/qbittorrent", json={"host": "10.0.0.9", "port": 1234, "username": "", "password": ""}
+    )
+
+    events = [e["event_type"] for e in client.get("/api/admin/audit-log").json()["events"]]
+    assert "tmdb_key_changed" in events
+    assert "qbt_connection_changed" in events
+
+
+def test_audit_log_records_deploy_trigger(client_and_deps, monkeypatch):
+    client, _, _, _, _, _ = client_and_deps
+    monkeypatch.setattr(api, "run_git_pull", lambda: {"detail": "ok", "commit": "abc1234"})
+
+    client.post("/api/admin/deploy")
+
+    events = client.get("/api/admin/audit-log").json()["events"]
+    assert any(e["event_type"] == "deploy_triggered" and "abc1234" in e["detail"] for e in events)
+
+
+def test_audit_log_records_deploy_failure(client_and_deps, monkeypatch):
+    client, _, _, _, _, _ = client_and_deps
+
+    def _boom():
+        raise api.DeployError("git pull failed: conflict")
+
+    monkeypatch.setattr(api, "run_git_pull", _boom)
+
+    response = client.post("/api/admin/deploy")
+
+    assert response.status_code == 502
+    events = client.get("/api/admin/audit-log").json()["events"]
+    assert any(e["event_type"] == "deploy_failed" for e in events)
+
+
+def test_audit_log_records_plex_unlink(client_and_deps):
+    client, _, _, _, _, _ = client_and_deps
+
+    client.post("/api/plex/unlink")
+
+    events = [e["event_type"] for e in client.get("/api/admin/audit-log").json()["events"]]
+    assert "plex_unlinked" in events
+
+
+def test_audit_log_paginates(client_and_deps):
+    client, store, _, _, _, _ = client_and_deps
+    for i in range(5):
+        store.record_auth_event("test_event", detail=f"event {i}")
+
+    response = client.get("/api/admin/audit-log", params={"limit": 2, "offset": 1})
+
+    assert response.status_code == 200
+    body = response.json()
+    assert len(body["events"]) == 2
+    assert body["total"] >= 5
+
+
+def test_login_start_is_rate_limited(client_and_deps):
+    client, _, _, _, _, _ = client_and_deps
+
+    responses = [client.post("/api/auth/login/start") for _ in range(21)]
+
+    statuses = [r.status_code for r in responses]
+    assert statuses.count(200) <= 20
+    assert 429 in statuses
+
+
 def api_state_login_session(client) -> "FakeLoginSession":
     """The FakeLoginSession instance the running app's lifespan installed
     — reached through the TestClient's own app reference, since the

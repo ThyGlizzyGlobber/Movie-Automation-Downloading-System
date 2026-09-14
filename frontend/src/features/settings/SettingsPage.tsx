@@ -7,6 +7,7 @@ import TvSchedulePanel from './TvSchedulePanel'
 import RetentionPanel from './RetentionPanel'
 import ConnectionsPanel from './ConnectionsPanel'
 import PlexServerPanel from './PlexServerPanel'
+import RemoteAccessPanel from './RemoteAccessPanel'
 import ActivityDashboardPanel from './ActivityDashboardPanel'
 import UpdatesPanel from './UpdatesPanel'
 import './SettingsPage.css'
@@ -23,6 +24,8 @@ function renderPanel(key: string) {
       return <ConnectionsPanel />
     case 'plex':
       return <PlexServerPanel />
+    case 'remote-access':
+      return <RemoteAccessPanel />
     case 'activity':
       return <ActivityDashboardPanel />
     case 'updates':

@@ -1,9 +1,11 @@
 import { postJson, putJson, request } from './client'
 import type {
   ActivityOut,
+  AuditLogOut,
   PipelineSettings,
   PipelineSettingsBody,
   QbtSettingsResult,
+  RemoteAccessSettings,
   RetentionSettings,
   TmdbSettingsResult,
   TvScheduleSettings,
@@ -53,4 +55,22 @@ export function updateQbtSettings(body: QbtConnectionInput) {
 // Activity Dashboard (Part D).
 export function getActivity(limit = 50, offset = 0) {
   return request<ActivityOut>(`/api/admin/activity?limit=${limit}&offset=${offset}`)
+}
+
+// Remote Access panel (Part G2) + the audit log/"revoke all sessions"
+// panic button (Part G4).
+export function getRemoteAccess() {
+  return request<RemoteAccessSettings>('/api/settings/remote-access')
+}
+
+export function setRemoteAccess(body: RemoteAccessSettings) {
+  return putJson<RemoteAccessSettings>('/api/settings/remote-access', body)
+}
+
+export function getAuditLog(limit = 25, offset = 0) {
+  return request<AuditLogOut>(`/api/admin/audit-log?limit=${limit}&offset=${offset}`)
+}
+
+export function revokeAllSessions() {
+  return postJson<{ revoked: number }>('/api/admin/revoke-sessions', {})
 }

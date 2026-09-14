@@ -14,8 +14,60 @@ services:
       - backend-data:/app/data
     # No published port — reachable only from frontend over the internal
     # Compose network as `backend:8000`, per the confirmed architecture.
+    # Standing invariant (frontend migration Part G4): never add a `ports:`
+    # entry here. The LAN restriction on /api/setup/*, the security
+    # headers, and rate limiting all live in frontend/nginx.conf, in front
+    # of this container, not on it — publishing this port directly would
+    # let anyone who reaches it skip every one of those protections.
     expose:
       - "8000"
 
+  # Frontend migration Part G3 — remote access / TLS.
+  #
+  # This app never terminates HTTPS itself; exposing it to the internet
+  # needs a reverse proxy in front of the `frontend` service above.
+  # Recommended, roughly in order of "just works" for a homelab:
+  #   - Cloudflare Tunnel — no inbound port-forward at all, hides your home
+  #     IP entirely. Run `cloudflared` (its own container/binary, not part
+  #     of this compose file) pointed at http://frontend:80 on this
+  #     network.
+  #   - Nginx Proxy Manager / Traefik — if you're already running one for
+  #     other services, add a proxy host/router pointed at
+  #     http://frontend:80 (join this compose network, or route via the
+  #     8080 published port below) and let it issue its own cert.
+  #   - The `caddy` service below — zero-config automatic HTTPS via Let's
+  #     Encrypt, if you don't already have a proxy and just want a domain
+  #     pointed at this app. Opt-in only (`profiles: ["remote"]`), so it
+  #     never starts on a plain `docker compose up`:
+  #       PUBLIC_DOMAIN=your.domain.com docker compose --profile remote up -d
+  #     Requires PUBLIC_DOMAIN to resolve to this host, with ports 80 (the
+  #     ACME HTTP challenge) and 443 forwarded to it.
+  #
+  # Whichever you pick, the existing same-origin /api/ proxy inside
+  # frontend/nginx.conf is untouched — the reverse proxy sits in front of
+  # that one origin, so no CORS changes are ever needed. Verify it works
+  # over plain LAN HTTP first, confirm it on the real NAS over LAN, *then*
+  # set up whichever of the above you're using, and only after that
+  # succeeds, flip Settings → Remote Access on (frontend migration Part
+  # G1's ordering: you can't reach admin status without first being on the
+  # home network, so this sequencing is itself a safety control).
+  caddy:
+    image: caddy:2-alpine
+    profiles: ["remote"]
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      - PUBLIC_DOMAIN=${PUBLIC_DOMAIN:?set PUBLIC_DOMAIN to your domain before using the remote profile}
+    volumes:
+      - caddy-data:/data
+      - caddy-config:/config
+    command: >
+      caddy reverse-proxy --from ${PUBLIC_DOMAIN} --to frontend:80
+    depends_on:
+      - frontend
+
 volumes:
   backend-data:
+  caddy-data:
+  caddy-config:

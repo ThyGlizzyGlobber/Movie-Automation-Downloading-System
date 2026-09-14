@@ -1,0 +1,40 @@
+/* Stacked-row cards, matching ActivityDashboardPanel's own convention
+   (no horizontally-scrolling table on mobile). */
+.audit-log-list {
+  display: flex;
+  flex-direction: column;
+}
+.audit-log-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 4px;
+  border-bottom: 1px solid var(--border);
+}
+.audit-log-row:last-child {
+  border-bottom: none;
+}
+.audit-log-main {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.audit-log-type {
+  font-size: 14.5px;
+  font-weight: 600;
+}
+.audit-log-sub {
+  font-size: 12.5px;
+  color: var(--text-dim);
+  margin-top: 2px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.audit-log-time {
+  font-size: 12.5px;
+  color: var(--text-dim);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
