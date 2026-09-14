@@ -7,7 +7,9 @@ import ProviderPage from '../components/ProviderPage'
 import AccountPage from '../features/account/AccountPage'
 import RequireAdmin from '../features/auth/RequireAdmin'
 import MoviesLandingPage from '../features/movies/MoviesLandingPage'
+import MovieDetailPage from '../features/movies/MovieDetailPage'
 import TvLandingPage from '../features/tv/TvLandingPage'
+import ShowDetailPage from '../features/tv/ShowDetailPage'
 import {
   getComingSoon,
   getDiscoverByGenre,
@@ -58,7 +60,7 @@ export const router = createHashRouter([
         path: 'movies/provider/:id/:name',
         element: <ProviderPage mediaType="movie" discoverByProvider={getDiscoverByProvider} search={searchMovies} />,
       },
-      { path: 'movies/:id', element: <ComingSoon label="Movie detail" /> },
+      { path: 'movies/:id', element: <MovieDetailPage /> },
 
       { path: 'tv', element: <TvLandingPage /> },
       { path: 'tv/watching', element: <ComingSoon label="Watching" /> },
@@ -79,7 +81,7 @@ export const router = createHashRouter([
         path: 'tv/provider/:id/:name',
         element: <ProviderPage mediaType="tv" discoverByProvider={getTvDiscoverByProvider} search={searchTv} />,
       },
-      { path: 'tv/:id', element: <ComingSoon label="Show detail" /> },
+      { path: 'tv/:id', element: <ShowDetailPage /> },
 
       { path: 'person/:id', element: <ComingSoon label="Person" /> },
       { path: 'search/:query', element: <ComingSoon label="Search" /> },

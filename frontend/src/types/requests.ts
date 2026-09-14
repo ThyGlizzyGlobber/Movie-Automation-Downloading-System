@@ -12,6 +12,8 @@ export type RequestStatus =
 
 export type MediaType = 'movie' | 'episode' | 'pack'
 
+export type RedownloadMode = 'upgrade' | 'overwrite'
+
 export interface RequestOut {
   id: number
   query: string | null
@@ -28,19 +30,28 @@ export interface RequestOut {
   season_number: number | null
   episode_number: number | null
   season_range_end: number | null
+  requested_by_plex_id: string | null
+  requested_by_username: string | null
+  // Part K1/K3 — "upgrade"/"overwrite"/null, drives the queue's
+  // "Redownload" tag.
+  redownload_mode: RedownloadMode | null
 }
 
-// api.py:94-106
+// api.py:271-291
 export interface CreateRequestBody {
   tmdb_id: number
   query?: string | null
   min_resolution?: string | null
+  // Set only from the "Already on Plex" confirmation modal (Part K1).
+  // "overwrite" is rejected server-side unless this tmdb_id has a request
+  // this app itself organized on record.
+  redownload_mode?: RedownloadMode | null
 }
 
-// api.py:181-195 — today's real shape: no season-range or min_resolution
-// support yet, despite db.py's schema already having columns for both
-// (see Part J4/K of the migration plan for the planned extensions).
+// api.py:378-396
 export interface BulkDownloadBody {
   scope: 'season' | 'series'
   season_number?: number | null
+  min_resolution?: string | null
+  redownload_mode?: RedownloadMode | null
 }

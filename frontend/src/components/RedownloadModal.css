@@ -1,0 +1,77 @@
+.redownload-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  background: rgba(0, 0, 0, 0.7);
+  backdrop-filter: blur(6px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+.redownload-card {
+  width: 100%;
+  max-width: 400px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 24px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5);
+}
+.redownload-title {
+  font-size: 18px;
+  font-weight: 800;
+  margin: 0 0 8px;
+}
+.redownload-body {
+  color: var(--text-dim);
+  font-size: 14px;
+  line-height: 1.5;
+  margin: 0 0 20px;
+}
+.redownload-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.redownload-option {
+  width: 100%;
+  padding: 13px 16px;
+  font-size: 14.5px;
+  font-weight: 600;
+  text-align: left;
+  background: var(--bg-elevated);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+.redownload-option:not([disabled]):hover {
+  background: #fff;
+  color: var(--smithflix-charcoal);
+  border-color: #fff;
+}
+.redownload-option .redownload-option-sub {
+  display: block;
+  margin-top: 2px;
+  font-size: 12.5px;
+  font-weight: 400;
+  color: var(--text-dim);
+}
+.redownload-option:not([disabled]):hover .redownload-option-sub {
+  color: color-mix(in srgb, var(--smithflix-charcoal) 70%, transparent);
+}
+.redownload-option.danger {
+  color: var(--status-nospace);
+}
+.redownload-option[disabled] {
+  opacity: 0.5;
+}
+.redownload-cancel {
+  margin-top: 4px;
+  width: 100%;
+  padding: 10px;
+  background: none;
+  border: none;
+  color: var(--text-dim);
+  font-size: 13.5px;
+}

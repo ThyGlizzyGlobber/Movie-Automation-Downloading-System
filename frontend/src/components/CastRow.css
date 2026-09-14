@@ -1,0 +1,34 @@
+.cast-section {
+  --cast-w: clamp(90px, 10vw, 150px);
+  margin-top: 32px;
+}
+.cast-section .cast-card {
+  flex: 0 0 var(--cast-w);
+}
+.cast-card img {
+  width: var(--cast-w);
+  height: var(--cast-w);
+  border-radius: 50%;
+  object-fit: cover;
+  background: var(--bg-card);
+  display: block;
+}
+.cast-card:hover .cast-name {
+  color: var(--accent);
+}
+.cast-card .cast-name {
+  font-size: 12.5px;
+  font-weight: 600;
+  margin-top: 6px;
+  text-align: center;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.cast-card .cast-character {
+  font-size: 11.5px;
+  color: var(--text-dim);
+  text-align: center;
+  margin-top: 1px;
+}

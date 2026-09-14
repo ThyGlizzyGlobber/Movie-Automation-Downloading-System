@@ -1,4 +1,4 @@
-import type { Genre, ProductionCompany, TmdbListItem } from './movies'
+import type { CastMember, CrewMember, Genre, ProductionCompany, TmdbListItem } from './movies'
 
 export interface Network {
   id: number
@@ -15,13 +15,25 @@ export interface SeasonSummary {
   poster_path: string | null
 }
 
+export interface ContentRatingEntry {
+  iso_3166_1: string
+  rating: string
+}
+
 export interface TvDetail extends Omit<TmdbListItem, 'genre_ids'> {
   status: string // "Returning Series" | "Ended" | "Canceled" | ...
+  original_language?: string
   genres: Genre[]
   networks: Network[]
   production_companies: ProductionCompany[]
   seasons: SeasonSummary[]
-  credits?: { cast?: import('./movies').CastMember[] }
+  credits?: { cast?: CastMember[]; crew?: CrewMember[] }
+  content_ratings?: { results?: ContentRatingEntry[] }
+  recommendations?: { results?: TmdbListItem[] }
   // Annotated server-side — see api.py's get_tv_detail.
   is_coming_soon: boolean
+  // Part K3 — TV parity with the movie route. A show's organized history
+  // is episode/pack rows, never a single fixed media_type the way a
+  // movie's always is.
+  on_plex_tracked: boolean
 }

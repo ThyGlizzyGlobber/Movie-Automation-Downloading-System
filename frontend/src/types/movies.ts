@@ -47,14 +47,26 @@ export interface WatchProviderEntry {
   logo_path: string
 }
 
+export interface ReleaseDatesResult {
+  iso_3166_1: string
+  release_dates: { certification: string }[]
+}
+
 export interface MovieDetail extends Omit<TmdbListItem, 'genre_ids'> {
   runtime: number | null
+  original_language?: string
   genres: Genre[]
   production_companies: ProductionCompany[]
   'watch/providers'?: { results?: { US?: { flatrate?: WatchProviderEntry[] } } }
-  credits?: { cast?: CastMember[] }
+  credits?: { cast?: CastMember[]; crew?: CrewMember[] }
+  release_dates?: { results?: ReleaseDatesResult[] }
+  recommendations?: { results?: TmdbListItem[] }
   // Annotated server-side — see api.py's get_movie_detail.
   is_coming_soon: boolean
+  // Part K2 — true only when this app has a confirmed record of having
+  // organized a file for this title itself; drives whether "Overwrite
+  // existing" is offered in the redownload confirmation modal.
+  on_plex_tracked: boolean
 }
 
 export interface CastMember {
@@ -62,6 +74,12 @@ export interface CastMember {
   name: string
   character?: string
   profile_path: string | null
+}
+
+export interface CrewMember {
+  id: number
+  name: string
+  job: string
 }
 
 export interface MovieTrailer {

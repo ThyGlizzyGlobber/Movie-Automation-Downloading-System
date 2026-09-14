@@ -1,0 +1,536 @@
+/* Shared by MovieDetailPage and ShowDetailPage — the hero banner, the
+   two-column panel grid below it, and every card/button inside those
+   panels. Ported from the old app's detail-page CSS, restyled to this
+   migration's one-prop-per-line convention; values/behavior unchanged. */
+
+.detail-hero {
+  position: relative;
+  width: calc(100% + 28px);
+  overflow: hidden;
+  margin: calc(-1 * (var(--topbar-h, 64px) + 14px)) -14px 40px;
+  padding-top: calc(var(--topbar-h, 64px) + 14px);
+  min-height: clamp(450px, 38vw, 720px);
+  background: #000;
+}
+.detail-hero-backdrop {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  z-index: 0;
+  mask-image: linear-gradient(
+    90deg,
+    transparent 0,
+    rgba(0, 0, 0, 0.35) calc(0.4 * clamp(450px, 38vw, 720px)),
+    black clamp(450px, 38vw, 720px)
+  );
+  -webkit-mask-image: linear-gradient(
+    90deg,
+    transparent 0,
+    rgba(0, 0, 0, 0.35) calc(0.4 * clamp(450px, 38vw, 720px)),
+    black clamp(450px, 38vw, 720px)
+  );
+}
+.detail-hero-fade {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  background-image:
+    linear-gradient(to bottom, rgba(0, 0, 0, 0.5) 0%, rgba(0, 0, 0, 0.325) 20%, rgba(0, 0, 0, 0) 50%),
+    linear-gradient(to top, rgba(0, 0, 0, 1) 0%, rgba(0, 0, 0, 0.65) 20%, rgba(0, 0, 0, 0) 50%);
+}
+.detail-hero-content {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  gap: 24px;
+  align-items: flex-end;
+  flex-wrap: wrap;
+  min-height: clamp(450px, 38vw, 720px);
+  padding: 24px var(--edge-inset) 32px;
+}
+.detail-action-col {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  /* Shared with .detail-action-col .add-btn below, so the big action
+     pill always matches the poster's own width at every breakpoint. */
+  --detail-poster-w: 130px;
+}
+.detail-icon-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.detail-provider-icon {
+  width: 48px;
+  height: 48px;
+  border-radius: 22%;
+  overflow: hidden;
+  flex: 0 0 auto;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+}
+.detail-provider-icon img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.detail-poster-wrap {
+  position: relative;
+  border-radius: 10px;
+  overflow: hidden;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.55);
+}
+.detail-poster {
+  width: var(--detail-poster-w);
+  height: 195px;
+  object-fit: cover;
+  background: var(--bg-card);
+  display: block;
+}
+.detail-info {
+  flex: 1 1 320px;
+  min-width: 260px;
+  padding-bottom: 2px;
+}
+.detail-info h1 {
+  font-size: 34px;
+  font-weight: 800;
+  margin: 0 0 10px;
+  line-height: 1.15;
+}
+.detail-info h1 .hero-year {
+  font-weight: 400;
+  color: var(--text-dim);
+}
+/* Dim-toned text sitting directly on the hero image gets a shadow that
+   doesn't depend on the backdrop's own tone underneath it. */
+.detail-meta,
+.cert-badge,
+.detail-overview,
+.detail-cast-line,
+.detail-overview-more-btn {
+  text-shadow: 0 1px 4px color-mix(in srgb, var(--bg) 90%, transparent);
+}
+.detail-meta {
+  color: var(--text-dim);
+  font-size: 14px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 14px;
+}
+.cert-badge {
+  font-size: 11px;
+  font-weight: 700;
+  padding: 1px 6px;
+  border: 1px solid var(--text-dim);
+  border-radius: 4px;
+  color: var(--text-dim);
+  line-height: 1.4;
+}
+.detail-overview {
+  margin-top: 8px;
+  font-size: 17px;
+  line-height: 1.5;
+  color: var(--text);
+  max-width: 640px;
+}
+.detail-overview.clamped {
+  display: -webkit-box;
+  -webkit-line-clamp: 4;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.detail-overview-more-btn {
+  display: block;
+  margin: 6px 0 0;
+  padding: 0;
+  background: none;
+  border: none;
+  color: var(--accent);
+  font-weight: 600;
+  font-size: 13px;
+  cursor: pointer;
+}
+.detail-overview-more-btn:hover {
+  text-decoration: underline;
+}
+/* Prime-style "Cast: Name, Name, Name" line — the first handful of names
+   as plain person links. Stacked under the overview by default (mobile);
+   .detail-overview-row switches to side-by-side once there's room. */
+.detail-cast-line {
+  margin-top: 12px;
+  font-size: 15px;
+  color: var(--text-dim);
+  max-width: 260px;
+}
+.detail-cast-line a {
+  color: var(--text);
+}
+.detail-cast-line a:hover {
+  text-decoration: underline;
+}
+@media (min-width: 860px) {
+  .detail-overview-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 32px;
+    margin-top: 8px;
+  }
+  .detail-overview-row .detail-overview-col {
+    flex: 1 1 auto;
+  }
+  .detail-overview-row .detail-overview {
+    margin-top: 0;
+  }
+  .detail-overview-row .detail-cast-line {
+    flex: 0 0 220px;
+    margin-top: 0;
+    margin-left: auto;
+  }
+}
+
+/* Lower half of the page — a Related row (plain MediaRow, no new CSS
+   needed) followed by a two-column grid of self-contained cards. Unlike
+   a carousel row, this grid mirrors --row-inset on the right too, so its
+   cards line up with the hero column on both sides. */
+.detail-panels-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  margin-top: 28px;
+  padding: 0 calc(var(--edge-inset) - 14px);
+}
+@media (min-width: 860px) {
+  .detail-panels-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    align-items: start;
+    gap: 20px;
+  }
+}
+.detail-panels-col {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.detail-panel {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 18px 18px 20px;
+}
+.detail-panel > :first-child {
+  margin-top: 0;
+}
+
+.detail-panel-title {
+  font-size: 20px;
+  font-weight: 800;
+  margin: 0 0 10px;
+}
+.detail-panel-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+.detail-panel-tag {
+  font-size: 12px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+}
+.detail-panel-overview-text {
+  font-size: 16px;
+  line-height: 1.5;
+  color: var(--text);
+}
+.detail-panel-overview-text.clamped {
+  display: -webkit-box;
+  -webkit-line-clamp: 4;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.detail-panel-more-btn {
+  margin: 6px 0 0;
+  padding: 0;
+  background: none;
+  border: none;
+  color: var(--accent);
+  font-weight: 600;
+  font-size: 13px;
+  cursor: pointer;
+}
+.detail-panel-more-btn:hover {
+  text-decoration: underline;
+}
+
+.creators-row {
+  margin-top: 12px;
+  font-size: 14px;
+}
+.creators-row:first-of-type {
+  margin-top: 0;
+}
+.creators-row .label {
+  color: var(--text-dim);
+  font-size: 12px;
+  margin-bottom: 2px;
+}
+.creators-row .value a {
+  color: var(--text);
+}
+.creators-row .value a:hover {
+  text-decoration: underline;
+}
+
+.details-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.details-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 14px;
+}
+.details-row .label {
+  color: var(--text-dim);
+}
+.details-row .value {
+  color: var(--text);
+  text-align: right;
+}
+
+.detail-footer {
+  margin-top: 56px;
+  padding: 32px 0 40px;
+  text-align: center;
+}
+.detail-footer .brand-wordmark {
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: 28px;
+}
+.detail-footer .brand-word-smith {
+  color: var(--text);
+}
+.detail-footer .brand-word-flix {
+  color: var(--accent);
+}
+
+/* Add/subscribe-state indicator (tick/cross circle next to the score
+   ring) — same 48px size, same hover treatment as the header's own icon
+   buttons. */
+.detail-state-icon {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: color-mix(in srgb, var(--bg-card) 70%, transparent);
+  border: 1px solid var(--border);
+  color: var(--text);
+  font-size: 22px;
+}
+.detail-state-icon:hover {
+  background: #fff;
+  color: var(--smithflix-charcoal);
+  border-radius: 50%;
+}
+.detail-state-icon[disabled] {
+  opacity: 0.5;
+  pointer-events: none;
+}
+
+.add-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  white-space: nowrap;
+  padding: 12px 22px;
+  font-size: 15px;
+  font-weight: 700;
+  background: var(--accent);
+  color: var(--accent-text);
+  border: none;
+  border-radius: 999px;
+}
+.add-btn:active {
+  opacity: 0.85;
+}
+.add-btn[disabled] {
+  background: var(--bg-card);
+  color: var(--text-dim);
+}
+.add-confirm {
+  margin-top: 14px;
+  padding: 12px 14px;
+  background: var(--bg-card);
+  border-radius: 10px;
+  font-size: 14px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+/* Big pill sized to match the poster above it, not its own text/padding
+   — overrides .add-btn's shared nowrap/inline-flex since a fixed width
+   narrower than "+ Add to Plex" needs to wrap onto a second line. */
+.detail-action-col .add-btn {
+  width: var(--detail-poster-w);
+  min-height: 48px;
+  height: auto;
+  padding: 12px 14px;
+  font-size: 16px;
+  font-weight: 700;
+  white-space: normal;
+  text-align: center;
+  justify-content: center;
+  background: #fff;
+  color: var(--smithflix-charcoal);
+  border: none;
+}
+.section-heading {
+  font-size: 15px;
+  font-weight: 700;
+  margin: 20px 0 10px;
+}
+
+@media (min-width: 860px) {
+  .detail-action-col {
+    --detail-poster-w: 200px;
+  }
+  .detail-poster {
+    height: 300px;
+  }
+  .detail-info h1 {
+    font-size: 40px;
+  }
+  .add-btn {
+    padding: 14px 28px;
+    font-size: 16px;
+  }
+}
+
+.unsubscribe-link {
+  display: block;
+  width: 100%;
+  text-align: center;
+  margin-top: 10px;
+  background: none;
+  border: none;
+  color: var(--text-dim);
+  font-size: 13.5px;
+  text-decoration: underline;
+}
+.bulk-btn {
+  width: 100%;
+  margin-top: 10px;
+  padding: 13px;
+  font-size: 15px;
+  font-weight: 600;
+  background: var(--bg-card);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+.bulk-btn.primary {
+  background: var(--accent);
+  color: var(--accent-text);
+  border-color: var(--accent);
+}
+.bulk-btn:active {
+  opacity: 0.85;
+}
+.bulk-btn[disabled] {
+  color: var(--text-dim);
+  opacity: 0.6;
+}
+.bulk-btn:not([disabled]):hover {
+  background: #fff;
+  color: var(--smithflix-charcoal);
+  border-color: #fff;
+}
+.season-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 8px;
+}
+.season-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 12px;
+  background: var(--bg-card);
+  border-radius: 10px;
+  font-size: 14px;
+}
+.season-row-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.season-btn {
+  font-size: 12.5px;
+  font-weight: 600;
+  padding: 7px 14px;
+  border-radius: 999px;
+  background: none;
+  color: var(--accent);
+  border: 1px solid var(--accent);
+}
+.season-btn:active {
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+}
+.season-btn[disabled] {
+  color: var(--text-dim);
+  border-color: var(--border);
+}
+.season-btn:not([disabled]):hover {
+  background: #fff;
+  color: var(--smithflix-charcoal);
+  border-color: #fff;
+}
+
+/* Per-request resolution picker (Part J4) — sits inline with the bulk-
+   download/quality-shortcut buttons it applies to. */
+.resolution-select {
+  font-size: 12.5px;
+  font-weight: 600;
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: var(--bg-elevated);
+  color: var(--text);
+  border: 1px solid var(--border);
+}
+
+/* Small "Redownload" tag — mirrors StatusPill's own pill language,
+   distinct accent-secondary color so it reads as its own signal next to
+   a status pill rather than another status. */
+.redownload-tag {
+  display: inline-flex;
+  align-items: center;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--accent-secondary) 25%, transparent);
+  color: var(--accent-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}

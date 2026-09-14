@@ -11,6 +11,13 @@ const ChromeContext = createContext<{ hasHero: boolean; setHasHero: (v: boolean)
 
 export function ChromeProvider({ children }: { children: ReactNode }) {
   const [hasHero, setHasHero] = useState(false)
+  // Drives Topbar.css's body.has-hero rules (transparent header over a
+  // hero backdrop until scrolled) — the context alone doesn't touch the
+  // DOM on its own.
+  useEffect(() => {
+    document.body.classList.toggle('has-hero', hasHero)
+    return () => document.body.classList.remove('has-hero')
+  }, [hasHero])
   return <ChromeContext.Provider value={{ hasHero, setHasHero }}>{children}</ChromeContext.Provider>
 }
 
