@@ -1447,16 +1447,24 @@ class SetupTmdbRequest(BaseModel):
     api_key: str = Field(min_length=1)
 
 
-@app.put("/api/setup/tmdb", dependencies=[Depends(require_setup_token)])
-def setup_tmdb(body: SetupTmdbRequest, store: RequestStore = Depends(get_store)) -> dict:
+def _update_tmdb_key(body: SetupTmdbRequest, store: RequestStore) -> dict:
     """Saves, but doesn't immediately apply — get_tmdb's own docstring in
     this module explains why: it's resolved once at startup, not
-    per-request. `restart_required: true` is what the wizard's UI uses
-    to tell the admin so, rather than implying this is live right away."""
+    per-request. `restart_required: true` is what the caller's UI uses to
+    tell the admin so, rather than implying this is live right away.
+    Shared by the one-time setup route and Settings' ongoing Connections
+    panel below — identical business rule, only the auth gate differs
+    (setup token pre-bootstrap, admin session after), so each stays its
+    own thin route rather than duplicating this logic twice."""
     if config.tmdb_api_key_source(store) == "env":
         raise HTTPException(status_code=409, detail="TMDB API key is already configured via environment variable")
     store.update_settings({"tmdb_api_key": body.api_key})
     return {"tmdb_configured": True, "tmdb_source": "db", "restart_required": True}
+
+
+@app.put("/api/setup/tmdb", dependencies=[Depends(require_setup_token)])
+def setup_tmdb(body: SetupTmdbRequest, store: RequestStore = Depends(get_store)) -> dict:
+    return _update_tmdb_key(body, store)
 
 
 class SetupQbtRequest(BaseModel):
@@ -1466,8 +1474,7 @@ class SetupQbtRequest(BaseModel):
     password: str = ""
 
 
-@app.post("/api/setup/qbittorrent/test", dependencies=[Depends(require_setup_token)])
-def setup_qbt_test(body: SetupQbtRequest) -> dict:
+def _test_qbt_connection(body: SetupQbtRequest) -> dict:
     try:
         client = QBTClient(body.host, body.port, body.username, body.password)
     except Exception as exc:
@@ -1475,9 +1482,14 @@ def setup_qbt_test(body: SetupQbtRequest) -> dict:
     return {"reachable": client.ping()}
 
 
-@app.put("/api/setup/qbittorrent", dependencies=[Depends(require_setup_token)])
-def setup_qbt(body: SetupQbtRequest, store: RequestStore = Depends(get_store)) -> dict:
-    """Same "saved, not immediately applied" note as setup_tmdb above."""
+@app.post("/api/setup/qbittorrent/test", dependencies=[Depends(require_setup_token)])
+def setup_qbt_test(body: SetupQbtRequest) -> dict:
+    return _test_qbt_connection(body)
+
+
+def _update_qbt_connection(body: SetupQbtRequest, store: RequestStore) -> dict:
+    """Same "saved, not immediately applied" note as _update_tmdb_key
+    above, and the same shared-helper reasoning."""
     if config.qbt_config_source(store) == "env":
         raise HTTPException(
             status_code=409, detail="qBittorrent connection is already configured via environment variables"
@@ -1486,6 +1498,32 @@ def setup_qbt(body: SetupQbtRequest, store: RequestStore = Depends(get_store)) -
         {"qbt_host": body.host, "qbt_port": body.port, "qbt_username": body.username, "qbt_password": body.password}
     )
     return {"qbt_configured": True, "qbt_source": "db", "restart_required": True}
+
+
+@app.put("/api/setup/qbittorrent", dependencies=[Depends(require_setup_token)])
+def setup_qbt(body: SetupQbtRequest, store: RequestStore = Depends(get_store)) -> dict:
+    return _update_qbt_connection(body, store)
+
+
+# -- Connections (frontend migration Part I) — Settings' ongoing,
+#    always-admin-gated equivalent of the setup routes just above (which
+#    410 permanently once setup completes, Part G1) — reuses their exact
+#    same business-rule helpers, only the auth gate differs. --
+
+
+@admin_router.put("/api/settings/tmdb")
+def update_tmdb_settings(body: SetupTmdbRequest, store: RequestStore = Depends(get_store)) -> dict:
+    return _update_tmdb_key(body, store)
+
+
+@admin_router.post("/api/settings/qbittorrent/test")
+def test_qbt_settings(body: SetupQbtRequest) -> dict:
+    return _test_qbt_connection(body)
+
+
+@admin_router.put("/api/settings/qbittorrent")
+def update_qbt_settings(body: SetupQbtRequest, store: RequestStore = Depends(get_store)) -> dict:
+    return _update_qbt_connection(body, store)
 
 
 @app.get("/api/health")
@@ -1553,6 +1591,37 @@ def admin_jobs(status: str | None = None, store: RequestStore = Depends(get_stor
     rows = [r for s in statuses for r in store.list_requests(status=s)]
     rows.sort(key=lambda r: r.id, reverse=True)
     return [RequestOut.from_row(r) for r in rows]
+
+
+# -- Frontend migration Part D: Settings' Activity Dashboard — every
+#    request (not just the failure-shaped subset /api/admin/jobs above
+#    covers), newest first, with who-asked-for-it attribution and simple
+#    per-user aggregate counts. --
+
+
+class RequesterStat(BaseModel):
+    plex_user_id: str
+    username: str | None
+    total_requests: int
+    requests_this_month: int
+
+
+class ActivityOut(BaseModel):
+    requests: list[RequestOut]
+    total: int
+    user_stats: list[RequesterStat]
+
+
+@admin_router.get("/api/admin/activity")
+def admin_activity(limit: int = 50, offset: int = 0, store: RequestStore = Depends(get_store)) -> ActivityOut:
+    limit = min(max(limit, 1), 200)
+    offset = max(offset, 0)
+    rows = store.list_requests_page(limit=limit, offset=offset)
+    return ActivityOut(
+        requests=[RequestOut.from_row(r) for r in rows],
+        total=store.count_requests(),
+        user_stats=[RequesterStat(**s) for s in store.get_requester_stats()],
+    )
 
 
 @admin_router.post("/api/admin/deploy")

@@ -1443,6 +1443,179 @@ def test_admin_jobs_filters_to_one_status(client_and_deps):
 
 
 # ---------------------------------------------------------------------------
+# /api/admin/activity — frontend migration Part D, Settings' Activity
+# Dashboard: every request (not just failure-shaped ones), attributed,
+# paginated, plus simple per-user aggregate counts.
+# ---------------------------------------------------------------------------
+
+
+def test_admin_activity_requires_admin(non_admin_client):
+    client, _, _, _, _, _ = non_admin_client
+
+    response = client.get("/api/admin/activity")
+
+    assert response.status_code == 403
+
+
+def test_admin_activity_returns_every_request_newest_first(client_and_deps):
+    client, store, _, _, _, _ = client_and_deps
+    first = store.create_request(tmdb_id=1, title="First", release_year=2020, query=None)
+    store.update_status(first.id, "complete")
+    second = store.create_request(tmdb_id=2, title="Second", release_year=2021, query=None)
+    store.update_status(second.id, "failed", error_message="boom")
+
+    response = client.get("/api/admin/activity")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["total"] == 2
+    assert [r["id"] for r in body["requests"]] == [second.id, first.id]
+
+
+def test_admin_activity_paginates_with_limit_and_offset(client_and_deps):
+    client, store, _, _, _, _ = client_and_deps
+    ids = []
+    for i in range(5):
+        row = store.create_request(tmdb_id=i, title=f"Movie {i}", release_year=2020, query=None)
+        ids.append(row.id)
+
+    response = client.get("/api/admin/activity", params={"limit": 2, "offset": 1})
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["total"] == 5
+    assert [r["id"] for r in body["requests"]] == list(reversed(ids))[1:3]
+
+
+def test_admin_activity_aggregates_per_user_stats_from_most_recent_username(client_and_deps):
+    """requested_by_username can change between one request and the next
+    (it's denormalized per-row, same as title) — the aggregate row must
+    reflect that user's *most recent* display name, not an arbitrary one."""
+    client, store, _, _, _, _ = client_and_deps
+    store.create_request(
+        tmdb_id=1, title="A", release_year=2020, query=None,
+        requested_by_plex_id="user-1", requested_by_username="OldName",
+    )
+    store.create_request(
+        tmdb_id=2, title="B", release_year=2020, query=None,
+        requested_by_plex_id="user-1", requested_by_username="NewName",
+    )
+    store.create_request(
+        tmdb_id=3, title="C", release_year=2020, query=None,
+        requested_by_plex_id="user-2", requested_by_username="OtherUser",
+    )
+    # Worker-created rows (no requester) must not show up as a phantom user.
+    store.create_episode_request(tmdb_id=9, show_id=1, title="Show", season_number=1, episode_number=1)
+
+    response = client.get("/api/admin/activity")
+
+    assert response.status_code == 200
+    stats = {s["plex_user_id"]: s for s in response.json()["user_stats"]}
+    assert set(stats) == {"user-1", "user-2"}
+    assert stats["user-1"]["username"] == "NewName"
+    assert stats["user-1"]["total_requests"] == 2
+    assert stats["user-1"]["requests_this_month"] == 2
+    assert stats["user-2"]["username"] == "OtherUser"
+    assert stats["user-2"]["total_requests"] == 1
+
+
+# ---------------------------------------------------------------------------
+# Settings' Connections panel (frontend migration Part I) — ongoing,
+# admin-gated equivalent of the setup wizard's TMDB/qBittorrent steps.
+# ---------------------------------------------------------------------------
+
+
+def test_update_tmdb_settings_requires_admin(non_admin_client, monkeypatch):
+    client, _, _, _, _, _ = non_admin_client
+    monkeypatch.setattr(config, "TMDB_API_KEY", None)
+
+    response = client.put("/api/settings/tmdb", json={"api_key": "new-key"})
+
+    assert response.status_code == 403
+
+
+def test_update_tmdb_settings_persists_when_not_env_configured(client_and_deps, monkeypatch):
+    client, store, _, _, _, _ = client_and_deps
+    monkeypatch.setattr(config, "TMDB_API_KEY", None)
+
+    response = client.put("/api/settings/tmdb", json={"api_key": "from-settings-ui"})
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body == {"tmdb_configured": True, "tmdb_source": "db", "restart_required": True}
+    assert store.get_settings()["tmdb_api_key"] == "from-settings-ui"
+
+
+def test_update_tmdb_settings_refuses_to_override_an_env_configured_key(client_and_deps, monkeypatch):
+    client, _, _, _, _, _ = client_and_deps
+    monkeypatch.setattr(config, "TMDB_API_KEY", "from-env")
+
+    response = client.put("/api/settings/tmdb", json={"api_key": "from-ui"})
+
+    assert response.status_code == 409
+
+
+def test_qbt_settings_test_connection_requires_admin(non_admin_client):
+    client, _, _, _, _, _ = non_admin_client
+
+    response = client.post(
+        "/api/settings/qbittorrent/test", json={"host": "1.2.3.4", "port": 8080, "username": "", "password": ""}
+    )
+
+    assert response.status_code == 403
+
+
+def test_qbt_settings_test_connection_reports_reachability(client_and_deps, monkeypatch):
+    client, _, _, _, _, _ = client_and_deps
+
+    class FakePingClient:
+        def __init__(self, host, port, username, password):
+            pass
+
+        def ping(self):
+            return True
+
+    monkeypatch.setattr(api, "QBTClient", FakePingClient)
+
+    response = client.post(
+        "/api/settings/qbittorrent/test", json={"host": "1.2.3.4", "port": 8080, "username": "", "password": ""}
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {"reachable": True}
+
+
+def test_update_qbt_settings_persists_when_not_env_configured(client_and_deps, monkeypatch):
+    client, store, _, _, _, _ = client_and_deps
+    monkeypatch.setattr(api.config, "_QBIT_HOST_ENV", None)
+    monkeypatch.setattr(api.config, "_QBIT_PORT_ENV", None)
+    monkeypatch.setattr(api.config, "_QBIT_USERNAME_ENV", None)
+    monkeypatch.setattr(api.config, "_QBIT_PASSWORD_ENV", None)
+
+    response = client.put(
+        "/api/settings/qbittorrent", json={"host": "10.0.0.5", "port": 9090, "username": "me", "password": "pw"}
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body == {"qbt_configured": True, "qbt_source": "db", "restart_required": True}
+    settings = store.get_settings()
+    assert settings["qbt_host"] == "10.0.0.5"
+    assert settings["qbt_port"] == 9090
+
+
+def test_update_qbt_settings_refuses_to_override_env_configuration(client_and_deps, monkeypatch):
+    client, _, _, _, _, _ = client_and_deps
+    monkeypatch.setattr(api.config, "_QBIT_HOST_ENV", "10.0.0.1")
+
+    response = client.put(
+        "/api/settings/qbittorrent", json={"host": "10.0.0.5", "port": 9090, "username": "", "password": ""}
+    )
+
+    assert response.status_code == 409
+
+
+# ---------------------------------------------------------------------------
 # /api/shows — Stage 12 standing subscriptions
 # ---------------------------------------------------------------------------
 

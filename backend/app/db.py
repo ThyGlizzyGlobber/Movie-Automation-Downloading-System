@@ -608,6 +608,60 @@ class RequestStore:
             rows = self._conn.execute("SELECT * FROM requests ORDER BY id DESC").fetchall()
         return [RequestRow._from_row(r) for r in rows]
 
+    def list_requests_page(self, limit: int, offset: int = 0) -> list[RequestRow]:
+        """Frontend migration Part D — the Activity Dashboard's own paged
+        view of the full requests history (every request, not just a
+        status subset like `list_requests(status=...)` above)."""
+        rows = self._conn.execute(
+            "SELECT * FROM requests ORDER BY id DESC LIMIT ? OFFSET ?", (limit, offset)
+        ).fetchall()
+        return [RequestRow._from_row(r) for r in rows]
+
+    def count_requests(self) -> int:
+        return self._conn.execute("SELECT COUNT(*) FROM requests").fetchone()[0]
+
+    def get_requester_stats(self) -> list[dict]:
+        """Per-user aggregate counts for the Activity Dashboard — total
+        requests and requests made this calendar month, grouped by
+        whoever made them. Rows with no requester (worker-created, e.g. a
+        subscription's automatic catch-up) are excluded — there's no
+        person to attribute those to. `username` is read from that
+        person's own *most recent* row (a correlated subquery, not a bare
+        GROUP BY column — SQLite's bare-column value in a GROUP BY isn't
+        guaranteed to be any particular row's, and a display name can
+        genuinely change between one request and the next since it's
+        denormalized per-row, same as title/release_year)."""
+        month_start = (
+            datetime.now(timezone.utc).replace(day=1, hour=0, minute=0, second=0, microsecond=0).isoformat()
+        )
+        rows = self._conn.execute(
+            """
+            SELECT
+                r1.requested_by_plex_id AS plex_user_id,
+                (
+                    SELECT r2.requested_by_username FROM requests r2
+                    WHERE r2.requested_by_plex_id = r1.requested_by_plex_id
+                    ORDER BY r2.id DESC LIMIT 1
+                ) AS username,
+                COUNT(*) AS total_requests,
+                SUM(CASE WHEN r1.created_at >= ? THEN 1 ELSE 0 END) AS requests_this_month
+            FROM requests r1
+            WHERE r1.requested_by_plex_id IS NOT NULL
+            GROUP BY r1.requested_by_plex_id
+            ORDER BY total_requests DESC
+            """,
+            (month_start,),
+        ).fetchall()
+        return [
+            {
+                "plex_user_id": r["plex_user_id"],
+                "username": r["username"],
+                "total_requests": r["total_requests"],
+                "requests_this_month": r["requests_this_month"],
+            }
+            for r in rows
+        ]
+
     def update_status(
         self,
         request_id: int,
