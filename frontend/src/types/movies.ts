@@ -19,6 +19,9 @@ export interface TmdbListItem {
   first_air_date?: string // tv
   vote_average?: number
   genre_ids?: number[]
+  // Home's hero carousel sorts trending movies+TV into one mixed list by
+  // this — TMDB includes it on every list/trending/discover item.
+  popularity?: number
   // Annotated server-side — see api.py's _annotate_on_plex.
   on_plex: boolean
 }

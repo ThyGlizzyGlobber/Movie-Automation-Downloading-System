@@ -1,18 +1,22 @@
+import { useMemo } from 'react'
 import { useQueries, useQuery } from '@tanstack/react-query'
 import { getDiscoverByGenre, getDiscoverByProvider, getDiscoverPopular, getDiscoverTrending, getComingSoon } from '../../api/movies'
+import HeroCarousel from '../../components/HeroCarousel'
 import MediaRow from '../../components/MediaRow'
 import ProviderChips from '../../components/ProviderChips'
 import LoadingState from '../../components/LoadingState'
 import ErrorState from '../../components/ErrorState'
 import { usePageTitle, useSetHasHero } from '../../lib/chrome'
 import { ROW_PROVIDERS } from '../../lib/providers'
+import { tagMediaType } from '../../lib/homeHero'
+
+const HERO_SLIDE_COUNT = 5
 
 // Curated, row-based — no Popular/Trending/Coming Soon tabs; each row's
 // title is the way to reach that one category's own full list
-// (CategoryPage), Prime-Video-style. The hero carousel this page had in
-// the old app is deliberately not ported yet — it's shared with Home/TV
-// and lands together in its own dedicated later step (highest regression
-// risk, per the migration plan), not duplicated three times piecemeal.
+// (CategoryPage), Prime-Video-style. The hero carousel is the same
+// HeroCarousel Home uses, movie-only here (see HomePage.tsx) — one
+// component, not duplicated three times piecemeal.
 const MOVIE_GENRES = [
   { id: 28, label: 'Action' },
   { id: 35, label: 'Comedies' },
@@ -24,7 +28,7 @@ const MOVIE_GENRES = [
 
 export default function MoviesLandingPage() {
   usePageTitle('Movies')
-  useSetHasHero(false)
+  useSetHasHero(true)
 
   const trending = useQuery({ queryKey: ['movies', 'trending'], queryFn: () => getDiscoverTrending(1) })
   const popular = useQuery({ queryKey: ['movies', 'popular'], queryFn: () => getDiscoverPopular(1) })
@@ -42,12 +46,18 @@ export default function MoviesLandingPage() {
     })),
   })
 
+  const heroItems = useMemo(
+    () => tagMediaType(trending.data?.results ?? [], 'movie').filter((it) => it.backdrop_path).slice(0, HERO_SLIDE_COUNT),
+    [trending.data],
+  )
+
   if (trending.isLoading || popular.isLoading || comingSoon.isLoading) return <LoadingState />
   const firstError = trending.error || popular.error || comingSoon.error
   if (firstError) return <ErrorState message={firstError instanceof Error ? firstError.message : undefined} />
 
   return (
     <>
+      <HeroCarousel items={heroItems} />
       <MediaRow title="Trending Movies" items={trending.data?.results ?? []} mediaType="movie" expandHref="/movies/trending" />
       <MediaRow title="Popular" items={popular.data?.results ?? []} mediaType="movie" expandHref="/movies/popular" />
       <MediaRow title="New Releases" items={comingSoon.data?.results ?? []} mediaType="movie" expandHref="/movies/coming-soon" />

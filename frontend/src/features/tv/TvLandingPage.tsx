@@ -1,21 +1,26 @@
+import { useMemo } from 'react'
 import { useQueries, useQuery } from '@tanstack/react-query'
 import { getTvDiscoverByGenre, getTvDiscoverByProvider, getTvDiscoverPopular, getTvDiscoverTrending, getTvComingSoon, listShows } from '../../api/tv'
+import HeroCarousel from '../../components/HeroCarousel'
 import MediaRow from '../../components/MediaRow'
 import ProviderChips from '../../components/ProviderChips'
 import LoadingState from '../../components/LoadingState'
 import ErrorState from '../../components/ErrorState'
 import { usePageTitle, useSetHasHero } from '../../lib/chrome'
 import { ROW_PROVIDERS } from '../../lib/providers'
+import { tagMediaType } from '../../lib/homeHero'
 
-// Same curated, row-based treatment as MoviesLandingPage, TV-only.
+const HERO_SLIDE_COUNT = 5
+
+// Same curated, row-based treatment as MoviesLandingPage, TV-only —
+// including the same HeroCarousel Home uses (see HomePage.tsx).
 //
 // The old app's "New In Watching" row (subscribed shows sorted by most
 // recently *aired* episode) is a deliberate, documented gap here — it
 // needs an extra per-show TMDB enrichment fetch (last_episode_to_air)
 // that only paid for itself on Home/TV pages together. "Subscribed
 // Shows" (sorted by most recently *subscribed*, below) needs no such
-// fetch — ShowOut already carries poster_path — so it's the one ported
-// for now; the richer row can follow whenever Home itself is built.
+// fetch — ShowOut already carries poster_path — so it's the one ported.
 const TV_GENRES = [
   { id: 35, label: 'Comedies' },
   { id: 18, label: 'Dramas' },
@@ -28,7 +33,7 @@ const TV_GENRES = [
 
 export default function TvLandingPage() {
   usePageTitle('TV Shows')
-  useSetHasHero(false)
+  useSetHasHero(true)
 
   const shows = useQuery({ queryKey: ['shows'], queryFn: () => listShows() })
   const trending = useQuery({ queryKey: ['tv', 'trending'], queryFn: () => getTvDiscoverTrending(1) })
@@ -47,6 +52,11 @@ export default function TvLandingPage() {
     })),
   })
 
+  const heroItems = useMemo(
+    () => tagMediaType(trending.data?.results ?? [], 'tv').filter((it) => it.backdrop_path).slice(0, HERO_SLIDE_COUNT),
+    [trending.data],
+  )
+
   if (trending.isLoading || popular.isLoading || comingSoon.isLoading) return <LoadingState />
   const firstError = trending.error || popular.error || comingSoon.error
   if (firstError) return <ErrorState message={firstError instanceof Error ? firstError.message : undefined} />
@@ -60,6 +70,7 @@ export default function TvLandingPage() {
 
   return (
     <>
+      <HeroCarousel items={heroItems} />
       <MediaRow title="Subscribed Shows" items={subscribedShows} mediaType="tv" expandHref="/tv/watching" />
       <MediaRow title="Trending TV Shows" items={trending.data?.results ?? []} mediaType="tv" expandHref="/tv/trending" />
       <MediaRow title="Popular" items={popular.data?.results ?? []} mediaType="tv" expandHref="/tv/popular" />

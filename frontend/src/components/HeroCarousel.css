@@ -1,0 +1,271 @@
+/* Prime-Video-style hero carousel — shared by Home, Movies, and TV
+   (movie-only/TV-only trending items on the latter two). Same negative-
+   margin bleed-under-the-fixed-topbar trick as the detail page's own
+   hero, but its own class since the layout (poster+meta vs. this one's
+   title+actions) differs. Only the first couple of slides ever carry a
+   background video — every other slide is a plain backdrop image. */
+.home-hero {
+  position: relative;
+  width: calc(100% + 28px);
+  margin: calc(-1 * (var(--topbar-h, 64px) + 14px)) -14px 18px;
+  min-height: clamp(450px, 38vw, 720px);
+  overflow: hidden;
+  background: #000;
+}
+.home-hero-slide {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition: opacity 0.6s ease;
+}
+.home-hero-slide.active {
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+  z-index: 1;
+}
+.home-hero-media {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  background: #000;
+  z-index: 0;
+}
+.home-hero-media img {
+  position: absolute;
+  top: 0;
+  right: 0;
+  height: 100%;
+  width: auto;
+  z-index: 2;
+  transition: opacity 0.6s ease;
+  mask-image: linear-gradient(
+    90deg,
+    transparent 0,
+    rgba(0, 0, 0, 0.35) calc(0.4 * clamp(450px, 38vw, 720px)),
+    black clamp(450px, 38vw, 720px)
+  );
+  -webkit-mask-image: linear-gradient(
+    90deg,
+    transparent 0,
+    rgba(0, 0, 0, 0.35) calc(0.4 * clamp(450px, 38vw, 720px)),
+    black clamp(450px, 38vw, 720px)
+  );
+}
+.home-hero-media img.home-hero-poster-hidden {
+  opacity: 0;
+}
+.home-hero-video-wrap {
+  position: absolute;
+  top: 0;
+  right: 0;
+  height: 100%;
+  width: auto;
+  overflow: hidden;
+  z-index: 1;
+  pointer-events: none;
+  mask-image: linear-gradient(
+    90deg,
+    transparent 0,
+    rgba(0, 0, 0, 0.35) calc(0.4 * clamp(450px, 38vw, 720px)),
+    black clamp(450px, 38vw, 720px)
+  );
+  -webkit-mask-image: linear-gradient(
+    90deg,
+    transparent 0,
+    rgba(0, 0, 0, 0.35) calc(0.4 * clamp(450px, 38vw, 720px)),
+    black clamp(450px, 38vw, 720px)
+  );
+}
+.home-hero-video-wrap video {
+  display: block;
+  height: 100%;
+  width: auto;
+  border: none;
+  pointer-events: none;
+  transform: scale(1.35);
+  opacity: 0;
+  transition: opacity 0.6s ease;
+}
+.home-hero-video-wrap video.home-hero-video-visible {
+  opacity: 1;
+}
+.home-hero-fade {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  background-image:
+    linear-gradient(to bottom, rgba(0, 0, 0, 0.5) 0%, rgba(0, 0, 0, 0.325) 20%, rgba(0, 0, 0, 0) 50%),
+    linear-gradient(to top, rgba(0, 0, 0, 1) 0%, rgba(0, 0, 0, 0.65) 20%, rgba(0, 0, 0, 0) 50%);
+}
+.home-hero-content {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  align-items: flex-end;
+  min-height: clamp(450px, 38vw, 720px);
+  padding: 24px var(--edge-inset) 44px;
+}
+/* Mobile-first floor, not the desktop clamp()s' own 560px/88px floors —
+   those were tuned for a real desktop window and never actually shrink
+   below it (clamp() returns its own floor once the vw term drops under
+   it, regardless of how narrow the viewport actually gets), so a title
+   like "Lioness" ran off the right edge of a 375px phone instead of
+   wrapping. Restored to the original fluid values at 640px, same
+   breakpoint the actions row below already steps at. */
+.home-hero-info {
+  max-width: 100%;
+}
+.home-hero-info h1 {
+  font-size: clamp(34px, 11vw, 56px);
+  font-weight: 800;
+  margin: 0 0 10px;
+  line-height: 1.1;
+}
+@media (min-width: 640px) {
+  .home-hero-info {
+    max-width: clamp(560px, 45vw, 760px);
+  }
+  .home-hero-info h1 {
+    font-size: clamp(88px, 6vw + 58px, 128px);
+  }
+}
+.home-hero-badge {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--status-complete);
+  font-size: 17px;
+  font-weight: 800;
+  margin-bottom: 10px;
+}
+.home-hero-badge .material-symbols-rounded {
+  font-size: 19px;
+}
+.home-hero-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 16px;
+  flex-wrap: wrap;
+}
+.home-hero-actions .add-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  height: 48px;
+  padding: 0 26px;
+  font-size: 16px;
+}
+.home-hero-info-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 48px;
+  height: 48px;
+  font-size: 20px;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--bg-card) 70%, transparent);
+  border: 1px solid var(--border);
+  color: var(--text);
+}
+.home-hero-info-btn:hover {
+  opacity: 1;
+  background: var(--bg-card);
+}
+.home-hero-arrow {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 3;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  border: none;
+  background: color-mix(in srgb, var(--bg) 55%, transparent);
+  color: var(--text);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0.7;
+}
+.home-hero-arrow:hover {
+  opacity: 1;
+  background: var(--bg-card);
+}
+.home-hero-arrow-left {
+  left: 14px;
+}
+.home-hero-arrow-right {
+  right: 14px;
+}
+.home-hero-dots {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  bottom: 32px;
+  z-index: 3;
+  display: flex;
+  gap: 6px;
+}
+.home-hero-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  border: none;
+  background: rgba(255, 255, 255, 0.4);
+  transition:
+    width 0.25s ease,
+    background 0.25s ease;
+  padding: 0;
+}
+.home-hero-dot.active {
+  width: 22px;
+  background: var(--smithflix-dot-active);
+}
+.home-hero-cert {
+  position: absolute;
+  right: var(--edge-inset);
+  bottom: 32px;
+  z-index: 3;
+  padding: 3px 8px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-dim);
+  background: color-mix(in srgb, var(--bg) 55%, transparent);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+}
+.home-hero-mute-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 48px;
+  height: 48px;
+  font-size: 20px;
+  z-index: 3;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--bg-card) 70%, transparent);
+  border: 1px solid var(--border);
+  color: var(--text);
+  opacity: 0.85;
+}
+.home-hero-mute-btn:hover {
+  opacity: 1;
+  background: var(--bg-card);
+}
+@media (min-width: 640px) {
+  .home-hero-actions .add-btn {
+    height: 56px;
+    padding: 0 32px;
+    font-size: 17px;
+  }
+  .home-hero-info-btn,
+  .home-hero-mute-btn {
+    width: 56px;
+    height: 56px;
+    font-size: 22px;
+  }
+}

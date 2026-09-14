@@ -20,6 +20,10 @@ export interface ContentRatingEntry {
   rating: string
 }
 
+export interface EpisodeToAir {
+  air_date: string | null
+}
+
 export interface TvDetail extends Omit<TmdbListItem, 'genre_ids'> {
   status: string // "Returning Series" | "Ended" | "Canceled" | ...
   original_language?: string
@@ -30,6 +34,10 @@ export interface TvDetail extends Omit<TmdbListItem, 'genre_ids'> {
   credits?: { cast?: CastMember[]; crew?: CrewMember[] }
   content_ratings?: { results?: ContentRatingEntry[] }
   recommendations?: { results?: TmdbListItem[] }
+  // Home hero's own "New episode <day>" / "All episodes available"
+  // badge — TMDB includes both natively on the detail response.
+  next_episode_to_air?: EpisodeToAir | null
+  last_episode_to_air?: EpisodeToAir | null
   // Annotated server-side — see api.py's get_tv_detail.
   is_coming_soon: boolean
   // Part K3 — TV parity with the movie route. A show's organized history

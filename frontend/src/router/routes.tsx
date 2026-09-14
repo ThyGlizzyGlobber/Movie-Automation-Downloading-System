@@ -1,6 +1,5 @@
 import { createHashRouter, Navigate } from 'react-router-dom'
 import AppShell from '../components/AppShell'
-import ComingSoon from '../components/ComingSoon'
 import CategoryPage from '../components/CategoryPage'
 import GenreCategoryPage from '../components/GenreCategoryPage'
 import ProviderPage from '../components/ProviderPage'
@@ -15,6 +14,7 @@ import SearchPage from '../features/search/SearchPage'
 import PersonPage from '../features/person/PersonPage'
 import RequestsPage from '../features/requests/RequestsPage'
 import SettingsPage from '../features/settings/SettingsPage'
+import HomePage from '../features/home/HomePage'
 import {
   getComingSoon,
   getDiscoverByGenre,
@@ -35,15 +35,14 @@ import {
 // Hash-based (Part A2): frontend/nginx.conf has no SPA-fallback catch-all,
 // and the PWA manifest's start_url already works against the hash scheme
 // — see the migration plan for why this was chosen over browser-history
-// routing. Home/requests/settings content lands in later steps; ComingSoon
-// keeps every nav target real in the meantime.
+// routing.
 export const router = createHashRouter([
   {
     path: '/',
     element: <AppShell />,
     children: [
       { index: true, element: <Navigate to="/home" replace /> },
-      { path: 'home', element: <ComingSoon label="Home" /> },
+      { path: 'home', element: <HomePage /> },
 
       { path: 'movies', element: <MoviesLandingPage /> },
       {
