@@ -1,48 +1,48 @@
-// Temporary smoke-test harness for Part A5's API client — calls the real
-// backend (via Vite's dev proxy) and dumps raw responses so the hand-written
-// types can be checked against what actually comes back. Replaced by real
-// routing/pages in a later step.
-import { useEffect, useState } from 'react'
-import { getHealth, getStorage } from './api/system'
-import { getDiscoverPopular } from './api/movies'
-import { getTvDiscoverPopular } from './api/tv'
-import { listRequests } from './api/requests'
-import { getPipelineSettings, getTvSettings } from './api/settings'
-import { getPlexStatus } from './api/plex'
-
-function Probe({ name, fn }: { name: string; fn: () => Promise<unknown> }) {
-  const [state, setState] = useState<{ ok: boolean; data: unknown } | null>(null)
-
-  useEffect(() => {
-    fn()
-      .then((data) => setState({ ok: true, data }))
-      .catch((err) => setState({ ok: false, data: String(err) }))
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
-
-  return (
-    <section style={{ marginBottom: 24 }}>
-      <h3 style={{ fontFamily: 'var(--font-display)' }}>
-        {name} {state && (state.ok ? '✅' : '❌')}
-      </h3>
-      <pre style={{ background: 'var(--bg-card)', padding: 12, borderRadius: 8, overflow: 'auto', maxHeight: 300 }}>
-        {state ? JSON.stringify(state.data, null, 2) : 'loading…'}
-      </pre>
-    </section>
-  )
-}
+import { useSetupStatus } from './features/setup/useSetupStatus'
+import { isUnauthenticated, useSession } from './features/auth/useSession'
+import SetupWizard from './features/setup/SetupWizard'
+import LoginPage from './features/auth/LoginPage'
+import LoadingState from './components/LoadingState'
+import ErrorState from './components/ErrorState'
+import { logout } from './api/auth'
+import { useQueryClient } from '@tanstack/react-query'
 
 function App() {
+  const setupStatus = useSetupStatus()
+  const setupComplete = setupStatus.data?.setup_complete === true
+  const session = useSession(setupComplete)
+  const queryClient = useQueryClient()
+
+  if (setupStatus.isLoading) return <LoadingState />
+  if (setupStatus.isError) {
+    return <ErrorState message={setupStatus.error instanceof Error ? setupStatus.error.message : undefined} />
+  }
+  if (!setupComplete) return <SetupWizard />
+
+  if (session.isLoading) return <LoadingState />
+  if (session.isError) {
+    if (isUnauthenticated(session.error)) return <LoginPage />
+    return <ErrorState message={session.error instanceof Error ? session.error.message : undefined} />
+  }
+  if (!session.data) return <LoadingState />
+
+  // Persistent chrome, real routing, and pages land in later steps — this
+  // is a temporary placeholder confirming the auth gate itself works end
+  // to end.
   return (
     <div style={{ padding: 40 }}>
-      <Probe name="getHealth" fn={getHealth} />
-      <Probe name="getStorage" fn={getStorage} />
-      <Probe name="getDiscoverPopular" fn={() => getDiscoverPopular(1)} />
-      <Probe name="getTvDiscoverPopular" fn={() => getTvDiscoverPopular(1)} />
-      <Probe name="listRequests" fn={() => listRequests()} />
-      <Probe name="getPipelineSettings" fn={getPipelineSettings} />
-      <Probe name="getTvSettings" fn={getTvSettings} />
-      <Probe name="getPlexStatus" fn={getPlexStatus} />
+      <p>
+        Signed in as <strong>{session.data.username}</strong>
+        {session.data.is_admin && ' (admin)'}.
+      </p>
+      <button
+        onClick={async () => {
+          await logout()
+          queryClient.invalidateQueries({ queryKey: ['session'] })
+        }}
+      >
+        Log out
+      </button>
     </div>
   )
 }

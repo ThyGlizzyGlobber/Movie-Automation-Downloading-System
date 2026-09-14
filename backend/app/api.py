@@ -92,6 +92,22 @@ async def lifespan(app: FastAPI):
     app.state.worker = Worker(store, app.state.tmdb, app.state.qbt) if app.state.qbt else None
     app.state.login_session = LoginSession(store)
     app.state.plex_linker = PlexLinker(store)
+
+    # Frontend migration Part G1: the whole point of the setup token is
+    # that the admin finds it by checking this container's own logs —
+    # generate (or recall the already-persisted one, see
+    # get_or_create_setup_token's own docstring) it and print it clearly
+    # right at startup, every boot until setup actually completes. Doing
+    # this lazily (only whenever the first /api/setup/* request happened
+    # to land) would mean there's nowhere the admin could ever actually
+    # go read it from before making that first request.
+    if not store.get_settings().get("plex_server_machine_id"):
+        token = store.get_or_create_setup_token()
+        logger.warning("=" * 60)
+        logger.warning("First-run setup needed. Setup code: %s", token)
+        logger.warning("Enter this in the setup wizard to continue.")
+        logger.warning("=" * 60)
+
     if app.state.worker:
         await app.state.worker.start()
     else:

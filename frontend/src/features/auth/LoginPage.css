@@ -1,0 +1,80 @@
+/* Mobile-first, single-column — per Part H, the first screen a new user
+   most likely sees is on their phone. */
+.login-page {
+  min-height: 100vh;
+  min-height: 100dvh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px calc(20px + env(safe-area-inset-right)) calc(24px + env(safe-area-inset-bottom))
+    calc(20px + env(safe-area-inset-left));
+}
+
+.login-card {
+  width: 100%;
+  max-width: 380px;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+}
+
+.login-brand {
+  width: 56px;
+  height: 56px;
+  margin-bottom: 8px;
+}
+
+.login-title {
+  font-family: var(--font-display);
+  font-size: 28px;
+  margin: 0;
+}
+
+.login-copy {
+  color: var(--text-dim);
+  font-size: 14.5px;
+  line-height: 1.5;
+  margin: 4px 0 20px;
+}
+
+.login-button {
+  width: 100%;
+  padding: 14px 20px;
+  border: none;
+  border-radius: 10px;
+  background: var(--accent);
+  color: var(--accent-text);
+  font-size: 16px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.login-button:disabled {
+  opacity: 0.65;
+  cursor: default;
+}
+
+.login-hint {
+  color: var(--text-dim);
+  font-size: 13px;
+  margin-top: 14px;
+  line-height: 1.5;
+}
+
+.login-error {
+  color: var(--status-nospace);
+  font-size: 13.5px;
+  margin-top: 14px;
+}
+
+/* Tablet/desktop — a bit more breathing room, not just a wider mobile
+   layout (Part H's own "real pass per tier", not inherited-by-default). */
+@media (min-width: 640px) {
+  .login-card {
+    max-width: 420px;
+  }
+  .login-title {
+    font-size: 32px;
+  }
+}

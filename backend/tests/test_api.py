@@ -1920,7 +1920,7 @@ def test_select_plex_server_switches_and_signs_out_other_sessions(client_and_dep
     assert store.get_session("other-session") is None
 
 
-def test_select_plex_server_during_bootstrap_also_signs_the_admin_in(tmp_path):
+def test_select_plex_server_during_bootstrap_also_signs_the_admin_in(tmp_path, monkeypatch):
     """Completing setup's server picker is what finalizes bootstrap —
     without this, the admin would need a confusing second PIN sign-in
     immediately after the one that just linked the server."""
@@ -1941,39 +1941,46 @@ def test_select_plex_server_during_bootstrap_also_signs_the_admin_in(tmp_path):
         yield
 
     api.app.router.lifespan_context = test_lifespan
-    with TestClient(api.app) as client:
-        import app.plex as plex_module
-
-        original_list_resources = plex_module.PlexClient.list_resources
-        plex_module.PlexClient.list_resources = lambda self, token: [
+    # pytest's monkeypatch fixture (not manual attribute assignment) —
+    # it reverts automatically even on failure, unlike a hand-rolled
+    # try/finally that's easy to leave incomplete (an earlier version of
+    # this test restored list_resources but forgot get_account_identity,
+    # which then leaked into every later test file in the same session —
+    # e.g. test_plex.py's own get_account_identity tests, depending on
+    # collection order).
+    monkeypatch.setattr(
+        PlexClient,
+        "list_resources",
+        lambda self, token: [
             {"name": "Home NAS", "url": "http://home", "token": "tok", "owned": True, "machine_identifier": "mid-x"}
-        ]
-        plex_module.PlexClient.get_account_identity = lambda self, token: {"id": 555, "username": "new-admin"}
-        try:
-            # Bootstrap window: plex_token isn't set yet at all (list_plex_servers/
-            # select_plex_server read it from settings, so seed it directly —
-            # in the real flow PlexLinker.start()+poll would have set it).
-            store.update_settings({"plex_token": "linking-account-token"})
-            token = store.get_or_create_setup_token()
+        ],
+    )
+    monkeypatch.setattr(
+        PlexClient, "get_account_identity", lambda self, token: {"id": 555, "username": "new-admin"}
+    )
+    with TestClient(api.app) as client:
+        # Bootstrap window: plex_token isn't set yet at all (list_plex_servers/
+        # select_plex_server read it from settings, so seed it directly —
+        # in the real flow PlexLinker.start()+poll would have set it).
+        store.update_settings({"plex_token": "linking-account-token"})
+        token = store.get_or_create_setup_token()
 
-            response = client.put(
-                "/api/plex/server",
-                json={"machine_identifier": "mid-x"},
-                headers={"X-Setup-Token": token},
-            )
+        response = client.put(
+            "/api/plex/server",
+            json={"machine_identifier": "mid-x"},
+            headers={"X-Setup-Token": token},
+        )
 
-            assert response.status_code == 200
-            assert api.SESSION_COOKIE_NAME in response.cookies
+        assert response.status_code == 200
+        assert api.SESSION_COOKIE_NAME in response.cookies
 
-            session_response = client.get("/api/auth/session")
-            assert session_response.status_code == 200
-            assert session_response.json() == {
-                "username": "new-admin",
-                "is_admin": True,
-                "has_seen_tutorial": False,
-            }
-        finally:
-            plex_module.PlexClient.list_resources = original_list_resources
+        session_response = client.get("/api/auth/session")
+        assert session_response.status_code == 200
+        assert session_response.json() == {
+            "username": "new-admin",
+            "is_admin": True,
+            "has_seen_tutorial": False,
+        }
 
 
 def api_state_login_session(client) -> "FakeLoginSession":

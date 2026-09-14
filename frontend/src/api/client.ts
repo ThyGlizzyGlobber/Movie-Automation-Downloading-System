@@ -22,18 +22,18 @@ export async function request<T>(path: string, opts?: RequestInit): Promise<T> {
   return res.status === 204 ? (null as T) : res.json()
 }
 
-export function postJson<T>(path: string, body: unknown): Promise<T> {
+export function postJson<T>(path: string, body: unknown, headers?: HeadersInit): Promise<T> {
   return request<T>(path, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...headers },
     body: JSON.stringify(body),
   })
 }
 
-export function putJson<T>(path: string, body: unknown): Promise<T> {
+export function putJson<T>(path: string, body: unknown, headers?: HeadersInit): Promise<T> {
   return request<T>(path, {
     method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...headers },
     body: JSON.stringify(body),
   })
 }
