@@ -126,12 +126,19 @@ def is_tv_upcoming(show: dict) -> bool:
 
 class TMDBClient:
     def __init__(self, api_key: str, session: requests.Session | None = None):
-        if not api_key:
-            raise TMDBError("TMDB API key is not configured")
+        # Deliberately not raised here (frontend migration Part E): the
+        # backend needs to boot successfully — and serve the first-run
+        # setup wizard's own routes — even before a TMDB key exists
+        # anywhere (env or the settings-table fallback), which is exactly
+        # the state a fresh, not-yet-configured install starts in. The
+        # same "not configured" failure just happens on first real call
+        # instead of at construction time.
         self.api_key = api_key
         self.session = session or requests.Session()
 
     def _get(self, path: str, params: dict | None = None) -> dict:
+        if not self.api_key:
+            raise TMDBError("TMDB API key is not configured")
         params = dict(params or {})
         params["api_key"] = self.api_key
         response = self.session.get(f"{BASE_URL}{path}", params=params, timeout=10)

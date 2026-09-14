@@ -5,6 +5,7 @@ A single connection with `check_same_thread=False` guarded by a
 `asyncio.to_thread` so a query never blocks the event loop."""
 
 import json
+import secrets
 import sqlite3
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
@@ -67,6 +68,18 @@ class RequestRow:
     # "use the global default", same as every row created before this
     # existed.
     min_resolution: str | None = None
+    # Who asked for this — the authenticated Plex account at the moment
+    # the request was created (frontend migration Part C2). Denormalized
+    # (copied at creation time, not joined against `users`) same as
+    # title/release_year above, so the Activity Dashboard shows who
+    # requested something as of *then* even if that Plex account's
+    # display name later changes. NULL for every row created before this
+    # existed, and for any request the worker itself creates
+    # automatically (e.g. a subscribed show's per-episode catch-up) —
+    # there's no authenticated user behind those, only a real request
+    # made through the API has one.
+    requested_by_plex_id: str | None = None
+    requested_by_username: str | None = None
 
     @classmethod
     def _from_row(cls, row: sqlite3.Row) -> "RequestRow":
@@ -89,6 +102,8 @@ class RequestRow:
             source_cleanup_status=row["source_cleanup_status"],
             source_cleanup_next_attempt_at=row["source_cleanup_next_attempt_at"],
             min_resolution=row["min_resolution"],
+            requested_by_plex_id=row["requested_by_plex_id"],
+            requested_by_username=row["requested_by_username"],
         )
 
 
@@ -147,6 +162,61 @@ class ShowEpisodeRow:
         )
 
 
+@dataclass
+class UserRow:
+    """One Plex account that has ever successfully signed in (frontend
+    migration Part C2) — distinct from `sessions` below: a user can have
+    zero, one, or several active sessions, but only one `users` row.
+    `is_admin` is refreshed on every login from a fresh Plex access check
+    (see api.py's login flow) — never edited directly."""
+
+    plex_user_id: str
+    username: str | None
+    is_admin: bool
+    has_seen_tutorial: bool
+    first_seen_at: str
+    last_login_at: str
+
+    @classmethod
+    def _from_row(cls, row: sqlite3.Row) -> "UserRow":
+        return cls(
+            plex_user_id=row["plex_user_id"],
+            username=row["username"],
+            is_admin=bool(row["is_admin"]),
+            has_seen_tutorial=bool(row["has_seen_tutorial"]),
+            first_seen_at=row["first_seen_at"],
+            last_login_at=row["last_login_at"],
+        )
+
+
+@dataclass
+class SessionRow:
+    """A signed-in browser session (frontend migration Part C2/C3) — `id`
+    is the opaque, random token set as the session cookie's value, never
+    guessable/sequential. `username`/`is_admin` are copied from `users` at
+    login time (not joined on every request) so `require_session` is a
+    single indexed lookup, same denormalize-for-cheap-reads convention as
+    `RequestRow.title`/`release_year`."""
+
+    id: str
+    plex_user_id: str
+    username: str | None
+    is_admin: bool
+    created_at: str
+    expires_at: str
+
+    @classmethod
+    def _from_row(cls, row: sqlite3.Row) -> "SessionRow":
+        return cls(
+            id=row["id"],
+            plex_user_id=row["plex_user_id"],
+            username=row["username"],
+            is_admin=bool(row["is_admin"]),
+            created_at=row["created_at"],
+            expires_at=row["expires_at"],
+        )
+
+
 class RequestStore:
     def __init__(self, db_path: str | Path):
         if db_path != ":memory:":
@@ -189,6 +259,10 @@ class RequestStore:
                 "requests", "source_cleanup_next_attempt_at", "source_cleanup_next_attempt_at TEXT"
             )
             self._ensure_column("requests", "min_resolution", "min_resolution TEXT")
+            # Frontend migration Part C2: who asked for this — see
+            # RequestRow's own field comments.
+            self._ensure_column("requests", "requested_by_plex_id", "requested_by_plex_id TEXT")
+            self._ensure_column("requests", "requested_by_username", "requested_by_username TEXT")
 
             # Stage 12: the standing subscription. One row per subscribed
             # show — a UNIQUE tmdb_id stops two subscriptions to the same
@@ -264,6 +338,33 @@ class RequestStore:
                 """
             )
             self._conn.execute("INSERT OR IGNORE INTO settings (id, data_json) VALUES (1, '{}')")
+
+            # Frontend migration Part C2 — Plex-authenticated users and
+            # their signed-in sessions. See UserRow/SessionRow above.
+            self._conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS users (
+                    plex_user_id TEXT PRIMARY KEY,
+                    username TEXT,
+                    is_admin INTEGER NOT NULL DEFAULT 0,
+                    has_seen_tutorial INTEGER NOT NULL DEFAULT 0,
+                    first_seen_at TEXT NOT NULL,
+                    last_login_at TEXT NOT NULL
+                )
+                """
+            )
+            self._conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS sessions (
+                    id TEXT PRIMARY KEY,
+                    plex_user_id TEXT NOT NULL,
+                    username TEXT,
+                    is_admin INTEGER NOT NULL DEFAULT 0,
+                    created_at TEXT NOT NULL,
+                    expires_at TEXT NOT NULL
+                )
+                """
+            )
             self._conn.commit()
 
     def _ensure_column(self, table: str, column: str, ddl: str) -> None:
@@ -280,13 +381,16 @@ class RequestStore:
         release_year: int | None,
         query: str | None,
         min_resolution: str | None = None,
+        requested_by_plex_id: str | None = None,
+        requested_by_username: str | None = None,
     ) -> RequestRow:
         now = _now()
         with self._lock:
             cur = self._conn.execute(
                 "INSERT INTO requests (query, tmdb_id, title, release_year, status, min_resolution, "
-                "created_at, updated_at) VALUES (?, ?, ?, ?, 'queued', ?, ?, ?)",
-                (query, tmdb_id, title, release_year, min_resolution, now, now),
+                "requested_by_plex_id, requested_by_username, created_at, updated_at) "
+                "VALUES (?, ?, ?, ?, 'queued', ?, ?, ?, ?, ?)",
+                (query, tmdb_id, title, release_year, min_resolution, requested_by_plex_id, requested_by_username, now, now),
             )
             self._conn.commit()
             row_id = cur.lastrowid
@@ -313,7 +417,14 @@ class RequestStore:
         return self.get_request(row_id)
 
     def create_pack_request(
-        self, tmdb_id: int, show_id: int, title: str, season_number: int | None, season_range_end: int | None = None
+        self,
+        tmdb_id: int,
+        show_id: int,
+        title: str,
+        season_number: int | None,
+        season_range_end: int | None = None,
+        requested_by_plex_id: str | None = None,
+        requested_by_username: str | None = None,
     ) -> RequestRow:
         """Stage 13 (+ Stage 14.x's season-range scope): the tracking row
         for one bulk season/season-range/complete-series pack search+add
@@ -332,9 +443,20 @@ class RequestStore:
         with self._lock:
             cur = self._conn.execute(
                 "INSERT INTO requests (query, tmdb_id, title, release_year, status, media_type, "
-                "show_id, season_number, episode_number, season_range_end, created_at, updated_at) "
-                "VALUES (NULL, ?, ?, NULL, 'queued', 'pack', ?, ?, NULL, ?, ?, ?)",
-                (tmdb_id, title, show_id, season_number, season_range_end, now, now),
+                "show_id, season_number, episode_number, season_range_end, "
+                "requested_by_plex_id, requested_by_username, created_at, updated_at) "
+                "VALUES (NULL, ?, ?, NULL, 'queued', 'pack', ?, ?, NULL, ?, ?, ?, ?, ?)",
+                (
+                    tmdb_id,
+                    title,
+                    show_id,
+                    season_number,
+                    season_range_end,
+                    requested_by_plex_id,
+                    requested_by_username,
+                    now,
+                    now,
+                ),
             )
             self._conn.commit()
             row_id = cur.lastrowid
@@ -680,6 +802,113 @@ class RequestStore:
             self._conn.execute("UPDATE settings SET data_json = ? WHERE id = 1", (json.dumps(merged),))
             self._conn.commit()
             return merged
+
+    # -- users / sessions (frontend migration Part C2) --
+
+    def upsert_user(self, plex_user_id: str, username: str | None, is_admin: bool) -> UserRow:
+        """Called on every successful login — `is_admin` is re-derived
+        fresh each time from a live Plex access check (see api.py), so a
+        change in server ownership is picked up on the next sign-in
+        without any migration. First-time sign-in inserts a new row;
+        every later one just updates username/is_admin/last_login_at,
+        leaving has_seen_tutorial and first_seen_at untouched."""
+        now = _now()
+        with self._lock:
+            existing = self._conn.execute(
+                "SELECT 1 FROM users WHERE plex_user_id = ?", (plex_user_id,)
+            ).fetchone()
+            if existing:
+                self._conn.execute(
+                    "UPDATE users SET username = ?, is_admin = ?, last_login_at = ? WHERE plex_user_id = ?",
+                    (username, int(is_admin), now, plex_user_id),
+                )
+            else:
+                self._conn.execute(
+                    "INSERT INTO users (plex_user_id, username, is_admin, has_seen_tutorial, "
+                    "first_seen_at, last_login_at) VALUES (?, ?, ?, 0, ?, ?)",
+                    (plex_user_id, username, int(is_admin), now, now),
+                )
+            self._conn.commit()
+        return self.get_user(plex_user_id)
+
+    def get_user(self, plex_user_id: str) -> UserRow | None:
+        row = self._conn.execute("SELECT * FROM users WHERE plex_user_id = ?", (plex_user_id,)).fetchone()
+        return UserRow._from_row(row) if row else None
+
+    def mark_tutorial_seen(self, plex_user_id: str) -> None:
+        with self._lock:
+            self._conn.execute(
+                "UPDATE users SET has_seen_tutorial = 1 WHERE plex_user_id = ?", (plex_user_id,)
+            )
+            self._conn.commit()
+
+    def create_session(
+        self, session_id: str, plex_user_id: str, username: str | None, is_admin: bool, expires_at: str
+    ) -> SessionRow:
+        now = _now()
+        with self._lock:
+            self._conn.execute(
+                "INSERT INTO sessions (id, plex_user_id, username, is_admin, created_at, expires_at) "
+                "VALUES (?, ?, ?, ?, ?, ?)",
+                (session_id, plex_user_id, username, int(is_admin), now, expires_at),
+            )
+            self._conn.commit()
+        return self.get_session(session_id)
+
+    def get_session(self, session_id: str) -> SessionRow | None:
+        """None for a missing *or expired* session — an expired row is
+        deleted on read rather than left for a separate sweep, same
+        "no session ever silently keeps working past its own guarantee"
+        principle the periodic re-validation loop (Part G4) extends to
+        revoked Plex access."""
+        row = self._conn.execute("SELECT * FROM sessions WHERE id = ?", (session_id,)).fetchone()
+        if row is None:
+            return None
+        session = SessionRow._from_row(row)
+        if session.expires_at < _now():
+            self.delete_session(session_id)
+            return None
+        return session
+
+    def delete_session(self, session_id: str) -> None:
+        with self._lock:
+            self._conn.execute("DELETE FROM sessions WHERE id = ?", (session_id,))
+            self._conn.commit()
+
+    def delete_sessions_for_user(self, plex_user_id: str) -> int:
+        with self._lock:
+            cur = self._conn.execute("DELETE FROM sessions WHERE plex_user_id = ?", (plex_user_id,))
+            self._conn.commit()
+            return cur.rowcount
+
+    def delete_non_admin_sessions(self) -> int:
+        """Called when the linked Plex server changes (switching servers
+        in Settings, Part C3's `PUT /api/plex/server`) — every non-admin
+        session's access grant was checked against the *old* server, so
+        it must re-authenticate against the new one rather than silently
+        keep working. The admin who just made the switch stays signed in."""
+        with self._lock:
+            cur = self._conn.execute("DELETE FROM sessions WHERE is_admin = 0")
+            self._conn.commit()
+            return cur.rowcount
+
+    # -- setup bootstrap (frontend migration Part G1) --
+
+    def get_or_create_setup_token(self) -> str:
+        """One-time bootstrap secret required by /api/setup/* (and the
+        first-run POST /api/plex/link) until initial setup completes —
+        closes the race where, on an internet-reachable instance, a
+        stranger who reaches an unset-up install first could claim the
+        admin slot before the real admin does. Persisted in the settings
+        table rather than regenerated per-process, so it survives a
+        `--reload` restart during development and stays valid for as long
+        as setup remains incomplete, however long that takes."""
+        settings = self.get_settings()
+        token = settings.get("setup_token")
+        if not token:
+            token = secrets.token_urlsafe(32)
+            self.update_settings({"setup_token": token})
+        return token
 
     def close(self) -> None:
         self._conn.close()

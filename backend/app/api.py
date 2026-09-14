@@ -2,20 +2,30 @@
 store. Same-origin only (confirmed architecture) — no CORS middleware; the
 frontend (Stage 4) reaches this only via nginx's reverse proxy on the same
 origin. TMDB key and qBittorrent credentials never reach the browser: every
-route here is either a thin TMDB proxy or reads/writes the local job store."""
+route here is either a thin TMDB proxy or reads/writes the local job store.
+
+Frontend migration Part C: every route is protected by default, not
+opt-in — `router`/`admin_router` below carry a blanket `Depends(...)`
+rather than each route adding its own, specifically so a route added later
+can't silently ship unauthenticated by a forgotten decorator. The small,
+explicit allowlist that stays directly on `app` (unauthenticated) is
+`/api/health`, `/api/auth/login/*`, and `/api/setup/*` (which has its own
+token-based gate, not none at all — see require_setup_token)."""
 
 import logging
 import re
+import secrets
 import shutil
 from contextlib import asynccontextmanager
 from dataclasses import asdict
+from datetime import datetime, timedelta, timezone
 
-from fastapi import Depends, FastAPI, HTTPException, Request
+from fastapi import APIRouter, Depends, FastAPI, HTTPException, Request, Response
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 from app import config, trailers
-from app.db import RequestRow, RequestStore, ShowRow
+from app.db import RequestRow, RequestStore, SessionRow, ShowRow
 from app.deploy import DeployError, run_git_pull
 from app.logging_config import configure_logging
 from app.pipeline_settings import (
@@ -24,7 +34,7 @@ from app.pipeline_settings import (
     resolve_pipeline_settings,
     settings_from_raw,
 )
-from app.plex import PlexError, PlexLinker, plex_library_lookup
+from app.plex import LoginSession, PlexClient, PlexError, PlexLinker, plex_library_lookup
 from app.qbt import QBTClient
 from app.resolve import resolve
 from app.tmdb import TMDBClient, TMDBError, best_trailer_key, is_movie_coming_soon, is_tv_upcoming
@@ -41,20 +51,64 @@ _TRAILER_FILENAME_RE = re.compile(r"^[a-z]+-\d+-[\w-]+\.mp4$")
 configure_logging()
 logger = logging.getLogger("app.api")
 
+SESSION_COOKIE_NAME = "session_id"
+# Sliding expiry, not absolute — every successful `require_session` check
+# could in principle refresh it, but isn't wired up (yet) to do so; a
+# session simply needs re-establishing via login after this long regardless
+# of activity. 14 days is a starting default, easy to change later.
+SESSION_TTL_DAYS = 14
+
+
+def _new_session_expiry() -> str:
+    return (datetime.now(timezone.utc) + timedelta(days=SESSION_TTL_DAYS)).isoformat()
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    app.state.store = RequestStore(config.DB_PATH)
-    app.state.tmdb = TMDBClient(config.TMDB_API_KEY)
-    app.state.qbt = QBTClient(config.QBIT_HOST, config.QBIT_PORT, config.QBIT_USERNAME, config.QBIT_PASSWORD)
-    app.state.worker = Worker(app.state.store, app.state.tmdb, app.state.qbt)
-    app.state.plex_linker = PlexLinker(app.state.store)
-    await app.state.worker.start()
+    store = RequestStore(config.DB_PATH)
+    app.state.store = store
+
+    # TMDBClient no longer raises on an empty/missing key (see tmdb.py) —
+    # the app must boot, and serve the first-run setup wizard's own
+    # routes, even before a key exists anywhere. Resolved once, here, at
+    # startup — see get_tmdb's own docstring for why this isn't
+    # re-resolved per-request (a key saved through the wizard needs a
+    # restart to take effect, a named/accepted gap, not silently solved).
+    app.state.tmdb = TMDBClient(config.resolve_tmdb_api_key(store) or "")
+
+    # qBittorrent's own client logs in eagerly at construction (see
+    # qbt.py) — unlike TMDB, that can't be deferred without touching the
+    # third-party client library it wraps. A fresh install with qBittorrent
+    # not yet configured/reachable must still boot successfully (the setup
+    # wizard is exactly what configures it), so a construction failure here
+    # is caught rather than left to crash startup.
+    qbt_config = config.resolve_qbt_config(store)
+    try:
+        app.state.qbt = QBTClient(qbt_config.host, qbt_config.port, qbt_config.username, qbt_config.password)
+    except Exception as exc:  # pragma: no cover — exact exception type is qbittorrentapi's, not ours to depend on
+        logger.warning("qBittorrent unreachable at startup (%s) — background worker not started this boot", exc)
+        app.state.qbt = None
+
+    app.state.worker = Worker(store, app.state.tmdb, app.state.qbt) if app.state.qbt else None
+    app.state.login_session = LoginSession(store)
+    app.state.plex_linker = PlexLinker(store)
+    if app.state.worker:
+        await app.state.worker.start()
+    else:
+        # Named, accepted gap (frontend migration Part E): on a fresh
+        # install, qBittorrent isn't reachable yet at this first boot (the
+        # setup wizard is what configures it) — the worker, and any route
+        # depending on get_worker/get_qbt, stay unavailable until the next
+        # restart after that's fixed. Only reachable at all before
+        # qBittorrent's ever been configured; nothing could have been
+        # queued yet for the worker to act on regardless.
+        logger.warning("worker not started: qBittorrent was not reachable at boot")
     try:
         yield
     finally:
-        await app.state.worker.stop()
-        app.state.store.close()
+        if app.state.worker:
+            await app.state.worker.stop()
+        store.close()
 
 
 app = FastAPI(title="The Family Downloader", lifespan=lifespan)
@@ -65,19 +119,113 @@ def get_store(request: Request) -> RequestStore:
 
 
 def get_tmdb(request: Request) -> TMDBClient:
+    """A plain accessor, not a re-resolving one — deliberately kept
+    simple (frontend migration Part E) rather than rebuilding the client
+    whenever the resolved TMDB key changes: this app's test suite injects
+    fakes directly onto `app.state.tmdb`/`app.state.qbt` (see
+    test_api.py's `client_and_deps` fixture), and a "recreate the real
+    client on every call" version has no clean way to tell a genuine
+    config change apart from "this is a fake with no `api_key`
+    attribute" — tried, and it broke ~70 existing tests outright. Net
+    effect: a TMDB key or qBittorrent connection saved through the setup
+    wizard needs a restart to take effect, same accepted-gap shape as the
+    project's existing "a changed requirements.txt needs a manual image
+    recreate" — not solved here, but named rather than silently
+    papered over."""
     return request.app.state.tmdb
 
 
-def get_worker(request: Request) -> Worker:
-    return request.app.state.worker
-
-
 def get_qbt(request: Request) -> QBTClient:
+    """See get_tmdb's docstring immediately above — same reasoning,
+    same accepted restart-needed gap."""
     return request.app.state.qbt
+
+
+def get_worker(request: Request) -> Worker:
+    worker = request.app.state.worker
+    if worker is None:
+        raise HTTPException(
+            status_code=503, detail="background worker isn't running — qBittorrent wasn't reachable at startup"
+        )
+    return worker
 
 
 def get_plex_linker(request: Request) -> PlexLinker:
     return request.app.state.plex_linker
+
+
+def get_login_session(request: Request) -> LoginSession:
+    return request.app.state.login_session
+
+
+# ---------------------------------------------------------------------------
+# Auth dependencies (frontend migration Part C3)
+# ---------------------------------------------------------------------------
+
+
+def require_session(request: Request, store: RequestStore = Depends(get_store)) -> SessionRow:
+    session_id = request.cookies.get(SESSION_COOKIE_NAME)
+    if not session_id:
+        raise HTTPException(status_code=401, detail="not signed in")
+    session = store.get_session(session_id)
+    if session is None:
+        raise HTTPException(status_code=401, detail="session expired or invalid")
+    return session
+
+
+def require_admin(session: SessionRow = Depends(require_session)) -> SessionRow:
+    if not session.is_admin:
+        raise HTTPException(status_code=403, detail="admin access required")
+    return session
+
+
+def require_admin_or_setup_bootstrap(
+    request: Request, store: RequestStore = Depends(get_store)
+) -> SessionRow | None:
+    """Gate for POST /api/plex/link, GET /api/plex/status, and the new
+    multi-server routes: unauthenticated (but setup-token-checked) while
+    no server is linked yet — there's no admin session possible before
+    this completes, since the admin's identity *is* whoever completes it
+    — otherwise admin-only. See require_setup_token's docstring for why
+    the token check duplicates a few lines rather than composing with it."""
+    if not store.get_settings().get("plex_token"):
+        expected = store.get_or_create_setup_token()
+        if request.headers.get("X-Setup-Token") != expected:
+            raise HTTPException(status_code=401, detail="missing or incorrect setup token")
+        return None
+    session_id = request.cookies.get(SESSION_COOKIE_NAME)
+    if not session_id:
+        raise HTTPException(status_code=401, detail="not signed in")
+    session = store.get_session(session_id)
+    if session is None:
+        raise HTTPException(status_code=401, detail="session expired or invalid")
+    if not session.is_admin:
+        raise HTTPException(status_code=403, detail="admin access required")
+    return session
+
+
+def require_setup_token(request: Request, store: RequestStore = Depends(get_store)) -> None:
+    """Gates /api/setup/* until initial setup completes (frontend
+    migration Part G1) — closes the race where, on an internet-reachable
+    instance, a stranger who reaches an unset-up install first could
+    claim the admin slot before the real admin does. In production this
+    sits behind nginx's own LAN-only restriction on the same path
+    (Part G1's primary control); this is the defense-in-depth second
+    layer that holds even without nginx in front (e.g. this test suite,
+    or `npm run dev` against a bare uvicorn)."""
+    if store.get_settings().get("plex_token"):
+        raise HTTPException(status_code=410, detail="setup already completed")
+    expected = store.get_or_create_setup_token()
+    if request.headers.get("X-Setup-Token") != expected:
+        raise HTTPException(status_code=401, detail="missing or incorrect setup token")
+
+
+# Default-deny: every route registered on `router` requires a valid
+# signed-in session, `admin_router` additionally requires that session to
+# be the admin's. See this module's own docstring for the small, explicit
+# allowlist that deliberately stays off both.
+router = APIRouter(dependencies=[Depends(require_session)])
+admin_router = APIRouter(dependencies=[Depends(require_admin)])
 
 
 # ---------------------------------------------------------------------------
@@ -168,6 +316,10 @@ class RequestOut(BaseModel):
     season_number: int | None
     episode_number: int | None
     season_range_end: int | None
+    # Frontend migration Part C2 — who asked for this (None for
+    # worker-created rows, e.g. a subscribed show's automatic catch-up).
+    requested_by_plex_id: str | None = None
+    requested_by_username: str | None = None
 
     @classmethod
     def from_row(cls, row: RequestRow) -> "RequestOut":
@@ -263,7 +415,7 @@ def _on_plex_for(title: str, year: int | None, media_type: str, store: RequestSt
 # ---------------------------------------------------------------------------
 
 
-@app.post("/api/search")
+@router.post("/api/search")
 def search(
     body: SearchRequest, store: RequestStore = Depends(get_store), tmdb: TMDBClient = Depends(get_tmdb)
 ) -> list[dict]:
@@ -283,7 +435,7 @@ def search(
 #    same "key never reaches the browser" rule as /api/search. --
 
 
-@app.get("/api/discover/popular")
+@router.get("/api/discover/popular")
 def discover_popular(page: int = 1, store: RequestStore = Depends(get_store), tmdb: TMDBClient = Depends(get_tmdb)) -> dict:
     # Digital-availability filtered: Coming Soon is the dedicated tab for
     # theatrical-only titles, so Discover shouldn't also surface them.
@@ -295,7 +447,7 @@ def discover_popular(page: int = 1, store: RequestStore = Depends(get_store), tm
     return data
 
 
-@app.get("/api/discover/trending")
+@router.get("/api/discover/trending")
 def discover_trending(
     time_window: str = "week", page: int = 1, store: RequestStore = Depends(get_store), tmdb: TMDBClient = Depends(get_tmdb)
 ) -> dict:
@@ -307,7 +459,7 @@ def discover_trending(
     return data
 
 
-@app.get("/api/discover/providers")
+@router.get("/api/discover/providers")
 def discover_providers(region: str = "US", tmdb: TMDBClient = Depends(get_tmdb)) -> list[dict]:
     try:
         data = tmdb.get_watch_providers(region=region)
@@ -316,7 +468,7 @@ def discover_providers(region: str = "US", tmdb: TMDBClient = Depends(get_tmdb))
     return data.get("results", [])
 
 
-@app.get("/api/discover/providers/{provider_id}")
+@router.get("/api/discover/providers/{provider_id}")
 def discover_by_provider(
     provider_id: int,
     region: str = "US",
@@ -335,7 +487,7 @@ def discover_by_provider(
     return data
 
 
-@app.get("/api/discover/genre/{genre_id}")
+@router.get("/api/discover/genre/{genre_id}")
 def discover_by_genre(
     genre_id: int,
     region: str = "US",
@@ -353,7 +505,7 @@ def discover_by_genre(
     return data
 
 
-@app.get("/api/discover/coming-soon")
+@router.get("/api/discover/coming-soon")
 def discover_coming_soon(
     region: str = "US", page: int = 1, store: RequestStore = Depends(get_store), tmdb: TMDBClient = Depends(get_tmdb)
 ) -> dict:
@@ -365,7 +517,7 @@ def discover_coming_soon(
     return data
 
 
-@app.get("/api/movies/{tmdb_id}")
+@router.get("/api/movies/{tmdb_id}")
 def get_movie_detail(
     tmdb_id: int, store: RequestStore = Depends(get_store), tmdb: TMDBClient = Depends(get_tmdb)
 ) -> dict:
@@ -390,7 +542,7 @@ def get_movie_detail(
     }
 
 
-@app.get("/api/movies/{tmdb_id}/trailer")
+@router.get("/api/movies/{tmdb_id}/trailer")
 def get_movie_trailer(tmdb_id: int, tmdb: TMDBClient = Depends(get_tmdb)) -> dict:
     """Backs the home hero carousel's background video — a separate call
     from get_movie_detail rather than another append_to_response, since
@@ -418,7 +570,7 @@ def get_movie_trailer(tmdb_id: int, tmdb: TMDBClient = Depends(get_tmdb)) -> dic
 #    the-browser rules. --
 
 
-@app.get("/api/tv/discover/popular")
+@router.get("/api/tv/discover/popular")
 def tv_discover_popular(
     page: int = 1, store: RequestStore = Depends(get_store), tmdb: TMDBClient = Depends(get_tmdb)
 ) -> dict:
@@ -433,7 +585,7 @@ def tv_discover_popular(
     return data
 
 
-@app.get("/api/tv/discover/trending")
+@router.get("/api/tv/discover/trending")
 def tv_discover_trending(
     time_window: str = "week", page: int = 1, store: RequestStore = Depends(get_store), tmdb: TMDBClient = Depends(get_tmdb)
 ) -> dict:
@@ -445,7 +597,7 @@ def tv_discover_trending(
     return data
 
 
-@app.get("/api/tv/discover/providers/{provider_id}")
+@router.get("/api/tv/discover/providers/{provider_id}")
 def tv_discover_by_provider(
     provider_id: int,
     region: str = "US",
@@ -461,7 +613,7 @@ def tv_discover_by_provider(
     return data
 
 
-@app.get("/api/tv/discover/genre/{genre_id}")
+@router.get("/api/tv/discover/genre/{genre_id}")
 def tv_discover_by_genre(
     genre_id: int,
     region: str = "US",
@@ -477,7 +629,7 @@ def tv_discover_by_genre(
     return data
 
 
-@app.get("/api/tv/discover/coming-soon")
+@router.get("/api/tv/discover/coming-soon")
 def tv_discover_coming_soon(
     region: str = "US", page: int = 1, store: RequestStore = Depends(get_store), tmdb: TMDBClient = Depends(get_tmdb)
 ) -> dict:
@@ -489,7 +641,7 @@ def tv_discover_coming_soon(
     return data
 
 
-@app.get("/api/tv/{tmdb_id}")
+@router.get("/api/tv/{tmdb_id}")
 def get_tv_detail(tmdb_id: int, store: RequestStore = Depends(get_store), tmdb: TMDBClient = Depends(get_tmdb)) -> dict:
     """Full TMDB show detail — overview, seasons, status (Returning
     Series/Ended/Canceled), genres, poster/backdrop paths. Backs the show
@@ -507,7 +659,7 @@ def get_tv_detail(tmdb_id: int, store: RequestStore = Depends(get_store), tmdb: 
     }
 
 
-@app.get("/api/tv/{tmdb_id}/trailer")
+@router.get("/api/tv/{tmdb_id}/trailer")
 def get_tv_trailer(tmdb_id: int, tmdb: TMDBClient = Depends(get_tmdb)) -> dict:
     """The TV equivalent of get_movie_trailer above — same reasoning."""
     try:
@@ -521,7 +673,7 @@ def get_tv_trailer(tmdb_id: int, tmdb: TMDBClient = Depends(get_tmdb)) -> dict:
     return {"url": f"/api/trailers/{path.name}" if path else None}
 
 
-@app.get("/api/trailers/{filename}")
+@router.get("/api/trailers/{filename}")
 def get_trailer_file(filename: str) -> FileResponse:
     """Serves a cached hero-carousel trailer downloaded by trailers.py.
     Filename is regex-whitelisted before it ever reaches the filesystem —
@@ -534,7 +686,7 @@ def get_trailer_file(filename: str) -> FileResponse:
     return FileResponse(path, media_type="video/mp4")
 
 
-@app.get("/api/person/{person_id}")
+@router.get("/api/person/{person_id}")
 def get_person_detail(person_id: int, tmdb: TMDBClient = Depends(get_tmdb)) -> dict:
     """A cast member's filmography — backs the "click an actor" detail
     page. Only what the frontend actually needs: name/photo plus a
@@ -568,7 +720,7 @@ def get_person_detail(person_id: int, tmdb: TMDBClient = Depends(get_tmdb)) -> d
     }
 
 
-@app.post("/api/tv/search")
+@router.post("/api/tv/search")
 def search_tv(
     body: SearchRequest, store: RequestStore = Depends(get_store), tmdb: TMDBClient = Depends(get_tmdb)
 ) -> list[dict]:
@@ -583,12 +735,13 @@ def search_tv(
     return _annotate_on_plex(results, "show", store, title_key="name", date_key="first_air_date")
 
 
-@app.post("/api/requests", status_code=201)
+@router.post("/api/requests", status_code=201)
 def create_request(
     body: CreateRequest,
     store: RequestStore = Depends(get_store),
     tmdb: TMDBClient = Depends(get_tmdb),
     worker: Worker = Depends(get_worker),
+    session: SessionRow = Depends(require_session),
 ) -> RequestOut:
     try:
         identity = resolve(body.tmdb_id, tmdb)
@@ -601,17 +754,19 @@ def create_request(
         release_year=identity.release_year,
         query=body.query,
         min_resolution=body.min_resolution,
+        requested_by_plex_id=session.plex_user_id,
+        requested_by_username=session.username,
     )
     worker.enqueue(row.id)
     return RequestOut.from_row(row)
 
 
-@app.get("/api/requests")
+@router.get("/api/requests")
 def list_requests(status: str | None = None, store: RequestStore = Depends(get_store)) -> list[RequestOut]:
     return [RequestOut.from_row(r) for r in store.list_requests(status=status)]
 
 
-@app.get("/api/requests/{request_id}")
+@router.get("/api/requests/{request_id}")
 def get_request(request_id: int, store: RequestStore = Depends(get_store)) -> RequestOut:
     row = store.get_request(request_id)
     if row is None:
@@ -619,7 +774,7 @@ def get_request(request_id: int, store: RequestStore = Depends(get_store)) -> Re
     return RequestOut.from_row(row)
 
 
-@app.post("/api/requests/clear")
+@router.post("/api/requests/clear")
 def clear_requests(store: RequestStore = Depends(get_store)) -> dict:
     """"Clear My Requests": wipes settled history (reuses the same
     active-job-safe query the automatic retention cleanup runs, with
@@ -667,7 +822,7 @@ def _cancel_active_torrent(row: RequestRow, store: RequestStore, qbt: QBTClient)
     return torrent_hash
 
 
-@app.post("/api/requests/{request_id}/cancel")
+@router.post("/api/requests/{request_id}/cancel")
 def cancel_request(
     request_id: int, store: RequestStore = Depends(get_store), qbt: QBTClient = Depends(get_qbt)
 ) -> RequestOut:
@@ -701,7 +856,7 @@ def cancel_request(
     return RequestOut.from_row(store.get_request(request_id))
 
 
-@app.post("/api/requests/{request_id}/reject")
+@router.post("/api/requests/{request_id}/reject")
 def reject_request(
     request_id: int, store: RequestStore = Depends(get_store), qbt: QBTClient = Depends(get_qbt)
 ) -> RequestOut:
@@ -745,7 +900,7 @@ def reject_request(
 #    once, right here, at the moment of subscribing. --
 
 
-@app.post("/api/shows", status_code=201)
+@router.post("/api/shows", status_code=201)
 def create_show(
     body: SubscribeShowRequest,
     store: RequestStore = Depends(get_store),
@@ -764,12 +919,12 @@ def create_show(
     return _show_out(store, store.get_show(row.id))
 
 
-@app.get("/api/shows")
+@router.get("/api/shows")
 def list_shows(status: str | None = None, store: RequestStore = Depends(get_store)) -> list[ShowOut]:
     return [_show_out(store, r) for r in store.list_shows(status=status)]
 
 
-@app.get("/api/shows/{show_id}")
+@router.get("/api/shows/{show_id}")
 def get_show(show_id: int, store: RequestStore = Depends(get_store)) -> ShowOut:
     row = store.get_show(show_id)
     if row is None:
@@ -777,7 +932,7 @@ def get_show(show_id: int, store: RequestStore = Depends(get_store)) -> ShowOut:
     return _show_out(store, row)
 
 
-@app.post("/api/shows/{show_id}/pause")
+@router.post("/api/shows/{show_id}/pause")
 def pause_show(show_id: int, store: RequestStore = Depends(get_store)) -> ShowOut:
     if store.get_show(show_id) is None:
         raise HTTPException(status_code=404, detail="show not found")
@@ -785,7 +940,7 @@ def pause_show(show_id: int, store: RequestStore = Depends(get_store)) -> ShowOu
     return _show_out(store, store.get_show(show_id))
 
 
-@app.post("/api/shows/{show_id}/resume")
+@router.post("/api/shows/{show_id}/resume")
 def resume_show(show_id: int, store: RequestStore = Depends(get_store)) -> ShowOut:
     if store.get_show(show_id) is None:
         raise HTTPException(status_code=404, detail="show not found")
@@ -793,7 +948,7 @@ def resume_show(show_id: int, store: RequestStore = Depends(get_store)) -> ShowO
     return _show_out(store, store.get_show(show_id))
 
 
-@app.delete("/api/shows/{show_id}")
+@router.delete("/api/shows/{show_id}")
 def unsubscribe_show(show_id: int, store: RequestStore = Depends(get_store)) -> dict:
     """Unsubscribes — stops future checks. Every `requests`/`show_episodes`
     row this show ever produced stays exactly as it was, same "hidden,
@@ -822,13 +977,14 @@ def unsubscribe_show(show_id: int, store: RequestStore = Depends(get_store)) -> 
 #    status is never touched by this route. --
 
 
-@app.post("/api/tv/{tmdb_id}/bulk-download", status_code=201)
+@router.post("/api/tv/{tmdb_id}/bulk-download", status_code=201)
 def bulk_download_show(
     tmdb_id: int,
     body: BulkDownloadRequest,
     store: RequestStore = Depends(get_store),
     tmdb: TMDBClient = Depends(get_tmdb),
     worker: Worker = Depends(get_worker),
+    session: SessionRow = Depends(require_session),
 ) -> RequestOut:
     show = store.get_show_by_tmdb_id(tmdb_id)
     if show is None:
@@ -858,17 +1014,19 @@ def bulk_download_show(
         show_id=show.id,
         title=show.title,
         season_number=body.season_number,
+        requested_by_plex_id=session.plex_user_id,
+        requested_by_username=session.username,
     )
     worker.enqueue(row.id)
     return RequestOut.from_row(row)
 
 
-@app.get("/api/settings/retention")
+@admin_router.get("/api/settings/retention")
 def get_retention(store: RequestStore = Depends(get_store)) -> dict:
     return {"days": store.get_settings().get("request_retention_days")}
 
 
-@app.put("/api/settings/retention")
+@admin_router.put("/api/settings/retention")
 def set_retention(body: RetentionSettings, store: RequestStore = Depends(get_store)) -> dict:
     store.update_settings({"request_retention_days": body.days})
     return {"days": body.days}
@@ -881,12 +1039,12 @@ def set_retention(body: RetentionSettings, store: RequestStore = Depends(get_sto
 #    deploy — worker.py resolves these fresh from the store every run. --
 
 
-@app.get("/api/settings/pipeline")
+@admin_router.get("/api/settings/pipeline")
 def get_pipeline_settings(store: RequestStore = Depends(get_store)) -> dict:
     return asdict(resolve_pipeline_settings(store))
 
 
-@app.put("/api/settings/pipeline")
+@admin_router.put("/api/settings/pipeline")
 def set_pipeline_settings(body: PipelineSettingsIn, store: RequestStore = Depends(get_store)) -> dict:
     patch = {
         "category": body.category,
@@ -918,12 +1076,12 @@ def set_pipeline_settings(body: PipelineSettingsIn, store: RequestStore = Depend
 #    auto-replacing an already-downloaded file on a quality upgrade. --
 
 
-@app.get("/api/settings/tv")
+@admin_router.get("/api/settings/tv")
 def get_tv_settings(store: RequestStore = Depends(get_store)) -> dict:
     return asdict(resolve_tv_settings(store))
 
 
-@app.put("/api/settings/tv")
+@admin_router.put("/api/settings/tv")
 def set_tv_settings(body: TVScheduleSettingsIn, store: RequestStore = Depends(get_store)) -> dict:
     patch = {
         "show_check_interval_hours": body.show_check_interval_hours,
@@ -936,11 +1094,17 @@ def set_tv_settings(body: TVScheduleSettingsIn, store: RequestStore = Depends(ge
     return asdict(resolve_tv_settings(store))
 
 
-# -- Plex account linking (PIN sign-in). The resulting token is stored
-#    server-side only — these routes never return it. See plex.py. --
+# -- Plex account linking (admin server-linking, PIN sign-in). The
+#    resulting token is stored server-side only — these routes never
+#    return it. See plex.py. Gated by require_admin_or_setup_bootstrap
+#    (frontend migration Part C3): unauthenticated-but-token-checked while
+#    no server is linked yet (there's no admin to authenticate as before
+#    this completes — the admin's identity *is* whoever completes it),
+#    admin-only afterward (re-linking/switching is an ongoing admin
+#    action, not a bootstrap one). --
 
 
-@app.post("/api/plex/link")
+@app.post("/api/plex/link", dependencies=[Depends(require_admin_or_setup_bootstrap)])
 async def start_plex_link(linker: PlexLinker = Depends(get_plex_linker)) -> dict:
     try:
         auth_url = await linker.start()
@@ -949,30 +1113,249 @@ async def start_plex_link(linker: PlexLinker = Depends(get_plex_linker)) -> dict
     return {"auth_url": auth_url}
 
 
-@app.get("/api/plex/status")
+@app.get("/api/plex/status", dependencies=[Depends(require_admin_or_setup_bootstrap)])
 def plex_status(linker: PlexLinker = Depends(get_plex_linker)) -> dict:
     return linker.status()
 
 
-@app.post("/api/plex/unlink")
+@app.post("/api/plex/unlink", dependencies=[Depends(require_admin)])
 def unlink_plex(linker: PlexLinker = Depends(get_plex_linker)) -> dict:
     linker.unlink()
     return linker.status()
 
 
+@app.get("/api/plex/servers", dependencies=[Depends(require_admin_or_setup_bootstrap)])
+def list_plex_servers(store: RequestStore = Depends(get_store)) -> list[dict]:
+    """Every Plex server this account *owns*, using the already-persisted
+    account-level token — no fresh PIN sign-in needed (frontend migration
+    Part C1). Backs both the setup wizard's server picker (an account can
+    own more than one server) and Settings' "Switch Server" action."""
+    settings = store.get_settings()
+    token = settings.get("plex_token")
+    client_id = settings.get("plex_client_id")
+    if not token or not client_id:
+        raise HTTPException(status_code=409, detail="no Plex account linked yet — sign in first")
+    client = PlexClient(client_id)
+    try:
+        resources = client.list_resources(token)
+    except PlexError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    return [
+        {"name": r["name"], "machine_identifier": r["machine_identifier"]} for r in resources if r["owned"]
+    ]
+
+
+class SelectPlexServerRequest(BaseModel):
+    machine_identifier: str = Field(min_length=1)
+
+
+@app.put("/api/plex/server", dependencies=[Depends(require_admin_or_setup_bootstrap)])
+def select_plex_server(
+    body: SelectPlexServerRequest, store: RequestStore = Depends(get_store)
+) -> dict:
+    """Finalizes the setup wizard's server picker, or (post-setup) an
+    admin switching to a different owned server. Either way, re-resolves
+    fresh connection details for the chosen server (a connection URL can
+    change) rather than trusting whatever list_plex_servers last returned."""
+    settings = store.get_settings()
+    token = settings.get("plex_token")
+    client_id = settings.get("plex_client_id")
+    if not token or not client_id:
+        raise HTTPException(status_code=409, detail="no Plex account linked yet — sign in first")
+    client = PlexClient(client_id)
+    try:
+        resources = client.list_resources(token)
+    except PlexError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    match = next(
+        (r for r in resources if r["owned"] and r["machine_identifier"] == body.machine_identifier), None
+    )
+    if match is None:
+        raise HTTPException(status_code=404, detail="server not found among this account's owned servers")
+    store.update_settings(
+        {
+            "plex_server_url": match["url"],
+            "plex_server_token": match["token"],
+            "plex_server_name": match["name"],
+            "plex_server_machine_id": match["machine_identifier"],
+        }
+    )
+    # Switching servers changes who's authorized — every non-admin
+    # session's access grant was checked against the *old* server and
+    # must be re-validated via a fresh login against the new one.
+    store.delete_non_admin_sessions()
+    return {"server_name": match["name"]}
+
+
+# ---------------------------------------------------------------------------
+# End-user login (frontend migration Part C3) — Plex PIN sign-in, same
+# mechanism as admin server-linking above, different purpose: authenticates
+# *one person* against the already-linked server rather than linking the
+# server itself. See plex.py's LoginSession.
+# ---------------------------------------------------------------------------
+
+
+@app.post("/api/auth/login/start")
+async def start_login(login: LoginSession = Depends(get_login_session)) -> dict:
+    try:
+        auth_url = await login.start()
+    except PlexError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    return {"auth_url": auth_url}
+
+
+@app.get("/api/auth/login/status")
+def login_status(
+    response: Response,
+    login: LoginSession = Depends(get_login_session),
+    store: RequestStore = Depends(get_store),
+) -> dict:
+    status = login.status()
+    result = status["result"]
+    user = None
+    if result:
+        user = store.upsert_user(result["plex_user_id"], result["username"], result["is_admin"])
+        session_id = secrets.token_urlsafe(32)
+        store.create_session(session_id, user.plex_user_id, user.username, user.is_admin, _new_session_expiry())
+        response.set_cookie(
+            key=SESSION_COOKIE_NAME,
+            value=session_id,
+            httponly=True,
+            samesite="strict",
+            max_age=SESSION_TTL_DAYS * 24 * 3600,
+            path="/",
+        )
+    return {
+        "pending": status["pending"],
+        "authenticated": bool(result),
+        "username": user.username if user else None,
+        "is_admin": user.is_admin if user else None,
+        "has_seen_tutorial": user.has_seen_tutorial if user else None,
+        "error": status["error"],
+    }
+
+
+@router.get("/api/auth/session")
+def get_current_session(store: RequestStore = Depends(get_store), session: SessionRow = Depends(require_session)) -> dict:
+    user = store.get_user(session.plex_user_id)
+    return {
+        "username": session.username,
+        "is_admin": session.is_admin,
+        "has_seen_tutorial": user.has_seen_tutorial if user else False,
+    }
+
+
+@app.post("/api/auth/logout")
+def logout(response: Response, request: Request, store: RequestStore = Depends(get_store)) -> dict:
+    """No require_session — logging out an already-expired/invalid
+    session should still succeed and clear the cookie, not 401."""
+    session_id = request.cookies.get(SESSION_COOKIE_NAME)
+    if session_id:
+        store.delete_session(session_id)
+    response.delete_cookie(SESSION_COOKIE_NAME, path="/")
+    return {"logged_out": True}
+
+
+@router.put("/api/auth/tutorial-seen")
+def mark_tutorial_seen(store: RequestStore = Depends(get_store), session: SessionRow = Depends(require_session)) -> dict:
+    store.mark_tutorial_seen(session.plex_user_id)
+    return {"has_seen_tutorial": True}
+
+
+# ---------------------------------------------------------------------------
+# First-run setup wizard (frontend migration Part E) — TMDB key and
+# qBittorrent connection, collected through the UI so a non-technical
+# homelab install never needs to hand-edit .env. An env var always wins
+# when set (existing installs, including this app's own NAS deploy, need
+# zero changes); otherwise the value lives in the settings table, editable
+# here during bootstrap. Every mutating route requires require_setup_token
+# and 410s once setup is complete — ongoing post-setup editing is a
+# separate, always-admin-gated surface (Settings' Connections panel, a
+# later step of the migration, not built yet).
+# ---------------------------------------------------------------------------
+
+
+@app.get("/api/setup/status")
+def setup_status(store: RequestStore = Depends(get_store)) -> dict:
+    """No auth at all, deliberately — this is what the frontend calls
+    *before* deciding whether to show the setup wizard or the login
+    screen, so it can't itself be gated by either. Reveals only
+    configuredness, never a secret value."""
+    settings = store.get_settings()
+    qbt_source = config.qbt_config_source(store)
+    qbt_configured = qbt_source == "env" or bool(settings.get("qbt_host"))
+    plex_linked = bool(settings.get("plex_token"))
+    return {
+        "tmdb_configured": bool(config.resolve_tmdb_api_key(store)),
+        "tmdb_source": config.tmdb_api_key_source(store),
+        "qbt_configured": qbt_configured,
+        "qbt_source": qbt_source,
+        "plex_linked": plex_linked,
+        "setup_complete": plex_linked,
+    }
+
+
+class SetupTmdbRequest(BaseModel):
+    api_key: str = Field(min_length=1)
+
+
+@app.put("/api/setup/tmdb", dependencies=[Depends(require_setup_token)])
+def setup_tmdb(body: SetupTmdbRequest, store: RequestStore = Depends(get_store)) -> dict:
+    """Saves, but doesn't immediately apply — get_tmdb's own docstring in
+    this module explains why: it's resolved once at startup, not
+    per-request. `restart_required: true` is what the wizard's UI uses
+    to tell the admin so, rather than implying this is live right away."""
+    if config.tmdb_api_key_source(store) == "env":
+        raise HTTPException(status_code=409, detail="TMDB API key is already configured via environment variable")
+    store.update_settings({"tmdb_api_key": body.api_key})
+    return {"tmdb_configured": True, "tmdb_source": "db", "restart_required": True}
+
+
+class SetupQbtRequest(BaseModel):
+    host: str = Field(min_length=1)
+    port: int = Field(gt=0, lt=65536)
+    username: str = ""
+    password: str = ""
+
+
+@app.post("/api/setup/qbittorrent/test", dependencies=[Depends(require_setup_token)])
+def setup_qbt_test(body: SetupQbtRequest) -> dict:
+    try:
+        client = QBTClient(body.host, body.port, body.username, body.password)
+    except Exception as exc:
+        return {"reachable": False, "detail": str(exc)}
+    return {"reachable": client.ping()}
+
+
+@app.put("/api/setup/qbittorrent", dependencies=[Depends(require_setup_token)])
+def setup_qbt(body: SetupQbtRequest, store: RequestStore = Depends(get_store)) -> dict:
+    """Same "saved, not immediately applied" note as setup_tmdb above."""
+    if config.qbt_config_source(store) == "env":
+        raise HTTPException(
+            status_code=409, detail="qBittorrent connection is already configured via environment variables"
+        )
+    store.update_settings(
+        {"qbt_host": body.host, "qbt_port": body.port, "qbt_username": body.username, "qbt_password": body.password}
+    )
+    return {"qbt_configured": True, "qbt_source": "db", "restart_required": True}
+
+
 @app.get("/api/health")
-def health(qbt: QBTClient = Depends(get_qbt)) -> dict:
+def health(request: Request) -> dict:
     """Always 200 — the backend process being reachable at all is the
     caller's first signal. `qbittorrent: false` means the *dependency* is
-    unreachable right now (network blip, qBittorrent restarting), not that
-    this backend is broken, so it deliberately doesn't fail the request or
-    double as a container-restart trigger — per "fail safe, not best
-    guess," a flapping external dependency shouldn't take this app down
-    with it."""
-    return {"status": "ok", "qbittorrent": qbt.ping()}
+    unreachable right now (network blip, qBittorrent restarting, or
+    (frontend migration Part E) not yet configured/reachable on a fresh
+    install, in which case `app.state.qbt` is None — see the lifespan's
+    own handling), not that this backend is broken, so it deliberately
+    doesn't fail the request or double as a container-restart trigger —
+    per "fail safe, not best guess," a flapping external dependency
+    shouldn't take this app down with it."""
+    qbt = get_qbt(request)
+    return {"status": "ok", "qbittorrent": bool(qbt and qbt.ping())}
 
 
-@app.get("/api/storage")
+@router.get("/api/storage")
 def get_storage() -> dict:
     """Backs the always-visible storage indicator in the frontend's global
     chrome. Deliberately reads the filesystem directly (`shutil.disk_usage`
@@ -1008,15 +1391,15 @@ def get_storage() -> dict:
     }
 
 
-# -- Stage 8: raw JSON view of failure-shaped jobs, gated the same way as
-#    /api/admin/deploy below (visible, no real auth) — meant to be checked
-#    with curl, not SSHed into; no frontend UI until it's actually needed
-#    often enough to justify one (Stage 8's own open decision). --
+# -- Stage 8: raw JSON view of failure-shaped jobs. Admin-only (frontend
+#    migration Part C3), same as /api/admin/deploy below — meant to be
+#    checked with curl, not SSHed into; no frontend UI until it's actually
+#    needed often enough to justify one (Stage 8's own open decision). --
 
 _FAILURE_STATUSES = {"failed", "no qualifying results", "insufficient free space", "downloaded, not filed"}
 
 
-@app.get("/api/admin/jobs")
+@admin_router.get("/api/admin/jobs")
 def admin_jobs(status: str | None = None, store: RequestStore = Depends(get_store)) -> list[RequestOut]:
     statuses = [status] if status else sorted(_FAILURE_STATUSES)
     rows = [r for s in statuses for r in store.list_requests(status=s)]
@@ -1024,14 +1407,22 @@ def admin_jobs(status: str | None = None, store: RequestStore = Depends(get_stor
     return [RequestOut.from_row(r) for r in rows]
 
 
-@app.post("/api/admin/deploy")
+@admin_router.post("/api/admin/deploy")
 def deploy() -> dict:
     """Runs exactly `git pull --ff-only` against the deployed-copy clone —
-    see app/deploy.py. No parameters ever accepted. Gated only by the
-    Settings panel's hidden long-press control on the frontend; this route
-    itself has no auth, an accepted risk per the Stage 6 plan (blast radius
-    is bounded since it only ever runs this one fixed command)."""
+    see app/deploy.py. No parameters ever accepted. Originally gated only
+    by the Settings panel's hidden long-press control with no real auth
+    (an accepted Stage 6 risk, since it only ever ran this one fixed
+    command) — now admin-only (frontend migration Part C3), on top of
+    that same fixed-command bound."""
     try:
         return run_git_pull()
     except DeployError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+# Wires the default-deny routers onto the app — see this module's own
+# docstring for the small, explicit allowlist that stays directly on
+# `app` instead (unauthenticated, or with its own bespoke gate).
+app.include_router(router)
+app.include_router(admin_router)

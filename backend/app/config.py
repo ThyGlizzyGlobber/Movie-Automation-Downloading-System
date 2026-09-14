@@ -1,16 +1,93 @@
 import os
+from dataclasses import dataclass
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from dotenv import load_dotenv
+
+if TYPE_CHECKING:
+    from app.db import RequestStore
 
 load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 
 TMDB_API_KEY = os.environ.get("TMDB_API_KEY")
 
-QBIT_HOST = os.environ.get("QBIT_HOST", "192.168.0.133")
-QBIT_PORT = int(os.environ.get("QBIT_PORT", "30024"))
-QBIT_USERNAME = os.environ.get("QBIT_USERNAME", "")
-QBIT_PASSWORD = os.environ.get("QBIT_PASSWORD", "")
+# Tracked separately from the defaulted QBIT_* constants below so the
+# frontend migration's setup wizard/Connections panel (Part E) can tell
+# "genuinely set via env" apart from "just using the hardcoded fallback" —
+# QBIT_HOST is never actually None/empty the way TMDB_API_KEY can be, so
+# truthiness alone can't answer that question the way it can for TMDB.
+_QBIT_HOST_ENV = os.environ.get("QBIT_HOST")
+_QBIT_PORT_ENV = os.environ.get("QBIT_PORT")
+_QBIT_USERNAME_ENV = os.environ.get("QBIT_USERNAME")
+_QBIT_PASSWORD_ENV = os.environ.get("QBIT_PASSWORD")
+
+QBIT_HOST = _QBIT_HOST_ENV or "192.168.0.133"
+QBIT_PORT = int(_QBIT_PORT_ENV or "30024")
+QBIT_USERNAME = _QBIT_USERNAME_ENV or ""
+QBIT_PASSWORD = _QBIT_PASSWORD_ENV or ""
+
+# -- Frontend migration Part E: first-run setup wizard, DB-backed with an
+#    env-var override. An env var always wins when set, so an existing
+#    .env-based install (including this app's own NAS deploy) needs zero
+#    changes; otherwise the value comes from the settings table, editable
+#    through the wizard/Settings' Connections panel — the inverse of
+#    pipeline_settings.py's convention (there the DB is primary, config.py
+#    only a fallback default), because these are per-installation secrets
+#    an env-var user has already handled via infra-as-code, not tunable
+#    behavior every install is expected to configure through the UI.
+#
+#    Known, accepted gap: both api.py's lifespan (the worker's own
+#    TMDBClient/QBTClient) and its get_tmdb/get_qbt route dependencies
+#    resolve these only once, at startup — not per-request — so a value
+#    saved through the wizard needs a restart to actually take effect.
+#    (A per-request re-resolve was tried and reverted: it broke the test
+#    suite's fake-injection pattern for app.state.tmdb/app.state.qbt —
+#    see get_tmdb's own docstring in api.py.) Narrow in practice: setup
+#    happens once, at first boot, before anything's depended on either
+#    value yet — the wizard's own final step can just say "restart to
+#    apply" rather than actually needing to solve this. --
+
+
+def resolve_tmdb_api_key(store: "RequestStore") -> str | None:
+    return TMDB_API_KEY or store.get_settings().get("tmdb_api_key")
+
+
+def tmdb_api_key_source(store: "RequestStore") -> str | None:
+    """"env" | "db" | None — which of the two resolve_tmdb_api_key() above
+    actually used. Drives /api/setup/status and PUT /api/setup/tmdb's
+    "can't override an env var from the UI" refusal."""
+    if TMDB_API_KEY:
+        return "env"
+    return "db" if store.get_settings().get("tmdb_api_key") else None
+
+
+@dataclass(frozen=True)
+class QbtConnection:
+    host: str
+    port: int
+    username: str
+    password: str
+
+
+def resolve_qbt_config(store: "RequestStore") -> QbtConnection:
+    settings = store.get_settings()
+    return QbtConnection(
+        host=QBIT_HOST if _QBIT_HOST_ENV else (settings.get("qbt_host") or QBIT_HOST),
+        port=QBIT_PORT if _QBIT_PORT_ENV else int(settings.get("qbt_port") or QBIT_PORT),
+        username=QBIT_USERNAME if _QBIT_USERNAME_ENV else (settings.get("qbt_username") or QBIT_USERNAME),
+        password=QBIT_PASSWORD if _QBIT_PASSWORD_ENV else (settings.get("qbt_password") or QBIT_PASSWORD),
+    )
+
+
+def qbt_config_source(store: "RequestStore") -> str:
+    """"env" | "db" — qBittorrent connection fields are set as one group
+    through the wizard/Connections panel, not field-by-field, so one
+    combined source (env wins if *any* of the four vars is set) is enough,
+    unlike TMDB's single-value source above."""
+    if _QBIT_HOST_ENV or _QBIT_PORT_ENV or _QBIT_USERNAME_ENV or _QBIT_PASSWORD_ENV:
+        return "env"
+    return "db"
 
 # -- Stage 3: API/persistence layer. --
 

@@ -10,8 +10,9 @@ from datetime import datetime, timedelta, timezone
 import pytest
 from fastapi.testclient import TestClient
 
-from app import api
+from app import api, config
 from app.db import RequestStore
+from app.plex import PlexClient
 
 MOVIE = {
     "id": 693134,
@@ -273,6 +274,25 @@ class FakePlexLinker:
         self._status = {"linked": False, "username": None, "server_name": None, "pending": False, "error": None}
 
 
+class FakeLoginSession:
+    """Stands in for app.plex.LoginSession: API tests exercise route
+    wiring, not the real PIN polling flow (see test_plex.py for that)."""
+
+    def __init__(self):
+        self.started = 0
+        self._status = {"pending": False, "result": None, "error": None}
+        self.raise_on_start: Exception | None = None
+
+    async def start(self) -> str:
+        self.started += 1
+        if self.raise_on_start:
+            raise self.raise_on_start
+        return "https://app.plex.tv/auth#?clientID=test&code=ABCD"
+
+    def status(self) -> dict:
+        return self._status
+
+
 @pytest.fixture
 def client_and_deps(tmp_path):
     store = RequestStore(str(tmp_path / "test.db"))
@@ -280,6 +300,7 @@ def client_and_deps(tmp_path):
     worker = NoOpWorker()
     qbt = FakeQBTClient()
     plex_linker = FakePlexLinker()
+    login_session = FakeLoginSession()
 
     @asynccontextmanager
     async def test_lifespan(app):
@@ -288,11 +309,65 @@ def client_and_deps(tmp_path):
         app.state.worker = worker
         app.state.qbt = qbt
         app.state.plex_linker = plex_linker
+        app.state.login_session = login_session
         yield
 
     api.app.router.lifespan_context = test_lifespan
     with TestClient(api.app) as client:
+        # Every test in this file predates auth (frontend migration Part
+        # C) and exercises route logic on the assumption that whoever's
+        # calling is already allowed to — rather than touch every one of
+        # them individually, the fixture itself establishes one signed-in
+        # admin session up front, and TestClient (which persists cookies
+        # across requests on the same instance) carries it automatically
+        # from here on. Tests that specifically need to exercise
+        # unauthenticated/non-admin/setup-bootstrap behavior use the
+        # separate `unauthenticated_client`/`non_admin_client` fixtures
+        # below instead of this one.
+        store.update_settings(
+            {
+                "plex_token": "admin-plex-token",
+                "plex_client_id": "test-client-id",
+                "plex_server_machine_id": "test-machine-id",
+            }
+        )
+        admin = store.upsert_user("admin-plex-id", "admin", True)
+        session = store.create_session(
+            "test-admin-session",
+            admin.plex_user_id,
+            admin.username,
+            True,
+            (datetime.now(timezone.utc) + timedelta(days=1)).isoformat(),
+        )
+        client.cookies.set(api.SESSION_COOKIE_NAME, session.id)
         yield client, store, tmdb, worker, qbt, plex_linker
+
+
+@pytest.fixture
+def unauthenticated_client(client_and_deps):
+    """The same fixture, but with the admin session cookie stripped —
+    for tests that specifically exercise the "not signed in" 401 path."""
+    client, store, tmdb, worker, qbt, plex_linker = client_and_deps
+    client.cookies.delete(api.SESSION_COOKIE_NAME)
+    return client, store, tmdb, worker, qbt, plex_linker
+
+
+@pytest.fixture
+def non_admin_client(client_and_deps):
+    """The same fixture, but signed in as a regular (non-admin) user —
+    for tests that specifically exercise the "signed in, not admin" 403
+    path. A distinct Plex identity from the fixture's own admin user."""
+    client, store, tmdb, worker, qbt, plex_linker = client_and_deps
+    user = store.upsert_user("regular-plex-id", "regular-user", False)
+    session = store.create_session(
+        "test-regular-session",
+        user.plex_user_id,
+        user.username,
+        False,
+        (datetime.now(timezone.utc) + timedelta(days=1)).isoformat(),
+    )
+    client.cookies.set(api.SESSION_COOKIE_NAME, session.id)
+    return client, store, tmdb, worker, qbt, plex_linker
 
 
 def test_search_returns_tmdb_results(client_and_deps):
@@ -1568,3 +1643,286 @@ def test_list_requests_exposes_episode_fields(client_and_deps):
     assert row["show_id"] == show.id
     assert row["season_number"] == 1
     assert row["episode_number"] == 4
+
+
+def test_create_request_records_who_asked_for_it(client_and_deps):
+    """frontend migration Part C2 — the fixture's own admin session."""
+    client, store, _, _, _, _ = client_and_deps
+
+    response = client.post("/api/requests", json={"tmdb_id": 693134, "query": "dune"})
+
+    assert response.status_code == 201
+    body = response.json()
+    assert body["requested_by_plex_id"] == "admin-plex-id"
+    assert body["requested_by_username"] == "admin"
+
+
+# ---------------------------------------------------------------------------
+# Auth: default-deny wiring, admin gating, setup bootstrap (frontend
+# migration Part C/E/G1)
+# ---------------------------------------------------------------------------
+
+
+def test_unauthenticated_request_is_refused(unauthenticated_client):
+    client, _, _, _, _, _ = unauthenticated_client
+
+    response = client.get("/api/requests")
+
+    assert response.status_code == 401
+
+
+def test_a_route_with_no_explicit_auth_dependency_is_still_refused(unauthenticated_client):
+    """Proves the default-deny *wiring*, not just that the allowlisted
+    routes happen to work — a plain browse route declares no auth
+    dependency of its own (it's carried entirely by `router`'s blanket
+    one), so this only passes if that blanket dependency is actually
+    attached, not merely present in the file."""
+    client, _, _, _, _, _ = unauthenticated_client
+
+    response = client.get("/api/discover/popular")
+
+    assert response.status_code == 401
+
+
+def test_non_admin_is_refused_admin_only_routes(non_admin_client):
+    client, _, _, _, _, _ = non_admin_client
+
+    response = client.get("/api/settings/pipeline")
+
+    assert response.status_code == 403
+
+
+def test_non_admin_can_still_use_regular_routes(non_admin_client):
+    """require_session-only routes stay open to every signed-in user,
+    not just the admin — the shared queue is deliberately shared."""
+    client, _, _, _, _, _ = non_admin_client
+
+    response = client.get("/api/requests")
+
+    assert response.status_code == 200
+
+
+def test_health_needs_no_auth_at_all(unauthenticated_client):
+    client, _, _, _, _, _ = unauthenticated_client
+
+    response = client.get("/api/health")
+
+    assert response.status_code == 200
+
+
+def test_setup_status_needs_no_auth(unauthenticated_client):
+    client, _, _, _, _, _ = unauthenticated_client
+
+    response = client.get("/api/setup/status")
+
+    assert response.status_code == 200
+    # The fixture's own store already has plex_token set (see
+    # client_and_deps), so from setup's point of view this looks like an
+    # already-completed install — matches every other test in this file.
+    assert response.json()["setup_complete"] is True
+
+
+def test_setup_mutation_410s_once_setup_is_already_complete(unauthenticated_client):
+    client, _, _, _, _, _ = unauthenticated_client
+
+    response = client.put("/api/setup/tmdb", json={"api_key": "new-key"})
+
+    assert response.status_code == 410
+
+
+def test_setup_mutation_refuses_missing_token_before_setup_completes(tmp_path, monkeypatch):
+    """A fresh store (no plex_token at all) — the genuine bootstrap
+    window, not the fixture's already-linked default. Also simulates a
+    genuinely unconfigured environment: this repo's own backend/.env has
+    a real TMDB_API_KEY, which would otherwise make setup_tmdb 409 here
+    ("already configured via environment") instead of exercising the
+    token gate this test is actually about."""
+    monkeypatch.setattr(config, "TMDB_API_KEY", None)
+    store = RequestStore(str(tmp_path / "fresh.db"))
+    tmdb = FakeTMDBClient()
+    worker = NoOpWorker()
+    qbt = FakeQBTClient()
+
+    @asynccontextmanager
+    async def test_lifespan(app):
+        app.state.store = store
+        app.state.tmdb = tmdb
+        app.state.worker = worker
+        app.state.qbt = qbt
+        app.state.plex_linker = FakePlexLinker()
+        app.state.login_session = FakeLoginSession()
+        yield
+
+    api.app.router.lifespan_context = test_lifespan
+    with TestClient(api.app) as client:
+        response = client.put("/api/setup/tmdb", json={"api_key": "a-key"})
+        assert response.status_code == 401
+
+        token = store.get_or_create_setup_token()
+        response = client.put(
+            "/api/setup/tmdb", json={"api_key": "a-key"}, headers={"X-Setup-Token": "wrong-token"}
+        )
+        assert response.status_code == 401
+
+        response = client.put(
+            "/api/setup/tmdb", json={"api_key": "a-key"}, headers={"X-Setup-Token": token}
+        )
+        assert response.status_code == 200
+        body = response.json()
+        assert body["tmdb_configured"] is True
+        assert body["restart_required"] is True
+        assert store.get_settings()["tmdb_api_key"] == "a-key"
+
+
+def test_setup_tmdb_refuses_to_override_an_env_configured_key(unauthenticated_client, monkeypatch):
+    client, store, _, _, _, _ = unauthenticated_client
+    store.update_settings({"plex_token": None})  # reopen the bootstrap window
+    monkeypatch.setattr(config, "TMDB_API_KEY", "from-env")
+    token = store.get_or_create_setup_token()
+
+    response = client.put("/api/setup/tmdb", json={"api_key": "from-ui"}, headers={"X-Setup-Token": token})
+
+    assert response.status_code == 409
+
+
+def test_plex_link_bootstrap_requires_setup_token(unauthenticated_client):
+    client, store, _, _, _, _ = unauthenticated_client
+    store.update_settings({"plex_token": None})  # reopen the bootstrap window
+
+    response = client.post("/api/plex/link")
+    assert response.status_code == 401
+
+    token = store.get_or_create_setup_token()
+    response = client.post("/api/plex/link", headers={"X-Setup-Token": token})
+    assert response.status_code == 200
+
+
+def test_plex_link_requires_admin_once_already_linked(non_admin_client):
+    client, _, _, _, _, _ = non_admin_client
+
+    response = client.post("/api/plex/link")
+
+    assert response.status_code == 403
+
+
+def test_login_start_returns_auth_url(client_and_deps):
+    client, _, _, _, _, _ = client_and_deps
+
+    response = client.post("/api/auth/login/start")
+
+    assert response.status_code == 200
+    assert "code=ABCD" in response.json()["auth_url"]
+
+
+def test_login_status_sets_session_cookie_once_resolved(client_and_deps):
+    client, store, _, _, _, _ = client_and_deps
+    login_session = api_state_login_session(client)
+    login_session._status = {
+        "pending": False,
+        "result": {"plex_user_id": "friend-1", "username": "friend", "is_admin": False},
+        "error": None,
+    }
+
+    response = client.get("/api/auth/login/status")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["authenticated"] is True
+    assert body["username"] == "friend"
+    assert body["is_admin"] is False
+    assert api.SESSION_COOKIE_NAME in response.cookies
+    # And the new user is genuinely persisted, not just reflected back.
+    assert store.get_user("friend-1").username == "friend"
+
+
+def test_login_status_reports_pending_error_without_a_cookie(client_and_deps):
+    client, _, _, _, _, _ = client_and_deps
+    login_session = api_state_login_session(client)
+    login_session._status = {"pending": False, "result": None, "error": "Your Plex account doesn't have access."}
+
+    response = client.get("/api/auth/login/status")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["authenticated"] is False
+    assert body["error"] == "Your Plex account doesn't have access."
+    assert api.SESSION_COOKIE_NAME not in response.cookies
+
+
+def test_get_current_session_reflects_the_signed_in_user(non_admin_client):
+    client, _, _, _, _, _ = non_admin_client
+
+    response = client.get("/api/auth/session")
+
+    assert response.status_code == 200
+    assert response.json() == {"username": "regular-user", "is_admin": False, "has_seen_tutorial": False}
+
+
+def test_logout_clears_the_session_and_is_idempotent(client_and_deps):
+    client, store, _, _, _, _ = client_and_deps
+
+    response = client.post("/api/auth/logout")
+    assert response.status_code == 200
+    assert client.get("/api/auth/session").status_code == 401
+
+    # Calling it again with no session left at all must not error.
+    response = client.post("/api/auth/logout")
+    assert response.status_code == 200
+
+
+def test_mark_tutorial_seen_persists(non_admin_client):
+    client, store, _, _, _, _ = non_admin_client
+
+    response = client.put("/api/auth/tutorial-seen")
+
+    assert response.status_code == 200
+    assert store.get_user("regular-plex-id").has_seen_tutorial is True
+
+
+def test_list_plex_servers_returns_only_owned_ones(client_and_deps, monkeypatch):
+    client, store, _, _, _, _ = client_and_deps
+    monkeypatch.setattr(
+        PlexClient,
+        "list_resources",
+        lambda self, token: [
+            {"name": "Mine", "url": "http://a", "token": "t", "owned": True, "machine_identifier": "mid-a"},
+            {"name": "Friend's", "url": "http://b", "token": "t", "owned": False, "machine_identifier": "mid-b"},
+        ],
+    )
+
+    response = client.get("/api/plex/servers")
+
+    assert response.status_code == 200
+    assert response.json() == [{"name": "Mine", "machine_identifier": "mid-a"}]
+
+
+def test_select_plex_server_switches_and_signs_out_other_sessions(client_and_deps, monkeypatch):
+    client, store, _, _, _, _ = client_and_deps
+    monkeypatch.setattr(
+        PlexClient,
+        "list_resources",
+        lambda self, token: [
+            {"name": "Second NAS", "url": "http://second", "token": "tok2", "owned": True, "machine_identifier": "mid-2"}
+        ],
+    )
+    # A second, non-admin session that must not survive the switch.
+    other = store.upsert_user("other-user", "other", False)
+    store.create_session(
+        "other-session", other.plex_user_id, other.username, False,
+        (datetime.now(timezone.utc) + timedelta(days=1)).isoformat(),
+    )
+
+    response = client.put("/api/plex/server", json={"machine_identifier": "mid-2"})
+
+    assert response.status_code == 200
+    assert response.json() == {"server_name": "Second NAS"}
+    assert store.get_settings()["plex_server_machine_id"] == "mid-2"
+    assert store.get_session("other-session") is None
+
+
+def api_state_login_session(client) -> "FakeLoginSession":
+    """The FakeLoginSession instance the running app's lifespan installed
+    — reached through the TestClient's own app reference, since the
+    fixture doesn't hand it back directly (login flow tests are the only
+    ones that need to reach into it)."""
+    return client.app.state.login_session

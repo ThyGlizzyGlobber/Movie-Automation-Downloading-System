@@ -3,7 +3,7 @@ import asyncio
 import pytest
 
 from app.db import RequestStore
-from app.plex import PlexClient, PlexError, PlexLinker, has_in_library, plex_library_lookup
+from app.plex import LoginSession, PlexClient, PlexError, PlexLinker, has_in_library, plex_library_lookup
 
 
 class FakeResponse:
@@ -107,6 +107,94 @@ def test_get_owned_server_skips_unowned_and_non_server_resources():
     client = PlexClient("client-1", session=session)
 
     assert client.get_owned_server("account-token") is None
+
+
+def test_list_resources_includes_owned_and_shared_servers():
+    resources = [
+        {
+            "provides": "server",
+            "owned": True,
+            "name": "Living Room NAS",
+            "clientIdentifier": "machine-owned",
+            "accessToken": "owned-token",
+            "connections": [{"uri": "http://owned", "local": True, "relay": False}],
+        },
+        {
+            "provides": "server",
+            "owned": False,
+            "name": "Friend's Server",
+            "clientIdentifier": "machine-shared",
+            "accessToken": "shared-token",
+            "connections": [{"uri": "http://shared", "local": False, "relay": False}],
+        },
+        {"provides": "player", "owned": True, "connections": [{"uri": "x", "local": True, "relay": False}]},
+    ]
+    session = FakeSession(get_responses=[FakeResponse(json_data=resources)])
+    client = PlexClient("client-1", session=session)
+
+    result = client.list_resources("account-token")
+
+    assert result == [
+        {
+            "name": "Living Room NAS",
+            "url": "http://owned",
+            "token": "owned-token",
+            "owned": True,
+            "machine_identifier": "machine-owned",
+        },
+        {
+            "name": "Friend's Server",
+            "url": "http://shared",
+            "token": "shared-token",
+            "owned": False,
+            "machine_identifier": "machine-shared",
+        },
+    ]
+
+
+def test_check_server_access_matches_by_machine_identifier():
+    resources = [
+        {
+            "provides": "server",
+            "owned": False,
+            "name": "Family Server",
+            "clientIdentifier": "our-machine-id",
+            "accessToken": "tok",
+            "connections": [{"uri": "http://server", "local": True, "relay": False}],
+        }
+    ]
+    session = FakeSession(get_responses=[FakeResponse(json_data=resources)])
+    client = PlexClient("client-1", session=session)
+
+    assert client.check_server_access("account-token", "our-machine-id") == {"owned": False}
+
+
+def test_check_server_access_returns_none_when_server_not_in_list():
+    session = FakeSession(get_responses=[FakeResponse(json_data=[])])
+    client = PlexClient("client-1", session=session)
+
+    assert client.check_server_access("account-token", "our-machine-id") is None
+
+
+def test_get_account_identity_returns_id_and_username():
+    session = FakeSession(get_responses=[FakeResponse(json_data={"id": 42, "username": "bejay"})])
+    client = PlexClient("client-1", session=session)
+
+    assert client.get_account_identity("account-token") == {"id": 42, "username": "bejay"}
+
+
+def test_get_account_identity_falls_back_to_title_when_no_username():
+    session = FakeSession(get_responses=[FakeResponse(json_data={"id": 42, "title": "Bejay"})])
+    client = PlexClient("client-1", session=session)
+
+    assert client.get_account_identity("account-token") == {"id": 42, "username": "Bejay"}
+
+
+def test_get_account_identity_returns_none_on_error_response():
+    session = FakeSession(get_responses=[FakeResponse(status_code=401)])
+    client = PlexClient("client-1", session=session)
+
+    assert client.get_account_identity("account-token") is None
 
 
 def test_has_movie_matches_normalized_title_and_year():
@@ -327,8 +415,16 @@ def test_linker_poll_persists_token_username_and_server_once_signed_in(monkeypat
     monkeypatch.setattr(PlexClient, "check_pin", lambda self, pin_id: "the-token")
     monkeypatch.setattr(
         PlexClient,
-        "get_owned_server",
-        lambda self, token: {"name": "Living Room NAS", "url": "http://server", "token": "server-token"},
+        "list_resources",
+        lambda self, token: [
+            {
+                "name": "Living Room NAS",
+                "url": "http://server",
+                "token": "server-token",
+                "owned": True,
+                "machine_identifier": "machine-abc",
+            }
+        ],
     )
     monkeypatch.setattr(PlexClient, "get_account_username", lambda self, token: "bejay")
     linker = PlexLinker(store)
@@ -347,6 +443,7 @@ def test_linker_poll_persists_token_username_and_server_once_signed_in(monkeypat
     assert settings["plex_username"] == "bejay"
     assert settings["plex_server_url"] == "http://server"
     assert settings["plex_server_token"] == "server-token"
+    assert settings["plex_server_machine_id"] == "machine-abc"
 
     status = linker.status()
     assert status["linked"] is True
@@ -358,7 +455,7 @@ def test_linker_poll_records_error_when_signed_in_but_no_server_found(monkeypatc
     store = RequestStore(":memory:")
     monkeypatch.setattr(PlexClient, "create_pin", lambda self: {"id": 1, "code": "ABCD"})
     monkeypatch.setattr(PlexClient, "check_pin", lambda self, pin_id: "the-token")
-    monkeypatch.setattr(PlexClient, "get_owned_server", lambda self, token: None)
+    monkeypatch.setattr(PlexClient, "list_resources", lambda self, token: [])
     linker = PlexLinker(store)
 
     async def run():
@@ -385,3 +482,89 @@ def test_linker_unlink_clears_settings_and_cancels_pending_poll(monkeypatch):
     assert settings["plex_token"] is None
     assert settings["plex_username"] is None
     assert linker.status()["linked"] is False
+
+
+def test_linker_unlink_clears_machine_id_and_revokes_non_admin_sessions(monkeypatch):
+    store = RequestStore(":memory:")
+    store.update_settings(
+        {"plex_token": "tok", "plex_server_url": "http://server", "plex_server_machine_id": "machine-abc"}
+    )
+    user = store.upsert_user("friend-1", "friend", False)
+    store.create_session("sess-1", user.plex_user_id, user.username, False, "2999-01-01T00:00:00+00:00")
+    linker = PlexLinker(store)
+
+    linker.unlink()
+
+    assert store.get_settings()["plex_server_machine_id"] is None
+    assert store.get_session("sess-1") is None
+
+
+# ---------------------------------------------------------------------------
+# LoginSession — the end-user equivalent of PlexLinker's PIN sign-in flow
+# ---------------------------------------------------------------------------
+
+
+def test_login_session_persists_result_once_signed_in_with_server_access(monkeypatch):
+    store = RequestStore(":memory:")
+    store.update_settings({"plex_server_machine_id": "our-machine"})
+    monkeypatch.setattr(PlexClient, "create_pin", lambda self: {"id": 1, "code": "ABCD"})
+    monkeypatch.setattr(PlexClient, "check_pin", lambda self, pin_id: "user-token")
+    monkeypatch.setattr(
+        PlexClient, "check_server_access", lambda self, token, machine_id: {"owned": False}
+    )
+    monkeypatch.setattr(
+        PlexClient, "get_account_identity", lambda self, token: {"id": 99, "username": "friend"}
+    )
+    login = LoginSession(store)
+
+    async def run():
+        await login.start()
+        for _ in range(50):
+            if login.status()["result"]:
+                break
+            await asyncio.sleep(0.02)
+
+    asyncio.run(run())
+
+    status = login.status()
+    assert status["result"] == {"plex_user_id": "99", "username": "friend", "is_admin": False}
+    assert status["error"] is None
+
+
+def test_login_session_records_error_when_account_has_no_server_access(monkeypatch):
+    store = RequestStore(":memory:")
+    store.update_settings({"plex_server_machine_id": "our-machine"})
+    monkeypatch.setattr(PlexClient, "create_pin", lambda self: {"id": 1, "code": "ABCD"})
+    monkeypatch.setattr(PlexClient, "check_pin", lambda self, pin_id: "user-token")
+    monkeypatch.setattr(PlexClient, "check_server_access", lambda self, token, machine_id: None)
+    login = LoginSession(store)
+
+    async def run():
+        await login.start()
+        for _ in range(50):
+            if login.status()["error"]:
+                break
+            await asyncio.sleep(0.02)
+
+    asyncio.run(run())
+
+    assert login.status()["result"] is None
+    assert "doesn't have access" in login.status()["error"]
+
+
+def test_login_session_records_error_when_no_server_linked_yet(monkeypatch):
+    store = RequestStore(":memory:")  # no plex_server_machine_id at all
+    monkeypatch.setattr(PlexClient, "create_pin", lambda self: {"id": 1, "code": "ABCD"})
+    monkeypatch.setattr(PlexClient, "check_pin", lambda self, pin_id: "user-token")
+    login = LoginSession(store)
+
+    async def run():
+        await login.start()
+        for _ in range(50):
+            if login.status()["error"]:
+                break
+            await asyncio.sleep(0.02)
+
+    asyncio.run(run())
+
+    assert "hasn't linked a Plex account" in login.status()["error"]

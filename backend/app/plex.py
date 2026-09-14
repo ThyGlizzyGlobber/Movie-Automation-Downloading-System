@@ -89,30 +89,77 @@ class PlexClient:
         data = response.json()
         return data.get("username") or data.get("title")
 
-    def get_owned_server(self, token: str) -> dict | None:
-        """The first Plex Media Server this account owns, with a usable
-        connection URL and its own resource-level access token (what a PMS
-        actually expects, distinct from the plex.tv account token)."""
+    def list_resources(self, token: str) -> list[dict]:
+        """Every Plex Media Server resource this account can see — owned
+        *or* shared with them, unlike get_owned_server below, which stops
+        at the first owned one. Backs the frontend migration's end-user
+        access check (does this account have access to *our* server —
+        Part C1) and the admin's own multi-server picker (a person can
+        own more than one Plex server, Part C1's "linking is a picker, not
+        take the first result"). A user's own `/api/v2/resources` call
+        includes servers shared with them, not just ones they own — the
+        same mechanism Plex's own apps use to populate a "select server"
+        screen, confirmed against Plex community/forum docs during the
+        migration plan's design pass."""
         response = self.session.get(
             f"{PLEX_TV_BASE}/api/v2/resources", headers=self._headers(token), params={"includeHttps": "1"}, timeout=10
         )
         if not response.ok:
             raise PlexError(f"couldn't list Plex servers: {response.status_code}")
+        resources = []
         for resource in response.json():
             if "server" not in (resource.get("provides") or "").split(","):
-                continue
-            if not resource.get("owned"):
                 continue
             connections = resource.get("connections") or []
             local = next((c for c in connections if c.get("local") and not c.get("relay")), None)
             chosen = local or (connections[0] if connections else None)
             if not chosen:
                 continue
-            return {
-                "name": resource.get("name"),
-                "url": chosen["uri"],
-                "token": resource.get("accessToken") or token,
-            }
+            resources.append(
+                {
+                    "name": resource.get("name"),
+                    "url": chosen["uri"],
+                    "token": resource.get("accessToken") or token,
+                    "owned": bool(resource.get("owned")),
+                    "machine_identifier": resource.get("clientIdentifier"),
+                }
+            )
+        return resources
+
+    def get_owned_server(self, token: str) -> dict | None:
+        """The first Plex Media Server this account owns, with a usable
+        connection URL and its own resource-level access token (what a PMS
+        actually expects, distinct from the plex.tv account token). A thin
+        filter over list_resources — kept as its own method/return shape
+        since it's still what admin unlink/relink-to-first-server callers
+        want, and changing its shape would break existing callers."""
+        for resource in self.list_resources(token):
+            if resource["owned"]:
+                return {"name": resource["name"], "url": resource["url"], "token": resource["token"]}
+        return None
+
+    def get_account_identity(self, token: str) -> dict | None:
+        """The signed-in account's own stable plex.tv id and username —
+        who is this, distinct from get_owned_server's server-linking
+        concern. Same /api/v2/user endpoint get_account_username already
+        uses; None if the token is no longer valid."""
+        response = self.session.get(f"{PLEX_TV_BASE}/api/v2/user", headers=self._headers(token), timeout=10)
+        if not response.ok:
+            return None
+        data = response.json()
+        return {"id": data.get("id"), "username": data.get("username") or data.get("title")}
+
+    def check_server_access(self, token: str, machine_identifier: str) -> dict | None:
+        """Whether this account has access — owned or shared — to the
+        Plex server identified by `machine_identifier` (this app's own
+        linked server, from settings' `plex_server_machine_id`). None
+        means no access at all, which is a hard refusal for end-user
+        login (frontend migration Part C3); otherwise `{"owned": bool}`,
+        which is what distinguishes the admin from every other authorized
+        user."""
+        for resource in self.list_resources(token):
+            if resource["machine_identifier"] == machine_identifier:
+                return {"owned": resource["owned"]}
         return None
 
     def has_movie(self, server_url: str, server_token: str, title: str, year: int | None) -> bool:
@@ -266,7 +313,8 @@ class PlexLinker:
             while time.monotonic() < deadline:
                 token = await asyncio.to_thread(client.check_pin, pin_id)
                 if token:
-                    server = await asyncio.to_thread(client.get_owned_server, token)
+                    resources = await asyncio.to_thread(client.list_resources, token)
+                    server = next((r for r in resources if r["owned"]), None)
                     if not server:
                         self._error = "Signed in, but no Plex server was found on this account."
                         return
@@ -279,6 +327,10 @@ class PlexLinker:
                             "plex_server_url": server["url"],
                             "plex_server_token": server["token"],
                             "plex_server_name": server["name"],
+                            # Frontend migration Part C1: what end-user
+                            # access checks compare against — see
+                            # check_server_access above.
+                            "plex_server_machine_id": server["machine_identifier"],
                         },
                     )
                     return
@@ -309,5 +361,82 @@ class PlexLinker:
                 "plex_server_url": None,
                 "plex_server_token": None,
                 "plex_server_name": None,
+                "plex_server_machine_id": None,
             }
         )
+        # Unlinking removes the only server anyone's access was ever
+        # checked against — every session (including the admin's own)
+        # must re-authenticate rather than keep working against a server
+        # that's no longer configured at all.
+        self.store.delete_non_admin_sessions()
+
+
+class LoginSession:
+    """The end-user equivalent of PlexLinker's PIN sign-in flow (frontend
+    migration Part C3) — same plex.tv PIN mechanism, different purpose:
+    PlexLinker links *this app* to a Plex server (persisted, survives
+    restarts); LoginSession authenticates *one person* against the
+    already-linked server (a signed-in app session, not app-wide state).
+    Deliberately in-memory only, unlike PlexLinker — an interrupted login
+    attempt has nothing worth surviving a restart for, the user just
+    starts over."""
+
+    def __init__(self, store):
+        self.store = store
+        self._task: asyncio.Task | None = None
+        self._result: dict | None = None
+        self._error: str | None = None
+
+    def _client(self) -> PlexClient:
+        settings = self.store.get_settings()
+        client_id = settings.get("plex_client_id")
+        if not client_id:
+            client_id = new_client_identifier()
+            self.store.update_settings({"plex_client_id": client_id})
+        return PlexClient(client_id)
+
+    async def start(self) -> str:
+        client = self._client()
+        self._error = None
+        self._result = None
+        pin = await asyncio.to_thread(client.create_pin)
+        if self._task and not self._task.done():
+            self._task.cancel()
+        self._task = asyncio.create_task(self._poll(client, pin["id"]))
+        return client.auth_url(pin["code"])
+
+    async def _poll(self, client: PlexClient, pin_id: int) -> None:
+        deadline = time.monotonic() + PIN_TIMEOUT_SECONDS
+        try:
+            while time.monotonic() < deadline:
+                token = await asyncio.to_thread(client.check_pin, pin_id)
+                if token:
+                    machine_id = self.store.get_settings().get("plex_server_machine_id")
+                    if not machine_id:
+                        self._error = "This server hasn't linked a Plex account yet."
+                        return
+                    access = await asyncio.to_thread(client.check_server_access, token, machine_id)
+                    if access is None:
+                        self._error = "Your Plex account doesn't have access to this server."
+                        return
+                    identity = await asyncio.to_thread(client.get_account_identity, token)
+                    if not identity or not identity.get("id"):
+                        self._error = "Couldn't verify the signed-in Plex account."
+                        return
+                    self._result = {
+                        "plex_user_id": str(identity["id"]),
+                        "username": identity.get("username"),
+                        "is_admin": access["owned"],
+                    }
+                    return
+                await asyncio.sleep(PIN_POLL_INTERVAL_SECONDS)
+            self._error = "Plex sign-in timed out — try again."
+        except Exception as exc:  # fail safe — never leave the frontend polling forever
+            self._error = str(exc)
+
+    def status(self) -> dict:
+        return {
+            "pending": bool(self._task and not self._task.done()),
+            "result": self._result,
+            "error": self._error,
+        }
