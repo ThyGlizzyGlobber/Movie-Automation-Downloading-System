@@ -55,3 +55,33 @@ export interface PlexStatus {
   pending: boolean
   error: string | null
 }
+
+// PUT /api/settings/tmdb and /api/settings/qbittorrent (Part I's
+// Connections panel) — same response shape as their one-time /api/setup/*
+// counterparts, just always admin-gated instead of setup-token-gated.
+export interface TmdbSettingsResult {
+  tmdb_configured: boolean
+  tmdb_source: 'db'
+  restart_required: true
+}
+
+export interface QbtSettingsResult {
+  qbt_configured: boolean
+  qbt_source: 'db'
+  restart_required: true
+}
+
+// GET /api/admin/activity (Part D) — mirrors api.py's RequesterStat/
+// ActivityOut.
+export interface RequesterStat {
+  plex_user_id: string
+  username: string | null
+  total_requests: number
+  requests_this_month: number
+}
+
+export interface ActivityOut {
+  requests: import('./requests').RequestOut[]
+  total: number
+  user_stats: RequesterStat[]
+}

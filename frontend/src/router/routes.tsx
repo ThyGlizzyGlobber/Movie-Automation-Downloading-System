@@ -14,6 +14,7 @@ import WatchingPage from '../features/tv/WatchingPage'
 import SearchPage from '../features/search/SearchPage'
 import PersonPage from '../features/person/PersonPage'
 import RequestsPage from '../features/requests/RequestsPage'
+import SettingsPage from '../features/settings/SettingsPage'
 import {
   getComingSoon,
   getDiscoverByGenre,
@@ -95,7 +96,7 @@ export const router = createHashRouter([
         path: 'settings',
         element: (
           <RequireAdmin>
-            <ComingSoon label="Settings" />
+            <SettingsPage />
           </RequireAdmin>
         ),
       },

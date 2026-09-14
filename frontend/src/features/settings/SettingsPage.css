@@ -1,0 +1,299 @@
+/* Part I's redesign: a real nav shell instead of the old app's flat grid
+   of always-visible cards — one section's panel at a time, chosen from a
+   left-hand nav on desktop/tablet or a full-screen drill-down on mobile
+   (Part H's own mobile-gets-its-own-pass principle: this isn't the
+   desktop layout squeezed narrow, it's a different interaction). */
+.settings-shell {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  max-width: 980px;
+  margin: 0 auto;
+}
+.settings-hide-mobile {
+  display: none;
+}
+@media (min-width: 860px) {
+  .settings-shell {
+    flex-direction: row;
+    align-items: flex-start;
+    gap: 28px;
+  }
+  .settings-nav-col {
+    flex: 0 0 240px;
+    position: sticky;
+    top: calc(var(--topbar-h, 64px) + 20px);
+  }
+  .settings-panel-col {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+  .settings-hide-mobile {
+    display: block;
+  }
+}
+
+.settings-nav-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.settings-nav-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 16px;
+  border-radius: 10px;
+  background: none;
+  border: none;
+  border-bottom: 1px solid var(--border);
+  color: var(--text);
+  font-size: 15px;
+  font-weight: 600;
+  text-align: left;
+  width: 100%;
+}
+.settings-nav-item .material-symbols-rounded {
+  font-size: 20px;
+  color: var(--text-dim);
+}
+.settings-nav-item:active {
+  background: var(--bg-card);
+}
+.settings-nav-item.active {
+  background: var(--bg-card);
+  color: var(--accent);
+}
+.settings-nav-item.active .material-symbols-rounded {
+  color: var(--accent);
+}
+.settings-nav-item-chevron {
+  margin-left: auto;
+  color: var(--text-dim);
+  font-size: 18px !important;
+}
+@media (min-width: 860px) {
+  .settings-nav-item {
+    border-bottom: none;
+  }
+  .settings-nav-item-chevron {
+    display: none;
+  }
+}
+
+.settings-back-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  background: none;
+  border: none;
+  color: var(--accent);
+  font-size: 14.5px;
+  font-weight: 600;
+  margin-bottom: 16px;
+  padding: 0;
+}
+.settings-back-btn .material-symbols-rounded {
+  font-size: 18px;
+}
+@media (min-width: 860px) {
+  /* Placed after the base rule above — a media-query match doesn't
+     out-rank an unconditional rule of equal specificity that comes
+     later in the file, so this override has to sit after it, not
+     alongside the shell's other >=860px rules further up. */
+  .settings-back-btn {
+    display: none;
+  }
+}
+
+.settings-panel-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 18px 18px 20px;
+}
+.settings-panel-card h2 {
+  font-size: 18px;
+  font-weight: 800;
+  margin: 0 0 16px;
+  color: var(--text);
+}
+
+.settings-btn {
+  padding: 12px 20px;
+  font-size: 15px;
+  font-weight: 600;
+  border-radius: 10px;
+  background: var(--accent);
+  color: var(--accent-text);
+  border: none;
+}
+.settings-btn:active {
+  opacity: 0.85;
+}
+.settings-btn[disabled] {
+  background: var(--bg-elevated);
+  color: var(--text-dim);
+}
+.settings-btn.secondary {
+  background: var(--bg-elevated);
+  color: var(--text);
+  border: 1px solid var(--border);
+}
+.settings-btn.danger {
+  background: transparent;
+  color: var(--status-nospace);
+  border: 1px solid var(--status-nospace);
+}
+.settings-btn-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.plex-connected {
+  font-size: 15px;
+  margin-bottom: 14px;
+}
+.plex-hint {
+  color: var(--text-dim);
+  font-size: 13px;
+  margin-bottom: 14px;
+  line-height: 1.4;
+}
+.plex-error {
+  color: var(--status-nospace);
+  font-size: 13px;
+  margin-top: 10px;
+}
+.plex-success {
+  color: var(--status-complete);
+  font-size: 13px;
+  margin-top: 10px;
+}
+
+.settings-field {
+  margin-bottom: 16px;
+}
+.settings-field label {
+  display: block;
+  font-size: 13.5px;
+  color: var(--text-dim);
+  margin-bottom: 6px;
+}
+/* Bare selector, not scoped to specific [type="..."] values — several of
+   this page's <input>s don't set an explicit type attribute (defaulting
+   to text), which an attribute selector never matches regardless of the
+   resolved default; that silently left them at the browser's own
+   unstyled width instead of 100%, overflowing a narrow flex column.
+   .settings-checkbox-label's own more specific rule still wins for the
+   one checkbox that's nested inside a .settings-field. */
+.settings-field input,
+.settings-field select {
+  width: 100%;
+  padding: 10px 12px;
+  font-size: 15px;
+  box-sizing: border-box;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text);
+}
+/* flex-wrap (same fix as RequestsPage.css's .req-row): a text input's
+   own intrinsic minimum content width doesn't shrink to nothing just
+   because its flex-item wrapper has min-width:0, so a two-field row
+   silently overflowed a narrow phone width instead of wrapping. Each
+   field's own 160px basis is what actually triggers the drop to its own
+   line at the right width. */
+.settings-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.settings-row .settings-field {
+  flex: 1 1 160px;
+  min-width: 0;
+}
+.settings-size-range {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.settings-size-range input {
+  flex: 1;
+  min-width: 0;
+}
+.settings-size-range span {
+  color: var(--text-dim);
+  font-size: 14px;
+}
+.settings-checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--text);
+  font-size: 15px;
+  cursor: pointer;
+}
+.settings-checkbox-label input[type='checkbox'] {
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+}
+.settings-hint {
+  color: var(--text-dim);
+  font-size: 12.5px;
+  margin-top: 6px;
+  line-height: 1.4;
+}
+.settings-save-error {
+  color: var(--status-nospace);
+  font-size: 13px;
+  margin-top: 12px;
+}
+.settings-save-success {
+  color: var(--status-complete);
+  font-size: 13px;
+  margin-top: 12px;
+}
+.settings-env-note {
+  color: var(--text-dim);
+  font-size: 13px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 12px;
+  margin-bottom: 16px;
+  line-height: 1.4;
+}
+
+.settings-server-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+.settings-server-option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 14px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  color: var(--text);
+  font-size: 14.5px;
+  font-weight: 600;
+  text-align: left;
+}
+.settings-server-option.selected {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.about-footer {
+  text-align: center;
+  color: var(--text-dim);
+  font-size: 12px;
+  margin: 28px 0 12px;
+}

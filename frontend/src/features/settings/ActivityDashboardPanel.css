@@ -1,0 +1,59 @@
+/* Stacked-row cards, not a table — reads fine at any width including
+   mobile without a separate breakpoint pass (Part H's own ask: no
+   horizontally-scrolling table on a phone). */
+.activity-user-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.activity-user-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  background: var(--bg-elevated);
+  border-radius: 10px;
+  font-size: 14px;
+}
+.activity-user-name {
+  font-weight: 600;
+}
+.activity-user-counts {
+  color: var(--text-dim);
+  font-size: 13px;
+  text-align: right;
+}
+
+.activity-request-list {
+  display: flex;
+  flex-direction: column;
+}
+.activity-request-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 4px;
+  border-bottom: 1px solid var(--border);
+}
+.activity-request-row:last-child {
+  border-bottom: none;
+}
+.activity-request-main {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.activity-request-title {
+  font-size: 14.5px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.activity-request-sub {
+  font-size: 12.5px;
+  color: var(--text-dim);
+  margin-top: 2px;
+}

@@ -20,18 +20,10 @@ import {
   type SeasonGroup,
   type ShowGroup,
 } from '../../lib/requestGrouping'
+import { RETENTION_OPTIONS } from '../../lib/retention'
 import type { RedownloadMode, RequestOut } from '../../types/requests'
 import '../detail/DetailPage.css'
 import './RequestsPage.css'
-
-const RETENTION_OPTIONS: { days: number | null; label: string }[] = [
-  { days: null, label: 'Keep forever' },
-  { days: 30, label: 'Clear after 30 days' },
-  { days: 60, label: 'Clear after 60 days' },
-  { days: 90, label: 'Clear after 90 days' },
-  { days: 180, label: 'Clear after 180 days' },
-  { days: 365, label: 'Clear after 1 year' },
-]
 
 function formatDate(iso: string): string {
   return new Date(iso).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })
