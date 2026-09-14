@@ -46,6 +46,7 @@ SHOW = {
     "original_name": "Lanterns",
     "first_air_date": "2026-08-16",
     "number_of_seasons": 1,
+    "poster_path": "/lanterns.jpg",
 }
 
 _BTIH_RE = re.compile(r"btih:([a-zA-Z0-9]+)")
@@ -313,6 +314,36 @@ def test_check_downloading_leaves_in_progress_torrent_alone():
     asyncio.run(worker._check_downloading())
 
     assert store.get_request(row.id).status == "downloading"
+
+
+def test_check_downloading_persists_live_progress_fraction():
+    """Frontend migration Part J2 — the same `progress` value this branch
+    was already reading (to decide it's not >= 1 yet) is now also
+    persisted, so the Requests queue can show a real progress bar."""
+    store = RequestStore(":memory:")
+    row = store.create_request(tmdb_id=693134, title="Dune: Part Two", release_year=2024, query=None)
+    store.update_status(row.id, "downloading", result={"torrent_hash": "aaaa"})
+    qbt = FakeQBTClient(torrent_states={"aaaa": {"progress": 0.42}})
+    worker = Worker(store, FakeTMDBClient(), qbt)
+
+    asyncio.run(worker._check_downloading())
+
+    assert store.get_request(row.id).download_progress == pytest.approx(0.42)
+
+
+def test_check_downloading_progress_updates_on_repeated_polls():
+    store = RequestStore(":memory:")
+    row = store.create_request(tmdb_id=693134, title="Dune: Part Two", release_year=2024, query=None)
+    store.update_status(row.id, "downloading", result={"torrent_hash": "aaaa"})
+    qbt = FakeQBTClient(torrent_states={"aaaa": {"progress": 0.1}})
+    worker = Worker(store, FakeTMDBClient(), qbt)
+    asyncio.run(worker._check_downloading())
+    assert store.get_request(row.id).download_progress == pytest.approx(0.1)
+
+    qbt._torrent_states["aaaa"]["progress"] = 0.75
+    asyncio.run(worker._check_downloading())
+
+    assert store.get_request(row.id).download_progress == pytest.approx(0.75)
 
 
 def test_check_downloading_marks_cancelled_when_torrent_is_gone():
@@ -1038,6 +1069,9 @@ def test_check_show_creates_and_enqueues_requests_for_aired_unhandled_episodes()
     assert not store.has_show_episode(show.id, 1, 3)
     assert store.get_show(show.id).last_checked_at is not None
     assert worker.queue.qsize() == 2
+    # Frontend migration Part J1 — carried from the resolved show identity,
+    # not left null, on every episode request this scheduler creates.
+    assert all(r.poster_path == "/lanterns.jpg" for r in requests)
 
 
 def test_check_show_marks_episode_complete_without_downloading_when_already_on_disk(tmp_path, monkeypatch):
@@ -1241,6 +1275,7 @@ def test_check_show_prefers_a_pack_for_a_finished_latest_season_even_without_ful
     [request_row] = store.list_requests()
     assert request_row.media_type == "pack"
     assert request_row.season_number == 1
+    assert request_row.poster_path == "/lanterns.jpg"
 
 
 def test_check_show_ended_show_queues_one_complete_series_pack_and_skips_the_season_sweep():

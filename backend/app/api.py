@@ -365,6 +365,11 @@ class RequestOut(BaseModel):
     # Frontend migration Part K1/K3 — "upgrade"/"overwrite"/None, drives
     # the queue's "Redownload" tag.
     redownload_mode: str | None = None
+    # Frontend migration Part J1/J2 — poster art and live download
+    # progress for the Requests queue, both denormalized/refreshed the
+    # same way redownload_mode's neighbors above already are.
+    poster_path: str | None = None
+    download_progress: float | None = None
 
     @classmethod
     def from_row(cls, row: RequestRow) -> "RequestOut":
@@ -432,6 +437,8 @@ class ShowOut(BaseModel):
     status: str
     created_at: str
     last_checked_at: str | None
+    # Frontend migration Part J1 — see RequestRow's own comment.
+    poster_path: str | None = None
     # Stage 14: the Watching list's "latest episode status" — the most
     # recent episode/pack request this show has produced, or None if it
     # hasn't been checked yet (e.g. just subscribed, catch-up still queued).
@@ -846,6 +853,7 @@ def create_request(
         requested_by_plex_id=session.plex_user_id,
         requested_by_username=session.username,
         redownload_mode=body.redownload_mode,
+        poster_path=identity.poster_path,
     )
     worker.enqueue(row.id)
     return RequestOut.from_row(row)
@@ -1004,7 +1012,7 @@ def create_show(
     except TMDBError as exc:
         raise HTTPException(status_code=404, detail=f"tmdb_id {body.tmdb_id} not found") from exc
 
-    row = store.create_show(tmdb_id=body.tmdb_id, title=identity.title)
+    row = store.create_show(tmdb_id=body.tmdb_id, title=identity.title, poster_path=identity.poster_path)
     worker.check_show(row, full_backfill=True)
     return _show_out(store, store.get_show(row.id))
 
@@ -1082,7 +1090,9 @@ def bulk_download_show(
             identity = resolve_show(tmdb_id, tmdb)
         except TMDBError as exc:
             raise HTTPException(status_code=404, detail=f"tmdb_id {tmdb_id} not found") from exc
-        show = store.create_show(tmdb_id=tmdb_id, title=identity.title, status="paused")
+        show = store.create_show(
+            tmdb_id=tmdb_id, title=identity.title, status="paused", poster_path=identity.poster_path
+        )
 
     # A bulk download makes this show's own still-queued requests it
     # covers redundant — series scope covers every season, a season scope
@@ -1113,6 +1123,7 @@ def bulk_download_show(
         # for "overwrite" to unsafely bypass; it's accepted and stored,
         # but behaves like "upgrade" until that's built out.
         redownload_mode=body.redownload_mode,
+        poster_path=show.poster_path,
     )
     worker.enqueue(row.id)
     return RequestOut.from_row(row)

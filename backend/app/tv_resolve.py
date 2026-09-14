@@ -27,6 +27,10 @@ class ShowIdentity:
     # a year purely as a display/disambiguation hint. `None` when TMDB
     # hasn't got a first_air_date yet (an unreleased show).
     first_air_year: int | None = None
+    # Frontend migration Part J1 — see MediaIdentity's own comment; same
+    # idea, carried through to every episode/pack request row this show
+    # identity backs.
+    poster_path: str | None = None
 
 
 def episode_query(title_variant: str, season: int, episode: int) -> str:
@@ -166,4 +170,5 @@ def resolve_show(tmdb_id: int, client: TMDBClient) -> ShowIdentity:
         original_title=original_title,
         variants=variants,
         first_air_year=first_air_year,
+        poster_path=show.get("poster_path"),
     )

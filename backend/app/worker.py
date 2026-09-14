@@ -383,6 +383,16 @@ class Worker:
                 else:
                     logger.info("request %d (%s) downloading -> complete", row.id, row.title)
                     await asyncio.to_thread(self.store.update_status, row.id, "complete")
+            else:
+                # Frontend migration Part J2 — the same live fraction this
+                # branch's own `>= 1` check above already reads, just no
+                # longer discarded once it's less than that. Persisted on
+                # every poll so the Requests queue can show a real
+                # progress bar instead of an indeterminate "downloading"
+                # spinner.
+                progress = info.get("progress")
+                if progress is not None:
+                    await asyncio.to_thread(self.store.update_download_progress, row.id, progress)
 
     async def _organize_and_complete_episode(self, row) -> None:
         """Stage 11's organizer, finally wired to a real caller (Stage 12):
@@ -760,6 +770,7 @@ class Worker:
                     title=identity.title,
                     season_number=season_number,
                     episode_number=episode_number,
+                    poster_path=identity.poster_path,
                 )
                 self.store.update_status(
                     request_row.id,
@@ -833,7 +844,11 @@ class Worker:
             # request. `_should_attempt_pack()` is what stops a failed
             # attempt from being silently re-tried every cycle.
             request_row = self.store.create_pack_request(
-                tmdb_id=show.tmdb_id, show_id=show.id, title=identity.title, season_number=season_number
+                tmdb_id=show.tmdb_id,
+                show_id=show.id,
+                title=identity.title,
+                season_number=season_number,
+                poster_path=identity.poster_path,
             )
             self.enqueue(request_row.id)
             logger.info(
@@ -854,6 +869,7 @@ class Worker:
                 title=identity.title,
                 season_number=season_number,
                 episode_number=episode_number,
+                poster_path=identity.poster_path,
             )
             self.store.add_show_episode(show.id, season_number, episode_number, request_row.id)
             self.enqueue(request_row.id)
@@ -1049,7 +1065,11 @@ class Worker:
         show_ended = show_data.get("status") in ("Ended", "Canceled")
         if show_ended and self._should_attempt_pack(show, None, tv_settings):
             request_row = self.store.create_pack_request(
-                tmdb_id=show.tmdb_id, show_id=show.id, title=identity.title, season_number=None
+                tmdb_id=show.tmdb_id,
+                show_id=show.id,
+                title=identity.title,
+                season_number=None,
+                poster_path=identity.poster_path,
             )
             self.enqueue(request_row.id)
             logger.info(
@@ -1077,6 +1097,7 @@ class Worker:
                 request_row = self.store.create_pack_request(
                     tmdb_id=show.tmdb_id, show_id=show.id, title=identity.title,
                     season_number=1, season_range_end=prefix_end,
+                    poster_path=identity.poster_path,
                 )
                 self.enqueue(request_row.id)
                 logger.info(

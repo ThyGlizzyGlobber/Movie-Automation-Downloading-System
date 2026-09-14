@@ -19,6 +19,7 @@ MOVIE = {
     "title": "Dune: Part Two",
     "original_title": "Dune: Part Two",
     "release_date": "2024-03-01",
+    "poster_path": "/dunepart2.jpg",
 }
 
 SHOW = {
@@ -28,6 +29,7 @@ SHOW = {
     "first_air_date": "2026-01-01",
     "status": "Returning Series",
     "number_of_seasons": 1,
+    "poster_path": "/lanterns.jpg",
 }
 
 PERSON = {
@@ -419,6 +421,16 @@ def test_create_request_persists_resolution_override(client_and_deps):
     assert response.status_code == 201
     body = response.json()
     assert store.get_request(body["id"]).min_resolution == "2160p"
+
+
+def test_create_request_persists_poster_path(client_and_deps):
+    client, store, _, _, _, _ = client_and_deps
+    response = client.post("/api/requests", json={"tmdb_id": 693134, "query": "dune"})
+
+    assert response.status_code == 201
+    body = response.json()
+    assert body["poster_path"] == "/dunepart2.jpg"
+    assert store.get_request(body["id"]).poster_path == "/dunepart2.jpg"
 
 
 def test_create_request_rejects_unknown_resolution(client_and_deps):
@@ -1455,6 +1467,17 @@ def test_create_show_subscribes_and_runs_immediate_catchup(client_and_deps):
     assert store.get_show(body["id"]) is not None
 
 
+def test_create_show_persists_poster_path(client_and_deps):
+    client, store, _, _, _, _ = client_and_deps
+
+    response = client.post("/api/shows", json={"tmdb_id": 95350})
+
+    assert response.status_code == 201
+    body = response.json()
+    assert body["poster_path"] == "/lanterns.jpg"
+    assert store.get_show(body["id"]).poster_path == "/lanterns.jpg"
+
+
 def test_create_show_404s_on_unknown_tmdb_id(client_and_deps):
     client, _, tmdb, _, _, _ = client_and_deps
     tmdb._raise_on_get_movie = True
@@ -1647,6 +1670,31 @@ def test_bulk_download_reuses_an_existing_watching_show_unchanged(client_and_dep
     assert response.status_code == 201
     assert response.json()["show_id"] == show.id
     assert store.get_show(show.id).status == "watching"  # untouched, not reset to paused
+
+
+def test_bulk_download_on_a_new_show_persists_poster_path_from_the_fresh_resolve(client_and_deps):
+    client, store, _, _, _, _ = client_and_deps
+    assert store.get_show_by_tmdb_id(95350) is None
+
+    response = client.post("/api/tv/95350/bulk-download", json={"scope": "series"})
+
+    assert response.status_code == 201
+    body = response.json()
+    assert body["poster_path"] == "/lanterns.jpg"
+    assert store.get_show_by_tmdb_id(95350).poster_path == "/lanterns.jpg"
+
+
+def test_bulk_download_on_an_existing_show_reuses_its_stored_poster_path(client_and_deps):
+    """The already-subscribed-show branch never re-resolves TMDB — the
+    pack request's poster_path must come from the show row's own stored
+    value, not a fresh (unmade) TMDB lookup."""
+    client, store, _, _, _, _ = client_and_deps
+    show = store.create_show(tmdb_id=95350, title="Lanterns", poster_path="/already-on-file.jpg")
+
+    response = client.post(f"/api/tv/{show.tmdb_id}/bulk-download", json={"scope": "series"})
+
+    assert response.status_code == 201
+    assert response.json()["poster_path"] == "/already-on-file.jpg"
 
 
 def test_bulk_download_404s_on_unknown_tmdb_id_when_no_show_exists(client_and_deps):

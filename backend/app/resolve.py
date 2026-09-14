@@ -16,6 +16,11 @@ class MediaIdentity:
     original_title: str
     release_year: int | None
     variants: list[str] = field(default_factory=list)
+    # Frontend migration Part J1 — carried through to whatever `requests`
+    # row this identity backs, so the Requests queue can show poster art
+    # without a per-row TMDB detail fetch. `None` when TMDB has no poster
+    # on file, same as everywhere else this field is optional.
+    poster_path: str | None = None
 
 
 def resolve(tmdb_id: int, client: TMDBClient) -> MediaIdentity:
@@ -34,4 +39,5 @@ def resolve(tmdb_id: int, client: TMDBClient) -> MediaIdentity:
         original_title=original_title,
         release_year=release_year,
         variants=variants,
+        poster_path=movie.get("poster_path"),
     )

@@ -85,6 +85,17 @@ class RequestRow:
     # request's own replacement is confirmed in place). NULL for every
     # ordinary request, same as every field added before this existed.
     redownload_mode: str | None = None
+    # Frontend migration Part J1 — denormalized from the identity resolved
+    # at creation time (same convention as title/release_year), so the
+    # Requests queue can show poster art without a per-row TMDB fetch.
+    # NULL for every row created before this existed, and whenever TMDB
+    # itself has no poster on file.
+    poster_path: str | None = None
+    # Frontend migration Part J2 — qBittorrent's live progress fraction
+    # (0.0-1.0), refreshed on every download-watcher poll
+    # (DOWNLOAD_POLL_INTERVAL_SECONDS) while status == "downloading".
+    # NULL before the first poll, and for any row never in that status.
+    download_progress: float | None = None
 
     @classmethod
     def _from_row(cls, row: sqlite3.Row) -> "RequestRow":
@@ -110,6 +121,8 @@ class RequestRow:
             requested_by_plex_id=row["requested_by_plex_id"],
             requested_by_username=row["requested_by_username"],
             redownload_mode=row["redownload_mode"],
+            poster_path=row["poster_path"],
+            download_progress=row["download_progress"],
         )
 
 
@@ -124,6 +137,11 @@ class ShowRow:
     status: str  # "watching" | "paused"
     created_at: str
     last_checked_at: str | None
+    # Frontend migration Part J1 — see RequestRow's own comment; populated
+    # once at subscribe time, read back (not re-fetched) by every episode/
+    # pack request this show later produces and by bulk-download for an
+    # already-subscribed show.
+    poster_path: str | None = None
 
     @classmethod
     def _from_row(cls, row: sqlite3.Row) -> "ShowRow":
@@ -134,6 +152,7 @@ class ShowRow:
             status=row["status"],
             created_at=row["created_at"],
             last_checked_at=row["last_checked_at"],
+            poster_path=row["poster_path"],
         )
 
 
@@ -271,6 +290,9 @@ class RequestStore:
             self._ensure_column("requests", "requested_by_username", "requested_by_username TEXT")
             # Frontend migration Part K2 — see RequestRow's own comment.
             self._ensure_column("requests", "redownload_mode", "redownload_mode TEXT")
+            # Frontend migration Part J1/J2 — see RequestRow's own comments.
+            self._ensure_column("requests", "poster_path", "poster_path TEXT")
+            self._ensure_column("requests", "download_progress", "download_progress REAL")
 
             # Stage 12: the standing subscription. One row per subscribed
             # show — a UNIQUE tmdb_id stops two subscriptions to the same
@@ -287,6 +309,8 @@ class RequestStore:
                 )
                 """
             )
+            # Frontend migration Part J1 — see ShowRow's own comment.
+            self._ensure_column("shows", "poster_path", "poster_path TEXT")
             # Stage 12: the per-episode dedup ledger — distinct from the
             # `requests` audit trail. UNIQUE(show_id, season_number,
             # episode_number) is what makes "already handled" a single
@@ -392,13 +416,14 @@ class RequestStore:
         requested_by_plex_id: str | None = None,
         requested_by_username: str | None = None,
         redownload_mode: str | None = None,
+        poster_path: str | None = None,
     ) -> RequestRow:
         now = _now()
         with self._lock:
             cur = self._conn.execute(
                 "INSERT INTO requests (query, tmdb_id, title, release_year, status, min_resolution, "
-                "requested_by_plex_id, requested_by_username, redownload_mode, created_at, updated_at) "
-                "VALUES (?, ?, ?, ?, 'queued', ?, ?, ?, ?, ?, ?)",
+                "requested_by_plex_id, requested_by_username, redownload_mode, poster_path, created_at, updated_at) "
+                "VALUES (?, ?, ?, ?, 'queued', ?, ?, ?, ?, ?, ?, ?)",
                 (
                     query,
                     tmdb_id,
@@ -408,6 +433,7 @@ class RequestStore:
                     requested_by_plex_id,
                     requested_by_username,
                     redownload_mode,
+                    poster_path,
                     now,
                     now,
                 ),
@@ -417,7 +443,13 @@ class RequestStore:
         return self.get_request(row_id)
 
     def create_episode_request(
-        self, tmdb_id: int, show_id: int, title: str, season_number: int, episode_number: int
+        self,
+        tmdb_id: int,
+        show_id: int,
+        title: str,
+        season_number: int,
+        episode_number: int,
+        poster_path: str | None = None,
     ) -> RequestRow:
         """The Stage 12 equivalent of `create_request` for one episode of a
         subscribed show — same table, same statuses, same watcher, per the
@@ -428,9 +460,9 @@ class RequestStore:
         with self._lock:
             cur = self._conn.execute(
                 "INSERT INTO requests (query, tmdb_id, title, release_year, status, media_type, "
-                "show_id, season_number, episode_number, created_at, updated_at) "
-                "VALUES (NULL, ?, ?, NULL, 'queued', 'episode', ?, ?, ?, ?, ?)",
-                (tmdb_id, title, show_id, season_number, episode_number, now, now),
+                "show_id, season_number, episode_number, poster_path, created_at, updated_at) "
+                "VALUES (NULL, ?, ?, NULL, 'queued', 'episode', ?, ?, ?, ?, ?, ?)",
+                (tmdb_id, title, show_id, season_number, episode_number, poster_path, now, now),
             )
             self._conn.commit()
             row_id = cur.lastrowid
@@ -447,6 +479,7 @@ class RequestStore:
         requested_by_username: str | None = None,
         min_resolution: str | None = None,
         redownload_mode: str | None = None,
+        poster_path: str | None = None,
     ) -> RequestRow:
         """Stage 13 (+ Stage 14.x's season-range scope): the tracking row
         for one bulk season/season-range/complete-series pack search+add
@@ -466,9 +499,9 @@ class RequestStore:
             cur = self._conn.execute(
                 "INSERT INTO requests (query, tmdb_id, title, release_year, status, media_type, "
                 "show_id, season_number, episode_number, season_range_end, "
-                "requested_by_plex_id, requested_by_username, min_resolution, redownload_mode, "
+                "requested_by_plex_id, requested_by_username, min_resolution, redownload_mode, poster_path, "
                 "created_at, updated_at) "
-                "VALUES (NULL, ?, ?, NULL, 'queued', 'pack', ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?)",
+                "VALUES (NULL, ?, ?, NULL, 'queued', 'pack', ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     tmdb_id,
                     title,
@@ -479,6 +512,7 @@ class RequestStore:
                     requested_by_username,
                     min_resolution,
                     redownload_mode,
+                    poster_path,
                     now,
                     now,
                 ),
@@ -486,6 +520,21 @@ class RequestStore:
             self._conn.commit()
             row_id = cur.lastrowid
         return self.get_request(row_id)
+
+    def update_download_progress(self, request_id: int, progress: float) -> None:
+        """Persists qBittorrent's live progress fraction on every download-
+        watcher poll — see RequestRow's own comment. Deliberately doesn't
+        touch `updated_at`: that field means "the request's state last
+        changed" (status/result), and a routine progress tick isn't a
+        state change in that sense — bumping it here would make e.g. the
+        retention sweep's age-based purge (which only ever targets
+        terminal-status rows anyway) and any "last changed" display
+        elsewhere read as constantly fresh for no meaningful reason."""
+        with self._lock:
+            self._conn.execute(
+                "UPDATE requests SET download_progress = ? WHERE id = ?", (progress, request_id)
+            )
+            self._conn.commit()
 
     def get_request(self, request_id: int) -> RequestRow | None:
         row = self._conn.execute("SELECT * FROM requests WHERE id = ?", (request_id,)).fetchone()
@@ -762,7 +811,7 @@ class RequestStore:
 
     # -- shows (Stage 12 standing subscriptions) --
 
-    def create_show(self, tmdb_id: int, title: str, status: str = "watching") -> ShowRow:
+    def create_show(self, tmdb_id: int, title: str, status: str = "watching", poster_path: str | None = None) -> ShowRow:
         """`status` defaults to "watching" — a real, explicit subscribe.
         `POST /api/shows/bulk-download` (Stage 14.x) passes "paused" when
         it has to create a show row purely to anchor a one-off bulk
@@ -774,9 +823,9 @@ class RequestStore:
         now = _now()
         with self._lock:
             cur = self._conn.execute(
-                "INSERT INTO shows (tmdb_id, title, status, created_at, last_checked_at) "
-                "VALUES (?, ?, ?, ?, NULL)",
-                (tmdb_id, title, status, now),
+                "INSERT INTO shows (tmdb_id, title, status, poster_path, created_at, last_checked_at) "
+                "VALUES (?, ?, ?, ?, ?, NULL)",
+                (tmdb_id, title, status, poster_path, now),
             )
             self._conn.commit()
             row_id = cur.lastrowid
