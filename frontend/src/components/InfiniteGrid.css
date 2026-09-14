@@ -1,0 +1,33 @@
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(var(--poster-w), 1fr));
+  gap: 14px 10px;
+  padding-left: var(--row-inset);
+  margin-right: -14px;
+}
+.grid .poster-card {
+  width: auto;
+}
+.grid .poster-card img {
+  width: 100%;
+  height: auto;
+  aspect-ratio: 2 / 3;
+}
+/* Category/provider/person browse pages — symmetric padding-right
+   instead of the reach-the-edge margin-right:-14px, and a smaller
+   --poster-w to keep the same column density despite the narrower
+   available width. */
+.grid.person-grid,
+.grid.category-grid {
+  --poster-w: clamp(104px, 12vw, 210px);
+  padding-right: var(--row-inset);
+  margin-right: 0;
+}
+
+.grid-sentinel {
+  height: 1px;
+  margin-top: 12px;
+}
+.grid-sentinel .spinner {
+  margin-top: 16px;
+}

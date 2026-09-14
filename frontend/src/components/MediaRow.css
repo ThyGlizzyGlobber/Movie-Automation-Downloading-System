@@ -1,0 +1,97 @@
+section.row {
+  margin-bottom: 26px;
+}
+section.row h2 {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin: 0 0 10px var(--row-inset);
+}
+/* A row whose title expands to a dedicated full-list page — accent-
+   colored with a trailing chevron so it reads as tappable, not just a
+   label. */
+section.row .row-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--accent);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin: 0 0 10px var(--row-inset);
+}
+section.row .row-title-arrow {
+  font-size: 21px;
+  line-height: 1;
+  font-weight: 700;
+}
+section.row .row-title:active {
+  opacity: 0.7;
+}
+
+.hscroll {
+  display: flex;
+  gap: var(--row-gap);
+  overflow-x: auto;
+  padding: 8px 0 4px var(--row-inset);
+  margin-right: -14px;
+  scroll-snap-type: x proximity;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  scroll-padding-inline: var(--row-inset) 0;
+}
+.hscroll .poster-card {
+  flex: 0 0 var(--poster-w);
+}
+.hscroll::-webkit-scrollbar {
+  display: none;
+}
+
+/* Desktop-only click-to-scroll arrows, shown only while the row is
+   hovered — native touch-swipe already covers mobile. */
+.hscroll-wrap {
+  position: relative;
+}
+.hscroll-arrow {
+  position: absolute;
+  top: 0;
+  bottom: 4px;
+  width: 56px;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  color: var(--text);
+  padding: 0;
+  cursor: pointer;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.15s ease;
+  background: none;
+}
+.hscroll-arrow .material-symbols-rounded {
+  font-size: 34px;
+}
+.hscroll-arrow-left {
+  left: 0;
+  background: linear-gradient(to right, color-mix(in srgb, var(--bg) 75%, transparent), transparent);
+}
+.hscroll-arrow-right {
+  right: -14px;
+  background: linear-gradient(to left, color-mix(in srgb, var(--bg) 75%, transparent), transparent);
+}
+@media (hover: hover) {
+  .hscroll-wrap:hover .hscroll-arrow {
+    opacity: 1;
+    pointer-events: auto;
+  }
+  .hscroll-wrap.at-start:hover .hscroll-arrow-left {
+    opacity: 0;
+    pointer-events: none;
+  }
+}

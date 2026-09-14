@@ -24,10 +24,13 @@ export default function PosterCard({
   return (
     <a className="poster-card" href={href}>
       <div className="poster-art">
-        <img src={posterUrl(item.poster_path)} alt="" loading="lazy" />
+        {/* No caption underneath — the poster art itself always carries
+            the title, so a repeated text label below it is redundant
+            (per direct request). alt carries the accessible name instead,
+            since there's no longer any visible text to serve that role. */}
+        <img src={posterUrl(item.poster_path)} alt={title} loading="lazy" />
         {item.on_plex && <div className="on-plex-badge">On Plex</div>}
       </div>
-      <div className="cap">{title}</div>
     </a>
   )
 }

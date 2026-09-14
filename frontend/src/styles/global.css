@@ -68,6 +68,15 @@ main {
   }
 }
 
+/* Shared across category/detail/settings pages. */
+.page-title {
+  font-size: 21px;
+  margin: 0 0 22px var(--row-inset);
+}
+.page-title + .page-subtitle {
+  margin-top: -14px;
+}
+
 /* Shared by any status dot still in motion (searching/downloading) and
    the loading spinner below. */
 @keyframes pulse {
