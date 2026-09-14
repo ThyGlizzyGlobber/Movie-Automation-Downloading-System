@@ -184,11 +184,22 @@ def require_admin_or_setup_bootstrap(
 ) -> SessionRow | None:
     """Gate for POST /api/plex/link, GET /api/plex/status, and the new
     multi-server routes: unauthenticated (but setup-token-checked) while
-    no server is linked yet — there's no admin session possible before
+    setup isn't complete yet — there's no admin session possible before
     this completes, since the admin's identity *is* whoever completes it
     — otherwise admin-only. See require_setup_token's docstring for why
-    the token check duplicates a few lines rather than composing with it."""
-    if not store.get_settings().get("plex_token"):
+    the token check duplicates a few lines rather than composing with it.
+
+    Keyed on `plex_server_machine_id`, not `plex_token` — `plex_token`
+    is set as soon as the PIN sign-in itself succeeds, which is *before*
+    the account has actually picked which owned server to use (a
+    separate step, GET /api/plex/servers + PUT /api/plex/server). Keying
+    on `plex_token` would flip this into "admin required" the instant
+    sign-in succeeds but before server selection has run — including on
+    the GET /api/plex/servers call the wizard needs to show the picker in
+    the first place, a genuine deadlock caught while building the setup
+    wizard's frontend. `plex_server_machine_id` is only ever set once
+    PUT /api/plex/server actually finishes, which is what completes setup."""
+    if not store.get_settings().get("plex_server_machine_id"):
         expected = store.get_or_create_setup_token()
         if request.headers.get("X-Setup-Token") != expected:
             raise HTTPException(status_code=401, detail="missing or incorrect setup token")
@@ -212,8 +223,10 @@ def require_setup_token(request: Request, store: RequestStore = Depends(get_stor
     sits behind nginx's own LAN-only restriction on the same path
     (Part G1's primary control); this is the defense-in-depth second
     layer that holds even without nginx in front (e.g. this test suite,
-    or `npm run dev` against a bare uvicorn)."""
-    if store.get_settings().get("plex_token"):
+    or `npm run dev` against a bare uvicorn). Keyed on
+    `plex_server_machine_id`, not `plex_token` — see
+    require_admin_or_setup_bootstrap's docstring for why."""
+    if store.get_settings().get("plex_server_machine_id"):
         raise HTTPException(status_code=410, detail="setup already completed")
     expected = store.get_or_create_setup_token()
     if request.headers.get("X-Setup-Token") != expected:
@@ -1149,14 +1162,26 @@ class SelectPlexServerRequest(BaseModel):
     machine_identifier: str = Field(min_length=1)
 
 
-@app.put("/api/plex/server", dependencies=[Depends(require_admin_or_setup_bootstrap)])
+@app.put("/api/plex/server")
 def select_plex_server(
-    body: SelectPlexServerRequest, store: RequestStore = Depends(get_store)
+    body: SelectPlexServerRequest,
+    response: Response,
+    store: RequestStore = Depends(get_store),
+    session: SessionRow | None = Depends(require_admin_or_setup_bootstrap),
 ) -> dict:
     """Finalizes the setup wizard's server picker, or (post-setup) an
     admin switching to a different owned server. Either way, re-resolves
     fresh connection details for the chosen server (a connection URL can
-    change) rather than trusting whatever list_plex_servers last returned."""
+    change) rather than trusting whatever list_plex_servers last returned.
+
+    `session` is None exactly when this call is what's finishing bootstrap
+    (require_admin_or_setup_bootstrap's own bootstrap branch) — in that
+    case this is also the moment the just-linked account should actually
+    become signed in, not just "the server now knows who the admin is."
+    Without this, completing setup would leave the admin having to run a
+    *second*, separate PIN sign-in immediately after the one they just
+    did to link the server in the first place, which is confusing on top
+    of "why did that already work."""
     settings = store.get_settings()
     token = settings.get("plex_token")
     client_id = settings.get("plex_client_id")
@@ -1184,6 +1209,25 @@ def select_plex_server(
     # session's access grant was checked against the *old* server and
     # must be re-validated via a fresh login against the new one.
     store.delete_non_admin_sessions()
+
+    if session is None:
+        try:
+            identity = client.get_account_identity(token)
+        except Exception:  # fail safe: setup itself already succeeded above regardless of this
+            identity = None
+        if identity and identity.get("id"):
+            plex_user_id = str(identity["id"])
+            user = store.upsert_user(plex_user_id, identity.get("username"), True)
+            session_id = secrets.token_urlsafe(32)
+            store.create_session(session_id, user.plex_user_id, user.username, True, _new_session_expiry())
+            response.set_cookie(
+                key=SESSION_COOKIE_NAME,
+                value=session_id,
+                httponly=True,
+                samesite="strict",
+                max_age=SESSION_TTL_DAYS * 24 * 3600,
+                path="/",
+            )
     return {"server_name": match["name"]}
 
 
@@ -1284,14 +1328,23 @@ def setup_status(store: RequestStore = Depends(get_store)) -> dict:
     settings = store.get_settings()
     qbt_source = config.qbt_config_source(store)
     qbt_configured = qbt_source == "env" or bool(settings.get("qbt_host"))
-    plex_linked = bool(settings.get("plex_token"))
+    # Two distinct signals, not one — see require_admin_or_setup_bootstrap's
+    # docstring: `plex_token` is set as soon as PIN sign-in succeeds (the
+    # wizard uses `plex_account_linked` to know it can move on to showing
+    # the server picker), but `setup_complete`/every auth gate elsewhere
+    # keys specifically on a server having actually been *selected*
+    # (`plex_server_machine_id`) — the step that comes after, and the one
+    # that genuinely finishes bootstrap.
+    plex_account_linked = bool(settings.get("plex_token"))
+    setup_complete = bool(settings.get("plex_server_machine_id"))
     return {
         "tmdb_configured": bool(config.resolve_tmdb_api_key(store)),
         "tmdb_source": config.tmdb_api_key_source(store),
         "qbt_configured": qbt_configured,
         "qbt_source": qbt_source,
-        "plex_linked": plex_linked,
-        "setup_complete": plex_linked,
+        "plex_account_linked": plex_account_linked,
+        "plex_linked": setup_complete,
+        "setup_complete": setup_complete,
     }
 
 

@@ -1776,7 +1776,7 @@ def test_setup_mutation_refuses_missing_token_before_setup_completes(tmp_path, m
 
 def test_setup_tmdb_refuses_to_override_an_env_configured_key(unauthenticated_client, monkeypatch):
     client, store, _, _, _, _ = unauthenticated_client
-    store.update_settings({"plex_token": None})  # reopen the bootstrap window
+    store.update_settings({"plex_server_machine_id": None})  # reopen the bootstrap window
     monkeypatch.setattr(config, "TMDB_API_KEY", "from-env")
     token = store.get_or_create_setup_token()
 
@@ -1787,7 +1787,7 @@ def test_setup_tmdb_refuses_to_override_an_env_configured_key(unauthenticated_cl
 
 def test_plex_link_bootstrap_requires_setup_token(unauthenticated_client):
     client, store, _, _, _, _ = unauthenticated_client
-    store.update_settings({"plex_token": None})  # reopen the bootstrap window
+    store.update_settings({"plex_server_machine_id": None})  # reopen the bootstrap window
 
     response = client.post("/api/plex/link")
     assert response.status_code == 401
@@ -1918,6 +1918,62 @@ def test_select_plex_server_switches_and_signs_out_other_sessions(client_and_dep
     assert response.json() == {"server_name": "Second NAS"}
     assert store.get_settings()["plex_server_machine_id"] == "mid-2"
     assert store.get_session("other-session") is None
+
+
+def test_select_plex_server_during_bootstrap_also_signs_the_admin_in(tmp_path):
+    """Completing setup's server picker is what finalizes bootstrap —
+    without this, the admin would need a confusing second PIN sign-in
+    immediately after the one that just linked the server."""
+    store = RequestStore(str(tmp_path / "fresh.db"))
+    store.update_settings({"plex_token": None, "plex_client_id": "client-1"})
+    tmdb = FakeTMDBClient()
+    worker = NoOpWorker()
+    qbt = FakeQBTClient()
+
+    @asynccontextmanager
+    async def test_lifespan(app):
+        app.state.store = store
+        app.state.tmdb = tmdb
+        app.state.worker = worker
+        app.state.qbt = qbt
+        app.state.plex_linker = FakePlexLinker()
+        app.state.login_session = FakeLoginSession()
+        yield
+
+    api.app.router.lifespan_context = test_lifespan
+    with TestClient(api.app) as client:
+        import app.plex as plex_module
+
+        original_list_resources = plex_module.PlexClient.list_resources
+        plex_module.PlexClient.list_resources = lambda self, token: [
+            {"name": "Home NAS", "url": "http://home", "token": "tok", "owned": True, "machine_identifier": "mid-x"}
+        ]
+        plex_module.PlexClient.get_account_identity = lambda self, token: {"id": 555, "username": "new-admin"}
+        try:
+            # Bootstrap window: plex_token isn't set yet at all (list_plex_servers/
+            # select_plex_server read it from settings, so seed it directly —
+            # in the real flow PlexLinker.start()+poll would have set it).
+            store.update_settings({"plex_token": "linking-account-token"})
+            token = store.get_or_create_setup_token()
+
+            response = client.put(
+                "/api/plex/server",
+                json={"machine_identifier": "mid-x"},
+                headers={"X-Setup-Token": token},
+            )
+
+            assert response.status_code == 200
+            assert api.SESSION_COOKIE_NAME in response.cookies
+
+            session_response = client.get("/api/auth/session")
+            assert session_response.status_code == 200
+            assert session_response.json() == {
+                "username": "new-admin",
+                "is_admin": True,
+                "has_seen_tutorial": False,
+            }
+        finally:
+            plex_module.PlexClient.list_resources = original_list_resources
 
 
 def api_state_login_session(client) -> "FakeLoginSession":
