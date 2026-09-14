@@ -13,10 +13,55 @@ def _run(*args, cwd):
     subprocess.run(args, cwd=cwd, check=True, capture_output=True, text=True)
 
 
+# A minimal, zero-dependency package.json + matching lockfile — real
+# enough for `npm ci` to succeed fully offline (no registry access, no
+# real deps to resolve) while still exercising the actual `npm ci`/
+# `npm run build` subprocess calls deploy.py runs, not a mock of them.
+# The build script itself doesn't need Vite (or any dependency) to prove
+# the plumbing works — it just has to write *something* to dist/.
+_FRONTEND_PACKAGE_JSON = """\
+{
+  "name": "test-frontend",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "build": "mkdir -p dist && echo ok > dist/marker.txt"
+  }
+}
+"""
+_FRONTEND_PACKAGE_LOCK = """\
+{
+  "name": "test-frontend",
+  "version": "1.0.0",
+  "lockfileVersion": 3,
+  "requires": true,
+  "packages": {
+    "": {
+      "name": "test-frontend",
+      "version": "1.0.0"
+    }
+  }
+}
+"""
+
+
+def _write_frontend_package(seed_frontend_dir, build_script="mkdir -p dist && echo ok > dist/marker.txt"):
+    seed_frontend_dir.mkdir(parents=True, exist_ok=True)
+    (seed_frontend_dir / "package.json").write_text(
+        _FRONTEND_PACKAGE_JSON.replace(
+            '"build": "mkdir -p dist && echo ok > dist/marker.txt"', f'"build": "{build_script}"'
+        )
+    )
+    (seed_frontend_dir / "package-lock.json").write_text(_FRONTEND_PACKAGE_LOCK)
+
+
 @pytest.fixture
 def repo_pair(tmp_path, monkeypatch):
     """A bare 'origin' plus a clone of it — the clone stands in for the
-    deployed-copy mount deploy.py operates on."""
+    deployed-copy mount deploy.py operates on. Seeded with a real (if
+    trivial) frontend/ package so run_git_pull()'s own `npm ci`/
+    `npm run build` steps have something real to run against, matching
+    every other test in this file's "real git, no mocks" style."""
     origin = tmp_path / "origin.git"
     clone = tmp_path / "clone"
     _run("git", "init", "--bare", str(origin), cwd=tmp_path)
@@ -26,7 +71,8 @@ def repo_pair(tmp_path, monkeypatch):
     _run("git", "config", "user.email", "test@example.com", cwd=seed)
     _run("git", "config", "user.name", "Test", cwd=seed)
     (seed / "file.txt").write_text("v1\n")
-    _run("git", "add", "file.txt", cwd=seed)
+    _write_frontend_package(seed / "frontend")
+    _run("git", "add", "file.txt", "frontend", cwd=seed)
     _run("git", "commit", "-m", "initial", cwd=seed)
     _run("git", "branch", "-M", "main", cwd=seed)
     _run("git", "remote", "add", "origin", str(origin), cwd=seed)
@@ -89,4 +135,77 @@ def test_run_git_pull_raises_on_non_fast_forward(repo_pair):
     _run("git", "push", "origin", "main", cwd=seed)
 
     with pytest.raises(deploy.DeployError):
+        deploy.run_git_pull()
+
+
+# ---------------------------------------------------------------------------
+# Frontend migration Part B — `npm ci` + `npm run build`, run in the
+# clone's own frontend/ directory after every successful pull.
+# ---------------------------------------------------------------------------
+
+
+def test_run_git_pull_builds_the_frontend(repo_pair):
+    _origin, clone, _seed = repo_pair
+
+    deploy.run_git_pull()
+
+    assert (clone / "frontend" / "dist" / "marker.txt").read_text().strip() == "ok"
+
+
+def test_run_git_pull_rebuilds_on_every_pull_even_when_already_up_to_date(repo_pair):
+    """Not just "when something changed" — a prior build could have
+    failed or been interrupted, so every successful pull re-runs it,
+    "already up to date" included."""
+    _origin, clone, _seed = repo_pair
+    deploy.run_git_pull()
+    marker = clone / "frontend" / "dist" / "marker.txt"
+    marker.unlink()
+
+    deploy.run_git_pull()
+
+    assert marker.read_text().strip() == "ok"
+
+
+def test_run_git_pull_raises_when_the_frontend_build_script_fails(repo_pair, monkeypatch):
+    origin, clone, seed = repo_pair
+    _write_frontend_package(seed / "frontend", build_script="exit 1")
+    _run("git", "add", "frontend", cwd=seed)
+    _run("git", "commit", "-m", "break the build", cwd=seed)
+    _run("git", "push", "origin", "main", cwd=seed)
+
+    with pytest.raises(deploy.DeployError):
+        deploy.run_git_pull()
+    # The git pull itself must still have succeeded and be reflected in
+    # the clone — only the subsequent build step failed.
+    assert (clone / "frontend" / "package.json").read_text() == (seed / "frontend" / "package.json").read_text()
+
+
+def test_run_git_pull_frontend_build_error_surfaces_npm_output(repo_pair):
+    origin, clone, seed = repo_pair
+    _write_frontend_package(seed / "frontend", build_script="echo 'boom, something broke' >&2 && exit 1")
+    _run("git", "add", "frontend", cwd=seed)
+    _run("git", "commit", "-m", "break the build with a message", cwd=seed)
+    _run("git", "push", "origin", "main", cwd=seed)
+
+    with pytest.raises(deploy.DeployError, match="boom, something broke"):
+        deploy.run_git_pull()
+
+
+def test_run_git_pull_raises_when_npm_is_not_on_path(repo_pair, monkeypatch):
+    """Simulates the real failure mode a backend image that hasn't been
+    rebuilt to bake in Node would hit — git itself still has to work
+    (it's what got the new frontend/package.json here in the first
+    place), only npm is missing, so this can't just blank out PATH
+    wholesale the way the git-focused tests in this file do."""
+    _origin, _clone, _seed = repo_pair
+    real_run = subprocess.run
+
+    def fake_run(args, **kwargs):
+        if args[0] == "npm":
+            raise FileNotFoundError(2, "No such file or directory", "npm")
+        return real_run(args, **kwargs)
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+
+    with pytest.raises(deploy.DeployError, match="npm"):
         deploy.run_git_pull()

@@ -1,0 +1,12 @@
+# Frontend migration Part B: the build stage's own `COPY . .` runs after
+# `npm ci` already populated /app/node_modules inside the container — if
+# a local node_modules ever existed in the build context (e.g. from
+# running `npm install` on a workstation before building the image),
+# copying it in would silently overwrite that with platform-specific
+# binaries built for the *host*, not the node:20-alpine container. dist/
+# is excluded for the same "never let a stale local build shadow what
+# this stage produces" reason, not because it's sensitive.
+node_modules
+dist
+.git
+.env

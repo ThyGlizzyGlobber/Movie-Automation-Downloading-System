@@ -12,8 +12,19 @@ WORKDIR /app
 # videos at a usable resolution, so a format string that avoided ffmpeg
 # on purpose just failed outright ("Requested format is not available")
 # on every real trailer. Merging is the only reliable path now.
+# nodejs/npm: frontend migration Part B — deploy.py's run_git_pull() runs
+# `npm ci` + `npm run build` in the deployed clone's own frontend/
+# directory after every pull, so the Vite build has to happen somewhere,
+# and folding it into the existing self-update flow (rather than a
+# second, separate build mechanism) means it happens right here. Via
+# NodeSource's own setup script, not Debian's bundled `nodejs` package —
+# deliberately pinned to the same major version (20.x) as frontend/
+# Dockerfile's own `node:20-alpine` build stage, rather than trusting
+# whatever happens to be in this base image's apt repo at build time.
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends git openssh-client ffmpeg \
+    && apt-get install -y --no-install-recommends git openssh-client ffmpeg curl \
+    && curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
+    && apt-get install -y --no-install-recommends nodejs \
     && rm -rf /var/lib/apt/lists/*
 
 # The deployed-copy clone at /repo is bind-mounted from the NAS host, so its

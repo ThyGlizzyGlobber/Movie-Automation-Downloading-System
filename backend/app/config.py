@@ -272,6 +272,12 @@ GIT_SSH_KEY_PATH = os.environ.get("GIT_SSH_KEY_PATH")
 
 DEPLOY_TIMEOUT_SECONDS = int(os.environ.get("DEPLOY_TIMEOUT_SECONDS", "60"))
 
+# Frontend migration Part B: `npm ci` + a Vite build, run after every
+# successful git pull (see deploy.py's run_git_pull) — meaningfully
+# slower than a plain `git pull`, so its own separate, more generous
+# ceiling rather than sharing DEPLOY_TIMEOUT_SECONDS's 60s default.
+DEPLOY_BUILD_TIMEOUT_SECONDS = int(os.environ.get("DEPLOY_BUILD_TIMEOUT_SECONDS", "180"))
+
 # -- Stage 11: post-download file organization & Plex library layout. --
 
 # This container's path to the root of Plex's TV library, on the same

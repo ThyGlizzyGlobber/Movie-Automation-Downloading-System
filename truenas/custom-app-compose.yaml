@@ -36,14 +36,24 @@ services:
     ports:
       - "8095:80"
     # One directory-level bind mount, not per-file: a per-file bind mount
-    # breaks after `git pull` replaces a file via write-new+rename (the
+    # breaks after a write replaces a file via write-new+rename (the
     # container keeps the old inode) — confirmed live during Stage 5's
     # validation pass. A directory mount re-resolves paths on every
     # request, which is what "frontend picks it up on next request" in
-    # the confirmed architecture actually requires. nginx.conf denies
-    # serving this same directory's Dockerfile/nginx.conf as a result.
+    # the confirmed architecture actually requires.
+    #
+    # Frontend migration Part B: points at frontend/dist, not frontend/
+    # itself — deploy.py's `POST /api/admin/deploy` regenerates this exact
+    # host path (`npm run build` run against the same repo clone the
+    # backend container already has mounted at /repo) after every `git
+    # pull`, so this container's own image only matters at initial
+    # creation; an update never needs it rebuilt or restarted, same
+    # "picks it up on next request" property the pre-Vite single
+    # index.html had. dist/ never contains a dotfile/.env/Dockerfile —
+    # nginx.conf's own generic dotfile-deny rule is the (now largely
+    # redundant, still cheap) defense-in-depth layer for that.
     volumes:
-      - /mnt/SSD/AppData/movie-downloader/repo/frontend:/usr/share/nginx/html
+      - /mnt/SSD/AppData/movie-downloader/repo/frontend/dist:/usr/share/nginx/html
     depends_on:
       - backend
     restart: unless-stopped
