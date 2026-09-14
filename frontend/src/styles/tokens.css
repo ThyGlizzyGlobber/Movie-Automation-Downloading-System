@@ -1,0 +1,91 @@
+/* Smithflix brand palette — charcoal ground + a cool blue accent,
+   picked live via the theme-lab exercise against a "cool/moody blue"
+   Coolors board (superseding the original teal/cream/coral kit in
+   brand_identity/, and before that a light-red repaint; that folder is
+   left as-is, this is a live in-app repaint, not yet folded back into
+   the reference kit). Dark is the only theme — no light mode, no
+   toggle: removed per direct request rather than left dormant, since
+   the header icon slot it used is earmarked for a future profile icon
+   instead. --accent-secondary (also from the same board) is a second,
+   independent accent for elements that need to read as visually
+   distinct from the primary one (currently just the storage-used
+   fill, sitting right next to primary-accent buttons in the same
+   corner of the screen). */
+:root {
+  --smithflix-cream: #f3ede2;
+  /* Literal black, not a dark charcoal — per direct request, so the
+     page background blends seamlessly with the hero's own (also
+     literal-black) fade instead of reading as two adjacent, slightly
+     different dark tones. --bg-card/--bg-elevated (card/surface
+     layering) are deliberately untouched — this is scoped to the
+     page background specifically, not every dark surface in the app. */
+  --smithflix-charcoal: #000000;
+  /* Blended toward --smithflix-accent (a fixed 9% mix) rather than a
+     standalone warm-toned hex — per direct request to have every
+     actual charcoal surface (this, --bg-elevated, --border) lean
+     cool/blue like the accent instead of warm, tied to the accent
+     itself so they stay in sync if it ever changes. --smithflix-
+     charcoal above is deliberately excluded (see its own comment). */
+  --smithflix-charcoal-card: color-mix(in srgb, var(--smithflix-accent) 9%, #201e1c);
+  --smithflix-accent: #b4c5e4;
+  /* Near-white with just enough of the board's own cream cast to not
+     read as flatly pure white — the hero carousel's active dot. */
+  --smithflix-dot-active: #fbfff1;
+
+  --font-display: 'Baloo 2', sans-serif;
+  --font-body: 'Inter', -apple-system, BlinkMacSystemFont, "Helvetica Neue", Arial, sans-serif;
+
+  --bg: var(--smithflix-charcoal);
+  --bg-elevated: color-mix(in srgb, var(--smithflix-accent) 9%, #1a1816);
+  --bg-card: var(--smithflix-charcoal-card);
+  --text: var(--smithflix-cream);
+  --text-dim: #a39a8b;
+  --accent: var(--smithflix-accent);
+  --accent-text: #141312;
+  --accent-secondary: #3d52d5;
+  /* Higher than the other two charcoal surfaces' 9% — #332f2b's own
+     warm bias is stronger, so an equal mix barely moved the needle
+     (confirmed live: R/G/B landed within 1 unit of each other, still
+     reading as neutral rather than blue-leaning). */
+  --border: color-mix(in srgb, var(--smithflix-accent) 15%, #332f2b);
+  --status-queued: #6b7280;
+  --status-searching: #3b82f6;
+  --status-downloading: #a855f7;
+  --status-complete: #22c55e;
+  --status-nomatch: #f59e0b;
+  --status-nospace: #ef4444;
+  --status-failed: #dc2626;
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --row-gap: 10px;
+  /* Left-aligns a row's title and first poster with the header/hero
+     column at --edge-inset, on top of #app's own 14px edge padding
+     this sits inside of (so the two track together if --edge-inset
+     ever changes again, rather than needing to stay in sync by hand —
+     was a flat, independent 20px before). Shared by .hscroll's own
+     left padding and the row title's left margin below. Deliberately
+     asymmetric: the right side is NOT mirrored at this same inset —
+     see .hscroll/.provider-row, which instead cancel #app's own right
+     padding so a row's content reaches the true viewport edge, per
+     direct request. */
+  --row-inset: calc(var(--edge-inset) - 14px);
+  /* Poster card width scales continuously with viewport width (14vw)
+     between a mobile floor and a desktop ceiling, rather than jumping
+     between a handful of hand-picked breakpoint values — see .hscroll/
+     .grid below. Scaled down slightly from an earlier 140/275px pass
+     per feedback that the cards were reading a touch too large. */
+  --poster-w: clamp(120px, 14vw, 240px);
+  /* Same continuous-scaling idea as --poster-w, just a smaller range —
+     a circular cast photo reads fine noticeably smaller than a poster,
+     and the row would otherwise dominate the page at desktop widths. */
+  --cast-w: clamp(64px, 7vw, 104px);
+  /* Shared horizontal inset for the app's own "chrome" — the header
+     logo/icons, the home hero's text column, and the floating
+     downloads/storage pills — so they all line up on the same edge.
+     Deliberately NOT used by row-inset/content rows (.hscroll/.grid),
+     which stay full-bleed by their own separate design. Matches
+     Prime Video's own wider storefront-header margin, bumped up first
+     from an earlier, tighter 32px pass, then again from 48px per
+     direct request for more breathing room. */
+  --edge-inset: 64px;
+}

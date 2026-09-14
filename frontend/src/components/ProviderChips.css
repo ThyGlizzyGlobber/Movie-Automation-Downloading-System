@@ -1,0 +1,32 @@
+.provider-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(84px, 1fr));
+  gap: 16px 12px;
+  padding-left: var(--row-inset);
+  padding-right: var(--row-inset);
+}
+.provider-chip {
+  /* ~22% is the standard CSS approximation of Apple's App Store icon
+     "squircle" ratio (percentage, not a fixed px, so it holds at any
+     chip size the responsive grid lands on). */
+  width: 100%;
+  aspect-ratio: 1;
+  border-radius: 22%;
+  overflow: hidden;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+}
+.provider-chip img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.provider-label {
+  text-align: center;
+  font-size: 12.5px;
+  color: var(--text-dim);
+  margin-top: 6px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
