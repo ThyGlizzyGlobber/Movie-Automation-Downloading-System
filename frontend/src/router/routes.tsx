@@ -10,6 +10,8 @@ import MoviesLandingPage from '../features/movies/MoviesLandingPage'
 import MovieDetailPage from '../features/movies/MovieDetailPage'
 import TvLandingPage from '../features/tv/TvLandingPage'
 import ShowDetailPage from '../features/tv/ShowDetailPage'
+import SearchPage from '../features/search/SearchPage'
+import PersonPage from '../features/person/PersonPage'
 import {
   getComingSoon,
   getDiscoverByGenre,
@@ -30,8 +32,8 @@ import {
 // Hash-based (Part A2): frontend/nginx.conf has no SPA-fallback catch-all,
 // and the PWA manifest's start_url already works against the hash scheme
 // — see the migration plan for why this was chosen over browser-history
-// routing. Detail/requests/search/settings content lands in later steps;
-// ComingSoon keeps every nav target real in the meantime.
+// routing. Home/requests/settings content lands in later steps; ComingSoon
+// keeps every nav target real in the meantime.
 export const router = createHashRouter([
   {
     path: '/',
@@ -83,8 +85,8 @@ export const router = createHashRouter([
       },
       { path: 'tv/:id', element: <ShowDetailPage /> },
 
-      { path: 'person/:id', element: <ComingSoon label="Person" /> },
-      { path: 'search/:query', element: <ComingSoon label="Search" /> },
+      { path: 'person/:id', element: <PersonPage /> },
+      { path: 'search/:query', element: <SearchPage /> },
       { path: 'requests', element: <ComingSoon label="Requests" /> },
       { path: 'account', element: <AccountPage /> },
       {
