@@ -963,7 +963,69 @@ def test_get_movie_detail_returns_full_movie(client_and_deps):
     # MOVIE's release_date (2024-03-01) is well outside the Coming Soon
     # recency window, so is_coming_soon is deterministically False here
     # regardless of no release_dates data being present on the fixture.
-    assert response.json() == dict(MOVIE, on_plex=False, is_coming_soon=False)
+    # on_plex_tracked is False — no completed, organized request exists
+    # for this tmdb_id in a fresh store.
+    assert response.json() == dict(MOVIE, on_plex=False, is_coming_soon=False, on_plex_tracked=False)
+
+
+def test_get_movie_detail_on_plex_tracked_true_after_a_completed_organized_request(client_and_deps):
+    client, store, _, _, _, _ = client_and_deps
+    row = store.create_request(tmdb_id=693134, title="Dune: Part Two", release_year=2024, query=None)
+    store.mark_organized(row.id, ["/library/Dune Part Two (2024)/file.mkv"], [], "2000-01-01T00:00:00+00:00")
+
+    response = client.get("/api/movies/693134")
+
+    assert response.json()["on_plex_tracked"] is True
+
+
+def test_get_movie_detail_on_plex_tracked_false_for_a_complete_request_with_no_organized_paths(client_and_deps):
+    """A request can reach 'complete' without ever going through
+    mark_organized (e.g. test fixtures, or a future code path) — only a
+    genuine organized_paths record counts."""
+    client, store, _, _, _, _ = client_and_deps
+    row = store.create_request(tmdb_id=693134, title="Dune: Part Two", release_year=2024, query=None)
+    store.update_status(row.id, "complete")
+
+    response = client.get("/api/movies/693134")
+
+    assert response.json()["on_plex_tracked"] is False
+
+
+def test_create_request_overwrite_rejected_without_a_prior_organized_request(client_and_deps):
+    client, _, _, _, _, _ = client_and_deps
+
+    response = client.post("/api/requests", json={"tmdb_id": 693134, "redownload_mode": "overwrite"})
+
+    assert response.status_code == 400
+
+
+def test_create_request_overwrite_accepted_with_a_prior_organized_request(client_and_deps):
+    client, store, _, worker, _, _ = client_and_deps
+    prior = store.create_request(tmdb_id=693134, title="Dune: Part Two", release_year=2024, query=None)
+    store.mark_organized(prior.id, ["/library/Dune Part Two (2024)/file.mkv"], [], "2000-01-01T00:00:00+00:00")
+
+    response = client.post("/api/requests", json={"tmdb_id": 693134, "redownload_mode": "overwrite"})
+
+    assert response.status_code == 201
+    assert response.json()["redownload_mode"] == "overwrite"
+    assert worker.enqueued == [response.json()["id"]]
+
+
+def test_create_request_upgrade_mode_needs_no_prior_organized_request(client_and_deps):
+    client, _, _, _, _, _ = client_and_deps
+
+    response = client.post("/api/requests", json={"tmdb_id": 693134, "redownload_mode": "upgrade"})
+
+    assert response.status_code == 201
+    assert response.json()["redownload_mode"] == "upgrade"
+
+
+def test_create_request_rejects_unknown_redownload_mode(client_and_deps):
+    client, _, _, _, _, _ = client_and_deps
+
+    response = client.post("/api/requests", json={"tmdb_id": 693134, "redownload_mode": "delete-everything"})
+
+    assert response.status_code == 422
 
 
 def test_get_movie_detail_flags_is_coming_soon_for_a_theatrical_only_release(client_and_deps):
@@ -1174,8 +1236,21 @@ def test_get_tv_detail_returns_full_show(client_and_deps):
 
     assert response.status_code == 200
     # SHOW's first_air_date (2026-01-01) is in the past, so is_coming_soon
-    # is deterministically False.
-    assert response.json() == dict(SHOW, on_plex=False, is_coming_soon=False)
+    # is deterministically False. on_plex_tracked is False — no completed,
+    # organized episode/pack request exists for this tmdb_id in a fresh
+    # store.
+    assert response.json() == dict(SHOW, on_plex=False, is_coming_soon=False, on_plex_tracked=False)
+
+
+def test_get_tv_detail_on_plex_tracked_true_after_a_completed_organized_pack(client_and_deps):
+    client, store, _, _, _, _ = client_and_deps
+    show = store.create_show(tmdb_id=95350, title="Lanterns")
+    row = store.create_pack_request(tmdb_id=95350, show_id=show.id, title="Lanterns", season_number=1)
+    store.mark_organized(row.id, ["/library/Lanterns/Season 01/e01.mkv"], [], "2000-01-01T00:00:00+00:00")
+
+    response = client.get("/api/tv/95350")
+
+    assert response.json()["on_plex_tracked"] is True
 
 
 def test_get_tv_detail_flags_is_coming_soon_for_a_future_first_air_date(client_and_deps):
@@ -1500,6 +1575,35 @@ def test_bulk_download_season_creates_a_pack_request_and_enqueues_it(client_and_
     assert body["episode_number"] is None
     assert body["status"] == "queued"
     assert worker.enqueued == [body["id"]]
+
+
+def test_bulk_download_accepts_resolution_and_redownload_mode(client_and_deps):
+    """frontend migration Part J4/K3 — a season/series bulk download's own
+    resolution picker and redownload flag."""
+    client, store, _, _, _, _ = client_and_deps
+    show = store.create_show(tmdb_id=95350, title="Lanterns")
+
+    response = client.post(
+        f"/api/tv/{show.tmdb_id}/bulk-download",
+        json={"scope": "season", "season_number": 1, "min_resolution": "1080p", "redownload_mode": "upgrade"},
+    )
+
+    assert response.status_code == 201
+    body = response.json()
+    assert store.get_request(body["id"]).min_resolution == "1080p"
+    assert body["redownload_mode"] == "upgrade"
+
+
+def test_bulk_download_rejects_unknown_redownload_mode(client_and_deps):
+    client, store, _, _, _, _ = client_and_deps
+    show = store.create_show(tmdb_id=95350, title="Lanterns")
+
+    response = client.post(
+        f"/api/tv/{show.tmdb_id}/bulk-download",
+        json={"scope": "season", "season_number": 1, "redownload_mode": "delete-everything"},
+    )
+
+    assert response.status_code == 422
 
 
 def test_bulk_download_series_creates_a_pack_request_with_no_season(client_and_deps):

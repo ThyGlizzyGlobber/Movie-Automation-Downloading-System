@@ -80,6 +80,11 @@ class RequestRow:
     # made through the API has one.
     requested_by_plex_id: str | None = None
     requested_by_username: str | None = None
+    # frontend migration Part K2 — "upgrade" (search again, no deletion)
+    # or "overwrite" (also delete the prior organized file once this
+    # request's own replacement is confirmed in place). NULL for every
+    # ordinary request, same as every field added before this existed.
+    redownload_mode: str | None = None
 
     @classmethod
     def _from_row(cls, row: sqlite3.Row) -> "RequestRow":
@@ -104,6 +109,7 @@ class RequestRow:
             min_resolution=row["min_resolution"],
             requested_by_plex_id=row["requested_by_plex_id"],
             requested_by_username=row["requested_by_username"],
+            redownload_mode=row["redownload_mode"],
         )
 
 
@@ -263,6 +269,8 @@ class RequestStore:
             # RequestRow's own field comments.
             self._ensure_column("requests", "requested_by_plex_id", "requested_by_plex_id TEXT")
             self._ensure_column("requests", "requested_by_username", "requested_by_username TEXT")
+            # Frontend migration Part K2 — see RequestRow's own comment.
+            self._ensure_column("requests", "redownload_mode", "redownload_mode TEXT")
 
             # Stage 12: the standing subscription. One row per subscribed
             # show — a UNIQUE tmdb_id stops two subscriptions to the same
@@ -383,14 +391,26 @@ class RequestStore:
         min_resolution: str | None = None,
         requested_by_plex_id: str | None = None,
         requested_by_username: str | None = None,
+        redownload_mode: str | None = None,
     ) -> RequestRow:
         now = _now()
         with self._lock:
             cur = self._conn.execute(
                 "INSERT INTO requests (query, tmdb_id, title, release_year, status, min_resolution, "
-                "requested_by_plex_id, requested_by_username, created_at, updated_at) "
-                "VALUES (?, ?, ?, ?, 'queued', ?, ?, ?, ?, ?)",
-                (query, tmdb_id, title, release_year, min_resolution, requested_by_plex_id, requested_by_username, now, now),
+                "requested_by_plex_id, requested_by_username, redownload_mode, created_at, updated_at) "
+                "VALUES (?, ?, ?, ?, 'queued', ?, ?, ?, ?, ?, ?)",
+                (
+                    query,
+                    tmdb_id,
+                    title,
+                    release_year,
+                    min_resolution,
+                    requested_by_plex_id,
+                    requested_by_username,
+                    redownload_mode,
+                    now,
+                    now,
+                ),
             )
             self._conn.commit()
             row_id = cur.lastrowid
@@ -425,6 +445,8 @@ class RequestStore:
         season_range_end: int | None = None,
         requested_by_plex_id: str | None = None,
         requested_by_username: str | None = None,
+        min_resolution: str | None = None,
+        redownload_mode: str | None = None,
     ) -> RequestRow:
         """Stage 13 (+ Stage 14.x's season-range scope): the tracking row
         for one bulk season/season-range/complete-series pack search+add
@@ -444,8 +466,9 @@ class RequestStore:
             cur = self._conn.execute(
                 "INSERT INTO requests (query, tmdb_id, title, release_year, status, media_type, "
                 "show_id, season_number, episode_number, season_range_end, "
-                "requested_by_plex_id, requested_by_username, created_at, updated_at) "
-                "VALUES (NULL, ?, ?, NULL, 'queued', 'pack', ?, ?, NULL, ?, ?, ?, ?, ?)",
+                "requested_by_plex_id, requested_by_username, min_resolution, redownload_mode, "
+                "created_at, updated_at) "
+                "VALUES (NULL, ?, ?, NULL, 'queued', 'pack', ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     tmdb_id,
                     title,
@@ -454,6 +477,8 @@ class RequestStore:
                     season_range_end,
                     requested_by_plex_id,
                     requested_by_username,
+                    min_resolution,
+                    redownload_mode,
                     now,
                     now,
                 ),
@@ -465,6 +490,32 @@ class RequestStore:
     def get_request(self, request_id: int) -> RequestRow | None:
         row = self._conn.execute("SELECT * FROM requests WHERE id = ?", (request_id,)).fetchone()
         return RequestRow._from_row(row) if row else None
+
+    def get_latest_organized_request(self, tmdb_id: int, media_types: tuple[str, ...] = ("movie",)) -> RequestRow | None:
+        """The most recent *complete*, genuinely-organized request for this
+        title — i.e. one this app itself placed a file for and knows the
+        exact path of (`organized_paths` on record), not merely one that
+        was ever created. Frontend migration Part K2: backs both
+        `on_plex_tracked` (can "Overwrite" even be offered at all — only
+        ever against a file this app has a confirmed record of, never a
+        guess from the same fuzzy title/year match `on_plex` itself is)
+        and, when a redownload actually completes in 'overwrite' mode,
+        finding exactly which prior file to supersede.
+
+        `media_types` defaults to `("movie",)`; a TV caller passes
+        `("episode", "pack")` — a show's organized history can be either,
+        never a single fixed type the way a movie's always is."""
+        placeholders = ",".join("?" for _ in media_types)
+        rows = self._conn.execute(
+            f"SELECT * FROM requests WHERE tmdb_id = ? AND media_type IN ({placeholders}) AND status = 'complete' "
+            "ORDER BY id DESC",
+            (tmdb_id, *media_types),
+        ).fetchall()
+        for row in rows:
+            candidate = RequestRow._from_row(row)
+            if candidate.result and candidate.result.get("organized_paths"):
+                return candidate
+        return None
 
     def get_latest_request_for_show(self, show_id: int) -> RequestRow | None:
         """Most recent episode/pack request row for a subscribed show —
@@ -524,7 +575,12 @@ class RequestStore:
             self._conn.commit()
 
     def mark_organized(
-        self, request_id: int, organized_paths: list[str], pending_cleanup_hashes: list[str], next_attempt_at: str
+        self,
+        request_id: int,
+        organized_paths: list[str],
+        pending_cleanup_hashes: list[str],
+        next_attempt_at: str,
+        superseded_paths: list[str] | None = None,
     ) -> None:
         """Marks a request 'complete' with everything worker.py's durable
         `_watch_source_cleanup` sweep needs to eventually remove the now-
@@ -534,11 +590,28 @@ class RequestStore:
         organized, but an episode upgrade also folds in the superseded
         torrent it replaced) both persisted into the existing `result`
         JSON blob alongside whatever's already there (the winning
-        candidate, score breakdown, etc.), not a separate table."""
+        candidate, score breakdown, etc.), not a separate table.
+
+        `superseded_paths` (frontend migration Part K2) is different in
+        kind from `pending_cleanup_hashes`: a redownload's "overwrite"
+        mode deletes the *previously organized library file* from an
+        earlier, already-complete request — not a torrent (which may
+        have already been cleaned up entirely, long before this
+        redownload ever happened) — so it's removed via a direct
+        filesystem path, not `qbt.delete_torrent()`. Gated by the exact
+        same safety check as the torrent cleanup: only ever acted on
+        once _attempt_source_cleanup has confirmed *this* row's own new
+        `organized_paths` are genuinely present on disk."""
         with self._lock:
             row = self._conn.execute("SELECT result_json FROM requests WHERE id = ?", (request_id,)).fetchone()
             existing = json.loads(row["result_json"]) if row and row["result_json"] else {}
-            merged = {**existing, "organized_paths": organized_paths, "pending_cleanup_hashes": pending_cleanup_hashes}
+            merged = {
+                **existing,
+                "organized_paths": organized_paths,
+                "pending_cleanup_hashes": pending_cleanup_hashes,
+            }
+            if superseded_paths:
+                merged["superseded_paths"] = superseded_paths
             self._conn.execute(
                 "UPDATE requests SET status = 'complete', error_message = NULL, result_json = ?, "
                 "source_cleanup_status = 'pending', source_cleanup_next_attempt_at = ?, updated_at = ? "
@@ -569,16 +642,25 @@ class RequestStore:
             )
             self._conn.commit()
 
-    def defer_source_cleanup(self, request_id: int, remaining_hashes: list[str], next_attempt_at: str) -> None:
+    def defer_source_cleanup(
+        self,
+        request_id: int,
+        remaining_hashes: list[str],
+        next_attempt_at: str,
+        remaining_superseded_paths: list[str] | None = None,
+    ) -> None:
         """A cleanup attempt failed (or only partially succeeded, e.g. the
         current torrent deleted but a superseded one didn't) — stays
-        'pending' with the still-outstanding hashes persisted and a later
-        `next_attempt_at`, so the next sweep picks up exactly where this
-        one left off."""
+        'pending' with the still-outstanding hashes (and, frontend
+        migration Part K2, any still-outstanding superseded file paths)
+        persisted and a later `next_attempt_at`, so the next sweep picks
+        up exactly where this one left off."""
         with self._lock:
             row = self._conn.execute("SELECT result_json FROM requests WHERE id = ?", (request_id,)).fetchone()
             existing = json.loads(row["result_json"]) if row and row["result_json"] else {}
             merged = {**existing, "pending_cleanup_hashes": remaining_hashes}
+            if remaining_superseded_paths is not None:
+                merged["superseded_paths"] = remaining_superseded_paths
             self._conn.execute(
                 "UPDATE requests SET result_json = ?, source_cleanup_next_attempt_at = ? WHERE id = ?",
                 (json.dumps(merged), next_attempt_at, request_id),

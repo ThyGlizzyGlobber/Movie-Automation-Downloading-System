@@ -274,12 +274,25 @@ class CreateRequest(BaseModel):
     # Per-request floor override — the detail page's "Download 4K"/
     # "Download 1080p" shortcuts. None = use the global pipeline setting.
     min_resolution: str | None = None
+    # frontend migration Part K1/K2: set only from the "Already on Plex"
+    # confirmation modal. "overwrite" is rejected below (create_request)
+    # unless this tmdb_id has a request this app itself organized on
+    # record — never offered against a file only the fuzzy on_plex
+    # title/year match found.
+    redownload_mode: str | None = None
 
     @field_validator("min_resolution")
     @classmethod
     def _known_resolution(cls, v: str | None) -> str | None:
         if v is not None and not is_valid_min_resolution(v):
             raise ValueError(f"min_resolution must be one of {VALID_MIN_RESOLUTIONS}")
+        return v
+
+    @field_validator("redownload_mode")
+    @classmethod
+    def _known_redownload_mode(cls, v: str | None) -> str | None:
+        if v is not None and v not in ("upgrade", "overwrite"):
+            raise ValueError("redownload_mode must be 'upgrade' or 'overwrite'")
         return v
 
 
@@ -349,6 +362,9 @@ class RequestOut(BaseModel):
     # worker-created rows, e.g. a subscribed show's automatic catch-up).
     requested_by_plex_id: str | None = None
     requested_by_username: str | None = None
+    # Frontend migration Part K1/K3 — "upgrade"/"overwrite"/None, drives
+    # the queue's "Redownload" tag.
+    redownload_mode: str | None = None
 
     @classmethod
     def from_row(cls, row: RequestRow) -> "RequestOut":
@@ -367,12 +383,37 @@ class BulkDownloadRequest(BaseModel):
 
     scope: str
     season_number: int | None = None
+    # Frontend migration Part J4 — per-request floor override, same
+    # convention as CreateRequest.min_resolution (movies), now also
+    # available for a season/series bulk download.
+    min_resolution: str | None = None
+    # Frontend migration Part K3 — TV gets the same redownload treatment
+    # as movies. Accepted and stored for a pack request, but the actual
+    # overwrite-deletion mechanism (Part K2) is movie-only for now; an
+    # "overwrite" pack request behaves like "upgrade" until that's built
+    # out for packs too — a named, not-yet-solved gap in the same style
+    # as this project's others, not silently pretended to be complete.
+    redownload_mode: str | None = None
 
     @field_validator("scope")
     @classmethod
     def _known_scope(cls, v: str) -> str:
         if v not in ("season", "series"):
             raise ValueError("scope must be 'season' or 'series'")
+        return v
+
+    @field_validator("min_resolution")
+    @classmethod
+    def _known_resolution(cls, v: str | None) -> str | None:
+        if v is not None and not is_valid_min_resolution(v):
+            raise ValueError(f"min_resolution must be one of {VALID_MIN_RESOLUTIONS}")
+        return v
+
+    @field_validator("redownload_mode")
+    @classmethod
+    def _known_redownload_mode(cls, v: str | None) -> str | None:
+        if v is not None and v not in ("upgrade", "overwrite"):
+            raise ValueError("redownload_mode must be 'upgrade' or 'overwrite'")
         return v
 
     @model_validator(mode="after")
@@ -568,6 +609,12 @@ def get_movie_detail(
         **movie,
         "on_plex": _on_plex_for(movie.get("title") or "", year, "movie", store),
         "is_coming_soon": is_coming_soon,
+        # Frontend migration Part K2 — true only when this app has a
+        # confirmed record of having organized a file for this title
+        # itself, never derived from the same fuzzy on_plex title/year
+        # match above. Drives whether "Overwrite existing" is even
+        # offered in the redownload confirmation modal.
+        "on_plex_tracked": store.get_latest_organized_request(tmdb_id, ("movie",)) is not None,
     }
 
 
@@ -685,6 +732,10 @@ def get_tv_detail(tmdb_id: int, store: RequestStore = Depends(get_store), tmdb: 
         **show,
         "on_plex": _on_plex_for(show.get("name") or "", year, "show", store),
         "is_coming_soon": is_tv_upcoming(show),
+        # Frontend migration Part K3 — TV parity with the movie route
+        # above. A show's organized history is episode/pack rows, never
+        # a single fixed media_type the way a movie's always is.
+        "on_plex_tracked": store.get_latest_organized_request(tmdb_id, ("episode", "pack")) is not None,
     }
 
 
@@ -777,6 +828,15 @@ def create_request(
     except TMDBError as exc:
         raise HTTPException(status_code=404, detail=f"tmdb_id {body.tmdb_id} not found") from exc
 
+    if body.redownload_mode == "overwrite" and store.get_latest_organized_request(body.tmdb_id, ("movie",)) is None:
+        # Defense in depth — never trust the frontend's button state
+        # alone. "Overwrite" is only ever offered against a file this
+        # app has a confirmed record of organizing itself, never a guess
+        # from the same fuzzy on_plex title/year match.
+        raise HTTPException(
+            status_code=400, detail="nothing on record for this title that this app organized itself"
+        )
+
     row = store.create_request(
         tmdb_id=body.tmdb_id,
         title=identity.title,
@@ -785,6 +845,7 @@ def create_request(
         min_resolution=body.min_resolution,
         requested_by_plex_id=session.plex_user_id,
         requested_by_username=session.username,
+        redownload_mode=body.redownload_mode,
     )
     worker.enqueue(row.id)
     return RequestOut.from_row(row)
@@ -1045,6 +1106,13 @@ def bulk_download_show(
         season_number=body.season_number,
         requested_by_plex_id=session.plex_user_id,
         requested_by_username=session.username,
+        min_resolution=body.min_resolution,
+        # No on_plex_tracked/400 gate here unlike the movie route — TV's
+        # actual overwrite-deletion mechanism isn't built yet (see
+        # BulkDownloadRequest's own docstring), so there's nothing yet
+        # for "overwrite" to unsafely bypass; it's accepted and stored,
+        # but behaves like "upgrade" until that's built out.
+        redownload_mode=body.redownload_mode,
     )
     worker.enqueue(row.id)
     return RequestOut.from_row(row)

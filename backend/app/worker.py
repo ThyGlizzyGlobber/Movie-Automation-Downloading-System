@@ -243,10 +243,14 @@ class Worker:
         await asyncio.to_thread(self.store.update_status, request_id, "searching")
         try:
             settings = await asyncio.to_thread(resolve_pipeline_settings, self.store)
-            if row.media_type == "movie" and row.min_resolution:
-                # Per-request floor override from the detail page's
-                # "Download 4K"/"Download 1080p" shortcuts — applies only
-                # to this one request, never touches the global settings.
+            if row.media_type in ("movie", "pack") and row.min_resolution:
+                # Per-request floor override — the movie detail page's
+                # "Download 4K"/"Download 1080p" shortcuts, and (frontend
+                # migration Part J4) a season/series bulk-download's own
+                # resolution picker. Applies only to this one request,
+                # never touches the global settings. Episode requests
+                # (media_type == "episode") don't get this — there's no
+                # per-episode resolution picker, only the bulk/pack one.
                 settings = dataclasses.replace(settings, min_resolution=row.min_resolution)
             # Stage 15: torrents explicitly rejected as genuinely defective
             # on a prior attempt for this same movie/show — excluded from
@@ -451,8 +455,31 @@ class Worker:
             )
             return
         logger.info("request %d (%s) downloading -> complete (organized to %s)", row.id, label, target_path)
+
+        # frontend migration Part K2: an "overwrite" redownload also
+        # deletes the previously organized file once *this* new one is
+        # confirmed in place — see mark_organized's own docstring for why
+        # this is a direct path, not a torrent hash (the original torrent
+        # may have already been cleaned up long ago). Only paths that
+        # genuinely differ from this run's own target — organizing to the
+        # exact same computed path (same filename) already self-replaces
+        # via _link_or_copy's own "target exists -> unlink first" step,
+        # nothing extra to schedule in that case.
+        superseded_paths: list[str] = []
+        if row.redownload_mode == "overwrite":
+            prior = await asyncio.to_thread(self.store.get_latest_organized_request, row.tmdb_id, ("movie",))
+            if prior and prior.id != row.id:
+                superseded_paths = [
+                    p for p in (prior.result or {}).get("organized_paths", []) if p != str(target_path)
+                ]
+
         await asyncio.to_thread(
-            self.store.mark_organized, row.id, [str(target_path)], [torrent_hash], self._next_cleanup_attempt_at()
+            self.store.mark_organized,
+            row.id,
+            [str(target_path)],
+            [torrent_hash],
+            self._next_cleanup_attempt_at(),
+            superseded_paths=superseded_paths,
         )
 
     async def _organize_and_complete_pack(self, row) -> None:
@@ -590,13 +617,21 @@ class Worker:
         missing by the time this runs, that's treated as a permanent,
         deliberate skip (not a transient failure to retry) — the copy
         being gone is itself the anomaly, and retrying forever wouldn't
-        fix that."""
+        fix that.
+
+        Frontend migration Part K2: also deletes `superseded_paths` — the
+        previously organized file(s) an "overwrite" redownload replaces —
+        under the exact same gate as the torrent cleanup above (only once
+        *this* row's own new `organized_paths` are confirmed present), via
+        a direct filesystem delete rather than `qbt.delete_torrent()`
+        (that prior file's own torrent may already be long gone)."""
         result = row.result or {}
         organized_paths = result.get("organized_paths") or []
         hashes = result.get("pending_cleanup_hashes") or []
+        superseded_paths = result.get("superseded_paths") or []
         label = _request_label(row)
 
-        if not hashes:
+        if not hashes and not superseded_paths:
             await asyncio.to_thread(self.store.mark_source_cleanup_done, row.id)
             return
 
@@ -617,7 +652,7 @@ class Worker:
             await asyncio.to_thread(self.store.mark_source_cleanup_done, row.id)
             return
 
-        remaining: list[str] = []
+        remaining_hashes: list[str] = []
         for torrent_hash in hashes:
             try:
                 if await asyncio.to_thread(self.qbt.torrent_info, torrent_hash) is not None:
@@ -628,11 +663,29 @@ class Worker:
                 # else: already gone (this app's own doing, or otherwise) — nothing left to clean up for this hash
             except Exception:
                 logger.exception("source cleanup failed for torrent %s (%s) — will retry", torrent_hash, label)
-                remaining.append(torrent_hash)
+                remaining_hashes.append(torrent_hash)
 
-        if remaining:
+        remaining_superseded: list[str] = []
+        for path_str in superseded_paths:
+            try:
+                path = Path(path_str)
+                if await asyncio.to_thread(path.exists):
+                    await asyncio.to_thread(path.unlink)
+                    logger.info(
+                        "source cleanup: removed superseded file %r (%s) after redownload overwrite", path_str, label
+                    )
+                # else: already gone — nothing left to clean up for this path
+            except Exception:
+                logger.exception("superseded-file cleanup failed for %r (%s) — will retry", path_str, label)
+                remaining_superseded.append(path_str)
+
+        if remaining_hashes or remaining_superseded:
             await asyncio.to_thread(
-                self.store.defer_source_cleanup, row.id, remaining, self._next_cleanup_attempt_at()
+                self.store.defer_source_cleanup,
+                row.id,
+                remaining_hashes,
+                self._next_cleanup_attempt_at(),
+                remaining_superseded_paths=remaining_superseded,
             )
         else:
             await asyncio.to_thread(self.store.mark_source_cleanup_done, row.id)

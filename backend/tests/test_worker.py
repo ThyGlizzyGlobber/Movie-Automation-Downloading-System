@@ -792,6 +792,41 @@ def test_run_one_downloads_a_season_pack_request():
     assert reloaded.result["torrent_hash"] == "cccc"
 
 
+# -- frontend migration Part J4: a bulk season/series download's own
+#    resolution picker — same per-request floor override movie requests
+#    already had, now wired up for pack requests too. --
+
+
+def test_run_one_pack_without_override_rejects_release_below_global_floor():
+    store = RequestStore(":memory:")
+    show = store.create_show(tmdb_id=95350, title="Lanterns")
+    row = store.create_pack_request(tmdb_id=95350, show_id=show.id, title="Lanterns", season_number=1)
+    qbt = FakeQBTClient(
+        results_by_variant={"Lanterns Season 01": [_pack_result(fileName="Lanterns.S01.1080p.WEB-DL.mkv")]}
+    )
+    worker = Worker(store, FakeTMDBClient(), qbt)
+
+    asyncio.run(worker._run_one(row.id))
+
+    assert store.get_request(row.id).status == "no qualifying results"
+
+
+def test_run_one_pack_resolution_override_allows_release_below_global_floor():
+    store = RequestStore(":memory:")
+    show = store.create_show(tmdb_id=95350, title="Lanterns")
+    row = store.create_pack_request(
+        tmdb_id=95350, show_id=show.id, title="Lanterns", season_number=1, min_resolution="1080p"
+    )
+    qbt = FakeQBTClient(
+        results_by_variant={"Lanterns Season 01": [_pack_result(fileName="Lanterns.S01.1080p.WEB-DL.mkv")]}
+    )
+    worker = Worker(store, FakeTMDBClient(), qbt)
+
+    asyncio.run(worker._run_one(row.id))
+
+    assert store.get_request(row.id).status == "downloading"
+
+
 def test_run_one_downloads_a_complete_series_request():
     store = RequestStore(":memory:")
     show = store.create_show(tmdb_id=95350, title="Lanterns")
@@ -1897,7 +1932,9 @@ def test_check_downloading_schedules_source_cleanup_after_organizing_episode(tmp
     assert ("aaaa", True) in qbt.deleted
 
 
-def _pending_cleanup_row(store, torrent_hash: str, organized_paths: list, pending_hashes: list) -> None:
+def _pending_cleanup_row(
+    store, torrent_hash: str, organized_paths: list, pending_hashes: list, superseded_paths: list | None = None
+) -> None:
     """Builds a real request row already past organizing, sitting in
     `source_cleanup_status = 'pending'` — the same state `mark_organized`
     leaves a row in — so `_attempt_source_cleanup` can be exercised
@@ -1905,7 +1942,13 @@ def _pending_cleanup_row(store, torrent_hash: str, organized_paths: list, pendin
     rather than raw positional arguments."""
     row = store.create_request(tmdb_id=1, title="Lanterns S01E01", release_year=None, query=None)
     store.update_status(row.id, "downloading", result={"torrent_hash": torrent_hash})
-    store.mark_organized(row.id, [str(p) for p in organized_paths], pending_hashes, "2000-01-01T00:00:00+00:00")
+    store.mark_organized(
+        row.id,
+        [str(p) for p in organized_paths],
+        pending_hashes,
+        "2000-01-01T00:00:00+00:00",
+        superseded_paths=[str(p) for p in superseded_paths] if superseded_paths else None,
+    )
     return row.id
 
 
@@ -1976,6 +2019,181 @@ def test_source_cleanup_failure_is_logged_and_stays_pending_for_retry(tmp_path, 
 
     assert "source cleanup failed" in caplog.text
     assert store.get_request(request_id).source_cleanup_status == "pending"  # not "done" — will retry
+
+
+# -- frontend migration Part K2: "overwrite" redownload also deletes the
+#    previously organized file, once the new one is confirmed in place. --
+
+
+def test_source_cleanup_deletes_superseded_file_once_new_copy_confirmed(tmp_path):
+    new_copy = tmp_path / "new.mkv"
+    new_copy.write_bytes(b"new")
+    old_copy = tmp_path / "old.mkv"
+    old_copy.write_bytes(b"old")
+    store = RequestStore(":memory:")
+    qbt = FakeQBTClient(torrent_states={"aaaa": {"progress": 1.0}})
+    worker = Worker(store, FakeTMDBClient(), qbt)
+    request_id = _pending_cleanup_row(store, "aaaa", [new_copy], ["aaaa"], superseded_paths=[old_copy])
+
+    asyncio.run(worker._attempt_source_cleanup(store.get_request(request_id)))
+
+    assert not old_copy.exists()
+    assert new_copy.exists()  # only the superseded file is touched, never the new one
+    assert store.get_request(request_id).source_cleanup_status == "done"
+
+
+def test_source_cleanup_does_not_delete_superseded_file_when_new_copy_is_missing(tmp_path):
+    """Same safety gate as the torrent-cleanup case: if the new organized
+    copy isn't genuinely on disk, nothing old gets deleted either —
+    losing both would be unrecoverable."""
+    old_copy = tmp_path / "old.mkv"
+    old_copy.write_bytes(b"old")
+    store = RequestStore(":memory:")
+    qbt = FakeQBTClient(torrent_states={"aaaa": {"progress": 1.0}})
+    worker = Worker(store, FakeTMDBClient(), qbt)
+    request_id = _pending_cleanup_row(
+        store, "aaaa", [tmp_path / "does-not-exist.mkv"], ["aaaa"], superseded_paths=[old_copy]
+    )
+
+    asyncio.run(worker._attempt_source_cleanup(store.get_request(request_id)))
+
+    assert old_copy.exists()  # never touched
+    assert store.get_request(request_id).source_cleanup_status == "done"  # deliberate permanent skip
+
+
+def test_source_cleanup_noop_when_superseded_file_already_gone(tmp_path):
+    new_copy = tmp_path / "new.mkv"
+    new_copy.write_bytes(b"new")
+    store = RequestStore(":memory:")
+    qbt = FakeQBTClient(torrent_states={"aaaa": {"progress": 1.0}})
+    worker = Worker(store, FakeTMDBClient(), qbt)
+    request_id = _pending_cleanup_row(
+        store, "aaaa", [new_copy], ["aaaa"], superseded_paths=[tmp_path / "already-gone.mkv"]
+    )
+
+    asyncio.run(worker._attempt_source_cleanup(store.get_request(request_id)))
+
+    assert store.get_request(request_id).source_cleanup_status == "done"
+
+
+def test_source_cleanup_superseded_file_failure_is_logged_and_stays_pending_for_retry(tmp_path, caplog, monkeypatch):
+    new_copy = tmp_path / "new.mkv"
+    new_copy.write_bytes(b"new")
+    old_copy = tmp_path / "old.mkv"
+    old_copy.write_bytes(b"old")
+    store = RequestStore(":memory:")
+    qbt = FakeQBTClient(torrent_states={"aaaa": {"progress": 1.0}})
+    worker = Worker(store, FakeTMDBClient(), qbt)
+    request_id = _pending_cleanup_row(store, "aaaa", [new_copy], ["aaaa"], superseded_paths=[old_copy])
+
+    def boom(self):
+        raise OSError("permission denied")
+
+    monkeypatch.setattr(Path, "unlink", boom)
+
+    with caplog.at_level("ERROR", logger="app.worker"):
+        asyncio.run(worker._attempt_source_cleanup(store.get_request(request_id)))
+
+    assert "superseded-file cleanup failed" in caplog.text
+    reloaded = store.get_request(request_id)
+    assert reloaded.source_cleanup_status == "pending"  # not "done" — will retry
+    assert reloaded.result["superseded_paths"] == [str(old_copy)]
+
+
+def test_organize_and_complete_movie_schedules_superseded_path_on_overwrite(tmp_path, monkeypatch):
+    """End-to-end: a second, 'overwrite'-mode request for the same movie
+    finds the first (already-complete) request's organized file and
+    schedules it for deletion — the actual mechanism a redownload's
+    "Overwrite existing" option relies on."""
+    monkeypatch.setattr(config, "MOVIE_LIBRARY_ROOT", tmp_path / "library")
+    store = RequestStore(":memory:")
+
+    # Both torrents known to qBittorrent from the start — _check_downloading
+    # only ever looks at rows actually in 'downloading' status, so the
+    # second one just sits unused in qbt until the second request exists.
+    first_source = tmp_path / "downloads" / "Dune.Part.Two.2024.WEBRip.mkv"
+    first_source.parent.mkdir(parents=True)
+    first_source.write_bytes(b"data")
+    second_source = tmp_path / "downloads" / "Dune.Part.Two.2024.BluRay.mkv"
+    second_source.write_bytes(b"data2")
+    qbt = FakeQBTClient(
+        torrent_states={
+            "aaaa": {"progress": 1.0, "save_path": str(first_source.parent)},
+            "bbbb": {"progress": 1.0, "save_path": str(second_source.parent)},
+        },
+        torrent_files={
+            "aaaa": [{"name": first_source.name, "size": 4}],
+            "bbbb": [{"name": second_source.name, "size": 5}],
+        },
+    )
+    worker = Worker(store, FakeTMDBClient(), qbt)
+
+    # First request: completes normally, organizing to some filename.
+    first = store.create_request(tmdb_id=693134, title="Dune: Part Two", release_year=2024, query=None)
+    store.update_status(first.id, "downloading", result={"torrent_hash": "aaaa"})
+    asyncio.run(worker._check_downloading())
+    first_target = tmp_path / "library" / "Dune Part Two (2024) {tmdb-693134}" / first_source.name
+    assert first_target.exists()
+
+    # Second request: a different release (different filename), explicitly
+    # an "overwrite" redownload.
+    second = store.create_request(
+        tmdb_id=693134, title="Dune: Part Two", release_year=2024, query=None, redownload_mode="overwrite"
+    )
+    store.update_status(second.id, "downloading", result={"torrent_hash": "bbbb"})
+
+    asyncio.run(worker._check_downloading())
+
+    second_target = tmp_path / "library" / "Dune Part Two (2024) {tmdb-693134}" / second_source.name
+    assert second_target.exists()
+    reloaded = store.get_request(second.id)
+    assert reloaded.status == "complete"
+    assert reloaded.result["superseded_paths"] == [str(first_target)]
+
+    # And running the cleanup sweep actually removes the superseded file.
+    asyncio.run(worker._attempt_source_cleanup(store.get_request(second.id)))
+    assert not first_target.exists()
+    assert second_target.exists()
+
+
+def test_organize_and_complete_movie_does_not_supersede_on_plain_upgrade(tmp_path, monkeypatch):
+    """redownload_mode="upgrade" (or None — an ordinary request) must
+    never schedule anything for deletion, even if a prior organized copy
+    exists for the same title — only an explicit "overwrite" does."""
+    monkeypatch.setattr(config, "MOVIE_LIBRARY_ROOT", tmp_path / "library")
+    store = RequestStore(":memory:")
+
+    first_source = tmp_path / "downloads" / "Dune.Part.Two.2024.WEBRip.mkv"
+    first_source.parent.mkdir(parents=True)
+    first_source.write_bytes(b"data")
+    second_source = tmp_path / "downloads" / "Dune.Part.Two.2024.BluRay.mkv"
+    second_source.write_bytes(b"data2")
+    qbt = FakeQBTClient(
+        torrent_states={
+            "aaaa": {"progress": 1.0, "save_path": str(first_source.parent)},
+            "bbbb": {"progress": 1.0, "save_path": str(second_source.parent)},
+        },
+        torrent_files={
+            "aaaa": [{"name": first_source.name, "size": 4}],
+            "bbbb": [{"name": second_source.name, "size": 5}],
+        },
+    )
+    worker = Worker(store, FakeTMDBClient(), qbt)
+
+    first = store.create_request(tmdb_id=693134, title="Dune: Part Two", release_year=2024, query=None)
+    store.update_status(first.id, "downloading", result={"torrent_hash": "aaaa"})
+    asyncio.run(worker._check_downloading())
+
+    second = store.create_request(
+        tmdb_id=693134, title="Dune: Part Two", release_year=2024, query=None, redownload_mode="upgrade"
+    )
+    store.update_status(second.id, "downloading", result={"torrent_hash": "bbbb"})
+
+    asyncio.run(worker._check_downloading())
+
+    reloaded = store.get_request(second.id)
+    assert reloaded.status == "complete"
+    assert not reloaded.result.get("superseded_paths")
 
 
 def test_check_downloading_schedules_source_cleanup_after_organizing_pack(tmp_path, monkeypatch):
