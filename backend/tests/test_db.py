@@ -584,3 +584,48 @@ def test_purge_requests_older_than_zero_clears_all_terminal_regardless_of_age():
 
     assert removed == 1
     assert {r.id for r in store.list_requests()} == {active.id}
+
+
+# ---------------------------------------------------------------------------
+# rejected_torrents (Stage 15) — blacklisting a specific torrent hash that
+# turned out to be genuinely defective, so a fresh search for the same
+# movie/show excludes it going forward.
+# ---------------------------------------------------------------------------
+
+
+def test_get_rejected_torrent_hashes_empty_when_none_rejected():
+    store = _store()
+    assert store.get_rejected_torrent_hashes(693134) == set()
+
+
+def test_add_rejected_torrent_then_visible_in_get():
+    store = _store()
+    store.add_rejected_torrent(693134, "ABCDEF1234567890")
+
+    # Lowercased on the way in, same as every other hash this app tracks.
+    assert store.get_rejected_torrent_hashes(693134) == {"abcdef1234567890"}
+
+
+def test_add_rejected_torrent_is_idempotent():
+    store = _store()
+    store.add_rejected_torrent(693134, "AAAA")
+    store.add_rejected_torrent(693134, "AAAA")  # INSERT OR IGNORE, not a crash
+
+    assert store.get_rejected_torrent_hashes(693134) == {"aaaa"}
+
+
+def test_rejected_torrent_hashes_are_scoped_per_tmdb_id():
+    store = _store()
+    store.add_rejected_torrent(693134, "AAAA")
+    store.add_rejected_torrent(1288445, "BBBB")
+
+    assert store.get_rejected_torrent_hashes(693134) == {"aaaa"}
+    assert store.get_rejected_torrent_hashes(1288445) == {"bbbb"}
+
+
+def test_add_rejected_torrent_allows_multiple_hashes_for_the_same_movie():
+    store = _store()
+    store.add_rejected_torrent(693134, "AAAA")
+    store.add_rejected_torrent(693134, "BBBB")
+
+    assert store.get_rejected_torrent_hashes(693134) == {"aaaa", "bbbb"}

@@ -120,6 +120,43 @@ def test_download_picks_the_best_candidate_across_variants_not_just_the_first_va
     # Both variants were actually searched — the win came from comparing
     # across them, not from stopping once the first one found anything.
     assert "Dune: Part Two" in qbt.searched_variants
+
+
+def test_download_excludes_a_rejected_torrent_and_falls_through_to_next_best():
+    """Stage 15: a torrent previously rejected via POST /api/requests/{id}/
+    reject (genuinely defective despite scoring best on paper — e.g. the
+    confirmed-live "Mutiny" 2160p release with audio sync drift) must never
+    be re-selected on a fresh search for the same movie, even though it's
+    not currently sitting in qBittorrent at all (it was deleted when
+    rejected) — `excluded_hashes` has to work independently of
+    `existing_torrent_hashes()`."""
+    qbt = FakeQBTClient(
+        results_by_variant={
+            "Dune: Part Two": [
+                _result(fileName="Dune.Part.Two.2024.2160p.REMUX.mkv", fileUrl="magnet:?xt=urn:btih:AAAA"),
+                _result(fileName="Dune.Part.Two.2024.2160p.WEB.mkv", fileUrl="magnet:?xt=urn:btih:CCCC"),
+            ],
+        }
+    )
+
+    result = download(693134, FakeTMDBClient(), qbt, excluded_hashes={"aaaa"})
+
+    assert result.status == "added"
+    assert result.winner["fileName"] == "Dune.Part.Two.2024.2160p.WEB.mkv"
+    assert qbt.added == [("magnet:?xt=urn:btih:CCCC", "movies")]
+
+
+def test_download_rejects_every_candidate_falls_to_no_qualifying_results():
+    qbt = FakeQBTClient(
+        results_by_variant={
+            "Dune: Part Two": [_result(fileUrl="magnet:?xt=urn:btih:AAAA")],
+        }
+    )
+
+    result = download(693134, FakeTMDBClient(), qbt, excluded_hashes={"aaaa"})
+
+    assert result.status == "no qualifying results"
+    assert qbt.added == []
     assert "Dune" in qbt.searched_variants
 
 

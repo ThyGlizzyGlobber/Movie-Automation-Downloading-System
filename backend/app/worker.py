@@ -248,10 +248,21 @@ class Worker:
                 # "Download 4K"/"Download 1080p" shortcuts — applies only
                 # to this one request, never touches the global settings.
                 settings = dataclasses.replace(settings, min_resolution=row.min_resolution)
+            # Stage 15: torrents explicitly rejected as genuinely defective
+            # on a prior attempt for this same movie/show — excluded from
+            # this fresh search so it never re-selects the exact same bad
+            # release (see api.py's POST /api/requests/{id}/reject).
+            rejected_hashes = await asyncio.to_thread(self.store.get_rejected_torrent_hashes, row.tmdb_id)
             if row.media_type == "episode":
                 identity = await asyncio.to_thread(resolve_show, row.tmdb_id, self.tmdb)
                 result = await asyncio.to_thread(
-                    download_episode, identity, row.season_number, row.episode_number, self.qbt, settings
+                    download_episode,
+                    identity,
+                    row.season_number,
+                    row.episode_number,
+                    self.qbt,
+                    settings,
+                    rejected_hashes,
                 )
             elif row.media_type == "pack":
                 identity = await asyncio.to_thread(resolve_show, row.tmdb_id, self.tmdb)
@@ -262,10 +273,17 @@ class Worker:
                 else:
                     scope = "series"
                 result = await asyncio.to_thread(
-                    download_pack, identity, scope, self.qbt, settings, row.season_number, row.season_range_end
+                    download_pack,
+                    identity,
+                    scope,
+                    self.qbt,
+                    settings,
+                    row.season_number,
+                    row.season_range_end,
+                    rejected_hashes,
                 )
             else:
-                result = await asyncio.to_thread(download, row.tmdb_id, self.tmdb, self.qbt, settings)
+                result = await asyncio.to_thread(download, row.tmdb_id, self.tmdb, self.qbt, settings, rejected_hashes)
         except Exception as exc:  # fail safe, not silent — never leave a row stuck
             logger.exception("request %d failed", request_id)
             await asyncio.to_thread(self.store.update_status, request_id, "failed", error_message=str(exc))

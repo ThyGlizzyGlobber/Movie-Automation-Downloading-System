@@ -642,6 +642,31 @@ def clear_requests(store: RequestStore = Depends(get_store)) -> dict:
 _TORRENT_CANCELLABLE_STATUSES = {"downloading", "complete"}
 
 
+def _cancel_active_torrent(row: RequestRow, store: RequestStore, qbt: QBTClient) -> str:
+    """Shared by `cancel` and `reject` for a "downloading"/"complete" row:
+    validates status/torrent-on-record/still-in-qBittorrent, deletes the
+    torrent and its files, marks the request "cancelled", and returns the
+    torrent hash (the one extra thing `reject` needs on top of everything
+    `cancel` already does)."""
+    if row.status not in _TORRENT_CANCELLABLE_STATUSES:
+        raise HTTPException(status_code=409, detail=f"cannot cancel a request in status {row.status!r}")
+    torrent_hash = (row.result or {}).get("torrent_hash")
+    if not torrent_hash:
+        raise HTTPException(status_code=409, detail="no torrent on record for this request")
+    if qbt.torrent_info(torrent_hash) is None:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "qBittorrent no longer has this torrent — it most likely finished and was "
+                "auto-removed. Nothing was deleted; if the file is still on disk, it needs to "
+                "be removed manually."
+            ),
+        )
+    qbt.delete_torrent(torrent_hash, delete_files=True)
+    store.update_status(row.id, "cancelled")
+    return torrent_hash
+
+
 @app.post("/api/requests/{request_id}/cancel")
 def cancel_request(
     request_id: int, store: RequestStore = Depends(get_store), qbt: QBTClient = Depends(get_qbt)
@@ -671,23 +696,42 @@ def cancel_request(
         logger.info("request %d (%s) queued -> cancelled (via API)", request_id, row.title)
         return RequestOut.from_row(store.get_request(request_id))
 
-    if row.status not in _TORRENT_CANCELLABLE_STATUSES:
-        raise HTTPException(status_code=409, detail=f"cannot cancel a request in status {row.status!r}")
-    torrent_hash = (row.result or {}).get("torrent_hash")
-    if not torrent_hash:
-        raise HTTPException(status_code=409, detail="no torrent on record for this request")
-    if qbt.torrent_info(torrent_hash) is None:
-        raise HTTPException(
-            status_code=409,
-            detail=(
-                "qBittorrent no longer has this torrent — it most likely finished and was "
-                "auto-removed. Nothing was deleted; if the file is still on disk, it needs to "
-                "be removed manually."
-            ),
-        )
-    qbt.delete_torrent(torrent_hash, delete_files=True)
-    store.update_status(request_id, "cancelled")
+    _cancel_active_torrent(row, store, qbt)
     logger.info("request %d (%s) downloading/complete -> cancelled (via API)", request_id, row.title)
+    return RequestOut.from_row(store.get_request(request_id))
+
+
+@app.post("/api/requests/{request_id}/reject")
+def reject_request(
+    request_id: int, store: RequestStore = Depends(get_store), qbt: QBTClient = Depends(get_qbt)
+) -> RequestOut:
+    """Stage 15: like `cancel`, but for a torrent that turned out to be
+    genuinely defective despite looking like the best candidate on paper —
+    a bad encode, audio sync drift, wrong cut, anything the search/scoring
+    pipeline's filename/seeder-based signals could never have detected up
+    front (confirmed live: a well-seeded, top-scored 2160p "Mutiny" release
+    with progressive audio sync drift, 2026-09-14). Deletes the torrent and
+    its files the same way `cancel` does, but additionally blacklists this
+    exact torrent hash against the request's tmdb_id
+    (`RequestStore.add_rejected_torrent`), so a fresh search for the same
+    movie/show excludes it and falls through to the next-best-scored
+    candidate instead of re-selecting the same defective release.
+
+    Only valid for a "downloading"/"complete" row — a "queued" request has
+    no torrent on record yet to reject."""
+    row = store.get_request(request_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail="request not found")
+    if row.status == "queued":
+        raise HTTPException(status_code=409, detail="a queued request has no torrent yet to reject")
+
+    torrent_hash = _cancel_active_torrent(row, store, qbt)
+    store.add_rejected_torrent(row.tmdb_id, torrent_hash)
+    logger.info(
+        "request %d (%s) downloading/complete -> cancelled (rejected, torrent hash blacklisted)",
+        request_id,
+        row.title,
+    )
     return RequestOut.from_row(store.get_request(request_id))
 
 

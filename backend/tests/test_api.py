@@ -481,6 +481,83 @@ def test_cancel_404s_when_missing(client_and_deps):
     assert response.status_code == 404
 
 
+def test_reject_deletes_torrent_and_blacklists_hash_for_the_movie(client_and_deps):
+    client, store, _, _, qbt, _ = client_and_deps
+    created = client.post("/api/requests", json={"tmdb_id": 693134}).json()
+    store.update_status(created["id"], "downloading", result={"torrent_hash": "aaaa"})
+    qbt._torrent_states["aaaa"] = {"progress": 0.4}
+
+    response = client.post(f"/api/requests/{created['id']}/reject")
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "cancelled"
+    assert qbt.deleted == [("aaaa", True)]
+    assert store.get_request(created["id"]).status == "cancelled"
+    assert store.get_rejected_torrent_hashes(693134) == {"aaaa"}
+
+
+def test_reject_works_from_complete_status_too(client_and_deps):
+    client, store, _, _, qbt, _ = client_and_deps
+    created = client.post("/api/requests", json={"tmdb_id": 693134}).json()
+    store.update_status(created["id"], "complete", result={"torrent_hash": "bbbb"})
+    qbt._torrent_states["bbbb"] = {"progress": 1.0}
+
+    response = client.post(f"/api/requests/{created['id']}/reject")
+
+    assert response.status_code == 200
+    assert qbt.deleted == [("bbbb", True)]
+    assert store.get_rejected_torrent_hashes(693134) == {"bbbb"}
+
+
+def test_reject_rejects_queued_status(client_and_deps):
+    """A "queued" request has no torrent on record yet, so there's nothing
+    to blacklist — unlike `cancel`, which just marks it cancelled directly,
+    `reject` refuses outright."""
+    client, store, _, _, qbt, _ = client_and_deps
+    created = client.post("/api/requests", json={"tmdb_id": 693134}).json()  # starts "queued"
+
+    response = client.post(f"/api/requests/{created['id']}/reject")
+
+    assert response.status_code == 409
+    assert qbt.deleted == []
+    assert store.get_request(created["id"]).status == "queued"
+    assert store.get_rejected_torrent_hashes(693134) == set()
+
+
+def test_reject_fails_honestly_when_qbittorrent_already_removed_the_torrent(client_and_deps):
+    client, store, _, _, qbt, _ = client_and_deps
+    created = client.post("/api/requests", json={"tmdb_id": 693134}).json()
+    store.update_status(created["id"], "complete", result={"torrent_hash": "cccc"})
+    # "cccc" absent from qbt._torrent_states -> torrent_info returns None
+
+    response = client.post(f"/api/requests/{created['id']}/reject")
+
+    assert response.status_code == 409
+    assert "auto-removed" in response.json()["detail"]
+    assert qbt.deleted == []
+    assert store.get_request(created["id"]).status == "complete"
+    assert store.get_rejected_torrent_hashes(693134) == set()
+
+
+def test_reject_rejects_when_hash_was_never_captured(client_and_deps):
+    client, store, _, _, qbt, _ = client_and_deps
+    created = client.post("/api/requests", json={"tmdb_id": 693134}).json()
+    store.update_status(created["id"], "downloading", result={"torrent_hash": None})
+
+    response = client.post(f"/api/requests/{created['id']}/reject")
+
+    assert response.status_code == 409
+    assert qbt.deleted == []
+    assert store.get_rejected_torrent_hashes(693134) == set()
+
+
+def test_reject_404s_when_missing(client_and_deps):
+    client, _, _, _, _, _ = client_and_deps
+    response = client.post("/api/requests/999999/reject")
+
+    assert response.status_code == 404
+
+
 def test_clear_requests_removes_terminal_rows_only(client_and_deps):
     client, store, _, _, _, _ = client_and_deps
     terminal = client.post("/api/requests", json={"tmdb_id": 693134}).json()

@@ -231,6 +231,27 @@ class RequestStore:
             # `_watch_episode_rechecks`.
             self._ensure_column("show_episodes", "recheck_count", "recheck_count INTEGER NOT NULL DEFAULT 0")
             self._ensure_column("show_episodes", "last_rechecked_at", "last_rechecked_at TEXT")
+            # Stage 15: torrents explicitly rejected as genuinely defective
+            # (bad encode, audio sync drift, wrong cut — anything the
+            # search/scoring pipeline's filename-based signals could never
+            # have caught up front, confirmed live via a well-seeded,
+            # top-scored "Mutiny" 2160p release with progressive audio
+            # sync drift, 2026-09-14). Keyed by tmdb_id, not request_id —
+            # a rejection needs to keep excluding this exact torrent from
+            # every *future* request for the same movie/show, not just the
+            # one that first found it. UNIQUE(tmdb_id, torrent_hash) makes
+            # re-rejecting the same hash a harmless no-op.
+            self._conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS rejected_torrents (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    tmdb_id INTEGER NOT NULL,
+                    torrent_hash TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    UNIQUE(tmdb_id, torrent_hash)
+                )
+                """
+            )
             # Stage 7's settings panel reads/writes this; Stage 3 only owns
             # the schema — a single row, not per-profile (no family
             # profiles, per the confirmed architecture).
@@ -512,6 +533,28 @@ class RequestStore:
                 )
             self._conn.commit()
             return cur.rowcount
+
+    # -- rejected_torrents (Stage 15) --
+
+    def add_rejected_torrent(self, tmdb_id: int, torrent_hash: str) -> None:
+        """Blacklists `torrent_hash` against `tmdb_id` — a fresh search for
+        the same movie/show excludes it going forward, same as an
+        already-in-qBittorrent hash (see pipeline.py's `excluded_hashes`
+        parameter). `INSERT OR IGNORE`: re-rejecting the same hash (e.g. a
+        duplicate API call) is a harmless no-op, not an error."""
+        now = _now()
+        with self._lock:
+            self._conn.execute(
+                "INSERT OR IGNORE INTO rejected_torrents (tmdb_id, torrent_hash, created_at) VALUES (?, ?, ?)",
+                (tmdb_id, torrent_hash.lower(), now),
+            )
+            self._conn.commit()
+
+    def get_rejected_torrent_hashes(self, tmdb_id: int) -> set[str]:
+        rows = self._conn.execute(
+            "SELECT torrent_hash FROM rejected_torrents WHERE tmdb_id = ?", (tmdb_id,)
+        ).fetchall()
+        return {row["torrent_hash"] for row in rows}
 
     # -- shows (Stage 12 standing subscriptions) --
 

@@ -233,11 +233,23 @@ def _rank_and_add(
 
 
 def download(
-    tmdb_id: int, tmdb_client: TMDBClient, qbt: QBTClient, settings: PipelineSettings | None = None
+    tmdb_id: int,
+    tmdb_client: TMDBClient,
+    qbt: QBTClient,
+    settings: PipelineSettings | None = None,
+    excluded_hashes: set[str] | None = None,
 ) -> DownloadResult:
+    """`excluded_hashes` (Stage 15): torrent hashes explicitly rejected as
+    genuinely defective on a previous attempt for this same movie (see
+    `db.RequestStore.add_rejected_torrent`) — merged in alongside whatever's
+    already in qBittorrent, so a fresh search never re-selects the exact
+    same bad release, and instead falls through to the next-best-scored
+    candidate. `exclude_existing` (reused by every search helper below)
+    already treats "already in qBittorrent" and "explicitly rejected" as
+    the identical kind of exclusion, so nothing else has to change."""
     settings = settings or PipelineSettings.from_config()
     identity = resolve(tmdb_id, tmdb_client)
-    existing_hashes = qbt.existing_torrent_hashes()
+    existing_hashes = qbt.existing_torrent_hashes() | (excluded_hashes or set())
     free_space_bytes = qbt.free_space_bytes()
 
     candidates = _merge_variant_candidates(
@@ -305,6 +317,7 @@ def find_best_episode_candidate(
     episode: int,
     qbt: QBTClient,
     settings: PipelineSettings | None = None,
+    excluded_hashes: set[str] | None = None,
 ) -> tuple[dict, Score] | None:
     """Read-only peek at what `download_episode()` would add right now,
     without actually adding it — Stage 12.x's auto-recheck loop uses this
@@ -313,9 +326,12 @@ def find_best_episode_candidate(
     fallback-across-variants and free-space-fit filtering as the real add
     path (`_rank_and_add`), so "would this get added" and "did this get
     added" never quietly disagree. `None` if nothing fitting turns up
-    across every variant."""
+    across every variant.
+
+    `excluded_hashes` (Stage 15): same rejected-torrent exclusion as
+    `download()` — see its own docstring."""
     settings = settings or PipelineSettings.from_config()
-    existing_hashes = qbt.existing_torrent_hashes()
+    existing_hashes = qbt.existing_torrent_hashes() | (excluded_hashes or set())
     free_space_bytes = qbt.free_space_bytes()
 
     candidates = _merge_variant_candidates(
@@ -335,6 +351,7 @@ def download_episode(
     episode: int,
     qbt: QBTClient,
     settings: PipelineSettings | None = None,
+    excluded_hashes: set[str] | None = None,
 ) -> EpisodeDownloadResult:
     """The Stage 10 equivalent of `download()`, for one specific episode.
     Takes an already-resolved `ShowIdentity` rather than a tmdb_id + TMDB
@@ -343,9 +360,12 @@ def download_episode(
     or Stage 12's subscription row), so there's no TMDB call to make here.
     Reuses `_rank_and_add` unchanged; only the search/relevance side above
     it (episode identity instead of title+year, `config.TV_CATEGORY`
-    instead of `settings.category`) differs from `download()`."""
+    instead of `settings.category`) differs from `download()`.
+
+    `excluded_hashes` (Stage 15): same rejected-torrent exclusion as
+    `download()` — see its own docstring."""
     settings = settings or PipelineSettings.from_config()
-    existing_hashes = qbt.existing_torrent_hashes()
+    existing_hashes = qbt.existing_torrent_hashes() | (excluded_hashes or set())
     free_space_bytes = qbt.free_space_bytes()
 
     candidates = _merge_variant_candidates(
@@ -428,6 +448,7 @@ def download_pack(
     settings: PipelineSettings | None = None,
     season: int | None = None,
     season_range_end: int | None = None,
+    excluded_hashes: set[str] | None = None,
 ) -> PackDownloadResult:
     """Stage 13 (+ Stage 14.x's season-range scope): search/score/add for a
     whole-season, multi-season-range, or complete-series pack. Reuses
@@ -441,7 +462,13 @@ def download_pack(
     inclusive end), or `"series"`. Takes an already-resolved `ShowIdentity`
     rather than a tmdb_id + TMDB client, same reasoning as
     `download_episode`: a bulk-download request is always issued against a
-    show the caller has already resolved."""
+    show the caller has already resolved.
+
+    `excluded_hashes` (Stage 15): same rejected-torrent exclusion as
+    `download()` — see its own docstring. Added as the last parameter
+    (rather than alongside `settings`) so existing positional callers
+    (worker.py's `download_pack(identity, scope, qbt, settings, season,
+    season_range_end)`) keep working unchanged."""
     if scope not in ("season", "season_range", "series"):
         raise ValueError(f"scope must be 'season', 'season_range', or 'series', got {scope!r}")
     if scope == "season" and season is None:
@@ -450,7 +477,7 @@ def download_pack(
         raise ValueError("season and season_range_end are both required when scope == 'season_range'")
 
     settings = settings or PipelineSettings.from_config()
-    existing_hashes = qbt.existing_torrent_hashes()
+    existing_hashes = qbt.existing_torrent_hashes() | (excluded_hashes or set())
     free_space_bytes = qbt.free_space_bytes()
 
     combined: list[dict] = []
