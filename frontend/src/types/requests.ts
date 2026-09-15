@@ -42,6 +42,7 @@ export interface RequestOut {
   // on every download-watcher poll while status === 'downloading'; null
   // before the first poll and for any row never in that status.
   download_progress: number | null
+  notify?: boolean | null
 }
 
 // api.py:271-291
@@ -56,6 +57,9 @@ export interface CreateRequestBody {
   // A named quality profile (Settings › Quality profiles); the server
   // resolves it to min_resolution when that isn't sent explicitly.
   profile_id?: string | null
+  // "Notify me when it lands" on the request sheet; null = the
+  // requester's own default.
+  notify?: boolean | null
 }
 
 // api.py:378-396
@@ -65,4 +69,5 @@ export interface BulkDownloadBody {
   min_resolution?: string | null
   redownload_mode?: RedownloadMode | null
   profile_id?: string | null
+  notify?: boolean | null
 }

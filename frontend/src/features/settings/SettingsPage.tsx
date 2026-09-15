@@ -12,6 +12,9 @@ import ActivityDashboardPanel from './ActivityDashboardPanel'
 import UpdatesPanel from './UpdatesPanel'
 import StoragePanel from './StoragePanel'
 import QualityProfilesPanel from './QualityProfilesPanel'
+import NotificationsPanel from './NotificationsPanel'
+import HouseholdPanel from './HouseholdPanel'
+import AboutPanel from './AboutPanel'
 import './SettingsPage.css'
 import Icon from '../../components/Icon'
 
@@ -37,6 +40,12 @@ function renderPanel(key: string) {
       return <ActivityDashboardPanel />
     case 'updates':
       return <UpdatesPanel />
+    case 'household':
+      return <HouseholdPanel />
+    case 'notifications':
+      return <NotificationsPanel />
+    case 'about':
+      return <AboutPanel />
     default:
       return null
   }
@@ -65,6 +74,12 @@ export default function SettingsPage() {
     )
     sections.forEach((s) => observer.observe(s))
     return () => observer.disconnect()
+  }, [isDesktop])
+
+  useEffect(() => {
+    const hash = window.location.hash.split('#')[2]
+    if (hash?.startsWith('settings-')) jump(hash.slice('settings-'.length))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isDesktop])
 
   function jump(key: string) {

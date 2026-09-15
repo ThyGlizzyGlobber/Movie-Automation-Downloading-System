@@ -95,12 +95,13 @@ had no automatic organize step at all — `organize_movie()` was Stage
 """
 
 import asyncio
+
 import dataclasses
 import logging
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from app import config, plex
+from app import config, notifications, plex
 from app.db import NON_TERMINAL_STATUSES, RequestStore, ShowEpisodeRow, ShowRow
 from app.media_organizer import (
     MediaOrganizerError,
@@ -335,6 +336,19 @@ class Worker:
                 await self._check_downloading()
             except Exception:
                 logger.exception("download watch cycle failed")
+            try:
+                # Anything that settled since the last poll (complete or a
+                # terminal failure) gets its inbox / push notifications.
+                await asyncio.to_thread(notifications.sweep, self.store)
+            except Exception:
+                logger.exception("notification sweep failed")
+
+    async def _refresh_plex(self, media_type: str, target_path) -> None:
+        folder = str(target_path.parent) if target_path is not None else None
+        try:
+            await asyncio.to_thread(plex.refresh_after_import, self.store, media_type, folder)
+        except Exception:
+            logger.exception("plex refresh after import failed")
 
     async def _check_downloading(self) -> None:
         for row in await asyncio.to_thread(self.store.list_requests, "downloading"):
@@ -434,6 +448,7 @@ class Worker:
         await asyncio.to_thread(
             self.store.mark_organized, row.id, [str(target_path)], pending_hashes, self._next_cleanup_attempt_at()
         )
+        await self._refresh_plex("tv", target_path)
 
     async def _organize_and_complete_movie(self, row) -> None:
         """Movie equivalent of `_organize_and_complete_episode` — a movie
@@ -491,6 +506,7 @@ class Worker:
             self._next_cleanup_attempt_at(),
             superseded_paths=superseded_paths,
         )
+        await self._refresh_plex("movie", target_path)
 
     async def _organize_and_complete_pack(self, row) -> None:
         """Stage 13's fan-out point: a bulk season/complete-series pack row
@@ -562,6 +578,7 @@ class Worker:
             [torrent_hash],
             self._next_cleanup_attempt_at(),
         )
+        await self._refresh_plex("tv", placed[-1][2] if placed else None)
 
     async def _purge_no_video_torrent(self, torrent_hash: str, label: str) -> str:
         """A completed torrent with no real video file in it at all is the

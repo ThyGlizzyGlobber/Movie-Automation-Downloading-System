@@ -1,3 +1,4 @@
+import type { LibrarySettings } from '../types/features'
 import { postJson, putJson, request } from './client'
 import type {
   ActivityOut,
@@ -87,4 +88,17 @@ export function getStorageDetails() {
 
 export function revokeAllSessions() {
   return postJson<{ revoked: number }>('/api/admin/revoke-sessions', {})
+}
+
+export function getLibrarySettings() {
+  return request<LibrarySettings>('/api/settings/library')
+}
+
+export function setLibrarySettings(body: {
+  movie_library_root?: string | null
+  tv_library_root?: string | null
+  plex_refresh_after_import: boolean
+  free_space_floor_gb: number
+}) {
+  return putJson<LibrarySettings>('/api/settings/library', body)
 }

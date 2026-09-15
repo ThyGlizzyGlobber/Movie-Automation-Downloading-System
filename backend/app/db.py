@@ -43,6 +43,11 @@ class RequestRow:
     show_id: int | None = None
     season_number: int | None = None
     episode_number: int | None = None
+    # Notifications: the request sheet's "notify me when it lands" (None
+    # = the requester's own default); `notified_at` is set once the
+    # settled notification has gone out so it never fires twice.
+    notify: bool | None = None
+    notified_at: str | None = None
     # Stage 14.x: only ever set on a 'pack' row, alongside season_number as
     # the range's start — season_number set with this left NULL still means
     # "one season" (Stage 13's original shape), unchanged; both set means
@@ -115,6 +120,8 @@ class RequestRow:
             season_number=row["season_number"],
             episode_number=row["episode_number"],
             season_range_end=row["season_range_end"],
+            notify=(None if row["notify"] is None else bool(row["notify"])) if "notify" in row.keys() else None,
+            notified_at=row["notified_at"] if "notified_at" in row.keys() else None,
             source_cleanup_status=row["source_cleanup_status"],
             source_cleanup_next_attempt_at=row["source_cleanup_next_attempt_at"],
             min_resolution=row["min_resolution"],
@@ -201,9 +208,15 @@ class UserRow:
     has_seen_tutorial: bool
     first_seen_at: str
     last_login_at: str
+    # Household controls (Settings › Household) and notification
+    # preferences (Settings › Notifications).
+    can_request: bool = True
+    notify_own: bool = True
+    notify_household: bool = False
 
     @classmethod
     def _from_row(cls, row: sqlite3.Row) -> "UserRow":
+        keys = row.keys()
         return cls(
             plex_user_id=row["plex_user_id"],
             username=row["username"],
@@ -211,6 +224,9 @@ class UserRow:
             has_seen_tutorial=bool(row["has_seen_tutorial"]),
             first_seen_at=row["first_seen_at"],
             last_login_at=row["last_login_at"],
+            can_request=bool(row["can_request"]) if "can_request" in keys else True,
+            notify_own=bool(row["notify_own"]) if "notify_own" in keys else True,
+            notify_household=bool(row["notify_household"]) if "notify_household" in keys else False,
         )
 
 
@@ -397,6 +413,47 @@ class RequestStore:
                 )
                 """
             )
+            # Household controls and notification preferences per user.
+            self._ensure_column("users", "can_request", "can_request INTEGER NOT NULL DEFAULT 1")
+            self._ensure_column("users", "notify_own", "notify_own INTEGER NOT NULL DEFAULT 1")
+            self._ensure_column("users", "notify_household", "notify_household INTEGER NOT NULL DEFAULT 0")
+            # Per-request "notify me" and the once-only notification mark.
+            # Rows that settled before this existed are marked as already
+            # notified so the first sweep never fires for old history.
+            fresh = self._ensure_column("requests", "notify", "notify INTEGER")
+            self._ensure_column("requests", "notified_at", "notified_at TEXT")
+            if fresh:
+                self._conn.execute(
+                    "UPDATE requests SET notified_at = updated_at WHERE notified_at IS NULL "
+                    "AND status NOT IN ('queued', 'searching', 'downloading')"
+                )
+            self._conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS notifications (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    plex_user_id TEXT NOT NULL,
+                    request_id INTEGER,
+                    kind TEXT NOT NULL,
+                    title TEXT NOT NULL,
+                    body TEXT,
+                    created_at TEXT NOT NULL,
+                    read_at TEXT
+                )
+                """
+            )
+            self._conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS push_subscriptions (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    plex_user_id TEXT NOT NULL,
+                    endpoint TEXT NOT NULL UNIQUE,
+                    p256dh TEXT NOT NULL,
+                    auth TEXT NOT NULL,
+                    user_agent TEXT,
+                    created_at TEXT NOT NULL
+                )
+                """
+            )
             # Frontend migration Part G4 — a plain append-only log an admin
             # can actually check once this instance is internet-facing.
             # Scoped to genuinely security-relevant events, not every
@@ -421,10 +478,12 @@ class RequestStore:
             )
             self._conn.commit()
 
-    def _ensure_column(self, table: str, column: str, ddl: str) -> None:
+    def _ensure_column(self, table: str, column: str, ddl: str) -> bool:
         existing = {row["name"] for row in self._conn.execute(f"PRAGMA table_info({table})").fetchall()}
         if column not in existing:
             self._conn.execute(f"ALTER TABLE {table} ADD COLUMN {ddl}")
+            return True
+        return False
 
     # -- requests --
 
@@ -1121,6 +1180,119 @@ class RequestStore:
             cur = self._conn.execute("DELETE FROM sessions")
             self._conn.commit()
             return cur.rowcount
+
+    # -- notifications / push / household --
+
+    def set_request_notify(self, request_id: int, notify: bool | None) -> None:
+        with self._lock:
+            self._conn.execute(
+                "UPDATE requests SET notify = ? WHERE id = ?", (None if notify is None else int(notify), request_id)
+            )
+            self._conn.commit()
+
+    def list_unnotified_settled(self, statuses: list[str]) -> list[RequestRow]:
+        marks = ",".join("?" * len(statuses))
+        rows = self._conn.execute(
+            f"SELECT * FROM requests WHERE notified_at IS NULL AND status IN ({marks}) ORDER BY id", statuses
+        ).fetchall()
+        return [RequestRow._from_row(r) for r in rows]
+
+    def mark_notified(self, request_id: int) -> None:
+        with self._lock:
+            self._conn.execute("UPDATE requests SET notified_at = ? WHERE id = ?", (_now(), request_id))
+            self._conn.commit()
+
+    def add_notification(self, plex_user_id: str, request_id: int | None, kind: str, title: str, body: str | None) -> int:
+        with self._lock:
+            cur = self._conn.execute(
+                "INSERT INTO notifications (plex_user_id, request_id, kind, title, body, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+                (plex_user_id, request_id, kind, title, body, _now()),
+            )
+            self._conn.commit()
+            return int(cur.lastrowid)
+
+    def list_notifications(self, plex_user_id: str, limit: int = 30) -> list[dict]:
+        rows = self._conn.execute(
+            "SELECT * FROM notifications WHERE plex_user_id = ? ORDER BY id DESC LIMIT ?", (plex_user_id, limit)
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+    def unread_notification_count(self, plex_user_id: str) -> int:
+        row = self._conn.execute(
+            "SELECT COUNT(*) AS n FROM notifications WHERE plex_user_id = ? AND read_at IS NULL", (plex_user_id,)
+        ).fetchone()
+        return int(row["n"]) if row else 0
+
+    def mark_notifications_read(self, plex_user_id: str, ids: list[int] | None = None) -> int:
+        with self._lock:
+            if ids:
+                marks = ",".join("?" * len(ids))
+                cur = self._conn.execute(
+                    f"UPDATE notifications SET read_at = ? WHERE plex_user_id = ? AND read_at IS NULL AND id IN ({marks})",
+                    [_now(), plex_user_id, *ids],
+                )
+            else:
+                cur = self._conn.execute(
+                    "UPDATE notifications SET read_at = ? WHERE plex_user_id = ? AND read_at IS NULL", (_now(), plex_user_id)
+                )
+            self._conn.commit()
+            return cur.rowcount
+
+    def add_push_subscription(self, plex_user_id: str, endpoint: str, p256dh: str, auth: str, user_agent: str | None) -> None:
+        with self._lock:
+            self._conn.execute(
+                "INSERT INTO push_subscriptions (plex_user_id, endpoint, p256dh, auth, user_agent, created_at) "
+                "VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(endpoint) DO UPDATE SET plex_user_id = excluded.plex_user_id, "
+                "p256dh = excluded.p256dh, auth = excluded.auth, user_agent = excluded.user_agent",
+                (plex_user_id, endpoint, p256dh, auth, user_agent, _now()),
+            )
+            self._conn.commit()
+
+    def list_push_subscriptions(self, plex_user_id: str) -> list[dict]:
+        rows = self._conn.execute("SELECT * FROM push_subscriptions WHERE plex_user_id = ?", (plex_user_id,)).fetchall()
+        return [dict(r) for r in rows]
+
+    def delete_push_subscription(self, endpoint: str) -> int:
+        with self._lock:
+            cur = self._conn.execute("DELETE FROM push_subscriptions WHERE endpoint = ?", (endpoint,))
+            self._conn.commit()
+            return cur.rowcount
+
+    def list_users(self) -> list[UserRow]:
+        rows = self._conn.execute("SELECT * FROM users ORDER BY is_admin DESC, last_login_at DESC").fetchall()
+        return [UserRow._from_row(r) for r in rows]
+
+    def set_user_flags(
+        self,
+        plex_user_id: str,
+        *,
+        can_request: bool | None = None,
+        notify_own: bool | None = None,
+        notify_household: bool | None = None,
+    ) -> UserRow | None:
+        sets, values = [], []
+        for col, val in (("can_request", can_request), ("notify_own", notify_own), ("notify_household", notify_household)):
+            if val is not None:
+                sets.append(f"{col} = ?")
+                values.append(int(val))
+        if sets:
+            with self._lock:
+                self._conn.execute(f"UPDATE users SET {', '.join(sets)} WHERE plex_user_id = ?", [*values, plex_user_id])
+                self._conn.commit()
+        return self.get_user(plex_user_id)
+
+    def delete_user(self, plex_user_id: str) -> bool:
+        with self._lock:
+            self._conn.execute("DELETE FROM sessions WHERE plex_user_id = ?", (plex_user_id,))
+            self._conn.execute("DELETE FROM push_subscriptions WHERE plex_user_id = ?", (plex_user_id,))
+            self._conn.execute("DELETE FROM notifications WHERE plex_user_id = ?", (plex_user_id,))
+            cur = self._conn.execute("DELETE FROM users WHERE plex_user_id = ?", (plex_user_id,))
+            self._conn.commit()
+            return cur.rowcount > 0
+
+    def count_requests(self) -> int:
+        row = self._conn.execute("SELECT COUNT(*) AS n FROM requests").fetchone()
+        return int(row["n"]) if row else 0
 
     def record_auth_event(
         self,

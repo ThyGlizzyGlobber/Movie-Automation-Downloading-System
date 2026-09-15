@@ -430,3 +430,26 @@ FFPROBE_TIMEOUT_SECONDS = int(os.environ.get("FFPROBE_TIMEOUT_SECONDS", "15"))
 # practice, but this is a real file-sized operation (unlike the ffprobe
 # read above), hence the far more generous ceiling.
 FFMPEG_STRIP_TIMEOUT_SECONDS = int(os.environ.get("FFMPEG_STRIP_TIMEOUT_SECONDS", "600"))
+
+
+# -- Settings › Plex: the library folders can be changed from the UI.
+#    An env var still wins (same convention as the qBittorrent fields);
+#    otherwise a saved value replaces the module constant at startup and
+#    again whenever the setting is saved, so media_organizer's callers,
+#    which read `config.MOVIE_LIBRARY_ROOT` at call time, follow along. --
+
+_MOVIE_ROOT_ENV = os.environ.get("MOVIE_LIBRARY_ROOT")
+_TV_ROOT_ENV = os.environ.get("TV_LIBRARY_ROOT")
+
+
+def library_root_source() -> str:
+    return "env" if (_MOVIE_ROOT_ENV or _TV_ROOT_ENV) else "db"
+
+
+def apply_library_overrides(store: "RequestStore") -> None:
+    global MOVIE_LIBRARY_ROOT, TV_LIBRARY_ROOT
+    settings = store.get_settings()
+    if not _MOVIE_ROOT_ENV and settings.get("movie_library_root"):
+        MOVIE_LIBRARY_ROOT = Path(settings["movie_library_root"])
+    if not _TV_ROOT_ENV and settings.get("tv_library_root"):
+        TV_LIBRARY_ROOT = Path(settings["tv_library_root"])

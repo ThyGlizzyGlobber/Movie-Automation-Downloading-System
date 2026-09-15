@@ -16,6 +16,7 @@ import uuid
 from typing import Callable
 from urllib.parse import urlencode
 
+import logging
 import requests
 
 from app.cache import TTLCache
@@ -40,6 +41,9 @@ def new_client_identifier() -> str:
     """A stable per-installation id Plex uses to recognize this app across
     requests — generated once and persisted in settings, not a secret."""
     return str(uuid.uuid4())
+
+
+logger = logging.getLogger(__name__)
 
 
 class PlexClient:
@@ -213,6 +217,41 @@ class PlexClient:
         if not response.ok:
             raise PlexError(f"Plex recently-added fetch failed: {response.status_code}")
         return response.json().get("MediaContainer", {}).get("Metadata", []) or []
+
+    def sections(self, server_url: str, server_token: str) -> list[dict]:
+        """The server's libraries: [{key, type ('movie'|'show'), title,
+        locations: [paths]}], for the after-import refresh."""
+        response = self.session.get(
+            f"{server_url}/library/sections",
+            headers={"Accept": "application/json", "X-Plex-Token": server_token},
+            timeout=10,
+        )
+        if not response.ok:
+            raise PlexError(f"Plex sections fetch failed: {response.status_code}")
+        out = []
+        for d in response.json().get("MediaContainer", {}).get("Directory", []) or []:
+            out.append(
+                {
+                    "key": str(d.get("key")),
+                    "type": d.get("type"),
+                    "title": d.get("title"),
+                    "locations": [loc.get("path") for loc in d.get("Location", []) or [] if loc.get("path")],
+                }
+            )
+        return out
+
+    def refresh_section(self, server_url: str, server_token: str, section_key: str, path: str | None = None) -> None:
+        """Asks Plex to scan one library — the whole section, or only
+        `path` when it lies inside one of the section's locations."""
+        params = {"path": path} if path else None
+        response = self.session.get(
+            f"{server_url}/library/sections/{section_key}/refresh",
+            headers={"X-Plex-Token": server_token},
+            params=params,
+            timeout=10,
+        )
+        if not response.ok:
+            raise PlexError(f"Plex refresh failed: {response.status_code}")
 
     def metadata(self, server_url: str, server_token: str, rating_key: str) -> dict | None:
         """One library item by rating key (used to read a show's external
@@ -498,3 +537,32 @@ class LoginSession:
             "result": self._result,
             "error": self._error,
         }
+
+
+def refresh_after_import(store, media_type: str, organized_path: str | None) -> bool:
+    """Settings › Plex "Refresh Plex after import": scans the movie or show
+    library once a file has been placed. The organized path is passed as
+    a partial scan when it sits under one of the section's own locations
+    (Plex sees the same mount), otherwise the whole section is refreshed.
+    Best effort — a failure is logged, never raised into the worker."""
+    settings = store.get_settings()
+    if settings.get("plex_refresh_after_import", True) is False:
+        return False
+    url, token = settings.get("plex_server_url"), settings.get("plex_server_token")
+    if not url or not token:
+        return False
+    client = PlexClient(settings.get("plex_client_id") or new_client_identifier())
+    wanted = "movie" if media_type == "movie" else "show"
+    try:
+        sections = [s for s in client.sections(url, token) if s.get("type") == wanted]
+        if not sections:
+            return False
+        for section in sections:
+            partial = None
+            if organized_path and any(organized_path.startswith(loc.rstrip("/") + "/") for loc in section["locations"]):
+                partial = organized_path
+            client.refresh_section(url, token, section["key"], partial)
+        return True
+    except Exception as exc:  # noqa: BLE001
+        logger.info("plex refresh after import skipped: %s", exc)
+        return False

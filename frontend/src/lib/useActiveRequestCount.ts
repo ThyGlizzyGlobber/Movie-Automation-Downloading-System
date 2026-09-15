@@ -14,23 +14,6 @@ export function useActiveRequestCount(): number {
   return data?.filter((r) => NON_TERMINAL.has(r.status)).length ?? 0
 }
 
-// Requests that finished today — lights the bell in the top bar.
-export function useCompletedTodayCount(): number {
-  const { data } = useQuery({
-    queryKey: ['requests'],
-    queryFn: () => listRequests(),
-    refetchInterval: 5000,
-  })
-  const now = new Date()
-  return (
-    data?.filter((r) => {
-      if (r.status !== 'complete') return false
-      const d = new Date(r.updated_at)
-      return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth() && d.getDate() === now.getDate()
-    }).length ?? 0
-  )
-}
-
 export function badgeLabel(count: number): string {
   return count > 99 ? '99+' : String(count)
 }

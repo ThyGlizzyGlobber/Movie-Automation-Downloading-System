@@ -99,6 +99,7 @@ export default function ShowDetailPage() {
     redownloadMode?: RedownloadMode,
     minResolution?: string | null,
     profileId?: string | null,
+    notify?: boolean,
   ) {
     setBulkBusyKey(key)
     setBulkPhase('busy')
@@ -109,6 +110,7 @@ export default function ShowDetailPage() {
         min_resolution: minResolution ?? null,
         profile_id: profileId ?? null,
         redownload_mode: redownloadMode ?? null,
+        notify: notify ?? null,
       })
       setBulkPhase('done')
       setBulkResult(req)
@@ -317,12 +319,12 @@ export default function ShowDetailPage() {
           setRequestModal(null)
           setBulkBusyKey(null)
         }}
-        onSubmit={(profile) => {
+        onSubmit={(profile, notify) => {
           const pending = requestModal
           setRequestModal(null)
           if (!pending) return
           const key = pending.scope === 'series' ? 'series' : `season-${pending.seasonNumber}`
-          runBulkDownload(pending.scope, pending.seasonNumber, key, undefined, profile.min_resolution, profile.id)
+          runBulkDownload(pending.scope, pending.seasonNumber, key, undefined, profile.min_resolution, profile.id, notify)
         }}
       />
       <RedownloadModal

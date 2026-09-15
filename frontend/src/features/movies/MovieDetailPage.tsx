@@ -65,7 +65,7 @@ export default function MovieDetailPage() {
     return <ErrorState message={movieQuery.error instanceof Error ? movieQuery.error.message : undefined} />
   }
 
-  async function submitAdd(minResolution?: string, redownloadMode?: RedownloadMode, profileId?: string) {
+  async function submitAdd(minResolution?: string, redownloadMode?: RedownloadMode, profileId?: string, notify?: boolean) {
     setAddPhase('adding')
     try {
       const req: RequestOut = await createRequest({
@@ -74,6 +74,7 @@ export default function MovieDetailPage() {
         min_resolution: minResolution ?? null,
         redownload_mode: redownloadMode ?? null,
         profile_id: profileId ?? null,
+        notify: notify ?? null,
       })
       setAddPhase('added')
       setAddRequestId(req.id)
@@ -252,9 +253,9 @@ export default function MovieDetailPage() {
         subtitle={[year, 'Movie', 'Not in Plex'].filter(Boolean).join(' · ')}
         posterPath={movie.poster_path}
         onClose={() => setRequestOpen(false)}
-        onSubmit={(profile) => {
+        onSubmit={(profile, notify) => {
           setRequestOpen(false)
-          submitAdd(profile.min_resolution ?? undefined, undefined, profile.id)
+          submitAdd(profile.min_resolution ?? undefined, undefined, profile.id, notify)
         }}
       />
       <RedownloadModal

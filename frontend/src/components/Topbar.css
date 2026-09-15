@@ -263,8 +263,3 @@ body.search-open #searchToggleBtn,
   box-shadow: 0 0 8px var(--meridian-ice);
   border: 1.5px solid #0c0c12;
 }
-@media (max-width: 859px) {
-  #bellToggle {
-    display: none;
-  }
-}

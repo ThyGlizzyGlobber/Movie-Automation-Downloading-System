@@ -3,6 +3,7 @@ import { getStorageDetails } from '../../api/settings'
 import ProgressRing from '../../components/ProgressRing'
 import LoadingState from '../../components/LoadingState'
 import { formatBytes } from '../../lib/format'
+import LibraryRows from './LibraryRows'
 
 // The reference's Settings › Storage: the library disk as a ring, how
 // much of it each library holds, and request throughput. Library sizes
@@ -42,9 +43,7 @@ export default function StoragePanel() {
             ))}
           </div>
         </div>
-        <p className="settings-hint">
-          Folders: {d.libraries.map((l) => `${l.label} ${l.root}`).join(' · ')}
-        </p>
+        <LibraryRows part="storage" />
       </div>
       <div className="settings-panel-card">
         <h2>Activity</h2>

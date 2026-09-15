@@ -35,6 +35,9 @@ class PipelineSettings:
     language_allowlist: tuple[str, ...]
     language_blocklist: tuple[str, ...]
     language_required: tuple[str, ...] = ()
+    # Settings › Storage "Free-space floor": downloads that would leave
+    # less than this many GB free are treated as not fitting.
+    free_space_floor_gb: float = 0.0
 
     @classmethod
     def from_config(cls) -> "PipelineSettings":
@@ -89,6 +92,7 @@ def settings_from_raw(saved: dict) -> PipelineSettings:
             if saved.get("language_required") is not None
             else defaults.language_required
         ),
+        free_space_floor_gb=float(saved.get("free_space_floor_gb") or 0.0),
     )
 
 

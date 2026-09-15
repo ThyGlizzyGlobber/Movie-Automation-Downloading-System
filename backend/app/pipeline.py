@@ -131,6 +131,18 @@ def _merge_variant_candidates(variants: list[str], search_one_variant) -> list[d
     return dedup_candidates(combined)
 
 
+def usable_free_space(qbt: QBTClient, settings: "PipelineSettings | None") -> int:
+    """qBittorrent's free space minus the configured floor. An unreadable
+    figure (<=0) stays <=0 so the fit check below keeps not gating on
+    it; a readable figure below the floor becomes 1 byte, which nothing
+    with a known size fits into."""
+    free = qbt.free_space_bytes()
+    floor = int((settings.free_space_floor_gb if settings else 0) * 1024**3)
+    if free <= 0 or floor <= 0:
+        return free
+    return max(1, free - floor)
+
+
 def _candidates_that_fit(ranked: list[tuple[dict, Score]], free_space_bytes: int) -> list[tuple[dict, Score]]:
     """Every candidate (best-ranked first) whose size is known to fit in
     the space qBittorrent reports free — not just the top one, so a failed
@@ -250,7 +262,7 @@ def download(
     settings = settings or PipelineSettings.from_config()
     identity = resolve(tmdb_id, tmdb_client)
     existing_hashes = qbt.existing_torrent_hashes() | (excluded_hashes or set())
-    free_space_bytes = qbt.free_space_bytes()
+    free_space_bytes = usable_free_space(qbt, settings)
 
     candidates = _merge_variant_candidates(
         identity.variants, lambda variant: _search_variant(qbt, variant, identity, existing_hashes, settings)
@@ -332,7 +344,7 @@ def find_best_episode_candidate(
     `download()` — see its own docstring."""
     settings = settings or PipelineSettings.from_config()
     existing_hashes = qbt.existing_torrent_hashes() | (excluded_hashes or set())
-    free_space_bytes = qbt.free_space_bytes()
+    free_space_bytes = usable_free_space(qbt, settings)
 
     candidates = _merge_variant_candidates(
         identity.variants,
@@ -366,7 +378,7 @@ def download_episode(
     `download()` — see its own docstring."""
     settings = settings or PipelineSettings.from_config()
     existing_hashes = qbt.existing_torrent_hashes() | (excluded_hashes or set())
-    free_space_bytes = qbt.free_space_bytes()
+    free_space_bytes = usable_free_space(qbt, settings)
 
     candidates = _merge_variant_candidates(
         identity.variants,
@@ -478,7 +490,7 @@ def download_pack(
 
     settings = settings or PipelineSettings.from_config()
     existing_hashes = qbt.existing_torrent_hashes() | (excluded_hashes or set())
-    free_space_bytes = qbt.free_space_bytes()
+    free_space_bytes = usable_free_space(qbt, settings)
 
     combined: list[dict] = []
     for variant in identity.variants:

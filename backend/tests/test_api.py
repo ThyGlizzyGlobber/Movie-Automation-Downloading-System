@@ -2670,3 +2670,78 @@ def test_plex_recently_added_reports_unavailable_when_unlinked(client_and_deps):
 
     assert response.status_code == 200
     assert response.json() == {"available": False, "items": []}
+
+
+def test_notifications_start_empty_and_prefs_round_trip(client_and_deps):
+    client, _, _, _, _, _ = client_and_deps
+    assert client.get("/api/notifications").json() == {"items": [], "unread": 0}
+    response = client.put("/api/notifications/preferences", json={"notify_own": False, "notify_household": True})
+    assert response.status_code == 200
+    body = response.json()
+    assert body["notify_own"] is False and body["notify_household"] is True
+
+
+def test_test_notification_lands_in_the_inbox(client_and_deps):
+    client, _, _, _, _, _ = client_and_deps
+    assert client.post("/api/notifications/test").status_code == 200
+    body = client.get("/api/notifications").json()
+    assert body["unread"] == 1 and body["items"][0]["kind"] == "test"
+    assert client.post("/api/notifications/read", json={}).json()["marked"] == 1
+    assert client.get("/api/notifications").json()["unread"] == 0
+
+
+def test_household_lists_users_and_admin_cannot_be_switched_off(client_and_deps):
+    client, _, _, _, _, _ = client_and_deps
+    users = client.get("/api/admin/users").json()
+    assert users and users[0]["is_admin"] is True
+    admin_id = users[0]["plex_user_id"]
+    assert client.put(f"/api/admin/users/{admin_id}", json={"can_request": False}).status_code == 400
+    assert client.delete(f"/api/admin/users/{admin_id}").status_code == 400
+    assert client.put("/api/admin/users/nobody", json={"can_request": False}).status_code == 404
+
+
+def test_library_settings_round_trip_and_floor(client_and_deps):
+    client, _, _, _, _, _ = client_and_deps
+    current = client.get("/api/settings/library").json()
+    assert "movie_library_root" in current and current["plex_refresh_after_import"] is True
+    response = client.put(
+        "/api/settings/library",
+        json={"plex_refresh_after_import": False, "free_space_floor_gb": 200},
+    )
+    assert response.status_code == 200
+    assert response.json()["plex_refresh_after_import"] is False
+    assert response.json()["free_space_floor_gb"] == 200
+    assert client.put("/api/settings/library", json={"free_space_floor_gb": -1}).status_code == 422
+
+
+def test_about_reports_the_basics(client_and_deps):
+    client, _, _, _, _, _ = client_and_deps
+    body = client.get("/api/about").json()
+    assert body["name"] == "Meridian"
+    assert "requests" in body and "users" in body
+
+
+def test_notification_sweep_notifies_the_requester_once(tmp_path):
+    from app import notifications
+    from app.db import RequestStore
+
+    store = RequestStore(tmp_path / "n.db")
+    store.upsert_user("u1", "Uno", True)
+    row = store.create_request(1, "Undertow", 2026, None, requested_by_plex_id="u1", requested_by_username="Uno")
+    store.update_status(row.id, "complete")
+    assert notifications.sweep(store) == 1
+    assert notifications.sweep(store) == 0
+    items = store.list_notifications("u1")
+    assert items[0]["title"] == "Undertow (2026) is in Plex"
+
+
+def test_request_notify_flag_off_skips_the_requester(tmp_path):
+    from app import notifications
+    from app.db import RequestStore
+
+    store = RequestStore(tmp_path / "n2.db")
+    store.upsert_user("u1", "Uno", True)
+    row = store.create_request(2, "Cobalt Hour", 2024, None, requested_by_plex_id="u1")
+    store.set_request_notify(row.id, False)
+    store.update_status(row.id, "failed", error_message="boom")
+    assert notifications.sweep(store) == 0

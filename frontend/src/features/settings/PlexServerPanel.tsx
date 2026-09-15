@@ -6,6 +6,7 @@ import LoadingState from '../../components/LoadingState'
 import ErrorState from '../../components/ErrorState'
 import { ApiError } from '../../api/client'
 import Icon from '../../components/Icon'
+import LibraryRows from './LibraryRows'
 
 const POLL_INTERVAL_MS = 2500
 
@@ -199,6 +200,8 @@ export default function PlexServerPanel() {
       {phase === 'linking' && <p className="plex-hint">Switching servers…</p>}
 
       {error && <div className="plex-error">{error}</div>}
+
+      {status.linked && phase === 'status' && <LibraryRows part="library" />}
     </div>
   )
 }

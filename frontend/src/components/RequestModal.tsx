@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { getQualityProfiles } from '../api/requests'
 import { getStorage } from '../api/system'
+import { getNotificationPrefs } from '../api/notifications'
+import Toggle from './Toggle'
 import { formatBytes } from '../lib/format'
 import { posterUrl } from '../lib/tmdbImage'
 import type { QualityProfile } from '../types/features'
@@ -27,14 +29,20 @@ export default function RequestModal({
   posterPath?: string | null
   submitLabel?: string
   onClose: () => void
-  onSubmit: (profile: QualityProfile) => void
+  onSubmit: (profile: QualityProfile, notify: boolean) => void
 }) {
   const profiles = useQuery({ queryKey: ['quality-profiles'], queryFn: getQualityProfiles, enabled: open, staleTime: 60_000 })
   const storage = useQuery({ queryKey: ['storage'], queryFn: getStorage, enabled: open, staleTime: 60_000 })
   const [chosen, setChosen] = useState<string | null>(null)
+  const prefs = useQuery({ queryKey: ['notification-prefs'], queryFn: getNotificationPrefs, enabled: open, staleTime: 60_000 })
+  const [notify, setNotify] = useState<boolean | null>(null)
+  const notifyOn = notify ?? prefs.data?.notify_own ?? true
 
   useEffect(() => {
-    if (open) setChosen(null)
+    if (open) {
+      setChosen(null)
+      setNotify(null)
+    }
   }, [open])
   useEffect(() => {
     if (!open) return
@@ -95,6 +103,13 @@ export default function RequestModal({
             ))}
           </div>
         )}
+        <div className="request-modal-notify">
+          <div>
+            <b>Notify me when it lands</b>
+            <small>A note in the bell, and a push to any device that signed up.</small>
+          </div>
+          <Toggle checked={notifyOn} onChange={setNotify} label="Notify me when it lands" />
+        </div>
         <div className="request-modal-foot">
           <span className={`request-modal-note${tooBig ? ' warn' : ''}`}>
             {free != null
@@ -106,7 +121,7 @@ export default function RequestModal({
           <button className="request-modal-cancel" onClick={onClose}>
             Cancel
           </button>
-          <button className="request-modal-submit" disabled={!selected} onClick={() => selected && onSubmit(selected)}>
+          <button className="request-modal-submit" disabled={!selected} onClick={() => selected && onSubmit(selected, notifyOn)}>
             <Icon name="plus" />
             {selected && selected.id !== 'default' ? `${submitLabel} ${selected.name}` : submitLabel}
           </button>

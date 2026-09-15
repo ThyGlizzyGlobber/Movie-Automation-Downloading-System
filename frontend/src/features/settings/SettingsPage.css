@@ -713,3 +713,53 @@
   color: var(--text-dim);
   line-height: 1.5;
 }
+
+/* Household rows and About values. */
+.household-list {
+  display: grid;
+}
+.household-row {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+.household-who {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-width: 0;
+}
+.household-avatar {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #ffb88c, #ea6a8b);
+  color: var(--on-light);
+  display: grid;
+  place-items: center;
+  font-size: 12px;
+  font-weight: 800;
+  flex: 0 0 auto;
+}
+.household-tag {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 2px 8px;
+  border-radius: var(--radius-pill);
+  background: rgba(156, 192, 255, 0.12);
+  color: var(--meridian-ice);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  vertical-align: middle;
+}
+.about-value {
+  font-size: 14px;
+  font-weight: 700;
+}
+.about-value.mono {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  padding: 6px 12px;
+  border-radius: 10px;
+  background: var(--glass);
+}
