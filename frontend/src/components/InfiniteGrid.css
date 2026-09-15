@@ -29,3 +29,19 @@
 .grid-sentinel .spinner {
   margin-top: 16px;
 }
+
+/* Loading skeleton: poster-shaped shimmer cards. */
+.skel {
+  border-radius: var(--radius-md);
+  background: linear-gradient(100deg, rgba(255, 255, 255, 0.04) 30%, rgba(255, 255, 255, 0.09) 50%, rgba(255, 255, 255, 0.04) 70%);
+  background-size: 200% 100%;
+  animation: shimmer 1.6s linear infinite;
+}
+.skel-poster {
+  aspect-ratio: 2 / 3;
+}
+@keyframes shimmer {
+  to {
+    background-position: -200% 0;
+  }
+}

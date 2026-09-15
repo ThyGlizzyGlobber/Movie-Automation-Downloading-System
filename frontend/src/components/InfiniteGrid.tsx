@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { useInfiniteQuery } from '@tanstack/react-query'
 import PosterCard from './PosterCard'
-import LoadingState from './LoadingState'
 import ErrorState from './ErrorState'
 import EmptyState from './EmptyState'
 import type { TmdbListItem, TmdbListResponse } from '../types/movies'
@@ -82,7 +81,18 @@ export default function InfiniteGrid({
     if (onTotal && typeof total === 'number') onTotal(total)
   }, [onTotal, total])
 
-  if (query.isLoading) return <LoadingState />
+  // The reference's shimmer skeletons while the first page loads.
+  if (query.isLoading) {
+    return (
+      <div className="grid category-grid" aria-busy="true">
+        {Array.from({ length: 14 }, (_, i) => (
+          <div className="skel-card" key={i}>
+            <div className="skel skel-poster" />
+          </div>
+        ))}
+      </div>
+    )
+  }
   if (query.isError) {
     return <ErrorState message={query.error instanceof Error ? query.error.message : undefined} />
   }
