@@ -8,9 +8,19 @@
   position: relative;
   width: calc(100% + 28px);
   margin: calc(-1 * (var(--topbar-h, 64px) + 14px)) -14px 18px;
-  min-height: clamp(450px, 38vw, 720px);
+  /* Hero height follows the viewport: the reference is 740px tall at
+     1440 wide (about half the width), so it scales with width and caps
+     there; on phones it is a fraction of the screen height instead so
+     the title and buttons always sit above the fold. */
+  --hero-h: clamp(380px, 52vw, 740px);
+  min-height: var(--hero-h);
   overflow: hidden;
   background: var(--bg);
+}
+@media (max-width: 639px) {
+  .home-hero {
+    --hero-h: clamp(360px, 72svh, 560px);
+  }
 }
 .home-hero-slide {
   position: absolute;
@@ -46,14 +56,14 @@
   mask-image: linear-gradient(
     90deg,
     transparent 0,
-    rgba(0, 0, 0, 0.35) calc(0.4 * clamp(450px, 38vw, 720px)),
-    black clamp(450px, 38vw, 720px)
+    rgba(0, 0, 0, 0.35) calc(0.4 * var(--hero-h)),
+    black var(--hero-h)
   );
   -webkit-mask-image: linear-gradient(
     90deg,
     transparent 0,
-    rgba(0, 0, 0, 0.35) calc(0.4 * clamp(450px, 38vw, 720px)),
-    black clamp(450px, 38vw, 720px)
+    rgba(0, 0, 0, 0.35) calc(0.4 * var(--hero-h)),
+    black var(--hero-h)
   );
 }
 .home-hero-media img.home-hero-poster-hidden {
@@ -71,14 +81,14 @@
   mask-image: linear-gradient(
     90deg,
     transparent 0,
-    rgba(0, 0, 0, 0.35) calc(0.4 * clamp(450px, 38vw, 720px)),
-    black clamp(450px, 38vw, 720px)
+    rgba(0, 0, 0, 0.35) calc(0.4 * var(--hero-h)),
+    black var(--hero-h)
   );
   -webkit-mask-image: linear-gradient(
     90deg,
     transparent 0,
-    rgba(0, 0, 0, 0.35) calc(0.4 * clamp(450px, 38vw, 720px)),
-    black clamp(450px, 38vw, 720px)
+    rgba(0, 0, 0, 0.35) calc(0.4 * var(--hero-h)),
+    black var(--hero-h)
   );
 }
 .home-hero-video-wrap video {
@@ -119,7 +129,7 @@
   z-index: 2;
   display: flex;
   align-items: flex-end;
-  min-height: clamp(450px, 38vw, 720px);
+  min-height: var(--hero-h);
   padding: 24px var(--edge-inset) 44px;
 }
 /* Mobile-first floor, not the desktop clamp()s' own 560px/88px floors —

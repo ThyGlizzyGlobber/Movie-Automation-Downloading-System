@@ -66,6 +66,12 @@ export default function SettingsPage() {
               <Icon name="back" />
               Settings
             </button>
+            {isDesktop && (
+              <div className="settings-heading">
+                <h1 className="settings-title">Settings</h1>
+                <p className="settings-lead">Plex, downloads, storage and who can get in</p>
+              </div>
+            )}
             {renderPanel(effectiveSection)}
           </>
         )}

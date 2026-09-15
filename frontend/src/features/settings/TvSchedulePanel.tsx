@@ -53,9 +53,10 @@ export default function TvSchedulePanel() {
 
   return (
     <div className="settings-panel-card">
-      <h2>TV show scheduling</h2>
+      <h2>TV shows</h2>
+      <p className="settings-sub">How Meridian watches for new episodes of the shows you follow.</p>
       <div className="settings-field">
-        <label htmlFor="tvCheckInterval">Check subscribed shows every (hours)</label>
+        <label htmlFor="tvCheckInterval">Check for new episodes every (hours)</label>
         <input
           id="tvCheckInterval"
           type="number"
@@ -66,19 +67,19 @@ export default function TvSchedulePanel() {
         />
       </div>
       <div className="settings-field">
-        <label htmlFor="tvAirBuffer">Wait this long after air date before searching (hours)</label>
+        <label htmlFor="tvAirBuffer">Wait after an episode airs (hours)</label>
         <input id="tvAirBuffer" type="number" min="0" step="1" value={airBuffer} onChange={(e) => setAirBuffer(e.target.value)} />
-        <div className="settings-hint">Avoids searching before a real release exists — 0 searches immediately.</div>
+        <div className="settings-hint">Gives a copy time to appear. 0 means search straight away.</div>
       </div>
       <div className="settings-field">
         <label className="settings-checkbox-label">
           <input type="checkbox" checked={recheckEnabled} onChange={(e) => setRecheckEnabled(e.target.checked)} />
-          Automatically recheck episodes &amp; season packs
+          Keep looking for missing or better copies
         </label>
-        <div className="settings-hint">Retries empty searches and upgrades to a better release when found.</div>
+        <div className="settings-hint">Tries again later when nothing was found, and upgrades when a better copy turns up.</div>
       </div>
       <div className="settings-field">
-        <label htmlFor="tvRecheckInterval">Recheck every (hours)</label>
+        <label htmlFor="tvRecheckInterval">Try again every (hours)</label>
         <input
           id="tvRecheckInterval"
           type="number"
@@ -89,7 +90,7 @@ export default function TvSchedulePanel() {
         />
       </div>
       <div className="settings-field">
-        <label htmlFor="tvRecheckLimit">Stop rechecking after this many attempts</label>
+        <label htmlFor="tvRecheckLimit">Give up after this many tries</label>
         <input
           id="tvRecheckLimit"
           type="number"
@@ -98,7 +99,7 @@ export default function TvSchedulePanel() {
           value={recheckLimit}
           onChange={(e) => setRecheckLimit(e.target.value)}
         />
-        <div className="settings-hint">0 means keep rechecking indefinitely.</div>
+        <div className="settings-hint">0 means never give up.</div>
       </div>
       <button className="settings-btn" disabled={saveState === 'saving'} onClick={save}>
         {saveState === 'saving' ? 'Saving…' : saveState === 'saved' ? 'Saved' : 'Save'}

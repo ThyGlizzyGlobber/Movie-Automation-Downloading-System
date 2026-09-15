@@ -1,7 +1,6 @@
 /* Mobile bottom navigation as a floating glass pill above the safe
-   area (the reference's mobile tab bar), replacing the old edge-to-edge
-   band. Fixed elements that used to sit above the band (DownloadsFab,
-   StorageIndicator, the Requests clear button) clear it at 98px. */
+   area (the reference's mobile tab bar). Fixed elements that sit above
+   it (StorageIndicator, the Requests clear button) clear it at 98px. */
 #tabbar {
   position: fixed;
   left: 14px;
@@ -34,7 +33,25 @@
   transition: background 0.15s ease, color 0.15s ease;
 }
 .tab-icon {
+  position: relative;
   display: flex;
+}
+/* In-flight request count on the Requests tab. */
+.tab-badge {
+  position: absolute;
+  top: -6px;
+  right: -12px;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: var(--radius-pill);
+  background: var(--accent);
+  color: var(--accent-text);
+  font-size: 10px;
+  font-weight: 800;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 .tab-icon .icon {
   font-size: 22px;

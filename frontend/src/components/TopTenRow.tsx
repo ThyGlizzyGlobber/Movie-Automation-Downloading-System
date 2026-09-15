@@ -3,6 +3,7 @@ import MediaRow from './MediaRow'
 import PosterCard from './PosterCard'
 import type { TmdbListItem } from '../types/movies'
 import { rankMoves, type RankMove } from '../lib/topTen'
+import { browseHref } from '../api/browse'
 import './TopTenRow.css'
 
 const TOP_N = 10
@@ -41,6 +42,7 @@ export default function TopTenRow({ movies, shows }: { movies: TmdbListItem[]; s
       title="Top 10 this week"
       items={items}
       mediaType={mediaType}
+      expandHref={browseHref({ type: mediaType, sort: 'trending' })}
       headerRight={
         <div className="seg" role="tablist" aria-label="Top 10 type">
           <button role="tab" aria-selected={mediaType === 'movie'} className={mediaType === 'movie' ? 'active' : ''} onClick={() => setMediaType('movie')}>

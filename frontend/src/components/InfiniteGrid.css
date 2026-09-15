@@ -1,9 +1,11 @@
 .grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(var(--poster-w), 1fr));
-  gap: 14px 10px;
+  gap: 20px 16px;
+  /* Symmetric: the grid's right edge lines up with the header, unlike
+     the scrolling rows which deliberately run off the right edge. */
   padding-left: var(--row-inset);
-  margin-right: -14px;
+  padding-right: var(--row-inset);
 }
 .grid .poster-card {
   width: auto;
@@ -13,15 +15,11 @@
   height: auto;
   aspect-ratio: 2 / 3;
 }
-/* Category/provider/person browse pages — symmetric padding-right
-   instead of the reach-the-edge margin-right:-14px, and a smaller
-   --poster-w to keep the same column density despite the narrower
-   available width. */
+/* Browse/person grids use a slightly smaller poster so the column
+   count stays close to the reference's seven across at desktop. */
 .grid.person-grid,
 .grid.category-grid {
   --poster-w: clamp(104px, 12vw, 210px);
-  padding-right: var(--row-inset);
-  margin-right: 0;
 }
 
 .grid-sentinel {

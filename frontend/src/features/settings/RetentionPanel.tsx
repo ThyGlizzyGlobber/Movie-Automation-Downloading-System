@@ -32,11 +32,8 @@ export default function RetentionPanel() {
 
   return (
     <div className="settings-panel-card">
-      <h2>Requests history</h2>
-      <div className="settings-hint" style={{ marginTop: 0, marginBottom: 16 }}>
-        Automatically clears finished, cancelled, and failed requests older than this. Active downloads are never
-        affected.
-      </div>
+      <h2>History</h2>
+      <p className="settings-sub">Finished, cancelled and failed requests leave the list after this long. Downloads in progress are never removed.</p>
       <div className="settings-server-list">
         {RETENTION_OPTIONS.map((o) => {
           const isSelected = (query.data?.days ?? null) === o.days

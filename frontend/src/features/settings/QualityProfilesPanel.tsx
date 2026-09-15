@@ -6,11 +6,11 @@ import Icon from '../../components/Icon'
 import type { QualityProfile } from '../../types/features'
 
 const RESOLUTIONS = [
-  { value: '', label: 'Household default (Pipeline & Quality)' },
-  { value: '2160p', label: '2160p / 4K minimum' },
-  { value: '1080p', label: '1080p minimum' },
-  { value: '720p', label: '720p minimum' },
-  { value: '480p', label: '480p minimum' },
+  { value: '', label: 'Same as Downloads setting' },
+  { value: '2160p', label: '4K or better' },
+  { value: '1080p', label: '1080p or better' },
+  { value: '720p', label: '720p or better' },
+  { value: '480p', label: '480p or better' },
 ]
 
 function slug(name: string): string {
@@ -76,10 +76,7 @@ export default function QualityProfilesPanel() {
   return (
     <div className="settings-panel-card">
       <h2>Quality profiles</h2>
-      <p className="settings-hint">
-        What the household picks from when requesting. The resolution floor is the only knob the pipeline honours per
-        request; the size is a typical figure shown next to the choice, not a limit.
-      </p>
+      <p className="settings-sub">The choices people see when they request something. The size is a rough guide, not a limit.</p>
       <div className="profile-list">
         {profiles.map((p, i) => (
           <div className={`profile-card${p.id === defaultId ? ' default' : ''}`} key={p.id}>
@@ -102,7 +99,7 @@ export default function QualityProfilesPanel() {
             </div>
             <div className="settings-row">
               <div className="settings-field">
-                <label>Resolution floor</label>
+                <label>Lowest quality</label>
                 <select value={p.min_resolution ?? ''} onChange={(e) => update(i, { min_resolution: e.target.value || null })}>
                   {RESOLUTIONS.map((r) => (
                     <option key={r.value} value={r.value}>

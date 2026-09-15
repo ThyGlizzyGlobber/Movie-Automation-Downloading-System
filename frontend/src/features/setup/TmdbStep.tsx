@@ -20,7 +20,7 @@ export default function TmdbStep({
       await setupTmdb(apiKey.trim(), setupToken)
       onDone()
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Something went wrong — try again.')
+      setError(err instanceof ApiError ? err.message : 'Something went wrong. Try again.')
     } finally {
       setSaving(false)
     }
@@ -28,9 +28,9 @@ export default function TmdbStep({
 
   return (
     <>
-      <h1 className="setup-step-title">TMDB API key</h1>
+      <h1 className="setup-step-title">Movie &amp; TV info</h1>
       <p className="setup-step-copy">
-        Used to look up movie and TV metadata. Free to get at{' '}
+        Meridian gets titles, posters and details from TMDB. A free key takes a minute at{' '}
         <a href="https://www.themoviedb.org/settings/api" target="_blank" rel="noreferrer">
           themoviedb.org
         </a>
@@ -46,7 +46,7 @@ export default function TmdbStep({
           spellCheck={false}
           value={apiKey}
           onChange={(e) => setApiKey(e.target.value)}
-          placeholder="Paste your TMDB API key"
+          placeholder="Paste your key"
         />
       </div>
       {error && <p className="setup-error">{error}</p>}

@@ -82,8 +82,7 @@ export default function SetupWizard() {
 
         {restartNeeded && (
           <p className="setup-skip-note">
-            Saved. The backend needs a restart to actually use this — you can keep going and restart once at the
-            end.
+            Saved. Restart Meridian once you've finished so it picks this up.
           </p>
         )}
       </div>

@@ -12,14 +12,14 @@ export default function LoginPage() {
         <img className="login-brand" src="/brand-icon.svg" alt="" />
         <h1 className="login-title">Meridian</h1>
         <p className="login-copy">
-          Sign in with the Plex account that has access to this household's server.
+          Sign in with your Plex account.
         </p>
         <button className="login-button" onClick={begin} disabled={starting || pending}>
           {pending ? 'Waiting for Plex…' : 'Sign in with Plex'}
         </button>
         {pending && (
           <p className="login-hint">
-            Approve the sign-in in the tab that just opened, then come back here — this updates on its own.
+            Finish signing in in the tab that opened. This page updates by itself.
           </p>
         )}
         {error && <p className="login-error">{error}</p>}

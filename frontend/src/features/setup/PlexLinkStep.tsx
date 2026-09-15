@@ -73,10 +73,8 @@ export default function PlexLinkStep({ setupToken }: { setupToken: string }) {
 
   return (
     <>
-      <h1 className="setup-step-title">Link your Plex account</h1>
-      <p className="setup-step-copy">
-        Sign in with the Plex account that owns your server. This account becomes this app's admin.
-      </p>
+      <h1 className="setup-step-title">Connect Plex</h1>
+      <p className="setup-step-copy">Sign in with the Plex account that owns your server. That account becomes the admin.</p>
 
       {phase === 'idle' && (
         <div className="setup-actions">
@@ -88,7 +86,7 @@ export default function PlexLinkStep({ setupToken }: { setupToken: string }) {
 
       {phase === 'signing-in' && (
         <p className="setup-step-copy">
-          Approve the sign-in in the tab that just opened, then come back here — this updates on its own.
+          Finish signing in in the tab that opened. This page updates by itself.
         </p>
       )}
 

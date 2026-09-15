@@ -27,7 +27,7 @@ function relativeTime(iso: string | null): string {
 
 function SubscriptionStatusPill({ status }: { status: 'watching' | 'paused' }) {
   const cls = status === 'paused' ? 'status-queued' : 'status-complete'
-  const label = status === 'paused' ? 'Paused' : 'Watching'
+  const label = status === 'paused' ? 'Paused' : 'Following'
   return (
     <span className={`status-pill ${cls}`}>
       <span className={`status-dot ${cls}`} />
@@ -75,13 +75,13 @@ function WatchingRow({ show, onChanged }: { show: ShowOut; onChanged: () => void
   }
 
   async function handleUnsubscribe() {
-    if (!confirm("Unsubscribe from this show? Its download history stays in Requests.")) return
+    if (!confirm('Stop following this show? Its downloads stay in Requests.')) return
     setBusy(true)
     try {
       await deleteShow(show.id)
       onChanged()
     } catch (err) {
-      alert(`Couldn't unsubscribe: ${err instanceof Error ? err.message : 'Unknown error'}`)
+      alert(`Couldn't stop following: ${err instanceof Error ? err.message : 'Unknown error'}`)
       setBusy(false)
     }
   }
@@ -105,7 +105,7 @@ function WatchingRow({ show, onChanged }: { show: ShowOut; onChanged: () => void
           {show.status === 'paused' ? 'Resume' : 'Pause'}
         </button>
         <button className="watch-link" disabled={busy} onClick={handleUnsubscribe}>
-          Unsubscribe
+          Stop following
         </button>
       </div>
     </div>
@@ -129,7 +129,7 @@ export default function WatchingPage() {
 
   const shows = showsQuery.data ?? []
   if (!shows.length) {
-    return <EmptyState message="Not watching anything yet — find a show and tap Add Show." />
+    return <EmptyState message="No shows yet. Open a show and tap Add show." />
   }
 
   return (

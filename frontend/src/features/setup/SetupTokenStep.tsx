@@ -7,8 +7,8 @@ export default function SetupTokenStep({ onContinue }: { onContinue: (token: str
     <>
       <h1 className="setup-step-title">Let's set this up</h1>
       <p className="setup-step-copy">
-        Check the backend container's logs for a one-time setup code (<code>docker logs</code> the backend
-        service), then paste it below. This confirms it's really you setting this up, on this network.
+        Paste the setup code from Meridian's server log. It's printed when the server starts, and proves it's you
+        setting this up.
       </p>
       <div className="setup-field">
         <label htmlFor="setup-token">Setup code</label>
@@ -20,7 +20,7 @@ export default function SetupTokenStep({ onContinue }: { onContinue: (token: str
           spellCheck={false}
           value={token}
           onChange={(e) => setToken(e.target.value)}
-          placeholder="Paste the code from the logs"
+          placeholder="Paste the code from the log"
         />
       </div>
       <div className="setup-actions">

@@ -33,9 +33,9 @@ export default function RedownloadModal({
     return (
       <div className="redownload-overlay" onClick={close}>
         <div className="redownload-card" onClick={(e) => e.stopPropagation()}>
-          <h2 className="redownload-title">Overwrite existing file?</h2>
+          <h2 className="redownload-title">Replace the current copy?</h2>
           <p className="redownload-body">
-            This will permanently delete the existing copy of {targetLabel} once the new download completes. This can't be undone.
+            The current copy of {targetLabel} is deleted once the new download finishes. This can't be undone.
           </p>
           <div className="redownload-actions">
             <button
@@ -45,7 +45,7 @@ export default function RedownloadModal({
                 onChoose('overwrite')
               }}
             >
-              Yes, overwrite it
+              Yes, replace it
             </button>
             <button className="redownload-cancel" onClick={close}>
               Cancel
@@ -59,22 +59,22 @@ export default function RedownloadModal({
   return (
     <div className="redownload-overlay" onClick={close}>
       <div className="redownload-card" onClick={(e) => e.stopPropagation()}>
-        <h2 className="redownload-title">Already on Plex</h2>
-        <p className="redownload-body">{targetLabel} is already on your Plex server. What would you like to do?</p>
+        <h2 className="redownload-title">Already in Plex</h2>
+        <p className="redownload-body">{targetLabel} is already in Plex. What would you like to do?</p>
         <div className="redownload-actions">
           <button className="redownload-option" onClick={() => onChoose('upgrade')}>
             Find a better version
-            <span className="redownload-option-sub">Search again and add it alongside what's already there.</span>
+            <span className="redownload-option-sub">Search again and keep both copies.</span>
           </button>
           <button
             className="redownload-option"
             disabled={!trackedAvailable}
-            title={trackedAvailable ? undefined : "This app doesn't have a record of placing the existing file, so it can't safely delete it."}
+            title={trackedAvailable ? undefined : "Meridian didn't add this file, so it won't delete it."}
             onClick={() => setConfirmingOverwrite(true)}
           >
-            Overwrite existing
+            Replace it
             <span className="redownload-option-sub">
-              {trackedAvailable ? 'Replace the existing copy once the new one finishes.' : 'Unavailable — this file was not added by this app.'}
+              {trackedAvailable ? 'Delete the current copy when the new one is ready.' : "Not available. Meridian didn't add this file."}
             </span>
           </button>
         </div>

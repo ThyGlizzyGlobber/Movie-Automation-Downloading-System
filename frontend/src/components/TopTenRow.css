@@ -6,7 +6,15 @@
 .top10-card {
   display: flex;
   align-items: flex-end;
-  padding-top: 8px;
+  padding: 8px 0 26px;
+  /* The numeral is set at line-height .72, so its glyph box runs well
+     past the card's bottom edge even though the ink does not. Clipping
+     the card (clip, not hidden, so it never becomes a scroll container)
+     keeps that phantom height out of the row's scrollable area, which
+     is what let the row creep vertically. The clip margin leaves room
+     for the poster shadow and the numeral's hover glow. */
+  overflow: clip;
+  overflow-clip-margin: 30px;
 }
 .top10-num {
   font-family: var(--font-display);

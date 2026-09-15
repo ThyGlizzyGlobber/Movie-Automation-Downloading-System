@@ -16,6 +16,7 @@ import LoadingState from '../../components/LoadingState'
 import ErrorState from '../../components/ErrorState'
 import { usePageTitle, useSetHasHero } from '../../lib/chrome'
 import { mixTrending, tagMediaType } from '../../lib/homeHero'
+import { browseHref } from '../../api/browse'
 
 const HERO_SLIDE_COUNT = 5
 
@@ -91,7 +92,15 @@ export default function HomePage() {
       if (movieItems[j]) merged.push(movieItems[j])
       if (tvItems[j]) merged.push(tvItems[j])
     }
-    return <MediaRow key={g.label} title={g.label} items={merged} mediaType={(it) => it.mediaType} />
+    return (
+      <MediaRow
+        key={g.label}
+        title={g.label}
+        items={merged}
+        mediaType={(it) => it.mediaType}
+        expandHref={browseHref({ type: 'movie', genre: g.movieId })}
+      />
+    )
   })
 
   const contentRows = [
@@ -99,10 +108,10 @@ export default function HomePage() {
     <TopTenRow key="top10" movies={movieTrending.data?.results ?? []} shows={tvTrending.data?.results ?? []} />,
     // Plex's own Continue Watching; renders nothing when Plex has none.
     <ContinueWatchingRow key="continue" />,
-    <MediaRow key="trending" title="Trending Now" items={mixedTrending} mediaType={(it) => it.mediaType} />,
-    <MediaRow key="popular-movies" title="Popular Movies" items={moviePopular.data?.results ?? []} mediaType="movie" expandHref="/movies/popular" />,
-    <MediaRow key="popular-tv" title="Popular TV Shows" items={tvPopular.data?.results ?? []} mediaType="tv" expandHref="/tv/popular" />,
-    <MediaRow key="new-releases" title="New Releases" items={comingSoon.data?.results ?? []} mediaType="movie" expandHref="/movies/coming-soon" />,
+    <MediaRow key="trending" title="Trending Now" items={mixedTrending} mediaType={(it) => it.mediaType} expandHref={browseHref({ type: 'movie', sort: 'trending' })} />,
+    <MediaRow key="popular-movies" title="Popular Movies" items={moviePopular.data?.results ?? []} mediaType="movie" expandHref={browseHref({ type: 'movie' })} />,
+    <MediaRow key="popular-tv" title="Popular TV Shows" items={tvPopular.data?.results ?? []} mediaType="tv" expandHref={browseHref({ type: 'tv' })} />,
+    <MediaRow key="new-releases" title="New Releases" items={comingSoon.data?.results ?? []} mediaType="movie" expandHref={browseHref({ type: 'movie', list: 'coming-soon' })} />,
     ...genreRows,
   ]
   if (subscribedShows.length) {
@@ -119,7 +128,7 @@ export default function HomePage() {
       {contentRows}
       <section className="row">
         <h2>Browse a Service</h2>
-        <ProviderChips hrefPrefix="/movies/provider" />
+        <ProviderChips type="movie" />
       </section>
     </>
   )

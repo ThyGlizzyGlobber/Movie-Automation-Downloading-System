@@ -29,7 +29,7 @@ export default function QbittorrentStep({
       setTestResult(
         result.reachable
           ? { ok: true, message: 'Connected.' }
-          : { ok: false, message: result.detail || "Couldn't reach qBittorrent with these details." },
+          : { ok: false, message: result.detail || "Couldn't connect. Check the details and try again." },
       )
     } catch (err) {
       setTestResult({ ok: false, message: err instanceof ApiError ? err.message : 'Something went wrong.' })
@@ -45,7 +45,7 @@ export default function QbittorrentStep({
       await setupQbt(body, setupToken)
       onDone()
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Something went wrong — try again.')
+      setError(err instanceof ApiError ? err.message : 'Something went wrong. Try again.')
     } finally {
       setSaving(false)
     }
@@ -53,8 +53,8 @@ export default function QbittorrentStep({
 
   return (
     <>
-      <h1 className="setup-step-title">qBittorrent connection</h1>
-      <p className="setup-step-copy">Where this app sends downloads. Test the connection before continuing.</p>
+      <h1 className="setup-step-title">Download client</h1>
+      <p className="setup-step-copy">Where downloads run. Enter your qBittorrent details and test them.</p>
       <div className="setup-row">
         <div className="setup-field">
           <label htmlFor="qbt-host">Host</label>

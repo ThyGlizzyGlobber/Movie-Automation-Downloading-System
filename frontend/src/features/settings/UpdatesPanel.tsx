@@ -6,13 +6,13 @@ export default function UpdatesPanel() {
   const [deploying, setDeploying] = useState(false)
 
   async function checkForUpdates() {
-    if (!confirm('Pull the latest deployed code from git now?')) return
+    if (!confirm('Install the latest version of Meridian now?')) return
     setDeploying(true)
     try {
       const result = await postDeploy()
-      alert(`Deployed: ${result.detail}\nNow at ${result.commit}`)
+      alert(`Updated. ${result.detail}\nVersion ${result.commit}`)
     } catch (err) {
-      alert(`Deploy failed: ${err instanceof ApiError ? err.message : 'Something went wrong.'}`)
+      alert(`Update failed. ${err instanceof ApiError ? err.message : 'Something went wrong.'}`)
     } finally {
       setDeploying(false)
     }
@@ -20,9 +20,10 @@ export default function UpdatesPanel() {
 
   return (
     <div className="settings-panel-card">
-      <h2>Update</h2>
+      <h2>Updates</h2>
+      <p className="settings-sub">Install the latest version of Meridian.</p>
       <button className="settings-btn" disabled={deploying} onClick={checkForUpdates}>
-        {deploying ? 'Deploying…' : 'Check for updates'}
+        {deploying ? 'Updating…' : 'Check for updates'}
       </button>
       <div className="about-footer">Meridian</div>
     </div>

@@ -3,7 +3,6 @@ import { Outlet } from 'react-router-dom'
 import { ChromeProvider } from '../lib/chrome'
 import Topbar from './Topbar'
 import Tabbar from './Tabbar'
-import DownloadsFab from './DownloadsFab'
 import StorageIndicator from './StorageIndicator'
 import SearchOverlay from './SearchOverlay'
 import TutorialOverlay from '../features/onboarding/TutorialOverlay'
@@ -23,6 +22,19 @@ export default function AppShell() {
     return () => window.removeEventListener('scroll', update)
   }, [])
 
+  // ⌘K / Ctrl+K opens the search palette from anywhere (the hint on the
+  // top bar's search field).
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault()
+        setSearchOpen(true)
+      }
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [])
+
   return (
     <ChromeProvider>
       <Topbar onOpenSearch={() => setSearchOpen(true)} />
@@ -31,7 +43,6 @@ export default function AppShell() {
         <Outlet />
       </main>
       <Tabbar />
-      <DownloadsFab />
       <StorageIndicator />
       <TutorialOverlay />
     </ChromeProvider>

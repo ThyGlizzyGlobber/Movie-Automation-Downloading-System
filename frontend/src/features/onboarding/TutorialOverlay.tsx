@@ -11,9 +11,9 @@ import './TutorialOverlay.css'
 // localStorage, so it genuinely shows once regardless of which device a
 // person first signs in from).
 const SLIDES = [
-  { title: 'Welcome to Meridian', body: 'Search for a movie or show and request it — the rest happens on its own.' },
-  { title: 'Track what you requested', body: 'The download icon in the corner always shows what’s in progress.' },
-  { title: 'That’s it', body: 'Everyone in the household shares the same queue.' },
+  { title: 'Welcome to Meridian', body: 'Find a movie or show and tap Request. Meridian does the rest.' },
+  { title: 'See what’s on the way', body: 'Requests shows everything that’s downloading and everything that’s ready.' },
+  { title: 'Shared with the house', body: 'Everyone sees the same requests.' },
 ]
 
 export default function TutorialOverlay() {

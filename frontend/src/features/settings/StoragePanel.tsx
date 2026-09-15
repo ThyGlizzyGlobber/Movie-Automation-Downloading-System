@@ -21,10 +21,10 @@ export default function StoragePanel() {
     <>
       <div className="settings-panel-card">
         <h2>Storage</h2>
-        <p className="settings-hint">
+        <p className="settings-sub">
           {d.available
-            ? `${formatBytes(d.used_bytes)} of ${formatBytes(d.total_bytes)} used on the library disk.`
-            : 'The library disk is not mounted here, so usage is unknown.'}
+            ? `${formatBytes(d.used_bytes)} of ${formatBytes(d.total_bytes)} used.`
+            : "Meridian can't see the library drive from here."}
         </p>
         <div className="storage-layout">
           <div className="storage-ring">
@@ -43,11 +43,12 @@ export default function StoragePanel() {
           </div>
         </div>
         <p className="settings-hint">
-          Library folders: {d.libraries.map((l) => `${l.label} · ${l.root}`).join(' — ')}
+          Folders: {d.libraries.map((l) => `${l.label} ${l.root}`).join(' · ')}
         </p>
       </div>
       <div className="settings-panel-card">
-        <h2>Throughput</h2>
+        <h2>Activity</h2>
+        <p className="settings-sub">What's moving right now, and what landed recently.</p>
         <div className="storage-tiles">
           <div className="storage-tile">
             <small>Downloading</small>

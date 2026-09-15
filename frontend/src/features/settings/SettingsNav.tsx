@@ -10,15 +10,15 @@ export interface SettingsSection {
 // Grouped the way the reference's settings sidebar is (Server / Access /
 // System); the panel keys are unchanged.
 export const SETTINGS_SECTIONS: SettingsSection[] = [
-  { key: 'plex', label: 'Plex Server', icon: 'plex', group: 'Server' },
-  { key: 'connections', label: 'Connections', icon: 'plug', group: 'Server' },
-  { key: 'pipeline', label: 'Pipeline & Quality', icon: 'sliders', group: 'Server' },
-  { key: 'tv', label: 'TV Schedule', icon: 'clock', group: 'Server' },
+  { key: 'plex', label: 'Plex', icon: 'plex', group: 'Server' },
+  { key: 'connections', label: 'Services', icon: 'plug', group: 'Server' },
+  { key: 'pipeline', label: 'Downloads', icon: 'sliders', group: 'Server' },
+  { key: 'tv', label: 'TV shows', icon: 'clock', group: 'Server' },
   { key: 'profiles', label: 'Quality profiles', icon: 'hd', group: 'Server' },
   { key: 'storage', label: 'Storage', icon: 'drive', group: 'Server' },
-  { key: 'retention', label: 'Retention', icon: 'trash', group: 'Server' },
-  { key: 'remote-access', label: 'Remote Access', icon: 'lock', group: 'Access' },
-  { key: 'activity', label: 'Activity Dashboard', icon: 'chart', group: 'System' },
+  { key: 'retention', label: 'History', icon: 'trash', group: 'Server' },
+  { key: 'remote-access', label: 'Remote access', icon: 'lock', group: 'Access' },
+  { key: 'activity', label: 'Activity', icon: 'chart', group: 'System' },
   { key: 'updates', label: 'Updates', icon: 'refresh', group: 'System' },
 ]
 

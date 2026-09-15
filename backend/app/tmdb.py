@@ -124,6 +124,14 @@ def is_tv_upcoming(show: dict) -> bool:
     return aired_at > datetime.now(timezone.utc)
 
 
+# Browse-page sort keys as the frontend sends them, mapped to TMDB's own
+# sort_by values. "trending" is not here: it is served by the separate
+# trending endpoints and takes no other filters.
+BROWSE_SORTS = ("popular", "newest", "rated")
+BROWSE_SORTS_MOVIE = {"popular": "popularity.desc", "newest": "primary_release_date.desc", "rated": "vote_average.desc"}
+BROWSE_SORTS_TV = {"popular": "popularity.desc", "newest": "first_air_date.desc", "rated": "vote_average.desc"}
+
+
 class TMDBClient:
     def __init__(self, api_key: str, session: requests.Session | None = None):
         # Deliberately not raised here (frontend migration Part E): the
@@ -433,4 +441,87 @@ class TMDBClient:
             for movie in discover.get("results", [])
             if not _lacks_digital_release(self.get_release_dates(movie["id"]), region)
         ]
+        return {**discover, "results": filtered}
+
+    # -- Browse page: one Discover call that takes every filter the browse
+    #    page offers at once (genre, streaming service, year, sort), so a
+    #    genre row's "See all" and the filter chips on the page it opens
+    #    share one code path. Availability-filtered like the rows. --
+
+    @ttl_cache(POPULAR_DISCOVER_TTL_SECONDS)
+    def discover_movies(
+        self,
+        *,
+        genre_id: int | None = None,
+        provider_id: int | None = None,
+        year: int | None = None,
+        sort: str = "popular",
+        region: str = "US",
+        page: int = 1,
+    ) -> dict:
+        params: dict = {
+            "page": page,
+            "region": region,
+            "sort_by": BROWSE_SORTS_MOVIE.get(sort, BROWSE_SORTS_MOVIE["popular"]),
+            "include_adult": "false",
+        }
+        if genre_id:
+            params["with_genres"] = genre_id
+        if provider_id:
+            params["with_watch_providers"] = provider_id
+            params["watch_region"] = region
+        if year:
+            params["primary_release_year"] = year
+        if sort == "newest":
+            # Newest means "newest that is actually out", not TMDB's
+            # far-future placeholder entries; the small vote floor keeps
+            # unreleased-in-practice titles with no audience off the top.
+            params["primary_release_date.lte"] = datetime.now(timezone.utc).date().isoformat()
+            params["vote_count.gte"] = 20
+        elif sort == "rated":
+            params["vote_count.gte"] = 200
+        return self._get("/discover/movie", params)
+
+    def browse_movies(self, *, region: str = "US", **filters) -> dict:
+        discover = self.discover_movies(region=region, **filters)
+        filtered = [
+            movie
+            for movie in discover.get("results", [])
+            if not _lacks_digital_release(self.get_release_dates(movie["id"]), region)
+        ]
+        return {**discover, "results": filtered}
+
+    @ttl_cache(POPULAR_DISCOVER_TTL_SECONDS)
+    def discover_tv(
+        self,
+        *,
+        genre_id: int | None = None,
+        provider_id: int | None = None,
+        year: int | None = None,
+        sort: str = "popular",
+        region: str = "US",
+        page: int = 1,
+    ) -> dict:
+        params: dict = {
+            "page": page,
+            "sort_by": BROWSE_SORTS_TV.get(sort, BROWSE_SORTS_TV["popular"]),
+            "include_adult": "false",
+        }
+        if genre_id:
+            params["with_genres"] = genre_id
+        if provider_id:
+            params["with_watch_providers"] = provider_id
+            params["watch_region"] = region
+        if year:
+            params["first_air_date_year"] = year
+        if sort == "newest":
+            params["first_air_date.lte"] = datetime.now(timezone.utc).date().isoformat()
+            params["vote_count.gte"] = 20
+        elif sort == "rated":
+            params["vote_count.gte"] = 200
+        return self._get("/discover/tv", params)
+
+    def browse_tv(self, *, region: str = "US", **filters) -> dict:
+        discover = self.discover_tv(region=region, **filters)
+        filtered = [show for show in discover.get("results", []) if not is_tv_upcoming(show)]
         return {**discover, "results": filtered}

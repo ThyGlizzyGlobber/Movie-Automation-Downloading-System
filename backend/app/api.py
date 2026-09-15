@@ -46,7 +46,7 @@ from app.plex import LoginSession, PlexClient, PlexError, PlexLinker, new_client
 from app.quality_profiles import DEFAULT_PROFILE_ID, profile_min_resolution, resolve_profiles, validate_profiles
 from app.qbt import QBTClient
 from app.resolve import resolve
-from app.tmdb import TMDBClient, TMDBError, best_trailer_key, is_movie_coming_soon, is_tv_upcoming
+from app.tmdb import BROWSE_SORTS, TMDBClient, TMDBError, best_trailer_key, is_movie_coming_soon, is_tv_upcoming
 from app.tv_resolve import resolve_show
 from app.tv_settings import resolve_tv_settings
 from app.worker import Worker
@@ -554,6 +554,29 @@ def search(
 #    same "key never reaches the browser" rule as /api/search. --
 
 
+@router.get("/api/discover")
+def discover_browse(
+    genre: int | None = None,
+    provider: int | None = None,
+    year: int | None = None,
+    sort: str = "popular",
+    region: str = "US",
+    page: int = 1,
+    store: RequestStore = Depends(get_store),
+    tmdb: TMDBClient = Depends(get_tmdb),
+) -> dict:
+    """The browse page's one endpoint: every filter at once. Digital-
+    availability filtered like the rows above."""
+    if sort not in BROWSE_SORTS:
+        raise HTTPException(status_code=400, detail=f"sort must be one of {', '.join(BROWSE_SORTS)}")
+    try:
+        data = tmdb.browse_movies(genre_id=genre, provider_id=provider, year=year, sort=sort, region=region, page=page)
+    except TMDBError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    data["results"] = _annotate_on_plex(data.get("results", []), "movie", store, title_key="title", date_key="release_date")
+    return data
+
+
 @router.get("/api/discover/popular")
 def discover_popular(page: int = 1, store: RequestStore = Depends(get_store), tmdb: TMDBClient = Depends(get_tmdb)) -> dict:
     # Digital-availability filtered: Coming Soon is the dedicated tab for
@@ -693,6 +716,28 @@ def get_movie_trailer(tmdb_id: int, tmdb: TMDBClient = Depends(get_tmdb)) -> dic
 # -- Stage 14: TV browse surface — the show equivalent of the movie routes
 #    above. Same thin-pass-through/on_plex-annotation/key-never-reaches-
 #    the-browser rules. --
+
+
+@router.get("/api/tv/discover")
+def tv_discover_browse(
+    genre: int | None = None,
+    provider: int | None = None,
+    year: int | None = None,
+    sort: str = "popular",
+    region: str = "US",
+    page: int = 1,
+    store: RequestStore = Depends(get_store),
+    tmdb: TMDBClient = Depends(get_tmdb),
+) -> dict:
+    # Registered ahead of /api/tv/{tmdb_id} so the literal segment wins.
+    if sort not in BROWSE_SORTS:
+        raise HTTPException(status_code=400, detail=f"sort must be one of {', '.join(BROWSE_SORTS)}")
+    try:
+        data = tmdb.browse_tv(genre_id=genre, provider_id=provider, year=year, sort=sort, region=region, page=page)
+    except TMDBError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    data["results"] = _annotate_on_plex(data.get("results", []), "show", store, title_key="name", date_key="first_air_date")
+    return data
 
 
 @router.get("/api/tv/discover/popular")

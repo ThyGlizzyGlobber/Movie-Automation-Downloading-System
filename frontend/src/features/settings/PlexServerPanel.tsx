@@ -45,7 +45,7 @@ export default function PlexServerPanel() {
       setSelected(list.length === 1 ? list[0].machine_identifier : null)
       setPhase('picking-server')
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Something went wrong loading your servers.')
+      setError(err instanceof ApiError ? err.message : 'Couldn't load your servers.')
     } finally {
       setBusy(false)
     }
@@ -53,7 +53,7 @@ export default function PlexServerPanel() {
 
   async function finishSwitch() {
     if (!selected) return
-    if (!confirm('Switch Plex servers? Every other signed-in user will be signed out and need to sign in again.')) return
+    if (!confirm('Switch servers? Everyone will be signed out and need to sign in again.')) return
     setPhase('linking')
     setError(null)
     try {
@@ -61,7 +61,7 @@ export default function PlexServerPanel() {
       refreshStatus()
       setPhase('status')
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Something went wrong switching servers.')
+      setError(err instanceof ApiError ? err.message : 'Couldn't switch servers.')
       setPhase('picking-server')
     }
   }
@@ -99,7 +99,7 @@ export default function PlexServerPanel() {
   }
 
   async function disconnect() {
-    if (!confirm('Disconnect Plex? This app stops working for everyone until an admin links it again.')) return
+    if (!confirm('Disconnect Plex? Meridian stops working for everyone until an admin connects it again.')) return
     setBusy(true)
     try {
       await unlinkPlex()
@@ -119,7 +119,8 @@ export default function PlexServerPanel() {
 
   return (
     <div className="settings-panel-card">
-      <h2>Plex Server</h2>
+      <h2>Plex</h2>
+      <p className="settings-sub">The server Meridian adds to and reads from.</p>
 
       {phase === 'status' && (
         <>
@@ -140,7 +141,7 @@ export default function PlexServerPanel() {
             </>
           ) : (
             <>
-              <div className="plex-hint">Keeps completed downloads recognized even after qBittorrent clears them.</div>
+              <div className="plex-hint">Sign in with the Plex account that owns your server.</div>
               <button className="settings-btn" disabled={status.pending} onClick={beginSignIn}>
                 {status.pending ? 'Waiting for sign-in…' : 'Sign in with Plex'}
               </button>
@@ -150,13 +151,13 @@ export default function PlexServerPanel() {
       )}
 
       {phase === 'signing-in' && (
-        <p className="plex-hint">Approve the sign-in in the tab that just opened, then come back here — this updates on its own.</p>
+        <p className="plex-hint">Finish signing in in the tab that opened. This page updates by itself.</p>
       )}
 
       {phase === 'picking-server' && (
         <>
           {servers.length === 0 ? (
-            <div className="plex-error">This account doesn't own any Plex servers.</div>
+            <div className="plex-error">This account doesn't own a Plex server.</div>
           ) : (
             <div className="settings-server-list">
               {servers.map((s) => (

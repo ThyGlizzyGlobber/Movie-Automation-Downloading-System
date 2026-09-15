@@ -20,11 +20,19 @@ export default function InfiniteGrid({
   fetchPage,
   mediaType,
   emptyMessage,
+  filterItem,
+  onTotal,
 }: {
   queryKey: unknown[]
   fetchPage: (page: number) => Promise<TmdbListResponse>
   mediaType: 'movie' | 'tv' | ((item: TmdbListItem) => 'movie' | 'tv')
   emptyMessage: string
+  /* Client-side filter (the browse page's In Plex / Requested / Not yet
+     switch). Pages keep loading while the sentinel stays in view, so a
+     sparse filter fills in on its own. */
+  filterItem?: (item: TmdbListItem) => boolean
+  /* TMDB's total for the whole list, from the first page. */
+  onTotal?: (total: number) => void
 }) {
   const query = useInfiniteQuery({
     queryKey,
@@ -50,6 +58,11 @@ export default function InfiniteGrid({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [query.hasNextPage, query.isFetchingNextPage])
 
+  const total = query.data?.pages[0]?.total_results
+  useEffect(() => {
+    if (onTotal && typeof total === 'number') onTotal(total)
+  }, [onTotal, total])
+
   if (query.isLoading) return <LoadingState />
   if (query.isError) {
     return <ErrorState message={query.error instanceof Error ? query.error.message : undefined} />
@@ -64,9 +77,9 @@ export default function InfiniteGrid({
   const items = (query.data?.pages.flatMap((p) => p.results) ?? []).filter((item) => {
     if (seen.has(item.id)) return false
     seen.add(item.id)
-    return true
+    return filterItem ? filterItem(item) : true
   })
-  if (!items.length) return <EmptyState message={emptyMessage} />
+  if (!items.length && !query.hasNextPage) return <EmptyState message={emptyMessage} />
 
   return (
     <>

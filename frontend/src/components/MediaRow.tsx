@@ -12,6 +12,7 @@ export default function MediaRow<T extends PosterCardItem>({
   renderItem,
   headerRight,
   className,
+  seeAllLabel = 'See all',
 }: {
   title: string
   items: T[]
@@ -25,6 +26,7 @@ export default function MediaRow<T extends PosterCardItem>({
      toggle, a count). */
   headerRight?: ReactNode
   className?: string
+  seeAllLabel?: string
 }) {
   const trackRef = useRef<HTMLDivElement>(null)
   const [atStart, setAtStart] = useState(true)
@@ -48,21 +50,33 @@ export default function MediaRow<T extends PosterCardItem>({
 
   if (!items.length) return null
 
+  // A row that expands to a full browse page gets a clickable title and
+  // a "See all" at the right edge (the reference's row head).
   const heading = expandHref ? (
     <Link className="row-title" to={expandHref}>
       {title}
-      <span className="row-title-arrow">→</span>
     </Link>
   ) : (
     <h2>{title}</h2>
   )
+  const seeAll = expandHref ? (
+    <Link className="row-more" to={expandHref}>
+      {seeAllLabel}
+      <span className="row-more-circ">
+        <Icon name="next" />
+      </span>
+    </Link>
+  ) : null
 
   return (
     <section className={`row${className ? ` ${className}` : ''}`}>
-      {headerRight ? (
+      {headerRight || seeAll ? (
         <div className="row-head">
           {heading}
-          <div className="row-head-right">{headerRight}</div>
+          <div className="row-head-right">
+            {headerRight}
+            {seeAll}
+          </div>
         </div>
       ) : (
         heading

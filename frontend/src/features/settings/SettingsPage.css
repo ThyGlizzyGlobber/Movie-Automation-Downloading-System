@@ -457,3 +457,29 @@
 .profile-remove:disabled {
   opacity: 0.35;
 }
+
+/* Page title and one-line lead above the active panel (desktop), and the
+   one-line description under each card's heading. */
+.settings-heading {
+  margin: 0 0 22px;
+}
+.settings-title {
+  font-family: var(--font-display);
+  font-weight: 300;
+  font-size: clamp(40px, 4vw, 56px);
+  letter-spacing: var(--tracking-display);
+  line-height: 1;
+  margin: 0 0 8px;
+}
+.settings-lead {
+  margin: 0;
+  color: var(--text-dim);
+  font-weight: 600;
+  font-size: 14px;
+}
+.settings-sub {
+  margin: -6px 0 18px;
+  color: var(--text-dim);
+  font-weight: 600;
+  font-size: 13px;
+}

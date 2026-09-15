@@ -9,6 +9,7 @@ import ErrorState from '../../components/ErrorState'
 import { usePageTitle, useSetHasHero } from '../../lib/chrome'
 import { ROW_PROVIDERS } from '../../lib/providers'
 import { tagMediaType } from '../../lib/homeHero'
+import { browseHref } from '../../api/browse'
 
 const HERO_SLIDE_COUNT = 5
 
@@ -72,21 +73,21 @@ export default function TvLandingPage() {
     <>
       <HeroCarousel items={heroItems} />
       <MediaRow title="Subscribed Shows" items={subscribedShows} mediaType="tv" expandHref="/tv/watching" />
-      <MediaRow title="Trending TV Shows" items={trending.data?.results ?? []} mediaType="tv" expandHref="/tv/trending" />
-      <MediaRow title="Popular" items={popular.data?.results ?? []} mediaType="tv" expandHref="/tv/popular" />
-      <MediaRow title="Coming Soon" items={comingSoon.data?.results ?? []} mediaType="tv" expandHref="/tv/coming-soon" />
+      <MediaRow title="Trending TV Shows" items={trending.data?.results ?? []} mediaType="tv" expandHref={browseHref({ type: 'tv', sort: 'trending' })} />
+      <MediaRow title="Popular" items={popular.data?.results ?? []} mediaType="tv" expandHref={browseHref({ type: 'tv' })} />
+      <MediaRow title="Coming Soon" items={comingSoon.data?.results ?? []} mediaType="tv" expandHref={browseHref({ type: 'tv', list: 'coming-soon' })} />
       {TV_GENRES.map((g, i) => (
         <MediaRow
           key={g.id}
           title={g.label}
           items={genreResults[i].data?.results ?? []}
           mediaType="tv"
-          expandHref={`/tv/genre/${g.id}/${encodeURIComponent(g.label)}`}
+          expandHref={browseHref({ type: 'tv', genre: g.id })}
         />
       ))}
       <section className="row">
         <h2>Browse a Service</h2>
-        <ProviderChips hrefPrefix="/tv/provider" />
+        <ProviderChips type="tv" />
       </section>
       {ROW_PROVIDERS.map((p, i) => (
         <MediaRow
@@ -94,7 +95,7 @@ export default function TvLandingPage() {
           title={`Popular on ${p.name}`}
           items={providerResults[i].data?.results ?? []}
           mediaType="tv"
-          expandHref={`/tv/provider/${p.id}/${encodeURIComponent(p.name)}`}
+          expandHref={browseHref({ type: 'tv', provider: p.id })}
         />
       ))}
     </>

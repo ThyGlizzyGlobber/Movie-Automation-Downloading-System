@@ -15,7 +15,7 @@ function TmdbSection({ envConfigured }: { envConfigured: boolean }) {
     setResult(null)
     try {
       await updateTmdbSettings(apiKey.trim())
-      setResult({ ok: true, message: 'Saved — restart the backend for this to take effect.' })
+      setResult({ ok: true, message: 'Saved. Restart Meridian to start using it.' })
       setApiKey('')
     } catch (err) {
       setResult({ ok: false, message: err instanceof ApiError ? err.message : 'Something went wrong.' })
@@ -26,9 +26,10 @@ function TmdbSection({ envConfigured }: { envConfigured: boolean }) {
 
   return (
     <>
-      <h2>TMDB</h2>
+      <h2>Movie &amp; TV info</h2>
+      <p className="settings-sub">Titles, posters and details come from TMDB.</p>
       {envConfigured ? (
-        <div className="settings-env-note">Configured via environment variable — edit it in the backend's own .env to change it.</div>
+        <div className="settings-env-note">Set in the server's .env file. Change it there.</div>
       ) : (
         <>
           <div className="settings-field">
@@ -41,7 +42,7 @@ function TmdbSection({ envConfigured }: { envConfigured: boolean }) {
               spellCheck={false}
               value={apiKey}
               onChange={(e) => setApiKey(e.target.value)}
-              placeholder="Paste a new TMDB API key to replace it"
+              placeholder="Paste a new key to replace the current one"
             />
           </div>
           <button className="settings-btn" disabled={!apiKey.trim() || saving} onClick={save}>
@@ -73,7 +74,7 @@ function QbittorrentSection({ envConfigured }: { envConfigured: boolean }) {
     try {
       const result = await testQbtSettingsConnection(body)
       setTestResult(
-        result.reachable ? { ok: true, message: 'Connected.' } : { ok: false, message: result.detail || "Couldn't reach qBittorrent with these details." },
+        result.reachable ? { ok: true, message: 'Connected.' } : { ok: false, message: result.detail || "Couldn't connect. Check the details and try again." },
       )
     } catch (err) {
       setTestResult({ ok: false, message: err instanceof ApiError ? err.message : 'Something went wrong.' })
@@ -87,7 +88,7 @@ function QbittorrentSection({ envConfigured }: { envConfigured: boolean }) {
     setSaveResult(null)
     try {
       await updateQbtSettings(body)
-      setSaveResult({ ok: true, message: 'Saved — restart the backend for this to take effect.' })
+      setSaveResult({ ok: true, message: 'Saved. Restart Meridian to start using it.' })
     } catch (err) {
       setSaveResult({ ok: false, message: err instanceof ApiError ? err.message : 'Something went wrong.' })
     } finally {
@@ -97,11 +98,10 @@ function QbittorrentSection({ envConfigured }: { envConfigured: boolean }) {
 
   return (
     <>
-      <h2>qBittorrent</h2>
+      <h2>Download client</h2>
+      <p className="settings-sub">Where downloads run. Meridian talks to qBittorrent.</p>
       {envConfigured ? (
-        <div className="settings-env-note">
-          Configured via environment variables — edit them in the backend's own .env to change them.
-        </div>
+        <div className="settings-env-note">Set in the server's .env file. Change it there.</div>
       ) : (
         <>
           <div className="settings-row">
@@ -121,7 +121,7 @@ function QbittorrentSection({ envConfigured }: { envConfigured: boolean }) {
             </div>
             <div className="settings-field">
               <label htmlFor="cxQbtPassword">Password</label>
-              <input id="cxQbtPassword" type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Leave blank to keep unchanged" />
+              <input id="cxQbtPassword" type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Leave blank to keep the current one" />
             </div>
           </div>
           <div className="settings-btn-row">

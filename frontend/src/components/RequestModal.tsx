@@ -74,7 +74,7 @@ export default function RequestModal({
         </div>
         <div className="request-modal-label">Quality</div>
         {profiles.isLoading ? (
-          <div className="request-modal-loading">Loading profiles…</div>
+          <div className="request-modal-loading">Loading…</div>
         ) : (
           <div className="request-modal-options" role="radiogroup" aria-label="Quality profile">
             {list.map((p) => (
@@ -99,9 +99,9 @@ export default function RequestModal({
           <span className={`request-modal-note${tooBig ? ' warn' : ''}`}>
             {free != null
               ? tooBig
-                ? `Only ${formatBytes(free)} free — this profile usually needs more.`
-                : `${formatBytes(free)} free in the library.`
-              : 'Library free space unknown.'}
+                ? `Only ${formatBytes(free)} free. This usually needs more.`
+                : `${formatBytes(free)} free.`
+              : 'Free space unknown.'}
           </span>
           <button className="request-modal-cancel" onClick={onClose}>
             Cancel

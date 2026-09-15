@@ -22,9 +22,10 @@ export default function ActivityDashboardPanel() {
   return (
     <>
       <div className="settings-panel-card" style={{ marginBottom: 16 }}>
-        <h2>Who's requesting</h2>
+        <h2>Requests by person</h2>
+        <p className="settings-sub">Who has asked for what.</p>
         {data.user_stats.length === 0 ? (
-          <EmptyState message="No attributed requests yet." />
+          <EmptyState message="No requests yet." />
         ) : (
           <div className="activity-user-list">
             {data.user_stats.map((s) => (
@@ -39,7 +40,7 @@ export default function ActivityDashboardPanel() {
         )}
       </div>
       <div className="settings-panel-card">
-        <h2>Recent activity</h2>
+        <h2>Recent requests</h2>
         {data.requests.length === 0 ? (
           <EmptyState message="Nothing requested yet." />
         ) : (

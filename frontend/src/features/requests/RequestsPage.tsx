@@ -285,7 +285,7 @@ export default function RequestsPage() {
     <>
       <div id="requestsList">
         {items.length === 0 ? (
-          <EmptyState message="Nothing requested yet — find a movie or show and tap Add." />
+          <EmptyState message="Nothing requested yet. Find a movie or show and tap Request." />
         ) : (
           items.map((item) =>
             item.type === 'standalone' ? (

@@ -53,7 +53,7 @@ export default function PipelinePanel() {
     const min = Number(minSize)
     const max = Number(maxSize)
     if (!(min < max)) {
-      setSaveError('Minimum size must be less than maximum size.')
+      setSaveError('The smallest size has to be less than the largest.')
       setSaveState('error')
       return
     }
@@ -78,9 +78,10 @@ export default function PipelinePanel() {
 
   return (
     <div className="settings-panel-card">
-      <h2>Download preferences</h2>
+      <h2>Downloads</h2>
+      <p className="settings-sub">What counts as a good enough copy.</p>
       <div className="settings-field">
-        <label htmlFor="pfMinResolution">Minimum resolution</label>
+        <label htmlFor="pfMinResolution">Lowest quality to accept</label>
         <select id="pfMinResolution" value={minResolution} onChange={(e) => setMinResolution(e.target.value)}>
           {RESOLUTION_OPTIONS.map((r) => (
             <option key={r.value} value={r.value}>
@@ -88,27 +89,28 @@ export default function PipelinePanel() {
             </option>
           ))}
         </select>
-        <div className="settings-hint">A better release still wins when one's found — this is just a floor.</div>
+        <div className="settings-hint">Better copies are always preferred. This is just the floor.</div>
       </div>
       <div className="settings-field">
-        <label>Size range (GB)</label>
+        <label>File size (GB)</label>
         <div className="settings-size-range">
           <input type="number" min="0" step="1" value={minSize} onChange={(e) => setMinSize(e.target.value)} />
           <span>to</span>
           <input type="number" min="0" step="1" value={maxSize} onChange={(e) => setMaxSize(e.target.value)} />
         </div>
+        <div className="settings-hint">The smallest and largest download you'll accept.</div>
       </div>
       <div className="settings-field">
-        <label htmlFor="pfAllowlist">Only allow these languages</label>
+        <label htmlFor="pfAllowlist">Only these languages</label>
         <LanguageMultiSelect id="pfAllowlist" selected={allowlist} onChange={setAllowlist} />
       </div>
       <div className="settings-field">
-        <label htmlFor="pfRequired">Must include all of these languages</label>
+        <label htmlFor="pfRequired">Must include these languages</label>
         <LanguageMultiSelect id="pfRequired" selected={required} onChange={setRequired} />
-        <div className="settings-hint">For multi-audio releases, e.g. requiring English and Spanish together.</div>
+        <div className="settings-hint">For copies with more than one audio track.</div>
       </div>
       <div className="settings-field">
-        <label htmlFor="pfBlocklist">Never allow these languages</label>
+        <label htmlFor="pfBlocklist">Never these languages</label>
         <LanguageMultiSelect id="pfBlocklist" selected={blocklist} onChange={setBlocklist} />
       </div>
       <button className="settings-btn" disabled={saveState === 'saving'} onClick={save}>

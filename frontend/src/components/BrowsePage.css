@@ -1,0 +1,128 @@
+.browse {
+  padding: 0 var(--row-inset);
+}
+.browse-head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-bottom: 22px;
+}
+.browse-title {
+  font-family: var(--font-display);
+  font-weight: 300;
+  font-size: var(--text-page);
+  letter-spacing: var(--tracking-display);
+  line-height: 0.95;
+  margin: 0;
+}
+.browse-count {
+  color: var(--text-dim);
+  font-weight: 200;
+}
+.browse-sub {
+  margin: 10px 0 0;
+  color: var(--text-dim);
+  font-weight: 600;
+  font-size: 14px;
+}
+.browse-type button {
+  padding: 8px 16px;
+  font-size: 13px;
+}
+.browse-filters {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 14px;
+}
+.browse-filters .seg button {
+  padding: 8px 16px;
+  font-size: 13px;
+}
+/* A native select wearing the reference's glass dropdown pill: the
+   visible label and chevron are drawn by the label, the select sits on
+   top invisibly so the OS picker still opens on tap. */
+.browse-drop {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 38px;
+  padding: 0 12px 0 16px;
+  border-radius: var(--radius-pill);
+  background: var(--glass);
+  border: 1px solid var(--glass-border);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text);
+  cursor: pointer;
+}
+.browse-drop.mute {
+  color: var(--text-dim);
+}
+.browse-drop .icon {
+  font-size: 14px;
+  color: var(--text-dim);
+  transform: rotate(90deg);
+}
+.browse-drop select {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  opacity: 0;
+  cursor: pointer;
+  font-size: 16px;
+}
+.browse-drop:hover {
+  background: var(--glass-strong);
+}
+.browse-genres {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-bottom: 30px;
+}
+.browse-genres button {
+  padding: 7px 14px;
+  border-radius: var(--radius-pill);
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-dim);
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  transition: background 0.15s ease, color 0.15s ease;
+}
+.browse-genres button:hover {
+  color: var(--text);
+  background: var(--glass-strong);
+}
+.browse-genres button.on {
+  color: var(--on-light);
+  background: var(--btn-primary-bg);
+  border-color: transparent;
+}
+/* The grid inside the browse page already sits inside the page inset. */
+.browse .grid {
+  padding-left: 0;
+  padding-right: 0;
+}
+@media (max-width: 639px) {
+  .browse-genres {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    margin: 0 calc(-1 * var(--row-inset) - 14px) 22px;
+    padding: 0 calc(var(--row-inset) + 14px);
+    scrollbar-width: none;
+  }
+  .browse-genres::-webkit-scrollbar {
+    display: none;
+  }
+  .browse-genres button {
+    flex: 0 0 auto;
+  }
+}

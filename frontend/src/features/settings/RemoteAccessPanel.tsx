@@ -49,19 +49,18 @@ function RemoteAccessSettingsSection() {
   return (
     <div className="settings-panel-card" style={{ marginBottom: 16 }}>
       <h2>Remote access</h2>
-      <div className="settings-hint" style={{ marginTop: 0 }}>
-        This app never opens a port on its own — set up a reverse proxy (Traefik, Nginx Proxy Manager, or Cloudflare
-        Tunnel, which needs no inbound port-forward at all) in front of it first. Turning this on only tells the
-        backend that HTTPS is genuinely in place, so it can mark your session cookie <code>Secure</code>.
-      </div>
+      <p className="settings-sub">
+        Turn this on once Meridian is reachable over HTTPS from outside your home, for example through a reverse proxy
+        or a Cloudflare Tunnel. It keeps sign-ins secure.
+      </p>
       <div className="settings-field">
         <label className="settings-checkbox-label">
           <input type="checkbox" checked={enabled} onChange={(e) => setEnabled(e.target.checked)} />
-          Reachable from outside the LAN
+          Meridian is reachable from outside the house
         </label>
       </div>
       <div className="settings-field">
-        <label htmlFor="raPublicDomain">Public domain (optional)</label>
+        <label htmlFor="raPublicDomain">Web address (optional)</label>
         <input
           id="raPublicDomain"
           type="text"
@@ -72,7 +71,7 @@ function RemoteAccessSettingsSection() {
           onChange={(e) => setDomain(e.target.value)}
           placeholder="meridian.example.com"
         />
-        <div className="settings-hint">Just for your own reference here — confirms what you've pointed the proxy at.</div>
+        <div className="settings-hint">A note of where you've pointed it. Nothing else uses this.</div>
       </div>
       <button className="settings-btn" disabled={saveState === 'saving'} onClick={save}>
         {saveState === 'saving' ? 'Saving…' : saveState === 'saved' ? 'Saved' : 'Save'}
@@ -88,7 +87,7 @@ function RevokeSessionsSection() {
   const [result, setResult] = useState<{ ok: boolean; message: string } | null>(null)
 
   async function revoke() {
-    if (!confirm('Sign out every device, including this one? Everyone — you included — will need to sign in again.')) {
+    if (!confirm('Sign out every device, including this one?')) {
       return
     }
     setBusy(true)
@@ -107,10 +106,7 @@ function RevokeSessionsSection() {
   return (
     <div className="settings-panel-card" style={{ marginBottom: 16 }}>
       <h2>Lost a device?</h2>
-      <div className="settings-hint" style={{ marginTop: 0 }}>
-        Immediately signs everyone out, this session included — the fastest way to cut off access from a lost or
-        stolen device without waiting for its session to expire on its own.
-      </div>
+      <p className="settings-sub">Signs everyone out straight away, including you.</p>
       <button className="settings-btn danger" disabled={busy} onClick={revoke}>
         {busy ? 'Signing everyone out…' : 'Sign out every device'}
       </button>
@@ -124,21 +120,21 @@ function eventLabel(eventType: string): string {
     case 'login_success':
       return 'Signed in'
     case 'login_failure':
-      return 'Sign-in refused'
+      return 'Sign-in blocked'
     case 'plex_server_selected':
-      return 'Plex server linked/switched'
+      return 'Plex server changed'
     case 'plex_unlinked':
       return 'Plex disconnected'
     case 'tmdb_key_changed':
-      return 'TMDB key changed'
+      return 'Movie & TV info key changed'
     case 'qbt_connection_changed':
-      return 'qBittorrent connection changed'
+      return 'Download client changed'
     case 'remote_access_toggled':
       return 'Remote access changed'
     case 'sessions_revoked':
-      return 'All sessions revoked'
+      return 'Everyone signed out'
     case 'deploy_triggered':
-      return 'Update deployed'
+      return 'Updated'
     case 'deploy_failed':
       return 'Update failed'
     default:
@@ -157,7 +153,8 @@ function AuditLogSection() {
 
   return (
     <div className="settings-panel-card">
-      <h2>Recent security events</h2>
+      <h2>Sign-in history</h2>
+      <p className="settings-sub">Recent sign-ins and changes to access.</p>
       {data.events.length === 0 ? (
         <EmptyState message="Nothing logged yet." />
       ) : (

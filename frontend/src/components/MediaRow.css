@@ -23,28 +23,43 @@ section.row .row-title {
   letter-spacing: var(--tracking-title);
   margin: 0 0 14px var(--row-inset);
 }
-section.row .row-title-arrow {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 28px;
-  height: 28px;
-  border-radius: 50%;
-  background: var(--glass);
-  border: 1px solid var(--glass-border-soft);
-  font-family: var(--font-body);
-  font-size: 15px;
-  line-height: 1;
-  font-weight: 700;
-  color: var(--text-dim);
-  transition: background 0.15s ease, color 0.15s ease;
-}
-section.row .row-title:hover .row-title-arrow {
-  background: var(--btn-primary-bg);
-  color: var(--on-light);
+section.row .row-title:hover {
+  color: var(--text);
+  opacity: 0.85;
 }
 section.row .row-title:active {
   opacity: 0.7;
+}
+/* "See all" with a small glass circle, at the row head's right edge. */
+section.row .row-more {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-dim);
+  margin-right: 14px;
+  white-space: nowrap;
+}
+section.row .row-more-circ {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: var(--glass);
+  border: 1px solid var(--glass-border-soft);
+  color: var(--text);
+  font-size: 15px;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+section.row .row-more:hover {
+  color: var(--text);
+}
+section.row .row-more:hover .row-more-circ {
+  background: var(--btn-primary-bg);
+  color: var(--on-light);
 }
 /* Header with controls on the right (Top 10's Movies/TV toggle). The
    heading keeps its own left inset; the right side mirrors it against
@@ -63,7 +78,7 @@ section.row .row-head .row-title {
 section.row .row-head-right {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 14px;
   margin-bottom: 14px;
 }
 /* Segmented glass toggle, shared by any row header that offers a
@@ -100,7 +115,13 @@ section.row .row-head-right {
   display: flex;
   gap: 14px;
   overflow-x: auto;
-  padding: 8px 0 18px var(--row-inset);
+  /* overflow-x: auto alone would make the track scroll vertically too
+     (a lifted poster or a numeral's glyph overflowing the box turned a
+     wheel over the row into the row itself creeping up and down).
+     Vertical overflow is clipped instead, with enough padding above and
+     below for the hover lift and the card shadow. */
+  overflow-y: hidden;
+  padding: 14px 0 26px var(--row-inset);
   margin-right: -14px;
   scroll-snap-type: x proximity;
   -webkit-overflow-scrolling: touch;

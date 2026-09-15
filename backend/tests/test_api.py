@@ -131,6 +131,12 @@ class FakeTMDBClient:
     def get_coming_soon(self, region="US", page=1):
         return {"results": [MOVIE], "page": page, "total_pages": 3}
 
+    def browse_movies(self, **filters):
+        return {"results": [MOVIE], "page": filters.get("page", 1), "total_pages": 10, "filters": filters}
+
+    def browse_tv(self, **filters):
+        return {"results": [SHOW], "page": filters.get("page", 1), "total_pages": 10, "filters": filters}
+
     # -- Stage 12: show subscriptions --
 
     def get_tv(self, tmdb_id):
@@ -2628,3 +2634,31 @@ def test_plex_on_deck_and_image_unlinked(client_and_deps):
     assert client.get("/api/plex/on-deck").json() == {"available": False, "items": []}
     assert client.get("/api/plex/image", params={"path": "/library/metadata/1/art/2"}).status_code == 404
     assert client.get("/api/plex/image", params={"path": "/etc/passwd"}).status_code == 400
+
+
+def test_discover_browse_passes_every_filter_through(client_and_deps):
+    client, _, _, _, _, _ = client_and_deps
+    response = client.get("/api/discover", params={"genre": 28, "provider": 8, "year": 2024, "sort": "rated", "page": 3})
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["results"] == [dict(MOVIE, on_plex=False)]
+    assert body["filters"] == {"genre_id": 28, "provider_id": 8, "year": 2024, "sort": "rated", "region": "US", "page": 3}
+
+
+def test_discover_browse_rejects_unknown_sort(client_and_deps):
+    client, _, _, _, _, _ = client_and_deps
+    response = client.get("/api/discover", params={"sort": "bogus"})
+
+    assert response.status_code == 400
+
+
+def test_tv_discover_browse_is_not_shadowed_by_the_detail_route(client_and_deps):
+    client, _, _, _, _, _ = client_and_deps
+    response = client.get("/api/tv/discover", params={"genre": 18, "sort": "newest"})
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["results"] == [dict(SHOW, on_plex=False)]
+    assert body["filters"]["genre_id"] == 18
+    assert body["filters"]["sort"] == "newest"

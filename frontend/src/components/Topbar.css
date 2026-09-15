@@ -37,40 +37,6 @@ body.search-open #topbar::before {
   opacity: 0;
 }
 
-#searchToggleBtn,
-#accountToggle,
-#settingsToggle {
-  flex: 0 0 auto;
-  background: var(--glass);
-  border: none;
-  color: var(--text);
-  font-size: 19px;
-  width: 38px;
-  height: 38px;
-  border-radius: 50%;
-  line-height: 1;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-#searchToggleBtn:active,
-#accountToggle:active,
-#settingsToggle:active {
-  background: var(--glass-strong);
-}
-#searchToggleBtn:hover,
-#accountToggle:hover,
-#settingsToggle:hover,
-body.search-open #searchToggleBtn,
-#accountToggle.active,
-#settingsToggle.active {
-  background: var(--btn-primary-bg);
-  color: var(--on-light);
-}
-#searchToggleBtn {
-  margin-left: auto;
-}
-
 #topbarLogo {
   flex: 0 0 auto;
   display: flex;
@@ -96,10 +62,79 @@ body.search-open #searchToggleBtn,
   box-shadow: 0 6px 18px rgba(80, 120, 255, 0.35);
 }
 
+/* Right-hand cluster: search, settings (admins), account. */
+.top-nav-right {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+#searchToggleBtn,
+#accountToggle,
+#settingsToggle {
+  flex: 0 0 auto;
+  background: var(--glass);
+  border: none;
+  color: var(--text);
+  font-size: 18px;
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 0;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+#searchToggleBtn:active,
+#accountToggle:active,
+#settingsToggle:active {
+  background: var(--glass-strong);
+}
+#searchToggleBtn:hover,
+#settingsToggle:hover,
+body.search-open #searchToggleBtn,
+#settingsToggle.active {
+  background: var(--btn-primary-bg);
+  color: var(--on-light);
+}
+/* The search field's label and shortcut only appear once the pill is
+   wide enough for a real field (desktop). */
+.top-search-label,
+.top-search-kbd {
+  display: none;
+}
+/* Avatar: the account button shows the signed-in user's initials on the
+   reference's warm gradient; the user icon is the fallback when there is
+   no username to draw from. */
+#accountToggle.has-initials {
+  background: linear-gradient(135deg, #ffb88c, #ea6a8b);
+  color: var(--on-light);
+  font-family: var(--font-body);
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+}
+#accountToggle:not(.has-initials):hover,
+#accountToggle:not(.has-initials).active {
+  background: var(--btn-primary-bg);
+  color: var(--on-light);
+}
+#accountToggle.has-initials.active,
+#accountToggle.has-initials:hover {
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.85);
+}
+
 .top-nav-links {
   display: none;
 }
 .top-nav-link {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
   padding: 9px 18px;
   border-radius: var(--radius-pill);
   font-size: 14px;
@@ -117,6 +152,21 @@ body.search-open #searchToggleBtn,
   background: rgba(255, 255, 255, 0.13);
   box-shadow: var(--glass-highlight);
 }
+/* Live count of in-flight requests next to the Requests link. */
+.top-nav-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 6px;
+  border-radius: var(--radius-pill);
+  background: var(--accent);
+  color: var(--accent-text);
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 1;
+}
 
 @media (min-width: 860px) {
   #topbar {
@@ -128,9 +178,8 @@ body.search-open #searchToggleBtn,
     left: var(--nav-side);
     right: var(--nav-side);
   }
-  /* Segmented pill of links, centred between the wordmark and the icon
-     cluster (auto margins on both it and the search button split the
-     free space). */
+  /* Segmented pill of links, centred between the wordmark and the
+     right-hand cluster (auto margins on both split the free space). */
   .top-nav-links {
     display: flex;
     align-items: center;
@@ -141,10 +190,56 @@ body.search-open #searchToggleBtn,
     border-radius: var(--radius-pill);
     background: rgba(255, 255, 255, 0.04);
   }
-  #searchToggleBtn,
+  .top-nav-right {
+    margin-left: 0;
+  }
   #accountToggle,
   #settingsToggle {
     width: 40px;
     height: 40px;
+  }
+  /* The search field: a 230px glass pill with the shortcut hint at its
+     right edge (the reference's "Search ⌘K"). */
+  #searchToggleBtn {
+    width: 230px;
+    height: 40px;
+    border-radius: var(--radius-pill);
+    justify-content: flex-start;
+    padding: 0 10px 0 16px;
+    color: var(--text-dim);
+    font-family: var(--font-body);
+    font-size: 14px;
+    font-weight: 600;
+  }
+  #searchToggleBtn .icon {
+    color: var(--text);
+  }
+  #searchToggleBtn:hover,
+  body.search-open #searchToggleBtn {
+    background: var(--glass-strong);
+    color: var(--text);
+  }
+  .top-search-label {
+    display: inline;
+  }
+  .top-search-kbd {
+    display: inline-block;
+    margin-left: auto;
+    font: 600 11px var(--font-body);
+    padding: 3px 7px;
+    border-radius: 6px;
+    background: rgba(255, 255, 255, 0.08);
+    color: var(--text-dim);
+  }
+}
+/* Between the phone layout and the full desktop pill, the field is a
+   shorter pill with just the label. */
+@media (min-width: 860px) and (max-width: 1099px) {
+  #searchToggleBtn {
+    width: auto;
+    padding-right: 16px;
+  }
+  .top-search-kbd {
+    display: none;
   }
 }

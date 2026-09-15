@@ -9,12 +9,13 @@ import ErrorState from '../../components/ErrorState'
 import { usePageTitle, useSetHasHero } from '../../lib/chrome'
 import { ROW_PROVIDERS } from '../../lib/providers'
 import { tagMediaType } from '../../lib/homeHero'
+import { browseHref } from '../../api/browse'
 
 const HERO_SLIDE_COUNT = 5
 
 // Curated, row-based — no Popular/Trending/Coming Soon tabs; each row's
 // title is the way to reach that one category's own full list
-// (CategoryPage), Prime-Video-style. The hero carousel is the same
+// (the browse page), Prime-Video-style. The hero carousel is the same
 // HeroCarousel Home uses, movie-only here (see HomePage.tsx) — one
 // component, not duplicated three times piecemeal.
 const MOVIE_GENRES = [
@@ -58,21 +59,21 @@ export default function MoviesLandingPage() {
   return (
     <>
       <HeroCarousel items={heroItems} />
-      <MediaRow title="Trending Movies" items={trending.data?.results ?? []} mediaType="movie" expandHref="/movies/trending" />
-      <MediaRow title="Popular" items={popular.data?.results ?? []} mediaType="movie" expandHref="/movies/popular" />
-      <MediaRow title="New Releases" items={comingSoon.data?.results ?? []} mediaType="movie" expandHref="/movies/coming-soon" />
+      <MediaRow title="Trending Movies" items={trending.data?.results ?? []} mediaType="movie" expandHref={browseHref({ type: 'movie', sort: 'trending' })} />
+      <MediaRow title="Popular" items={popular.data?.results ?? []} mediaType="movie" expandHref={browseHref({ type: 'movie' })} />
+      <MediaRow title="New Releases" items={comingSoon.data?.results ?? []} mediaType="movie" expandHref={browseHref({ type: 'movie', list: 'coming-soon' })} />
       {MOVIE_GENRES.map((g, i) => (
         <MediaRow
           key={g.id}
           title={g.label}
           items={genreResults[i].data?.results ?? []}
           mediaType="movie"
-          expandHref={`/movies/genre/${g.id}/${encodeURIComponent(g.label)}`}
+          expandHref={browseHref({ type: 'movie', genre: g.id })}
         />
       ))}
       <section className="row">
         <h2>Browse a Service</h2>
-        <ProviderChips hrefPrefix="/movies/provider" />
+        <ProviderChips type="movie" />
       </section>
       {ROW_PROVIDERS.map((p, i) => (
         <MediaRow
@@ -80,7 +81,7 @@ export default function MoviesLandingPage() {
           title={`Popular on ${p.name}`}
           items={providerResults[i].data?.results ?? []}
           mediaType="movie"
-          expandHref={`/movies/provider/${p.id}/${encodeURIComponent(p.name)}`}
+          expandHref={browseHref({ type: 'movie', provider: p.id })}
         />
       ))}
     </>
