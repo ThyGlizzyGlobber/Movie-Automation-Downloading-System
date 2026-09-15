@@ -1,10 +1,12 @@
 import { useEffect, useState } from 'react'
 import { Outlet } from 'react-router-dom'
 import { ChromeProvider } from '../lib/chrome'
+import { ToastProvider } from '../lib/toast'
 import Topbar from './Topbar'
 import Tabbar from './Tabbar'
 import StorageIndicator from './StorageIndicator'
 import SearchOverlay from './SearchOverlay'
+import ToastStack from './ToastStack'
 import TutorialOverlay from '../features/onboarding/TutorialOverlay'
 
 export default function AppShell() {
@@ -37,14 +39,17 @@ export default function AppShell() {
 
   return (
     <ChromeProvider>
-      <Topbar onOpenSearch={() => setSearchOpen(true)} />
-      <SearchOverlay isOpen={searchOpen} onClose={() => setSearchOpen(false)} />
-      <main>
-        <Outlet />
-      </main>
-      <Tabbar />
-      <StorageIndicator />
-      <TutorialOverlay />
+      <ToastProvider>
+        <Topbar onOpenSearch={() => setSearchOpen(true)} />
+        <SearchOverlay isOpen={searchOpen} onClose={() => setSearchOpen(false)} />
+        <main>
+          <Outlet />
+        </main>
+        <Tabbar />
+        <StorageIndicator />
+        <TutorialOverlay />
+        <ToastStack />
+      </ToastProvider>
     </ChromeProvider>
   )
 }

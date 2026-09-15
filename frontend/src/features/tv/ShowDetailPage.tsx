@@ -14,6 +14,7 @@ import LoadingState from '../../components/LoadingState'
 import ErrorState from '../../components/ErrorState'
 import { DetailOverviewPanel, CreatorsAndCastPanel, DetailsCardPanel, CastLine, DetailProviderIcon } from '../detail/DetailPanels'
 import { usePageTitle, useSetHasHero } from '../../lib/chrome'
+import { errorText, useToast } from '../../lib/toast'
 import { posterUrl, backdropUrl } from '../../lib/tmdbImage'
 import AmbientGlow from '../../components/AmbientGlow'
 import { genreLine, languageNameOf, tvCertificationOf, yearOf } from '../../lib/detailHelpers'
@@ -54,6 +55,7 @@ export default function ShowDetailPage() {
   const [bulkBusyKey, setBulkBusyKey] = useState<string | null>(null)
   const [pendingBulk, setPendingBulk] = useState<PendingBulk | null>(null)
   const [modalOpen, setModalOpen] = useState(false)
+  const { toast } = useToast()
 
   if (showQuery.isLoading) return <LoadingState />
   if (showQuery.isError || !show) {
@@ -65,8 +67,9 @@ export default function ShowDetailPage() {
     try {
       const sub = await createShow(tmdbId)
       setSubscription(sub)
+      toast({ tone: 'ok', title: `Following ${show!.name || show!.original_name || 'this show'}`, body: 'New episodes are picked up on their own.' })
     } catch (err) {
-      alert(`Couldn't add this show: ${err instanceof Error ? err.message : 'Unknown error'}`)
+      toast({ tone: 'error', title: "Couldn't add this show", body: errorText(err) })
     } finally {
       setSubscribeBusy(false)
     }
@@ -84,7 +87,7 @@ export default function ShowDetailPage() {
 
   async function handleUnsubscribe() {
     if (!subscription) return
-    if (!confirm("Unsubscribe from this show? Its download history stays in Requests.")) return
+    if (!confirm('Stop following this show? Its downloads stay in Requests.')) return
     await deleteShow(subscription.id)
     setSubscription(null)
   }
@@ -109,6 +112,11 @@ export default function ShowDetailPage() {
       })
       setBulkPhase('done')
       setBulkResult(req)
+      toast({
+        tone: 'info',
+        title: `Requested ${show!.name || show!.original_name || 'this show'}`,
+        body: `${scope === 'series' ? 'Whole series' : `Season ${seasonNumber}`} · looking for a copy now`,
+      })
       // The backend may have just silently created a paused show record
       // to anchor this download (no prior subscription) — re-check so
       // the hero's own subscribe state stops showing stale info.

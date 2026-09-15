@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useInfiniteQuery } from '@tanstack/react-query'
 import PosterCard from './PosterCard'
 import LoadingState from './LoadingState'
@@ -41,10 +41,29 @@ export default function InfiniteGrid({
     getNextPageParam: (lastPage) => (lastPage.page < lastPage.total_pages ? lastPage.page + 1 : undefined),
   })
 
+  // With a client-side filter a page can come back with nothing to show;
+  // after a handful of such pages in a row the auto-loading stops and a
+  // "Keep looking" button takes over, so a sparse filter never fetches
+  // the whole catalogue on its own.
+  const MAX_EMPTY_PAGES = 5
+  const pages = query.data?.pages ?? []
+  const seenAll = new Set<number>()
+  const visibleAll = pages.map((p) =>
+    p.results.filter((item) => {
+      if (seenAll.has(item.id)) return false
+      seenAll.add(item.id)
+      return filterItem ? filterItem(item) : true
+    }).length,
+  )
+  let emptyStreak = 0
+  for (let i = visibleAll.length - 1; i >= 0 && visibleAll[i] === 0; i--) emptyStreak++
+  const [manualPages, setManualPages] = useState(0)
+  const autoPaused = !!filterItem && emptyStreak >= MAX_EMPTY_PAGES + manualPages * MAX_EMPTY_PAGES
+
   const sentinelRef = useRef<HTMLDivElement>(null)
   useEffect(() => {
     const el = sentinelRef.current
-    if (!el || !query.hasNextPage) return
+    if (!el || !query.hasNextPage || autoPaused) return
     const observer = new IntersectionObserver(
       (entries) => {
         if (entries.some((e) => e.isIntersecting) && !query.isFetchingNextPage) {
@@ -56,7 +75,7 @@ export default function InfiniteGrid({
     observer.observe(el)
     return () => observer.disconnect()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [query.hasNextPage, query.isFetchingNextPage])
+  }, [query.hasNextPage, query.isFetchingNextPage, autoPaused])
 
   const total = query.data?.pages[0]?.total_results
   useEffect(() => {
@@ -79,7 +98,20 @@ export default function InfiniteGrid({
     seen.add(item.id)
     return filterItem ? filterItem(item) : true
   })
-  if (!items.length && !query.hasNextPage) return <EmptyState message={emptyMessage} />
+  if (!items.length && (!query.hasNextPage || autoPaused)) {
+    return (
+      <EmptyState
+        message={autoPaused ? `${emptyMessage} Checked the first ${pages.length * 20} titles.` : emptyMessage}
+        action={
+          autoPaused && query.hasNextPage ? (
+            <button className="retry" disabled={query.isFetchingNextPage} onClick={() => setManualPages((n) => n + 1)}>
+              {query.isFetchingNextPage ? 'Looking…' : 'Keep looking'}
+            </button>
+          ) : undefined
+        }
+      />
+    )
+  }
 
   return (
     <>
@@ -90,6 +122,11 @@ export default function InfiniteGrid({
       </div>
       <div className="grid-sentinel" ref={sentinelRef}>
         {query.isFetchingNextPage && <div className="spinner" />}
+        {autoPaused && query.hasNextPage && !query.isFetchingNextPage && (
+          <button className="retry" onClick={() => setManualPages((n) => n + 1)}>
+            Keep looking
+          </button>
+        )}
       </div>
     </>
   )

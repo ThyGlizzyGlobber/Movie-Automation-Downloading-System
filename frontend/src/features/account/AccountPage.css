@@ -1,57 +1,85 @@
 .account-page {
   display: flex;
   justify-content: center;
-  padding-top: 40px;
+  padding-top: 24px;
 }
+/* A glass card like the reference's empty states and settings cards. */
 .account-card {
   width: 100%;
-  max-width: 340px;
+  max-width: 380px;
   text-align: center;
   display: flex;
   flex-direction: column;
   align-items: center;
+  padding: 36px 28px 28px;
+  border-radius: 28px;
+  background: var(--glass);
+  border: 1px solid var(--glass-border);
+  box-shadow: var(--glass-highlight);
 }
 .account-avatar {
-  font-size: 64px;
+  font-size: 40px;
   color: var(--text-dim);
+  width: 72px;
+  height: 72px;
+  padding: 16px;
+  border-radius: 50%;
+  background: var(--glass);
+}
+.account-avatar-initials {
+  width: 72px;
+  height: 72px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #ffb88c, #ea6a8b);
+  color: var(--on-light);
+  display: grid;
+  place-items: center;
+  font-size: 22px;
+  font-weight: 800;
+  letter-spacing: 0.02em;
 }
 .account-username {
   font-family: var(--font-display);
-  font-size: 22px;
-  margin: 8px 0 2px;
+  font-weight: 300;
+  font-size: 30px;
+  letter-spacing: -0.03em;
+  margin: 16px 0 2px;
 }
 .account-role {
-  color: var(--accent);
-  font-size: 13px;
-  font-weight: 700;
+  color: var(--text-dim);
+  font-size: 11px;
+  font-weight: 800;
   text-transform: uppercase;
-  letter-spacing: 0.04em;
-  margin: 0 0 24px;
+  letter-spacing: 0.08em;
+  margin: 0 0 20px;
 }
 .account-actions {
   width: 100%;
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  margin-top: 12px;
+  gap: 8px;
+  margin-top: 8px;
 }
 .account-button {
   width: 100%;
-  padding: 12px 20px;
-  border-radius: 10px;
-  font-size: 15px;
-  font-weight: 600;
+  height: 46px;
+  border-radius: var(--radius-pill);
+  font-size: 14px;
+  font-weight: 700;
   cursor: pointer;
+  border: none;
 }
 .account-button.secondary {
-  background: var(--bg-card);
-  border: 1px solid var(--border);
+  background: var(--glass);
+  border: 1px solid var(--glass-border);
   color: var(--text);
 }
+.account-button.secondary:hover {
+  background: var(--glass-strong);
+}
 .account-button.danger {
-  background: none;
-  border: 1px solid var(--status-nospace);
-  color: var(--status-nospace);
+  background: color-mix(in srgb, var(--status-failed) 12%, transparent);
+  color: var(--status-failed);
 }
 .account-button:disabled {
   opacity: 0.6;

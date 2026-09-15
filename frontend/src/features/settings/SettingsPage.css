@@ -165,9 +165,20 @@
   border: 1px solid var(--border);
 }
 .settings-btn.danger {
+  background: color-mix(in srgb, var(--status-failed) 12%, transparent);
+  color: var(--status-failed);
+}
+.settings-btn.ghost {
   background: transparent;
-  color: var(--status-nospace);
-  border: 1px solid var(--status-nospace);
+  color: var(--text-dim);
+}
+.settings-btn.ghost:hover {
+  color: var(--text);
+}
+.settings-btn.sm {
+  padding: 0 16px;
+  height: 38px;
+  font-size: 13px;
 }
 .settings-btn-row {
   display: flex;
@@ -482,4 +493,71 @@
   color: var(--text-dim);
   font-weight: 600;
   font-size: 13px;
+}
+
+/* Card heading status ("Connected" with a glowing dot) and the Plex
+   server row: gradient mark, server name and account, actions at the
+   right. */
+.settings-panel-card h2 {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.settings-live {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-family: var(--font-body);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0;
+  color: var(--status-complete);
+}
+.settings-live b {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--status-complete);
+  box-shadow: 0 0 10px var(--status-complete);
+}
+.settings-plex {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  flex-wrap: wrap;
+}
+.settings-plex-mark {
+  width: 48px;
+  height: 48px;
+  border-radius: 14px;
+  background: linear-gradient(135deg, #7f8bff, #3fd6c8);
+  color: var(--on-light);
+  display: grid;
+  place-items: center;
+  font-size: 24px;
+  box-shadow: 0 6px 18px rgba(80, 120, 255, 0.35);
+  flex: 0 0 auto;
+}
+.settings-plex-text {
+  min-width: 0;
+  flex: 1 1 160px;
+}
+.settings-plex-text b {
+  display: block;
+  font-family: var(--font-display);
+  font-weight: 400;
+  font-size: 19px;
+  letter-spacing: var(--tracking-title);
+}
+.settings-plex-text small {
+  display: block;
+  color: var(--text-dim);
+  font-size: 12px;
+  font-weight: 600;
+  margin-top: 2px;
+}
+.settings-plex .settings-btn-row {
+  margin-left: auto;
+  margin-top: 0;
 }

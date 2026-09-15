@@ -7,23 +7,15 @@ import ErrorState from '../../components/ErrorState'
 import EmptyState from '../../components/EmptyState'
 import { usePageTitle, useSetHasHero } from '../../lib/chrome'
 import { posterUrl } from '../../lib/tmdbImage'
+import { relativeTime } from '../../lib/format'
+import { errorText, useToast } from '../../lib/toast'
 import { latestRequestLabel } from '../../lib/requestGrouping'
 import { statusMeta } from '../../lib/status'
 import type { ShowOut } from '../../types/shows'
 import type { RequestOut } from '../../types/requests'
 import '../requests/RequestsPage.css'
+import '../../components/BrowsePage.css'
 import './WatchingPage.css'
-
-function relativeTime(iso: string | null): string {
-  if (!iso) return 'never'
-  const diffMs = Date.now() - new Date(iso).getTime()
-  const mins = Math.round(diffMs / 60000)
-  if (mins < 1) return 'just now'
-  if (mins < 60) return `${mins}m ago`
-  const hours = Math.round(mins / 60)
-  if (hours < 24) return `${hours}h ago`
-  return `${Math.round(hours / 24)}d ago`
-}
 
 function SubscriptionStatusPill({ status }: { status: 'watching' | 'paused' }) {
   const cls = status === 'paused' ? 'status-queued' : 'status-complete'
@@ -59,6 +51,7 @@ function LatestRequestPill({ req }: { req: RequestOut | null }) {
 
 function WatchingRow({ show, onChanged }: { show: ShowOut; onChanged: () => void }) {
   const [busy, setBusy] = useState(false)
+  const { toast } = useToast()
   const req = show.latest_request
 
   async function handleToggle() {
@@ -68,7 +61,7 @@ function WatchingRow({ show, onChanged }: { show: ShowOut; onChanged: () => void
       else await pauseShow(show.id)
       onChanged()
     } catch (err) {
-      alert(`Couldn't update this show: ${err instanceof Error ? err.message : 'Unknown error'}`)
+      toast({ tone: 'error', title: "Couldn't update this show", body: errorText(err) })
     } finally {
       setBusy(false)
     }
@@ -81,7 +74,7 @@ function WatchingRow({ show, onChanged }: { show: ShowOut; onChanged: () => void
       await deleteShow(show.id)
       onChanged()
     } catch (err) {
-      alert(`Couldn't stop following: ${err instanceof Error ? err.message : 'Unknown error'}`)
+      toast({ tone: 'error', title: "Couldn't stop following", body: errorText(err) })
       setBusy(false)
     }
   }
@@ -113,7 +106,7 @@ function WatchingRow({ show, onChanged }: { show: ShowOut; onChanged: () => void
 }
 
 export default function WatchingPage() {
-  usePageTitle('Watching')
+  usePageTitle('Following')
   useSetHasHero(false)
   const queryClient = useQueryClient()
   const showsQuery = useQuery({ queryKey: ['shows'], queryFn: () => listShows() })
@@ -133,10 +126,20 @@ export default function WatchingPage() {
   }
 
   return (
-    <div id="watchingList">
-      {shows.map((s) => (
-        <WatchingRow key={s.id} show={s} onChanged={onChanged} />
-      ))}
+    <div className="watching">
+      <div className="browse-head">
+        <div>
+          <h1 className="browse-title">Following</h1>
+          <p className="browse-sub">
+            {shows.length} show{shows.length === 1 ? '' : 's'} · new episodes are picked up on their own
+          </p>
+        </div>
+      </div>
+      <div id="watchingList">
+        {shows.map((s) => (
+          <WatchingRow key={s.id} show={s} onChanged={onChanged} />
+        ))}
+      </div>
     </div>
   )
 }

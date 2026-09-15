@@ -18,6 +18,7 @@ import { posterUrl, backdropUrl } from '../../lib/tmdbImage'
 import AmbientGlow from '../../components/AmbientGlow'
 import { certificationOf, genreLine, languageNameOf, yearOf, statusFollowupText } from '../../lib/detailHelpers'
 import { NON_TERMINAL } from '../../lib/status'
+import { useToast } from '../../lib/toast'
 import type { RedownloadMode, RequestOut } from '../../types/requests'
 import '../detail/DetailPage.css'
 import Icon from '../../components/Icon'
@@ -57,6 +58,8 @@ export default function MovieDetailPage() {
     refetchInterval: (q) => (q.state.data && NON_TERMINAL.has(q.state.data.status) ? 4000 : false),
   })
 
+  const { toast } = useToast()
+
   if (movieQuery.isLoading) return <LoadingState />
   if (movieQuery.isError || !movie) {
     return <ErrorState message={movieQuery.error instanceof Error ? movieQuery.error.message : undefined} />
@@ -74,6 +77,7 @@ export default function MovieDetailPage() {
       })
       setAddPhase('added')
       setAddRequestId(req.id)
+      toast({ tone: 'info', title: `Requested ${movie!.title || movie!.original_title || 'this movie'}`, body: 'Looking for a copy now' })
     } catch (err) {
       setAddPhase('error')
       setAddError(err instanceof Error ? err.message : 'Unknown error')
@@ -91,6 +95,7 @@ export default function MovieDetailPage() {
       })
       setQualityPhase('added')
       setQualityRequestId(req.id)
+      toast({ tone: 'info', title: `Requested ${movie!.title || movie!.original_title || 'this movie'}`, body: `${minResolution === '2160p' ? '4K' : '1080p'} · looking for a copy now` })
     } catch (err) {
       setQualityPhase('error')
       setQualityError(err instanceof Error ? err.message : 'Unknown error')

@@ -8,6 +8,7 @@ section.row h2 {
   color: var(--text);
   letter-spacing: var(--tracking-title);
   margin: 0 0 14px var(--row-inset);
+  white-space: nowrap;
 }
 /* A row whose title expands to a dedicated full-list page — accent-
    colored with a trailing chevron so it reads as tappable, not just a
@@ -16,6 +17,8 @@ section.row .row-title {
   display: inline-flex;
   align-items: center;
   gap: 10px;
+  white-space: nowrap;
+  min-width: 0;
   font-family: var(--font-display);
   font-size: var(--text-section);
   font-weight: 400;
@@ -73,6 +76,15 @@ section.row .row-head {
 }
 section.row .row-head h2,
 section.row .row-head .row-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+section.row .row-head-right {
+  flex: 0 0 auto;
+}
+section.row .row-head h2,
+section.row .row-head .row-title {
   margin-bottom: 14px;
 }
 section.row .row-head-right {
@@ -92,6 +104,7 @@ section.row .row-head-right {
   border: 1px solid var(--glass-border-soft);
 }
 .seg button {
+  white-space: nowrap;
   padding: 6px 12px;
   border: none;
   border-radius: var(--radius-pill);
@@ -178,5 +191,17 @@ section.row .row-head-right {
   .hscroll-wrap.at-start:hover .hscroll-arrow-left {
     opacity: 0;
     pointer-events: none;
+  }
+}
+
+/* Phones: the row head keeps the title on one line; "See all" drops its
+   label and keeps the circle. */
+@media (max-width: 639px) {
+  section.row .row-more {
+    font-size: 0;
+    gap: 0;
+  }
+  section.row .row-head-right {
+    gap: 10px;
   }
 }

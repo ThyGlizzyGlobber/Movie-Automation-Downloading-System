@@ -1,0 +1,107 @@
+.toast-stack {
+  position: fixed;
+  right: var(--edge-inset);
+  bottom: calc(98px + var(--safe-bottom));
+  z-index: 30;
+  display: grid;
+  gap: 10px;
+  width: min(420px, calc(100vw - 28px));
+}
+@media (min-width: 860px) {
+  .toast-stack {
+    bottom: 28px;
+  }
+}
+@media (max-width: 639px) {
+  .toast-stack {
+    right: 14px;
+  }
+}
+.toast {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 12px 12px 12px 12px;
+  border-radius: 18px;
+  background: var(--glass-overlay);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  border: 1px solid var(--glass-border);
+  box-shadow: var(--shadow-float), var(--glass-highlight);
+  animation: toast-in 0.25s cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.toast-circ {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: var(--glass);
+  display: grid;
+  place-items: center;
+  font-size: 17px;
+  flex: 0 0 auto;
+}
+.toast.ok .toast-circ {
+  color: var(--status-complete);
+}
+.toast.error .toast-circ {
+  color: var(--status-failed);
+}
+.toast.info .toast-circ {
+  color: var(--meridian-ice);
+}
+.toast-text {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+.toast-text b {
+  display: block;
+  font-size: 14px;
+  font-weight: 700;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.toast-text small {
+  display: block;
+  color: var(--text-dim);
+  font-size: 12px;
+  font-weight: 600;
+  margin-top: 2px;
+}
+.toast-action {
+  flex: 0 0 auto;
+  height: 34px;
+  padding: 0 14px;
+  border-radius: var(--radius-pill);
+  border: none;
+  background: var(--btn-primary-bg);
+  color: var(--btn-primary-text);
+  font-size: 13px;
+  font-weight: 700;
+}
+.toast-close {
+  flex: 0 0 auto;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  border: none;
+  background: none;
+  color: var(--text-dim);
+  font-size: 14px;
+  display: grid;
+  place-items: center;
+}
+.toast-close:hover {
+  background: var(--glass);
+  color: var(--text);
+}

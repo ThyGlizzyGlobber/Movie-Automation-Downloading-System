@@ -5,6 +5,7 @@ import type { PlexServerSummary } from '../../types/auth'
 import LoadingState from '../../components/LoadingState'
 import ErrorState from '../../components/ErrorState'
 import { ApiError } from '../../api/client'
+import Icon from '../../components/Icon'
 
 const POLL_INTERVAL_MS = 2500
 
@@ -45,7 +46,7 @@ export default function PlexServerPanel() {
       setSelected(list.length === 1 ? list[0].machine_identifier : null)
       setPhase('picking-server')
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Couldn't load your servers.')
+      setError(err instanceof ApiError ? err.message : "Couldn't load your servers.")
     } finally {
       setBusy(false)
     }
@@ -61,7 +62,7 @@ export default function PlexServerPanel() {
       refreshStatus()
       setPhase('status')
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Couldn't switch servers.')
+      setError(err instanceof ApiError ? err.message : "Couldn't switch servers.")
       setPhase('picking-server')
     }
   }
@@ -119,24 +120,37 @@ export default function PlexServerPanel() {
 
   return (
     <div className="settings-panel-card">
-      <h2>Plex</h2>
+      <h2>
+        Plex
+        {status.linked && phase === 'status' && (
+          <span className="settings-live">
+            <b />
+            Connected
+          </span>
+        )}
+      </h2>
       <p className="settings-sub">The server Meridian adds to and reads from.</p>
 
       {phase === 'status' && (
         <>
           {status.linked ? (
             <>
-              <div className="plex-connected">
-                Connected as <strong>{status.username || 'your account'}</strong>
-                {status.server_name ? ` · ${status.server_name}` : ''}
-              </div>
-              <div className="settings-btn-row">
-                <button className="settings-btn secondary" disabled={busy} onClick={loadServersForSwitch}>
-                  Switch server
-                </button>
-                <button className="settings-btn danger" disabled={busy} onClick={disconnect}>
-                  Disconnect
-                </button>
+              <div className="settings-plex">
+                <span className="settings-plex-mark">
+                  <Icon name="plex" />
+                </span>
+                <div className="settings-plex-text">
+                  <b>{status.server_name || 'Plex server'}</b>
+                  <small>Signed in as {status.username || 'your account'}</small>
+                </div>
+                <div className="settings-btn-row">
+                  <button className="settings-btn secondary sm" disabled={busy} onClick={loadServersForSwitch}>
+                    Switch server
+                  </button>
+                  <button className="settings-btn ghost sm" disabled={busy} onClick={disconnect}>
+                    Disconnect
+                  </button>
+                </div>
               </div>
             </>
           ) : (

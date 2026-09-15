@@ -1,10 +1,6 @@
-/* Symmetric --row-inset on top of main's own 14px (== --edge-inset on
-   both sides) rather than the asymmetric left-only/reach-the-edge
-   treatment .hscroll/.grid use — this is a plain vertical list, not a
-   horizontally-scrolling row, so there's no "reaches the true edge"
-   affordance to preserve on the right. Lines up with every other page's
-   own spacing. */
-#requestsList {
+/* The .req-* rows below are the Watching page's (features/tv). The
+   Requests page itself uses the .rq-* layout further down. */
+#watchingList {
   padding: 0 var(--row-inset);
   display: grid;
   gap: 10px;
@@ -156,62 +152,6 @@
   opacity: 0.5;
 }
 
-/* Floating above the tab bar, bottom-right — shares the same slot
-   DownloadsFab uses everywhere else, since the two never appear together
-   (DownloadsFab hides itself on this exact route). */
-.clear-requests-fab {
-  position: fixed;
-  right: var(--edge-inset);
-  bottom: calc(98px + var(--safe-bottom));
-  z-index: 9;
-}
-.retention-menu-backdrop {
-  position: fixed;
-  inset: 0;
-  z-index: 8;
-}
-.split-btn {
-  display: flex;
-  align-items: stretch;
-  background: var(--glass-overlay);
-  backdrop-filter: var(--glass-blur);
-  -webkit-backdrop-filter: var(--glass-blur);
-  border: 1px solid var(--glass-border);
-  border-radius: var(--radius-pill);
-  overflow: hidden;
-  box-shadow: var(--shadow-float), var(--glass-highlight);
-}
-.split-btn-main {
-  background: none;
-  border: none;
-  color: var(--status-failed);
-  font-size: 13.5px;
-  font-weight: 700;
-  padding: 10px 16px;
-  white-space: nowrap;
-}
-.split-btn-main[disabled] {
-  opacity: 0.6;
-}
-.split-btn-divider {
-  width: 1px;
-  background: var(--glass-border);
-  margin: 8px 0;
-}
-.split-btn-arrow {
-  background: none;
-  border: none;
-  color: var(--status-failed);
-  font-size: 12px;
-  padding: 10px 14px;
-  display: flex;
-  align-items: center;
-}
-.split-btn-main:active,
-.split-btn-arrow:active {
-  background: color-mix(in srgb, var(--status-failed) 18%, transparent);
-}
-
 .retention-menu {
   position: absolute;
   z-index: 9;
@@ -251,8 +191,368 @@
   font-weight: 700;
 }
 
-@media (min-width: 860px) {
-  .clear-requests-fab {
-    bottom: 28px;
+
+.retention-menu-title {
+  padding: 10px 14px 6px;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+
+/* ---- Requests page (the reference's Requests tab) ---- */
+.rq {
+  padding: 0 var(--row-inset);
+}
+.rq-head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 18px;
+  flex-wrap: wrap;
+  margin-bottom: 26px;
+}
+.rq-h1 {
+  font-family: var(--font-display);
+  font-weight: 300;
+  font-size: var(--text-page);
+  letter-spacing: var(--tracking-display);
+  line-height: 0.95;
+  margin: 0;
+}
+.rq-lead {
+  margin: 10px 0 0;
+  color: var(--text-dim);
+  font-weight: 600;
+  font-size: 14px;
+}
+/* On phones the stat tiles are hidden and their counts join the lead. */
+.rq-lead-m {
+  display: none;
+}
+.rq-stats {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.rq-stat {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 14px 20px;
+  border-radius: 18px;
+  background: var(--glass);
+  border: 1px solid var(--glass-border);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+}
+.rq-stat b {
+  display: block;
+  font-family: var(--font-display);
+  font-size: 28px;
+  font-weight: 400;
+  letter-spacing: -0.03em;
+  line-height: 1;
+}
+.rq-stat small {
+  display: block;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-dim);
+  margin-top: 4px;
+}
+.rq-stat-icon {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  background: var(--glass);
+  display: grid;
+  place-items: center;
+  font-size: 16px;
+}
+.rq-stat-icon.ice {
+  color: var(--meridian-ice);
+}
+.rq-stat-icon.mint {
+  color: var(--meridian-mint);
+}
+.rq-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 18px;
+}
+.rq-toolbar .seg button {
+  padding: 8px 16px;
+  font-size: 13px;
+}
+.rq-clear {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.rq-clear-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 38px;
+  padding: 0 16px;
+  border-radius: var(--radius-pill);
+  background: var(--glass);
+  border: 1px solid var(--glass-border);
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 700;
+}
+.rq-clear-btn:hover {
+  background: var(--glass-strong);
+}
+.rq-clear-btn[disabled] {
+  opacity: 0.6;
+}
+.rq-clear .retention-menu {
+  bottom: auto;
+  top: calc(100% + 8px);
+}
+.rq-list {
+  display: grid;
+  gap: 10px;
+}
+.rq-group {
+  display: grid;
+  gap: 6px;
+}
+.rq-children {
+  display: grid;
+  gap: 6px;
+  padding-left: 24px;
+}
+/* One row: poster · title · state · ring · actions. */
+.rq-row {
+  display: grid;
+  grid-template-columns: 56px minmax(0, 1.5fr) minmax(0, 1.4fr) 200px auto;
+  gap: 28px;
+  align-items: center;
+  padding: 14px 20px 14px 14px;
+  border-radius: var(--radius-lg);
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--glass-border-soft);
+  transition: background 0.15s ease;
+}
+.rq-row:hover {
+  background: rgba(255, 255, 255, 0.065);
+}
+.rq-clickable {
+  cursor: pointer;
+}
+.rq-row.depth-1 {
+  background: rgba(255, 255, 255, 0.03);
+}
+.rq-row.depth-2 {
+  background: rgba(255, 255, 255, 0.02);
+  padding-top: 10px;
+  padding-bottom: 10px;
+}
+.rq-art {
+  width: 56px;
+  height: 84px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.rq-art img {
+  width: 56px;
+  height: 84px;
+  object-fit: cover;
+  border-radius: 11px;
+  background: var(--bg-card);
+  display: block;
+}
+.depth-2 .rq-art {
+  height: 40px;
+}
+.rq-chev {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: var(--glass);
+  display: grid;
+  place-items: center;
+  color: var(--text-dim);
+  font-size: 15px;
+  transition: transform 0.2s ease;
+}
+.rq-chev.on {
+  transform: rotate(90deg);
+}
+.rq-t {
+  min-width: 0;
+}
+.rq-title {
+  display: block;
+  font-family: var(--font-display);
+  font-size: 19px;
+  font-weight: 400;
+  letter-spacing: var(--tracking-title);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.depth-2 .rq-title {
+  font-size: 16px;
+}
+.rq-t small {
+  display: block;
+  color: var(--text-dim);
+  font-size: 12px;
+  font-weight: 600;
+  margin-top: 4px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.rq-pill-m {
+  display: none;
+}
+.rq-state {
+  min-width: 0;
+}
+.rq-detail {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-dim);
+  margin-top: 8px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.rq-prog {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+.rq-k {
+  font-size: 13px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.rq-k small {
+  display: block;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-dim);
+  margin-top: 3px;
+}
+.rq-acts {
+  display: flex;
+  gap: 6px;
+  justify-content: flex-end;
+  min-width: 36px;
+}
+.rq-circ {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  border: none;
+  background: var(--glass);
+  color: var(--text);
+  font-size: 16px;
+  display: grid;
+  place-items: center;
+  transition: background 0.15s ease, color 0.15s ease, transform 0.2s ease;
+}
+.rq-circ:hover {
+  background: var(--btn-primary-bg);
+  color: var(--on-light);
+}
+.rq-circ.on {
+  transform: rotate(90deg);
+}
+.rq-circ.danger {
+  color: var(--status-failed);
+}
+.rq-circ.danger:hover {
+  background: color-mix(in srgb, var(--status-failed) 22%, transparent);
+  color: var(--status-failed);
+}
+.rq-circ[disabled] {
+  opacity: 0.5;
+}
+
+/* Phones: one compact glass row (poster, title and pill, ring); a tap
+   reveals the actions underneath. */
+@media (max-width: 859px) {
+  .rq-head {
+    margin-bottom: 14px;
+  }
+  .rq-stats {
+    display: none;
+  }
+  .rq-lead-m {
+    display: inline;
+  }
+  .rq-toolbar .seg button {
+    padding: 7px 12px;
+    font-size: 12px;
+  }
+  .rq-row {
+    grid-template-columns: 44px minmax(0, 1fr) 44px;
+    gap: 12px;
+    padding: 10px 12px 10px 10px;
+    border-radius: 18px;
+  }
+  .rq-art,
+  .rq-art img {
+    width: 44px;
+    height: 66px;
+  }
+  .rq-art img {
+    border-radius: 9px;
+  }
+  .rq-chev {
+    width: 28px;
+    height: 28px;
+  }
+  .rq-title {
+    font-size: 15px;
+  }
+  .rq-t small {
+    display: none;
+  }
+  .rq-pill-m {
+    display: block;
+    margin-top: 5px;
+  }
+  .rq-pill-m .status-pill {
+    font-size: 10px;
+    padding: 4px 8px 4px 6px;
+  }
+  .rq-state,
+  .rq-k {
+    display: none;
+  }
+  .rq-prog .status-ring,
+  .rq-prog .progress-ring {
+    width: 44px !important;
+    height: 44px !important;
+  }
+  .rq-acts {
+    display: none;
+    grid-column: 1 / -1;
+    justify-content: flex-end;
+  }
+  .rq-open .rq-acts,
+  .rq-clickable .rq-acts {
+    display: flex;
+  }
+  .rq-clickable .rq-acts .rq-circ:not(.danger) {
+    display: none;
+  }
+  .rq-children {
+    padding-left: 12px;
   }
 }

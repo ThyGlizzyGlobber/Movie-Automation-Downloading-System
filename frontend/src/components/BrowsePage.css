@@ -20,6 +20,12 @@
 .browse-count {
   color: var(--text-dim);
   font-weight: 200;
+  white-space: nowrap;
+}
+@media (max-width: 639px) {
+  .browse-count {
+    font-size: 0.55em;
+  }
 }
 .browse-sub {
   margin: 10px 0 0;

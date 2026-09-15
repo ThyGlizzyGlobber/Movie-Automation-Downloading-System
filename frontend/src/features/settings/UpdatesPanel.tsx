@@ -1,18 +1,20 @@
 import { useState } from 'react'
 import { postDeploy } from '../../api/admin'
 import { ApiError } from '../../api/client'
+import { useToast } from '../../lib/toast'
 
 export default function UpdatesPanel() {
   const [deploying, setDeploying] = useState(false)
+  const { toast } = useToast()
 
   async function checkForUpdates() {
     if (!confirm('Install the latest version of Meridian now?')) return
     setDeploying(true)
     try {
       const result = await postDeploy()
-      alert(`Updated. ${result.detail}\nVersion ${result.commit}`)
+      toast({ tone: 'ok', title: 'Updated', body: `${result.detail} · ${result.commit}` })
     } catch (err) {
-      alert(`Update failed. ${err instanceof ApiError ? err.message : 'Something went wrong.'}`)
+      toast({ tone: 'error', title: 'Update failed', body: err instanceof ApiError ? err.message : 'Something went wrong.' })
     } finally {
       setDeploying(false)
     }

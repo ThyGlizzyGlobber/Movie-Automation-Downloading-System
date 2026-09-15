@@ -43,3 +43,10 @@
 .toggle-show-btn[disabled] {
   opacity: 0.5;
 }
+
+.watching {
+  padding: 0 var(--row-inset);
+}
+.watching #watchingList {
+  padding: 0;
+}

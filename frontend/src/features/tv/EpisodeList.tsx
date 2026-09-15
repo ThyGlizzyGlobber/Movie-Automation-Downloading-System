@@ -3,6 +3,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { getSeasonEpisodes, requestEpisode } from '../../api/tv'
 import { stillUrl } from '../../lib/tmdbImage'
 import { statusMeta } from '../../lib/status'
+import { errorText, useToast } from '../../lib/toast'
 import Icon from '../../components/Icon'
 import type { EpisodeStatus } from '../../types/features'
 
@@ -38,6 +39,7 @@ function EpisodePill({ ep }: { ep: EpisodeStatus }) {
 
 function EpisodeAction({ tmdbId, season, ep, onDone }: { tmdbId: number; season: number; ep: EpisodeStatus; onDone: () => void }) {
   const [phase, setPhase] = useState<'idle' | 'busy' | 'error'>('idle')
+  const { toast } = useToast()
   if (ep.state !== 'missing' && ep.state !== 'failed') return null
   async function act() {
     setPhase('busy')
@@ -45,8 +47,10 @@ function EpisodeAction({ tmdbId, season, ep, onDone }: { tmdbId: number; season:
       await requestEpisode(tmdbId, season, ep.episode_number)
       onDone()
       setPhase('idle')
-    } catch {
+      toast({ tone: 'info', title: `Requested S${String(season).padStart(2, '0')}E${String(ep.episode_number).padStart(2, '0')}`, body: ep.name || 'Looking for a copy now' })
+    } catch (err) {
       setPhase('error')
+      toast({ tone: 'error', title: "Couldn't request that episode", body: errorText(err) })
     }
   }
   return (

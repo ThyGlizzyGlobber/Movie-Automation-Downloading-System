@@ -5,6 +5,7 @@ import { createShow, listShows } from '../api/tv'
 import { posterUrl } from '../lib/tmdbImage'
 import { NON_TERMINAL, statusMeta } from '../lib/status'
 import { hitTitle, hitYear, type SearchHit } from '../lib/liveSearch'
+import { errorText, useToast } from '../lib/toast'
 import Icon from './Icon'
 
 // Live results inside the search palette (the reference's search sheet):
@@ -29,6 +30,7 @@ function RowAction({
   subscribed: boolean
   onDone: () => void
 }) {
+  const { toast } = useToast()
   const [phase, setPhase] = useState<ActionPhase>('idle')
 
   if (hit.on_plex) {
@@ -66,8 +68,14 @@ function RowAction({
       else await createRequest({ tmdb_id: hit.id, query: hitTitle(hit) })
       setPhase('done')
       onDone()
-    } catch {
+      toast(
+        hit.mediaType === 'tv'
+          ? { tone: 'ok', title: `Following ${hitTitle(hit)}`, body: 'New episodes are picked up on their own.' }
+          : { tone: 'info', title: `Requested ${hitTitle(hit)}`, body: 'Looking for a copy now' },
+      )
+    } catch (err) {
       setPhase('error')
+      toast({ tone: 'error', title: "Couldn't request that", body: errorText(err) })
     }
   }
 
