@@ -1,0 +1,79 @@
+/* Top 10 row — see design-exploration/obsidian.html, Home tab. The card
+   is a flex pair: numeral on the left, poster overlapping it on the
+   right. Numeral size and overlap scale with --poster-w so the ratio
+   holds from phone to desktop (reference: 236px numeral to a 176px
+   poster, overlapping by ~26px). */
+.top10-card {
+  display: flex;
+  align-items: flex-end;
+  padding-top: 8px;
+}
+.top10-num {
+  font-family: var(--font-display);
+  font-weight: 200;
+  font-size: calc(var(--poster-w) * 1.3);
+  line-height: 0.72;
+  letter-spacing: -0.09em;
+  min-width: calc(var(--poster-w) * 0.55);
+  margin-right: calc(var(--poster-w) * -0.15);
+  position: relative;
+  z-index: 0;
+  user-select: none;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.95) 0%, rgba(255, 255, 255, 0.14) 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  transition: filter 0.25s ease;
+}
+.top10-poster {
+  position: relative;
+  z-index: 1;
+  width: var(--poster-w);
+  flex: 0 0 auto;
+}
+.top10-poster .poster-card {
+  display: block;
+}
+.top10-rank-sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+/* Rank movement since last week's snapshot (lib/topTen.ts). Sits in the
+   poster's top-left; the On Plex chip keeps the top-right. */
+.top10-move {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  z-index: 2;
+  padding: 4px 8px;
+  border-radius: var(--radius-pill);
+  background: rgba(5, 5, 8, 0.6);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  pointer-events: none;
+}
+.top10-move.up {
+  color: var(--meridian-mint);
+}
+.top10-move.down {
+  color: var(--meridian-coral);
+}
+.top10-move.new {
+  color: var(--meridian-ice);
+}
+@media (hover: hover) {
+  .top10-card:hover .top10-num {
+    background: linear-gradient(180deg, #dbe8ff 0%, rgba(156, 192, 255, 0.15) 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    filter: drop-shadow(0 0 18px rgba(156, 192, 255, 0.35));
+  }
+}

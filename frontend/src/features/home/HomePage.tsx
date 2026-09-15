@@ -9,6 +9,7 @@ import {
 import { getTvDiscoverByGenre, getTvDiscoverPopular, getTvDiscoverTrending, listShows } from '../../api/tv'
 import HeroCarousel from '../../components/HeroCarousel'
 import MediaRow from '../../components/MediaRow'
+import TopTenRow from '../../components/TopTenRow'
 import ProviderChips from '../../components/ProviderChips'
 import LoadingState from '../../components/LoadingState'
 import ErrorState from '../../components/ErrorState'
@@ -93,6 +94,8 @@ export default function HomePage() {
   })
 
   const contentRows = [
+    // Top 10 leads, straight under the hero (the reference's order).
+    <TopTenRow key="top10" movies={movieTrending.data?.results ?? []} shows={tvTrending.data?.results ?? []} />,
     <MediaRow key="trending" title="Trending Now" items={mixedTrending} mediaType={(it) => it.mediaType} />,
     <MediaRow key="popular-movies" title="Popular Movies" items={moviePopular.data?.results ?? []} mediaType="movie" expandHref="/movies/popular" />,
     <MediaRow key="popular-tv" title="Popular TV Shows" items={tvPopular.data?.results ?? []} mediaType="tv" expandHref="/tv/popular" />,
