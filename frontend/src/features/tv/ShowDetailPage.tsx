@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react'
 import { useParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { getTvShow, listShows, createShow, pauseShow, resumeShow, deleteShow, bulkDownload } from '../../api/tv'
+import RequestModal from '../../components/RequestModal'
+import EpisodeList from './EpisodeList'
 import StatusPill from '../../components/StatusPill'
 import ScoreRing from '../../components/ScoreRing'
 import ClampedText from '../../components/ClampedText'
@@ -44,7 +46,8 @@ export default function ShowDetailPage() {
     if (showsQuery.data) setSubscription(showsQuery.data.find((s) => s.tmdb_id === tmdbId) ?? null)
   }, [showsQuery.data, tmdbId])
 
-  const [minResolution, setMinResolution] = useState('')
+  const [activeSeason, setActiveSeason] = useState<number | null>(null)
+  const [requestModal, setRequestModal] = useState<PendingBulk | null>(null)
   const [bulkPhase, setBulkPhase] = useState<Phase>('idle')
   const [bulkError, setBulkError] = useState<string | null>(null)
   const [bulkResult, setBulkResult] = useState<RequestOut | null>(null)
@@ -86,14 +89,22 @@ export default function ShowDetailPage() {
     setSubscription(null)
   }
 
-  async function runBulkDownload(scope: 'season' | 'series', seasonNumber: number | null, key: string, redownloadMode?: RedownloadMode) {
+  async function runBulkDownload(
+    scope: 'season' | 'series',
+    seasonNumber: number | null,
+    key: string,
+    redownloadMode?: RedownloadMode,
+    minResolution?: string | null,
+    profileId?: string | null,
+  ) {
     setBulkBusyKey(key)
     setBulkPhase('busy')
     try {
       const req = await bulkDownload(tmdbId, {
         scope,
         season_number: seasonNumber,
-        min_resolution: minResolution || null,
+        min_resolution: minResolution ?? null,
+        profile_id: profileId ?? null,
         redownload_mode: redownloadMode ?? null,
       })
       setBulkPhase('done')
@@ -118,12 +129,17 @@ export default function ShowDetailPage() {
       setModalOpen(true)
       return
     }
-    runBulkDownload(scope, seasonNumber, key)
+    // Not in Plex yet: the request sheet picks the quality profile.
+    setBulkBusyKey(key)
+    setRequestModal({ scope, seasonNumber, label })
   }
 
   const backdrop = backdropUrl(show.backdrop_path)
   const cast = show.credits?.cast
   const seasons = (show.seasons || []).filter((s) => s.season_number > 0)
+  // Most recent real season first; specials only when that's all there is.
+  const currentSeason = activeSeason ?? (seasons.length ? seasons[seasons.length - 1].season_number : null)
+  const currentSeasonLabel = seasons.find((x) => x.season_number === currentSeason)?.name || `Season ${currentSeason}`
   const year = yearOf(show.first_air_date)
   const title = show.name || show.original_name || ''
   const certification = tvCertificationOf(show)
@@ -218,43 +234,41 @@ export default function ShowDetailPage() {
         </div>
         <div className="detail-panels-col">
           <div className="detail-panel">
-            <h2 className="section-heading">Bulk download</h2>
-            <select
-              className="resolution-select"
-              value={minResolution}
-              onChange={(e) => setMinResolution(e.target.value)}
-              aria-label="Minimum resolution"
-            >
-              <option value="">Default quality</option>
-              <option value="2160p">2160p / 4K minimum</option>
-              <option value="1080p">1080p minimum</option>
-            </select>
+            <h2 className="section-heading">Episodes</h2>
             {seasons.length > 0 && (
-              <div className="season-list">
-                {seasons.map((s) => {
-                  const key = `season-${s.season_number}`
-                  return (
-                    <div className="season-row" key={s.id}>
-                      <span>{s.name || `Season ${s.season_number}`}</span>
-                      <button
-                        className="season-btn"
-                        disabled={bulkPhase === 'busy' && bulkBusyKey === key}
-                        onClick={() => handleBulkClick('season', s.season_number, s.name || `Season ${s.season_number}`, key)}
-                      >
-                        {bulkPhase === 'busy' && bulkBusyKey === key ? 'Adding…' : 'Download'}
-                      </button>
-                    </div>
-                  )
-                })}
+              <div className="seg season-picker" role="tablist" aria-label="Season">
+                {seasons.map((s) => (
+                  <button
+                    key={s.id}
+                    role="tab"
+                    aria-selected={s.season_number === currentSeason}
+                    className={s.season_number === currentSeason ? 'active' : ''}
+                    onClick={() => setActiveSeason(s.season_number)}
+                  >
+                    {s.name || `Season ${s.season_number}`}
+                  </button>
+                ))}
               </div>
             )}
-            <button
-              className="bulk-btn primary"
-              disabled={bulkPhase === 'busy' && bulkBusyKey === 'series'}
-              onClick={() => handleBulkClick('series', null, 'Complete Series', 'series')}
-            >
-              {bulkPhase === 'busy' && bulkBusyKey === 'series' ? 'Adding…' : 'Download Complete Series'}
-            </button>
+            {currentSeason != null && <EpisodeList tmdbId={tmdbId} season={currentSeason} />}
+            <div className="bulk-actions">
+              {currentSeason != null && (
+                <button
+                  className="bulk-btn"
+                  disabled={bulkPhase === 'busy' && bulkBusyKey === `season-${currentSeason}`}
+                  onClick={() => handleBulkClick('season', currentSeason, currentSeasonLabel, `season-${currentSeason}`)}
+                >
+                  {bulkPhase === 'busy' && bulkBusyKey === `season-${currentSeason}` ? 'Adding…' : `Download ${currentSeasonLabel}`}
+                </button>
+              )}
+              <button
+                className="bulk-btn primary"
+                disabled={bulkPhase === 'busy' && bulkBusyKey === 'series'}
+                onClick={() => handleBulkClick('series', null, 'Complete Series', 'series')}
+              >
+                {bulkPhase === 'busy' && bulkBusyKey === 'series' ? 'Adding…' : 'Download Complete Series'}
+              </button>
+            </div>
             {(bulkPhase === 'done' || bulkPhase === 'error') && (
               <div className="add-confirm">
                 {bulkPhase === 'error' ? (
@@ -285,6 +299,24 @@ export default function ShowDetailPage() {
         </span>
       </div>
 
+      <RequestModal
+        open={requestModal != null}
+        title={requestModal?.scope === 'series' ? title : `${title} · ${requestModal?.label ?? ''}`}
+        subtitle={requestModal?.scope === 'series' ? 'Complete series' : 'One season'}
+        posterPath={show.poster_path}
+        submitLabel="Download"
+        onClose={() => {
+          setRequestModal(null)
+          setBulkBusyKey(null)
+        }}
+        onSubmit={(profile) => {
+          const pending = requestModal
+          setRequestModal(null)
+          if (!pending) return
+          const key = pending.scope === 'series' ? 'series' : `season-${pending.seasonNumber}`
+          runBulkDownload(pending.scope, pending.seasonNumber, key, undefined, profile.min_resolution, profile.id)
+        }}
+      />
       <RedownloadModal
         open={modalOpen}
         targetLabel={pendingBulk?.label ?? title}

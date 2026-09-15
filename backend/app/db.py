@@ -642,6 +642,18 @@ class RequestStore:
     def count_requests(self) -> int:
         return self._conn.execute("SELECT COUNT(*) FROM requests").fetchone()[0]
 
+    def count_requests_with_status(self, status: str) -> int:
+        return self._conn.execute("SELECT COUNT(*) FROM requests WHERE status = ?", (status,)).fetchone()[0]
+
+    def count_completed_since(self, since_iso: str) -> int:
+        """Requests that reached 'complete' (organized into Plex) at or
+        after `since_iso` — the Settings storage panel's "added today /
+        this week" counters. `updated_at` is the last status transition,
+        which for a complete row is the moment it was filed."""
+        return self._conn.execute(
+            "SELECT COUNT(*) FROM requests WHERE status = 'complete' AND updated_at >= ?", (since_iso,)
+        ).fetchone()[0]
+
     def get_requester_stats(self) -> list[dict]:
         """Per-user aggregate counts for the Activity Dashboard — total
         requests and requests made this calendar month, grouped by

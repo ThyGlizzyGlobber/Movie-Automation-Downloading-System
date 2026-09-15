@@ -9,6 +9,7 @@ import ClampedText from '../../components/ClampedText'
 import CastRow from '../../components/CastRow'
 import MediaRow from '../../components/MediaRow'
 import RedownloadModal from '../../components/RedownloadModal'
+import RequestModal from '../../components/RequestModal'
 import LoadingState from '../../components/LoadingState'
 import ErrorState from '../../components/ErrorState'
 import { DetailOverviewPanel, CreatorsAndCastPanel, DetailsCardPanel, CastLine, DetailProviderIcon } from '../detail/DetailPanels'
@@ -36,6 +37,7 @@ export default function MovieDetailPage() {
   const [addError, setAddError] = useState<string | null>(null)
   const [addRequestId, setAddRequestId] = useState<number | null>(null)
   const [modalOpen, setModalOpen] = useState(false)
+  const [requestOpen, setRequestOpen] = useState(false)
 
   const [qualityPhase, setQualityPhase] = useState<AddPhase>('idle')
   const [qualityError, setQualityError] = useState<string | null>(null)
@@ -60,7 +62,7 @@ export default function MovieDetailPage() {
     return <ErrorState message={movieQuery.error instanceof Error ? movieQuery.error.message : undefined} />
   }
 
-  async function submitAdd(minResolution?: string, redownloadMode?: RedownloadMode) {
+  async function submitAdd(minResolution?: string, redownloadMode?: RedownloadMode, profileId?: string) {
     setAddPhase('adding')
     try {
       const req: RequestOut = await createRequest({
@@ -68,6 +70,7 @@ export default function MovieDetailPage() {
         query: movie!.title || movie!.original_title || null,
         min_resolution: minResolution ?? null,
         redownload_mode: redownloadMode ?? null,
+        profile_id: profileId ?? null,
       })
       setAddPhase('added')
       setAddRequestId(req.id)
@@ -94,12 +97,14 @@ export default function MovieDetailPage() {
     }
   }
 
+  // Already in Plex: the redownload question comes first (existing
+  // modal). Otherwise the request sheet picks a quality profile.
   function handleAddClick() {
     if (movie!.on_plex) {
       setModalOpen(true)
       return
     }
-    submitAdd()
+    setRequestOpen(true)
   }
 
   const runtime = movie.runtime ? `${Math.floor(movie.runtime / 60)}h ${movie.runtime % 60}m` : ''
@@ -236,6 +241,17 @@ export default function MovieDetailPage() {
         </span>
       </div>
 
+      <RequestModal
+        open={requestOpen}
+        title={title}
+        subtitle={[year, 'Movie', 'Not in Plex'].filter(Boolean).join(' · ')}
+        posterPath={movie.poster_path}
+        onClose={() => setRequestOpen(false)}
+        onSubmit={(profile) => {
+          setRequestOpen(false)
+          submitAdd(profile.min_resolution ?? undefined, undefined, profile.id)
+        }}
+      />
       <RedownloadModal
         open={modalOpen}
         targetLabel={title}

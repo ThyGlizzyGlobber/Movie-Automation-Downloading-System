@@ -10,6 +10,8 @@ import PlexServerPanel from './PlexServerPanel'
 import RemoteAccessPanel from './RemoteAccessPanel'
 import ActivityDashboardPanel from './ActivityDashboardPanel'
 import UpdatesPanel from './UpdatesPanel'
+import StoragePanel from './StoragePanel'
+import QualityProfilesPanel from './QualityProfilesPanel'
 import './SettingsPage.css'
 import Icon from '../../components/Icon'
 
@@ -21,6 +23,10 @@ function renderPanel(key: string) {
       return <TvSchedulePanel />
     case 'retention':
       return <RetentionPanel />
+    case 'profiles':
+      return <QualityProfilesPanel />
+    case 'storage':
+      return <StoragePanel />
     case 'connections':
       return <ConnectionsPanel />
     case 'plex':

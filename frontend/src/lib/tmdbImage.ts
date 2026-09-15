@@ -32,6 +32,12 @@ export function profileUrl(path: string | null | undefined): string {
   return path ? IMG_BASE + PROFILE_SIZE + path : PLACEHOLDER_POSTER
 }
 
+const STILL_SIZE = 'w300'
+
+export function stillUrl(path: string | null | undefined): string {
+  return path ? IMG_BASE + STILL_SIZE + path : ''
+}
+
 export function sampleUrl(path: string | null | undefined): string {
   return path ? IMG_BASE + SAMPLE_SIZE + path : ''
 }

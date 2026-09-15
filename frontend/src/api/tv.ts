@@ -3,6 +3,7 @@ import type { TmdbListItem, TmdbListResponse, MovieTrailer } from '../types/movi
 import type { TvDetail } from '../types/tv'
 import type { ShowOut } from '../types/shows'
 import type { BulkDownloadBody, RequestOut } from '../types/requests'
+import type { SeasonEpisodes } from '../types/features'
 
 export function searchTv(query: string, providerId?: number | null) {
   return postJson<TmdbListItem[]>('/api/tv/search', { query, provider_id: providerId ?? null })
@@ -62,4 +63,14 @@ export function deleteShow(id: number) {
 // show record behind the scenes on first use if one doesn't exist yet.
 export function bulkDownload(tmdbId: number, body: BulkDownloadBody) {
   return postJson<RequestOut>(`/api/tv/${tmdbId}/bulk-download`, body)
+}
+
+// Per-episode status for one season (show page episode list) and a
+// single-episode request.
+export function getSeasonEpisodes(tmdbId: number, seasonNumber: number) {
+  return request<SeasonEpisodes>(`/api/tv/${tmdbId}/season/${seasonNumber}/episodes`)
+}
+
+export function requestEpisode(tmdbId: number, seasonNumber: number, episodeNumber: number) {
+  return request<RequestOut>(`/api/tv/${tmdbId}/episodes/${seasonNumber}/${episodeNumber}`, { method: 'POST' })
 }

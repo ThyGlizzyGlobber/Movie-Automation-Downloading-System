@@ -184,6 +184,51 @@ class PlexClient:
             return True
         return False
 
+    def on_deck(self, server_url: str, server_token: str) -> list[dict]:
+        """Plex's own "Continue Watching" list for the linked server —
+        `/library/onDeck`, every in-progress movie/episode with its
+        `viewOffset`/`duration`. Backs the Home page's Continue watching
+        row. Raw Metadata dicts; api.py shapes them."""
+        response = self.session.get(
+            f"{server_url}/library/onDeck",
+            headers={"Accept": "application/json", "X-Plex-Token": server_token},
+            # includeGuids adds each item's external ids (tmdb://…) to the
+            # listing itself, sparing a metadata round trip per movie.
+            params={"includeGuids": 1},
+            timeout=10,
+        )
+        if not response.ok:
+            raise PlexError(f"Plex on-deck fetch failed: {response.status_code}")
+        return response.json().get("MediaContainer", {}).get("Metadata", []) or []
+
+    def metadata(self, server_url: str, server_token: str, rating_key: str) -> dict | None:
+        """One library item by rating key (used to read a show's external
+        ids for an on-deck episode, which only carries its own)."""
+        response = self.session.get(
+            f"{server_url}/library/metadata/{rating_key}",
+            headers={"Accept": "application/json", "X-Plex-Token": server_token},
+            timeout=5,
+        )
+        if not response.ok:
+            raise PlexError(f"Plex metadata fetch failed: {response.status_code}")
+        items = response.json().get("MediaContainer", {}).get("Metadata", []) or []
+        return items[0] if items else None
+
+    def fetch_image(self, server_url: str, server_token: str, path: str, width: int, height: int) -> tuple[bytes, str]:
+        """A library image (poster/art/still) resized by the server's own
+        photo transcoder, so the frontend can show Plex artwork through
+        this app's origin (the CSP allows no other image host) without
+        ever handing the server token to the browser."""
+        response = self.session.get(
+            f"{server_url}/photo/:/transcode",
+            headers={"X-Plex-Token": server_token},
+            params={"width": width, "height": height, "minSize": 1, "upscale": 1, "url": path},
+            timeout=15,
+        )
+        if not response.ok:
+            raise PlexError(f"Plex image fetch failed: {response.status_code}")
+        return response.content, response.headers.get("Content-Type", "image/jpeg")
+
     def library_index(self, server_url: str, server_token: str, media_type: str) -> dict[str, list[int | None]]:
         """Every title in one whole library section (`media_type`
         "movie"/"show"), as `normalize_text(title) -> [years...]` — one bulk

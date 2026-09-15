@@ -12,16 +12,20 @@ explicit allowlist that stays directly on `app` (unauthenticated) is
 `/api/health`, `/api/auth/login/*`, and `/api/setup/*` (which has its own
 token-based gate, not none at all — see require_setup_token)."""
 
+import asyncio
+import concurrent.futures
 import logging
+import os
 import re
 import secrets
 import shutil
+import time
 from contextlib import asynccontextmanager
 from dataclasses import asdict
 from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, FastAPI, HTTPException, Request, Response
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response as RawResponse
 from pydantic import BaseModel, Field, field_validator, model_validator
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
@@ -31,13 +35,15 @@ from app import config, trailers
 from app.db import RequestRow, RequestStore, SessionRow, ShowRow
 from app.deploy import DeployError, run_git_pull
 from app.logging_config import configure_logging
+from app.media_organizer import find_existing_episode_files
 from app.pipeline_settings import (
     VALID_MIN_RESOLUTIONS,
     is_valid_min_resolution,
     resolve_pipeline_settings,
     settings_from_raw,
 )
-from app.plex import LoginSession, PlexClient, PlexError, PlexLinker, plex_library_lookup
+from app.plex import LoginSession, PlexClient, PlexError, PlexLinker, new_client_identifier, plex_library_lookup
+from app.quality_profiles import DEFAULT_PROFILE_ID, profile_min_resolution, resolve_profiles, validate_profiles
 from app.qbt import QBTClient
 from app.resolve import resolve
 from app.tmdb import TMDBClient, TMDBError, best_trailer_key, is_movie_coming_soon, is_tv_upcoming
@@ -310,6 +316,9 @@ class CreateRequest(BaseModel):
     # record — never offered against a file only the fuzzy on_plex
     # title/year match found.
     redownload_mode: str | None = None
+    # A named quality profile (app.quality_profiles) — resolved to
+    # min_resolution server-side when min_resolution itself isn't sent.
+    profile_id: str | None = None
 
     @field_validator("min_resolution")
     @classmethod
@@ -429,6 +438,9 @@ class BulkDownloadRequest(BaseModel):
     # out for packs too — a named, not-yet-solved gap in the same style
     # as this project's others, not silently pretended to be complete.
     redownload_mode: str | None = None
+    # A named quality profile (app.quality_profiles) — resolved to
+    # min_resolution server-side when min_resolution itself isn't sent.
+    profile_id: str | None = None
 
     @field_validator("scope")
     @classmethod
@@ -860,6 +872,11 @@ def create_request(
     worker: Worker = Depends(get_worker),
     session: SessionRow = Depends(require_session),
 ) -> RequestOut:
+    if body.profile_id is not None and body.min_resolution is None:
+        try:
+            body.min_resolution = profile_min_resolution(store.get_settings(), body.profile_id)
+        except KeyError:
+            raise HTTPException(status_code=400, detail=f"unknown quality profile {body.profile_id!r}") from None
     try:
         identity = resolve(body.tmdb_id, tmdb)
     except TMDBError as exc:
@@ -1114,6 +1131,11 @@ def bulk_download_show(
     worker: Worker = Depends(get_worker),
     session: SessionRow = Depends(require_session),
 ) -> RequestOut:
+    if body.profile_id is not None and body.min_resolution is None:
+        try:
+            body.min_resolution = profile_min_resolution(store.get_settings(), body.profile_id)
+        except KeyError:
+            raise HTTPException(status_code=400, detail=f"unknown quality profile {body.profile_id!r}") from None
     show = store.get_show_by_tmdb_id(tmdb_id)
     if show is None:
         try:
@@ -1687,6 +1709,359 @@ def get_storage() -> dict:
         "free_bytes": usage.free,
         "used_percent": used_percent,
     }
+
+
+# -- Obsidian feature pass (2026-09-15): quality profiles, per-episode
+#    status, storage details, Plex "Continue watching". --
+
+
+class QualityProfileIn(BaseModel):
+    id: str
+    name: str
+    description: str | None = None
+    min_resolution: str | None = None
+    typical_size_gb: float | None = None
+
+
+class QualityProfilesIn(BaseModel):
+    profiles: list[QualityProfileIn]
+    default_profile_id: str = DEFAULT_PROFILE_ID
+
+
+@router.get("/api/quality-profiles")
+def get_quality_profiles(store: RequestStore = Depends(get_store)) -> dict:
+    """Any signed-in user: the request modal reads these."""
+    return resolve_profiles(store.get_settings())
+
+
+@admin_router.get("/api/settings/quality-profiles")
+def get_quality_profiles_admin(store: RequestStore = Depends(get_store)) -> dict:
+    return resolve_profiles(store.get_settings())
+
+
+@admin_router.put("/api/settings/quality-profiles")
+def set_quality_profiles(body: QualityProfilesIn, store: RequestStore = Depends(get_store)) -> dict:
+    profiles = [p.model_dump() for p in body.profiles]
+    try:
+        validate_profiles(profiles, body.default_profile_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    store.update_settings({"quality_profiles": profiles, "default_profile_id": body.default_profile_id})
+    return resolve_profiles(store.get_settings())
+
+
+NON_TERMINAL_STATUSES = {"queued", "searching", "downloading"}
+_EPISODE_TERMINAL_FAILURES = {"failed", "no qualifying results", "insufficient free space", "downloaded, not filed", "cancelled"}
+
+
+@router.get("/api/tv/{tmdb_id}/season/{season_number}/episodes")
+def get_season_episodes(
+    tmdb_id: int,
+    season_number: int,
+    store: RequestStore = Depends(get_store),
+    tmdb: TMDBClient = Depends(get_tmdb),
+) -> dict:
+    """One season's episodes with what this household has of each —
+    `in_plex` (a request this app filed, or a matching file already under
+    the TV library), `requested` (a live per-episode or covering pack
+    request, with its status/progress), `failed` (the last attempt ended
+    badly), `unaired`, or `missing`. Backs the show page's episode list."""
+    try:
+        episodes = tmdb.get_tv_season(tmdb_id, season_number)
+    except TMDBError as exc:
+        raise HTTPException(status_code=404, detail=f"season {season_number} of tmdb_id {tmdb_id} not found") from exc
+    show = store.get_show_by_tmdb_id(tmdb_id)
+    per_episode: dict[int, RequestRow] = {}
+    covering_packs: list[RequestRow] = []
+    if show is not None:
+        for ledger in store.list_show_episodes(show.id):
+            if ledger.season_number == season_number:
+                row = store.get_request(ledger.request_id)
+                if row is not None:
+                    per_episode[ledger.episode_number] = row
+        for row in store.list_requests():
+            if row.media_type != "pack" or row.show_id != show.id or row.status not in NON_TERMINAL_STATUSES:
+                continue
+            start = row.season_number
+            end = row.season_range_end if row.season_range_end is not None else start
+            if start is None or (start <= season_number <= end):
+                covering_packs.append(row)
+    numbers = [e.get("episode_number") for e in episodes if e.get("episode_number") is not None]
+    on_disk: dict[int, object] = {}
+    try:
+        identity = resolve_show(tmdb_id, tmdb)
+        on_disk = find_existing_episode_files(identity, season_number, numbers)
+    except (TMDBError, OSError):
+        on_disk = {}
+    today = datetime.now(timezone.utc).date().isoformat()
+    out = []
+    for ep in episodes:
+        number = ep.get("episode_number")
+        row = per_episode.get(number)
+        air_date = ep.get("air_date")
+        state, status, progress, request_id = "missing", None, None, None
+        if row is not None and row.status == "complete":
+            state, status, request_id = "in_plex", row.status, row.id
+        elif number in on_disk:
+            state = "in_plex"
+        elif row is not None and row.status in NON_TERMINAL_STATUSES:
+            state, status, progress, request_id = "requested", row.status, row.download_progress, row.id
+        elif covering_packs:
+            pack = covering_packs[0]
+            state, status, progress, request_id = "requested", pack.status, pack.download_progress, pack.id
+        elif row is not None and row.status in _EPISODE_TERMINAL_FAILURES:
+            state, status, request_id = "failed", row.status, row.id
+        elif not air_date or air_date > today:
+            state = "unaired"
+        out.append(
+            {
+                "episode_number": number,
+                "name": ep.get("name"),
+                "overview": ep.get("overview"),
+                "air_date": air_date,
+                "runtime": ep.get("runtime"),
+                "still_path": ep.get("still_path"),
+                "state": state,
+                "status": status,
+                "download_progress": progress,
+                "request_id": request_id,
+            }
+        )
+    in_plex = sum(1 for e in out if e["state"] == "in_plex")
+    aired = sum(1 for e in out if e["state"] != "unaired")
+    return {"season_number": season_number, "episodes": out, "in_plex": in_plex, "aired": aired}
+
+
+
+@router.post("/api/tv/{tmdb_id}/episodes/{season_number}/{episode_number}", status_code=201)
+def request_episode(
+    tmdb_id: int,
+    season_number: int,
+    episode_number: int,
+    store: RequestStore = Depends(get_store),
+    tmdb: TMDBClient = Depends(get_tmdb),
+    worker: Worker = Depends(get_worker),
+    session: SessionRow = Depends(require_session),
+) -> RequestOut:
+    """Ask for one specific episode (the show page's per-row Request
+    button). Same ledger the subscription scheduler uses, so the two never
+    double-request the same episode; 409 if it is already tracked."""
+    show = store.get_show_by_tmdb_id(tmdb_id)
+    if show is None:
+        try:
+            identity = resolve_show(tmdb_id, tmdb)
+        except TMDBError as exc:
+            raise HTTPException(status_code=404, detail=f"tmdb_id {tmdb_id} not found") from exc
+        show = store.create_show(tmdb_id=tmdb_id, title=identity.title, status="paused", poster_path=identity.poster_path)
+    if store.has_show_episode(show.id, season_number, episode_number):
+        raise HTTPException(status_code=409, detail="this episode is already tracked")
+    row = store.create_episode_request(
+        tmdb_id=show.tmdb_id,
+        show_id=show.id,
+        title=show.title,
+        season_number=season_number,
+        episode_number=episode_number,
+        poster_path=show.poster_path,
+    )
+    store.add_show_episode(show.id, season_number, episode_number, row.id)
+    logger.info(
+        "episode request %d: %s S%02dE%02d by %s", row.id, show.title, season_number, episode_number, session.username
+    )
+    worker.enqueue(row.id)
+    return RequestOut.from_row(row)
+
+
+_LIBRARY_SIZE_TTL_SECONDS = 600
+_library_size_cache: dict[str, tuple[float, int | None]] = {}
+
+
+def _directory_bytes(root) -> int | None:
+    """Total file bytes under `root`, or None when it isn't mounted.
+    Walks with os.scandir (no stat of directories beyond entries), cached
+    for ten minutes per root — a NAS library can be tens of thousands of
+    files, which is fine every ten minutes but not per page load."""
+    key = str(root)
+    now = time.monotonic()
+    cached = _library_size_cache.get(key)
+    if cached and now - cached[0] < _LIBRARY_SIZE_TTL_SECONDS:
+        return cached[1]
+    if not os.path.isdir(root):
+        _library_size_cache[key] = (now, None)
+        return None
+    total = 0
+    stack = [str(root)]
+    while stack:
+        current = stack.pop()
+        try:
+            with os.scandir(current) as it:
+                for entry in it:
+                    try:
+                        if entry.is_dir(follow_symlinks=False):
+                            stack.append(entry.path)
+                        elif entry.is_file(follow_symlinks=False):
+                            total += entry.stat(follow_symlinks=False).st_size
+                    except OSError:
+                        continue
+        except OSError:
+            continue
+    _library_size_cache[key] = (now, total)
+    return total
+
+
+@router.get("/api/storage/details")
+async def get_storage_details(store: RequestStore = Depends(get_store)) -> dict:
+    """The Settings storage panel: the disk from /api/storage plus how much
+    of it each library holds, and request throughput counters."""
+    disk = get_storage()
+    movie_bytes, tv_bytes = await asyncio.gather(
+        asyncio.to_thread(_directory_bytes, config.MOVIE_LIBRARY_ROOT),
+        asyncio.to_thread(_directory_bytes, config.TV_LIBRARY_ROOT),
+    )
+    now = datetime.now(timezone.utc)
+    day_start = now.replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
+    week_start = (now - timedelta(days=7)).isoformat()
+    return {
+        **disk,
+        "libraries": [
+            {"key": "movies", "label": "Movies", "root": str(config.MOVIE_LIBRARY_ROOT), "bytes": movie_bytes},
+            {"key": "tv", "label": "TV", "root": str(config.TV_LIBRARY_ROOT), "bytes": tv_bytes},
+        ],
+        "downloading": store.count_requests_with_status("downloading"),
+        "queued": store.count_requests_with_status("queued") + store.count_requests_with_status("searching"),
+        "completed_today": store.count_completed_since(day_start),
+        "completed_week": store.count_completed_since(week_start),
+    }
+
+
+_ON_DECK_MAX = 12
+_show_tmdb_cache: dict[str, tuple[float, int | None]] = {}
+_SHOW_TMDB_TTL_SECONDS = 3600
+
+
+def _tmdb_id_from_guids(item: dict | None) -> int | None:
+    for guid in (item or {}).get("Guid", []) or []:
+        value = guid.get("id", "")
+        if value.startswith("tmdb://"):
+            try:
+                return int(value[len("tmdb://") :])
+            except ValueError:
+                return None
+    return None
+
+
+def _show_tmdb_id(client: PlexClient, url: str, token: str, rating_key: str | None) -> int | None:
+    """TMDB id for one library item via its own metadata (cached an hour
+    on success; a miss is retried next time, since Plex may still be
+    matching a fresh item)."""
+    if not rating_key:
+        return None
+    now = time.monotonic()
+    cached = _show_tmdb_cache.get(rating_key)
+    if cached and now - cached[0] < _SHOW_TMDB_TTL_SECONDS:
+        return cached[1]
+    try:
+        tmdb_id = _tmdb_id_from_guids(client.metadata(url, token, rating_key))
+    except Exception:  # noqa: BLE001 — transport errors just mean "unknown for now"
+        return None
+    if tmdb_id is not None:
+        _show_tmdb_cache[rating_key] = (now, tmdb_id)
+    return tmdb_id
+
+
+_ON_DECK_LOOKUP_BUDGET_SECONDS = 6.0
+
+
+def _resolve_tmdb_ids(client: PlexClient, url: str, token: str, rating_keys: set[str]) -> dict[str, int | None]:
+    """Metadata lookups for several items at once, under one time budget
+    — a slow Plex server degrades to "no link" for the stragglers rather
+    than stalling the Home page."""
+    results: dict[str, int | None] = {}
+    if not rating_keys:
+        return results
+    with concurrent.futures.ThreadPoolExecutor(max_workers=6) as pool:
+        futures = {pool.submit(_show_tmdb_id, client, url, token, key): key for key in rating_keys}
+        done, _ = concurrent.futures.wait(futures, timeout=_ON_DECK_LOOKUP_BUDGET_SECONDS)
+        for future in done:
+            try:
+                results[futures[future]] = future.result()
+            except Exception:  # noqa: BLE001
+                results[futures[future]] = None
+        pool.shutdown(wait=False, cancel_futures=True)
+    return results
+
+
+@router.get("/api/plex/on-deck")
+def get_plex_on_deck(store: RequestStore = Depends(get_store)) -> dict:
+    """Plex's Continue Watching for the linked server, shaped for the Home
+    row: progress fraction, minutes left, the TMDB id (so a card can open
+    this app's own detail page) and a same-origin artwork URL. Degrades
+    to `available: false` rather than erroring — it backs a Home row, not
+    a page anyone navigated to on purpose."""
+    settings = store.get_settings()
+    url, token = settings.get("plex_server_url"), settings.get("plex_server_token")
+    if not url or not token:
+        return {"available": False, "items": []}
+    client = PlexClient(settings.get("plex_client_id") or new_client_identifier())
+    try:
+        raw = client.on_deck(url, token)
+    except Exception as exc:  # noqa: BLE001 — any transport failure degrades the row, never the page
+        logger.info("plex on-deck unavailable: %s", exc)
+        return {"available": False, "items": []}
+    entries = [e for e in raw[: _ON_DECK_MAX] if e.get("type") in ("movie", "episode")]
+    # Ids the listing didn't carry: a show's (for an episode) or a movie's
+    # own when includeGuids gave nothing — fetched together, bounded.
+    lookup_keys = {
+        str(e.get("grandparentRatingKey") if e.get("type") == "episode" else e.get("ratingKey"))
+        for e in entries
+        if e.get("type") == "episode" or _tmdb_id_from_guids(e) is None
+    }
+    resolved = _resolve_tmdb_ids(client, url, token, lookup_keys)
+    items = []
+    for entry in entries:
+        kind = entry.get("type")
+        duration = entry.get("duration") or 0
+        offset = entry.get("viewOffset") or 0
+        progress = round(min(max(offset / duration, 0.0), 1.0), 3) if duration else 0.0
+        if kind == "episode":
+            tmdb_id = resolved.get(str(entry.get("grandparentRatingKey")))
+            art = entry.get("thumb") or entry.get("art") or entry.get("grandparentArt")
+        else:
+            tmdb_id = _tmdb_id_from_guids(entry) or resolved.get(str(entry.get("ratingKey")))
+            art = entry.get("art") or entry.get("thumb")
+        items.append(
+            {
+                "rating_key": str(entry.get("ratingKey")),
+                "type": kind,
+                "media_type": "tv" if kind == "episode" else "movie",
+                "title": entry.get("title"),
+                "show_title": entry.get("grandparentTitle"),
+                "season_number": entry.get("parentIndex"),
+                "episode_number": entry.get("index"),
+                "year": entry.get("year"),
+                "progress": progress,
+                "remaining_minutes": max(0, round((duration - offset) / 60000)) if duration else None,
+                "tmdb_id": tmdb_id,
+                "art_url": f"/api/plex/image?path={art}" if art else None,
+            }
+        )
+    return {"available": True, "machine_id": settings.get("plex_server_machine_id"), "items": items}
+
+
+@router.get("/api/plex/image")
+def get_plex_image(path: str, width: int = 640, height: int = 360, store: RequestStore = Depends(get_store)) -> RawResponse:
+    """Same-origin proxy for Plex library artwork — see PlexClient.fetch_image."""
+    if not path.startswith("/library/") or ".." in path:
+        raise HTTPException(status_code=400, detail="not a library image path")
+    settings = store.get_settings()
+    url, token = settings.get("plex_server_url"), settings.get("plex_server_token")
+    if not url or not token:
+        raise HTTPException(status_code=404, detail="Plex is not linked")
+    client = PlexClient(settings.get("plex_client_id") or new_client_identifier())
+    try:
+        content, content_type = client.fetch_image(url, token, path, min(width, 1280), min(height, 720))
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=502, detail=f"Plex image unavailable: {exc}") from exc
+    return RawResponse(content=content, media_type=content_type, headers={"Cache-Control": "private, max-age=3600"})
 
 
 # -- Stage 8: raw JSON view of failure-shaped jobs. Admin-only (frontend

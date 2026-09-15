@@ -160,6 +160,32 @@ def find_existing_episode_file(show_identity: ShowIdentity, season: int, episode
     return None
 
 
+def find_existing_episode_files(show_identity: ShowIdentity, season: int, episodes: list[int]) -> dict[int, Path]:
+    """`find_existing_episode_file` for a whole season at once — one walk
+    of `TV_LIBRARY_ROOT`, then each candidate file (one whose name matches
+    the show) is checked against every wanted episode number. Backs the
+    show page's per-episode status list, which would otherwise re-walk
+    the library once per episode. Same matching rules and the same
+    named gap (only `TV_LIBRARY_ROOT` is looked at)."""
+    found: dict[int, Path] = {}
+    root = config.TV_LIBRARY_ROOT
+    if not root.is_dir() or not episodes:
+        return found
+    wanted = set(episodes)
+    for path in root.rglob("*"):
+        if not path.is_file() or path.suffix.lower() not in config.VIDEO_EXTENSIONS:
+            continue
+        tokens = tokenize(path.stem)
+        if not matches_any_variant(tokens, show_identity.variants):
+            continue
+        for episode in wanted - found.keys():
+            if has_episode_token(tokens, season, episode):
+                found[episode] = path
+        if wanted <= found.keys():
+            break
+    return found
+
+
 def build_episode_path(show_identity: ShowIdentity, season: int, episode: int, ext: str) -> Path:
     """`<TV_LIBRARY_ROOT>/<Show Title> ({year}) {tmdb-<id>}/Season <NN>/
     <Show Title> - sNNeNN.ext` — Plex's own documented `{tmdb-<id>}`

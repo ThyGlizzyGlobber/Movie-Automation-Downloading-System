@@ -2544,3 +2544,87 @@ def api_state_login_session(client) -> "FakeLoginSession":
     fixture doesn't hand it back directly (login flow tests are the only
     ones that need to reach into it)."""
     return client.app.state.login_session
+
+
+# -- Obsidian feature pass: quality profiles, per-episode status, storage
+#    details, Plex on-deck --
+
+
+def test_quality_profiles_default_and_update(client_and_deps):
+    client, store, _, _, _, _ = client_and_deps
+    body = client.get("/api/quality-profiles").json()
+    assert body["default_profile_id"] == "default"
+    assert [p["id"] for p in body["profiles"]] == ["default", "4k", "1080p"]
+
+    bad = client.put(
+        "/api/settings/quality-profiles",
+        json={"profiles": [{"id": "x", "name": "X", "min_resolution": "9000p"}], "default_profile_id": "x"},
+    )
+    assert bad.status_code == 422
+
+    good = client.put(
+        "/api/settings/quality-profiles",
+        json={
+            "profiles": [
+                {"id": "hd", "name": "HD", "min_resolution": "1080p", "typical_size_gb": 8},
+                {"id": "any", "name": "Anything", "min_resolution": None},
+            ],
+            "default_profile_id": "any",
+        },
+    )
+    assert good.status_code == 200
+    assert good.json()["default_profile_id"] == "any"
+    assert store.get_settings()["default_profile_id"] == "any"
+
+    # A request naming a profile inherits its resolution floor.
+    created = client.post("/api/requests", json={"tmdb_id": 693134, "query": "Dune", "profile_id": "hd"})
+    assert created.status_code == 201
+    assert store.get_request(created.json()["id"]).min_resolution == "1080p"
+    unknown = client.post("/api/requests", json={"tmdb_id": 693134, "query": "Dune", "profile_id": "nope"})
+    assert unknown.status_code == 400
+
+
+def test_request_episode_and_season_status(client_and_deps):
+    client, store, tmdb, worker, _, _ = client_and_deps
+    tmdb.get_tv_season = lambda tmdb_id, season_number: [
+        {"episode_number": 1, "name": "Pilot", "air_date": "2020-01-01", "runtime": 50, "still_path": "/e1.jpg"},
+        {"episode_number": 2, "name": "Two", "air_date": "2020-01-08", "runtime": 48, "still_path": None},
+        {"episode_number": 3, "name": "Later", "air_date": "2999-01-01", "runtime": None, "still_path": None},
+    ]
+    created = client.post("/api/tv/95350/episodes/1/1")
+    assert created.status_code == 201, created.text
+    request_id = created.json()["id"]
+    assert created.json()["media_type"] == "episode"
+    assert request_id in worker.enqueued
+    assert store.get_show_by_tmdb_id(95350).status == "paused"
+
+    again = client.post("/api/tv/95350/episodes/1/1")
+    assert again.status_code == 409
+
+    body = client.get("/api/tv/95350/season/1/episodes").json()
+    by_number = {e["episode_number"]: e for e in body["episodes"]}
+    assert by_number[1]["state"] == "requested" and by_number[1]["status"] == "queued"
+    assert by_number[1]["request_id"] == request_id
+    assert by_number[2]["state"] == "missing"
+    assert by_number[3]["state"] == "unaired"
+    assert body["aired"] == 2 and body["in_plex"] == 0
+
+    store.update_status(request_id, "complete")
+    body = client.get("/api/tv/95350/season/1/episodes").json()
+    assert {e["episode_number"]: e["state"] for e in body["episodes"]}[1] == "in_plex"
+    assert body["in_plex"] == 1
+
+
+def test_storage_details_shape(client_and_deps):
+    client, _, _, _, _, _ = client_and_deps
+    body = client.get("/api/storage/details").json()
+    assert [lib["key"] for lib in body["libraries"]] == ["movies", "tv"]
+    for key in ("downloading", "queued", "completed_today", "completed_week"):
+        assert isinstance(body[key], int)
+
+
+def test_plex_on_deck_and_image_unlinked(client_and_deps):
+    client, _, _, _, _, _ = client_and_deps
+    assert client.get("/api/plex/on-deck").json() == {"available": False, "items": []}
+    assert client.get("/api/plex/image", params={"path": "/library/metadata/1/art/2"}).status_code == 404
+    assert client.get("/api/plex/image", params={"path": "/etc/passwd"}).status_code == 400

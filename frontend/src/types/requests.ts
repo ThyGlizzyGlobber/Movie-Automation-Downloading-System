@@ -53,6 +53,9 @@ export interface CreateRequestBody {
   // "overwrite" is rejected server-side unless this tmdb_id has a request
   // this app itself organized on record.
   redownload_mode?: RedownloadMode | null
+  // A named quality profile (Settings › Quality profiles); the server
+  // resolves it to min_resolution when that isn't sent explicitly.
+  profile_id?: string | null
 }
 
 // api.py:378-396
@@ -61,4 +64,5 @@ export interface BulkDownloadBody {
   season_number?: number | null
   min_resolution?: string | null
   redownload_mode?: RedownloadMode | null
+  profile_id?: string | null
 }
