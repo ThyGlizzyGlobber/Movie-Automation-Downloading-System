@@ -1,5 +1,5 @@
 section.row {
-  margin-bottom: 26px;
+  margin-bottom: 18px;
 }
 section.row h2 {
   font-family: var(--font-display);
@@ -25,6 +25,10 @@ section.row .row-title {
   color: var(--text);
   letter-spacing: var(--tracking-title);
   margin: 0 0 14px var(--row-inset);
+}
+section.row .row-qualifier {
+  color: var(--text-dim);
+  font-weight: 300;
 }
 section.row .row-title:hover {
   color: var(--text);
@@ -126,7 +130,7 @@ section.row .row-head-right {
 
 .hscroll {
   display: flex;
-  gap: 14px;
+  gap: 18px;
   overflow-x: auto;
   /* overflow-x: auto alone would make the track scroll vertically too
      (a lifted poster or a numeral's glyph overflowing the box turned a
@@ -144,6 +148,10 @@ section.row .row-head-right {
 }
 .hscroll .poster-card {
   flex: 0 0 var(--poster-w);
+}
+.hscroll .hscroll-item > .poster-card {
+  display: block;
+  width: var(--poster-w);
 }
 .hscroll::-webkit-scrollbar {
   display: none;
@@ -197,6 +205,20 @@ section.row .row-head-right {
 /* Phones: the row head keeps the title on one line; "See all" drops its
    label and keeps the circle. */
 @media (max-width: 639px) {
+  /* The head wraps so a row with a switch keeps its full title. */
+  section.row .row-head {
+    flex-wrap: wrap;
+    gap: 6px 12px;
+  }
+  section.row .row-head h2,
+  section.row .row-head .row-title {
+    flex: 1 1 100%;
+    margin-bottom: 8px;
+  }
+  section.row .row-head-right {
+    margin-left: var(--row-inset);
+    margin-bottom: 10px;
+  }
   section.row .row-more {
     font-size: 0;
     gap: 0;

@@ -561,3 +561,155 @@
   margin-left: auto;
   margin-top: 0;
 }
+
+/* ---- Reference card recipe and key rows ---- */
+.settings-section {
+  scroll-margin-top: calc(var(--topbar-h, 64px) + 20px);
+  margin-bottom: 14px;
+}
+.settings-section .settings-panel-card {
+  margin-bottom: 14px;
+}
+.settings-panel-card {
+  border-radius: 24px;
+  padding: 26px 28px;
+}
+.settings-panel-card h2 {
+  font-size: 22px;
+  margin: 0 0 4px;
+}
+.settings-sub {
+  margin: 0 0 20px;
+}
+.setting-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 20px;
+  align-items: center;
+  padding: 14px 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.07);
+}
+.setting-row:first-of-type {
+  border-top: 0;
+}
+.setting-row-text b,
+.setting-row-text label {
+  display: block;
+  font-weight: 700;
+  font-size: 14px;
+  color: var(--text);
+  text-transform: none;
+  letter-spacing: 0;
+  margin: 0;
+}
+.setting-row-text small {
+  display: block;
+  color: var(--text-dim);
+  font-weight: 600;
+  font-size: 12px;
+  margin-top: 3px;
+}
+.setting-row-control {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+/* Inputs and selects: the reference's glass field. */
+.settings-field input,
+.settings-field select,
+.setting-row-control input,
+.setting-row-control select {
+  height: 42px;
+  padding: 0 14px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: var(--text);
+  font-family: var(--font-body);
+  font-size: 14px;
+  font-weight: 600;
+}
+.setting-row-control input {
+  width: 140px;
+}
+.setting-row-control select {
+  min-width: 200px;
+}
+.setting-row-control input:focus,
+.settings-field input:focus,
+.settings-field select:focus {
+  outline: 2px solid color-mix(in srgb, var(--accent) 60%, transparent);
+  outline-offset: 1px;
+}
+.settings-field input.mono,
+.setting-row-control input.mono {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  letter-spacing: 0.02em;
+}
+.setting-unit {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-dim);
+}
+@media (max-width: 639px) {
+  .settings-panel-card {
+    padding: 20px 18px;
+  }
+  .setting-row {
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
+  .setting-row-control input {
+    width: 100%;
+  }
+}
+/* Quality profile tiles (the card's default view; edit opens the form). */
+.profile-tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 10px;
+  margin-bottom: 16px;
+}
+.profile-tile {
+  border-radius: 18px;
+  padding: 16px 18px;
+  background: var(--glass);
+  border: 1px solid var(--glass-border);
+  position: relative;
+}
+.profile-tile.default {
+  border-color: rgba(156, 192, 255, 0.4);
+}
+.profile-tile .tag {
+  position: absolute;
+  top: 16px;
+  right: 18px;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--meridian-ice);
+}
+.profile-tile small {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+.profile-tile b {
+  display: block;
+  font-family: var(--font-display);
+  font-weight: 400;
+  font-size: 19px;
+  margin-top: 6px;
+  letter-spacing: -0.02em;
+}
+.profile-tile p {
+  margin: 8px 0 0;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-dim);
+  line-height: 1.5;
+}

@@ -15,7 +15,7 @@ DEFAULT_PROFILES: list[dict] = [
     {
         "id": "default",
         "name": "Household default",
-        "description": "Whatever Pipeline & Quality is set to",
+        "description": "Uses the Downloads setting",
         "min_resolution": None,
         "typical_size_gb": None,
     },

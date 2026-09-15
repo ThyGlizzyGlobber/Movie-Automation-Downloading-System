@@ -6,6 +6,7 @@ import Icon from './Icon'
 
 export default function MediaRow<T extends PosterCardItem>({
   title,
+  qualifier,
   items,
   mediaType,
   expandHref,
@@ -15,6 +16,8 @@ export default function MediaRow<T extends PosterCardItem>({
   seeAllLabel = 'See all',
 }: {
   title: string
+  /* The muted second half of the heading ("Top 10" + "this week"). */
+  qualifier?: string
   items: T[]
   mediaType: 'movie' | 'tv' | ((item: T) => 'movie' | 'tv')
   expandHref?: string
@@ -52,12 +55,19 @@ export default function MediaRow<T extends PosterCardItem>({
 
   // A row that expands to a full browse page gets a clickable title and
   // a "See all" at the right edge (the reference's row head).
+  const mixed = typeof mediaType === 'function'
+  const text = (
+    <>
+      {title}
+      {qualifier && <span className="row-qualifier"> {qualifier}</span>}
+    </>
+  )
   const heading = expandHref ? (
     <Link className="row-title" to={expandHref}>
-      {title}
+      {text}
     </Link>
   ) : (
-    <h2>{title}</h2>
+    <h2>{text}</h2>
   )
   const seeAll = expandHref ? (
     <Link className="row-more" to={expandHref}>
@@ -89,7 +99,7 @@ export default function MediaRow<T extends PosterCardItem>({
                 {renderItem(item, index)}
               </div>
             ) : (
-              <PosterCard key={item.id} item={item} mediaType={typeof mediaType === 'function' ? mediaType(item) : mediaType} />
+              <PosterCard key={item.id} item={item} mediaType={mixed ? (mediaType as (i: T) => 'movie' | 'tv')(item) : (mediaType as 'movie' | 'tv')} mixed={mixed} />
             ),
           )}
         </div>

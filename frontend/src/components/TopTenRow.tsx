@@ -39,7 +39,8 @@ export default function TopTenRow({ movies, shows }: { movies: TmdbListItem[]; s
   return (
     <MediaRow
       className="top10-row"
-      title="Top 10 this week"
+      title="Top 10"
+      qualifier="this week"
       items={items}
       mediaType={mediaType}
       expandHref={browseHref({ type: mediaType, sort: 'trending' })}
@@ -60,7 +61,7 @@ export default function TopTenRow({ movies, shows }: { movies: TmdbListItem[]; s
           </div>
           <div className="top10-poster">
             <span className="top10-rank-sr">Number {index + 1}</span>
-            <PosterCard item={item} mediaType={mediaType} />
+            <PosterCard item={item} mediaType={mediaType} caption={false} />
             <MoveChip move={moves[index]} />
           </div>
         </div>

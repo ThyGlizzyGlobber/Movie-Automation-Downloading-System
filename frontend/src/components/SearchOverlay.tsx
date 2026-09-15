@@ -61,12 +61,14 @@ export default function SearchOverlay({ isOpen, onClose }: { isOpen: boolean; on
   const [value, setValue] = useState('')
   const [recent, setRecent] = useState<string[]>([])
   const [highlighted, setHighlighted] = useState(-1)
+  const [tab, setTab] = useState<'all' | 'movie' | 'tv'>('all')
   const navigate = useNavigate()
   const inputRef = useRef<HTMLInputElement>(null)
   const placeholder = useSearchPlaceholderTypewriter(isOpen)
   const live = useLiveSearch(value)
   const typed = value.trim()
-  const hits: SearchHit[] = typed.length >= 2 ? (live.data ?? []) : []
+  const allHits: SearchHit[] = typed.length >= 2 ? (live.data ?? []) : []
+  const hits = tab === 'all' ? allHits : allHits.filter((h) => h.mediaType === tab)
 
   useEffect(() => {
     document.body.classList.toggle('search-open', isOpen)
@@ -78,6 +80,7 @@ export default function SearchOverlay({ isOpen, onClose }: { isOpen: boolean; on
       // rather than reopening on the previous text.
       setValue('')
       setHighlighted(-1)
+      setTab('all')
     }
   }, [isOpen])
 
@@ -164,6 +167,26 @@ export default function SearchOverlay({ isOpen, onClose }: { isOpen: boolean; on
           )}
           <kbd className="search-overlay-kbd">esc</kbd>
         </div>
+        {typed.length >= 2 && allHits.length > 0 && (
+          <div className="search-overlay-tabs">
+            <div className="seg" role="tablist" aria-label="Result type">
+              {(
+                [
+                  ['all', 'All'],
+                  ['movie', 'Movies'],
+                  ['tv', 'TV Shows'],
+                ] as const
+              ).map(([id, label]) => (
+                <button key={id} role="tab" aria-selected={tab === id} className={tab === id ? 'active' : ''} onClick={() => setTab(id)}>
+                  {label}
+                </button>
+              ))}
+            </div>
+            <span className="search-overlay-k">
+              {hits.length} result{hits.length === 1 ? '' : 's'} · ↑↓ to move · ↵ to open
+            </span>
+          </div>
+        )}
         {hits.length > 0 && (
           <>
             <SearchResults hits={hits} highlighted={highlighted} onOpen={openHit} onHover={setHighlighted} />
@@ -173,7 +196,7 @@ export default function SearchOverlay({ isOpen, onClose }: { isOpen: boolean; on
             </button>
           </>
         )}
-        {typed.length >= 2 && live.isFetched && hits.length === 0 && (
+        {typed.length >= 2 && live.isFetched && allHits.length === 0 && (
           <div className="search-overlay-none">Nothing matched “{typed}”. Press Enter to search anyway.</div>
         )}
         {!typed && recent.length > 0 && (

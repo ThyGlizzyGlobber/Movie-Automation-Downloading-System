@@ -2662,3 +2662,11 @@ def test_tv_discover_browse_is_not_shadowed_by_the_detail_route(client_and_deps)
     assert body["results"] == [dict(SHOW, on_plex=False)]
     assert body["filters"]["genre_id"] == 18
     assert body["filters"]["sort"] == "newest"
+
+
+def test_plex_recently_added_reports_unavailable_when_unlinked(client_and_deps):
+    client, _, _, _, _, _ = client_and_deps
+    response = client.get("/api/plex/recently-added")
+
+    assert response.status_code == 200
+    assert response.json() == {"available": False, "items": []}

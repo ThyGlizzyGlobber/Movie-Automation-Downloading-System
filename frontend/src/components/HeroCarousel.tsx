@@ -16,6 +16,16 @@ const HERO_POSTER_LEAD_MS = 3000
 interface Enrichment {
   badge: string | null
   cert: string
+  /* "2h 14m" for a movie, "2 seasons" for a show. */
+  length: string
+  genres: string
+}
+
+function movieLength(runtime: number | null): string {
+  if (!runtime) return ''
+  const h = Math.floor(runtime / 60)
+  const m = runtime % 60
+  return h ? `${h}h ${m}m` : `${m}m`
 }
 
 export default function HeroCarousel({ items }: { items: TaggedItem[] }) {
@@ -60,17 +70,24 @@ export default function HeroCarousel({ items }: { items: TaggedItem[] }) {
       try {
         let badge: string | null
         let cert: string
+        let length: string
+        let genres: string
         if (item.mediaType === 'tv') {
           const detail = await getTvShow(item.id)
           badge = tvHeroBadge(detail)
           cert = tvCertOf(detail)
+          const seasons = (detail.seasons ?? []).filter((se) => se.season_number > 0).length
+          length = seasons ? `${seasons} season${seasons === 1 ? '' : 's'}` : ''
+          genres = (detail.genres ?? []).slice(0, 2).map((g) => g.name).join(' · ')
         } else {
           const detail = await getMovie(item.id)
           badge = movieHeroBadge(detail)
           cert = movieCertOf(detail)
+          length = movieLength(detail.runtime)
+          genres = (detail.genres ?? []).slice(0, 2).map((g) => g.name).join(' · ')
         }
         if (cancelled) return
-        setEnrichment((prev) => ({ ...prev, [i]: { badge, cert } }))
+        setEnrichment((prev) => ({ ...prev, [i]: { badge, cert, length, genres } }))
       } catch {
         // badge/cert just stay empty
       }
@@ -206,10 +223,11 @@ export default function HeroCarousel({ items }: { items: TaggedItem[] }) {
         const title = item.title || item.name || item.original_title || item.original_name || ''
         const href = isTv ? `#/tv/${item.id}` : `#/movies/${item.id}`
         const onPlex = !!item.on_plex
-        const ctaIcon = onPlex ? 'play' : 'plus'
-        const ctaLabel = onPlex ? 'Watch on Plex' : 'Add to Plex'
         const info = enrichment[i]
         const hasVideo = i < HERO_TRAILER_COUNT && !!videoUrls[i]
+        const year = (item.release_date || item.first_air_date || '').slice(0, 4)
+        const rating = item.vote_average ? item.vote_average.toFixed(1) : ''
+        const eyebrow = info?.badge ?? (isTv ? 'Trending series' : 'Trending this week')
 
         return (
           <div className={`home-hero-slide${i === activeIndex ? ' active' : ''}`} key={item.id}>
@@ -259,25 +277,36 @@ export default function HeroCarousel({ items }: { items: TaggedItem[] }) {
             </a>
             <div className="home-hero-fade" />
             <div className="home-hero-content">
-              <div className="home-hero-info">
-                {info?.badge && (
-                  <div className="home-hero-badge">
-                    <Icon name="megaphone" />
-                    {info.badge}
-                  </div>
-                )}
+              <div className="home-hero-body">
+                <span className="hero-eyebrow">
+                  <b />
+                  {eyebrow}
+                </span>
                 <h1>{title}</h1>
+                <div className="hero-meta">
+                  {rating && (
+                    <span className="hero-pill">
+                      <Icon name="star" className="hero-star" />
+                      {rating}
+                    </span>
+                  )}
+                  {year && <span className="hero-pill">{year}</span>}
+                  {info?.cert && <span className="hero-pill">{info.cert}</span>}
+                  {info?.length && <span className="hero-pill">{info.length}</span>}
+                  {info?.genres && <span className="hero-pill mute">{info.genres}</span>}
+                </div>
+                {item.overview && <p className="hero-syn">{item.overview}</p>}
                 <div className="home-hero-actions">
-                  <a className="add-btn" href={href}>
-                    <Icon name={ctaIcon} />
-                    {ctaLabel}
+                  <a className="btn pri" href={href}>
+                    <Icon name={onPlex ? 'play' : 'plus'} />
+                    {onPlex ? 'Play' : 'Request'}
                   </a>
-                  <a className="home-hero-info-btn" href={href} aria-label="More info">
+                  <a className="btn sec circ" href={href} aria-label="More info">
                     <Icon name="info" />
                   </a>
                   {i === activeIndex && hasVideo && (
                     <button
-                      className="home-hero-mute-btn"
+                      className="btn sec circ"
                       aria-label={muted ? 'Unmute trailer' : 'Mute trailer'}
                       onClick={() => setMuted((m) => !m)}
                     >
@@ -287,7 +316,6 @@ export default function HeroCarousel({ items }: { items: TaggedItem[] }) {
                 </div>
               </div>
             </div>
-            {info?.cert && <div className="home-hero-cert">{info.cert}</div>}
           </div>
         )
       })}

@@ -4,9 +4,9 @@
 }
 .poster-art {
   position: relative;
-  border-radius: var(--radius-md);
+  border-radius: 18px;
   overflow: hidden;
-  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.45);
+  box-shadow: 0 24px 44px rgba(0, 0, 0, 0.55);
 }
 /* Faint top sheen so the rounded card reads as a lit surface rather than
    a flat cut-out, matching the reference's cards. */
@@ -24,9 +24,57 @@
   height: auto;
   aspect-ratio: 2 / 3;
   object-fit: cover;
-  border-radius: var(--radius-md);
+  border-radius: 18px;
   background: var(--bg-card);
   display: block;
+}
+/* Caption: Outfit title and a muted "year · genre" line. */
+.poster-caption {
+  display: block;
+  min-width: 0;
+}
+.poster-caption b {
+  display: block;
+  font-family: var(--font-display);
+  font-weight: 400;
+  font-size: 15px;
+  letter-spacing: -0.01em;
+  margin-top: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.poster-caption small {
+  display: block;
+  color: var(--text-dim);
+  font-size: 12px;
+  font-weight: 600;
+  margin-top: 3px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* Status chip on a requested title's poster (the reference's ob-stchip). */
+.poster-chip {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  border-radius: var(--radius-pill);
+  background: rgba(5, 5, 8, 0.55);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  font-size: 11px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.poster-chip .icon {
+  font-size: 13px;
 }
 /* "On Plex" chip — a glass badge in the poster's corner for anything
    already in the household's Plex library, distinct from "I requested
@@ -58,7 +106,6 @@
   }
   .poster-card:hover .poster-art {
     transform: translateY(-6px);
-    box-shadow: var(--shadow-card);
     z-index: 1;
   }
 }

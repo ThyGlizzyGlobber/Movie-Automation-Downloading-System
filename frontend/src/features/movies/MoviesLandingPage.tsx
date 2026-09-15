@@ -59,9 +59,9 @@ export default function MoviesLandingPage() {
   return (
     <>
       <HeroCarousel items={heroItems} />
-      <MediaRow title="Trending Movies" items={trending.data?.results ?? []} mediaType="movie" expandHref={browseHref({ type: 'movie', sort: 'trending' })} />
+      <MediaRow title="Trending" qualifier="movies" items={trending.data?.results ?? []} mediaType="movie" expandHref={browseHref({ type: 'movie', sort: 'trending' })} />
       <MediaRow title="Popular" items={popular.data?.results ?? []} mediaType="movie" expandHref={browseHref({ type: 'movie' })} />
-      <MediaRow title="New Releases" items={comingSoon.data?.results ?? []} mediaType="movie" expandHref={browseHref({ type: 'movie', list: 'coming-soon' })} />
+      <MediaRow title="New" qualifier="releases" items={comingSoon.data?.results ?? []} mediaType="movie" expandHref={browseHref({ type: 'movie', list: 'coming-soon' })} />
       {MOVIE_GENRES.map((g, i) => (
         <MediaRow
           key={g.id}
@@ -72,13 +72,16 @@ export default function MoviesLandingPage() {
         />
       ))}
       <section className="row">
-        <h2>Browse a Service</h2>
+        <h2>
+          Browse <span className="row-qualifier">by service</span>
+        </h2>
         <ProviderChips type="movie" />
       </section>
       {ROW_PROVIDERS.map((p, i) => (
         <MediaRow
           key={p.id}
-          title={`Popular on ${p.name}`}
+          title="Popular"
+          qualifier={`on ${p.name}`}
           items={providerResults[i].data?.results ?? []}
           mediaType="movie"
           expandHref={browseHref({ type: 'movie', provider: p.id })}

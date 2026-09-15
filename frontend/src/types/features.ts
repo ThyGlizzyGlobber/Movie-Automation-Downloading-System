@@ -71,3 +71,14 @@ export interface OnDeckItem {
 }
 
 export type OnDeck = { available: false; items: [] } | { available: true; machine_id: string | null; items: OnDeckItem[] }
+
+export interface RecentlyAddedItem {
+  rating_key: string
+  media_type: 'movie' | 'tv'
+  title: string | null
+  year: number | null
+  added_at: number | null
+  tmdb_id: number | null
+  poster_url: string | null
+}
+export type RecentlyAdded = { available: false; items: [] } | { available: true; items: RecentlyAddedItem[] }

@@ -4,6 +4,8 @@ import { getTvSettings, setTvSettings } from '../../api/settings'
 import LoadingState from '../../components/LoadingState'
 import ErrorState from '../../components/ErrorState'
 import { ApiError } from '../../api/client'
+import SettingRow from '../../components/SettingRow'
+import Toggle from '../../components/Toggle'
 
 type SaveState = 'idle' | 'saving' | 'saved' | 'error'
 
@@ -55,8 +57,7 @@ export default function TvSchedulePanel() {
     <div className="settings-panel-card">
       <h2>TV shows</h2>
       <p className="settings-sub">How Meridian watches for new episodes of the shows you follow.</p>
-      <div className="settings-field">
-        <label htmlFor="tvCheckInterval">Check for new episodes every (hours)</label>
+      <SettingRow label="Check for new episodes every" hint="How often Meridian looks at the shows you follow." htmlFor="tvCheckInterval">
         <input
           id="tvCheckInterval"
           type="number"
@@ -65,21 +66,23 @@ export default function TvSchedulePanel() {
           value={checkInterval}
           onChange={(e) => setCheckInterval(e.target.value)}
         />
-      </div>
-      <div className="settings-field">
-        <label htmlFor="tvAirBuffer">Wait after an episode airs (hours)</label>
+        <span className="setting-unit">hours</span>
+      </SettingRow>
+      <SettingRow
+        label="Wait after an episode airs"
+        hint="Gives a copy time to appear. 0 means search straight away."
+        htmlFor="tvAirBuffer"
+      >
         <input id="tvAirBuffer" type="number" min="0" step="1" value={airBuffer} onChange={(e) => setAirBuffer(e.target.value)} />
-        <div className="settings-hint">Gives a copy time to appear. 0 means search straight away.</div>
-      </div>
-      <div className="settings-field">
-        <label className="settings-checkbox-label">
-          <input type="checkbox" checked={recheckEnabled} onChange={(e) => setRecheckEnabled(e.target.checked)} />
-          Keep looking for missing or better copies
-        </label>
-        <div className="settings-hint">Tries again later when nothing was found, and upgrades when a better copy turns up.</div>
-      </div>
-      <div className="settings-field">
-        <label htmlFor="tvRecheckInterval">Try again every (hours)</label>
+        <span className="setting-unit">hours</span>
+      </SettingRow>
+      <SettingRow
+        label="Keep looking for missing or better copies"
+        hint="Tries again later when nothing was found, and upgrades when a better copy turns up."
+      >
+        <Toggle checked={recheckEnabled} onChange={setRecheckEnabled} label="Keep looking for missing or better copies" />
+      </SettingRow>
+      <SettingRow label="Try again every" htmlFor="tvRecheckInterval">
         <input
           id="tvRecheckInterval"
           type="number"
@@ -88,22 +91,17 @@ export default function TvSchedulePanel() {
           value={recheckInterval}
           onChange={(e) => setRecheckInterval(e.target.value)}
         />
+        <span className="setting-unit">hours</span>
+      </SettingRow>
+      <SettingRow label="Give up after" hint="0 means never give up." htmlFor="tvRecheckLimit">
+        <input id="tvRecheckLimit" type="number" min="0" step="1" value={recheckLimit} onChange={(e) => setRecheckLimit(e.target.value)} />
+        <span className="setting-unit">tries</span>
+      </SettingRow>
+      <div className="settings-btn-row" style={{ marginTop: 18 }}>
+        <button className="settings-btn" disabled={saveState === 'saving'} onClick={save}>
+          {saveState === 'saving' ? 'Saving…' : saveState === 'saved' ? 'Saved' : 'Save'}
+        </button>
       </div>
-      <div className="settings-field">
-        <label htmlFor="tvRecheckLimit">Give up after this many tries</label>
-        <input
-          id="tvRecheckLimit"
-          type="number"
-          min="0"
-          step="1"
-          value={recheckLimit}
-          onChange={(e) => setRecheckLimit(e.target.value)}
-        />
-        <div className="settings-hint">0 means never give up.</div>
-      </div>
-      <button className="settings-btn" disabled={saveState === 'saving'} onClick={save}>
-        {saveState === 'saving' ? 'Saving…' : saveState === 'saved' ? 'Saved' : 'Save'}
-      </button>
       {saveState === 'error' && saveError && <div className="settings-save-error">{saveError}</div>}
     </div>
   )

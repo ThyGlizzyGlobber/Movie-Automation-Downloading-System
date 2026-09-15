@@ -20,17 +20,21 @@
 .tab {
   flex: 1;
   display: flex;
-  flex-direction: column;
   align-items: center;
-  gap: 2px;
-  padding: 7px 0 6px;
+  justify-content: center;
+  gap: 8px;
+  height: 52px;
   border-radius: var(--radius-pill);
   color: var(--text-dim);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 700;
   background: none;
   border: none;
   transition: background 0.15s ease, color 0.15s ease;
+}
+/* The reference shows the label on the active tab only. */
+.tab:not(.active) .tab-label {
+  display: none;
 }
 .tab-icon {
   position: relative;
@@ -54,7 +58,7 @@
   justify-content: center;
 }
 .tab-icon .icon {
-  font-size: 22px;
+  font-size: 20px;
 }
 .tab.active {
   color: var(--text);

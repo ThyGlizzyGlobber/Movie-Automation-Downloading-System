@@ -56,3 +56,7 @@
 .status-dot.status-downloading {
   animation: pulse 1.1s ease-in-out infinite;
 }
+
+.status-searching .status-icon {
+  animation: spin 2.4s linear infinite;
+}

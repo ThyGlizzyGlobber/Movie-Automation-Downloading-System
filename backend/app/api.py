@@ -2092,6 +2092,62 @@ def get_plex_on_deck(store: RequestStore = Depends(get_store)) -> dict:
     return {"available": True, "machine_id": settings.get("plex_server_machine_id"), "items": items}
 
 
+@router.get("/api/plex/recently-added")
+def get_plex_recently_added(store: RequestStore = Depends(get_store)) -> dict:
+    """Plex's Recently Added, shaped for the Home row: one card per movie
+    or show (a season or episode collapses onto its show), the TMDB id
+    when it can be resolved, and a same-origin poster URL. Degrades to
+    `available: false` like the on-deck route."""
+    settings = store.get_settings()
+    url, token = settings.get("plex_server_url"), settings.get("plex_server_token")
+    if not url or not token:
+        return {"available": False, "items": []}
+    client = PlexClient(settings.get("plex_client_id") or new_client_identifier())
+    try:
+        raw = client.recently_added(url, token)
+    except Exception as exc:  # noqa: BLE001
+        logger.info("plex recently-added unavailable: %s", exc)
+        return {"available": False, "items": []}
+    entries = [e for e in raw if e.get("type") in ("movie", "show", "season", "episode")]
+
+    def show_key(e: dict) -> str | None:
+        if e.get("type") == "season":
+            return str(e.get("parentRatingKey"))
+        if e.get("type") == "episode":
+            return str(e.get("grandparentRatingKey"))
+        return None
+
+    lookup_keys = {show_key(e) or str(e.get("ratingKey")) for e in entries if show_key(e) or _tmdb_id_from_guids(e) is None}
+    resolved = _resolve_tmdb_ids(client, url, token, {k for k in lookup_keys if k and k != "None"})
+    items: list[dict] = []
+    seen: set[str] = set()
+    for entry in entries:
+        kind = entry.get("type")
+        key = show_key(entry) or str(entry.get("ratingKey"))
+        if key in seen:
+            continue
+        seen.add(key)
+        if kind == "season":
+            title, year, poster = entry.get("parentTitle"), entry.get("parentYear"), entry.get("parentThumb")
+        elif kind == "episode":
+            title, year, poster = entry.get("grandparentTitle"), None, entry.get("grandparentThumb")
+        else:
+            title, year, poster = entry.get("title"), entry.get("year"), entry.get("thumb")
+        tmdb_id = resolved.get(key) if show_key(entry) else (_tmdb_id_from_guids(entry) or resolved.get(key))
+        items.append(
+            {
+                "rating_key": key,
+                "media_type": "movie" if kind == "movie" else "tv",
+                "title": title,
+                "year": year,
+                "added_at": entry.get("addedAt"),
+                "tmdb_id": tmdb_id,
+                "poster_url": f"/api/plex/image?path={poster}&width=300&height=450" if poster else None,
+            }
+        )
+    return {"available": True, "items": items}
+
+
 @router.get("/api/plex/image")
 def get_plex_image(path: str, width: int = 640, height: int = 360, store: RequestStore = Depends(get_store)) -> RawResponse:
     """Same-origin proxy for Plex library artwork — see PlexClient.fetch_image."""

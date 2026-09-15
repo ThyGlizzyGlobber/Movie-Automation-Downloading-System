@@ -14,7 +14,13 @@ const RESOLUTIONS = [
 ]
 
 function slug(name: string): string {
-  return name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 32) || 'profile'
+  return (
+    name
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '')
+      .slice(0, 32) || 'profile'
+  )
 }
 
 // Settings › Quality profiles: the named choices the request sheet
@@ -28,6 +34,7 @@ export default function QualityProfilesPanel() {
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [saved, setSaved] = useState(false)
+  const [editing, setEditing] = useState(false)
 
   useEffect(() => {
     if (query.data) {
@@ -77,60 +84,98 @@ export default function QualityProfilesPanel() {
     <div className="settings-panel-card">
       <h2>Quality profiles</h2>
       <p className="settings-sub">The choices people see when they request something. The size is a rough guide, not a limit.</p>
-      <div className="profile-list">
-        {profiles.map((p, i) => (
-          <div className={`profile-card${p.id === defaultId ? ' default' : ''}`} key={p.id}>
-            <div className="profile-card-head">
-              <label className="profile-default">
-                <input type="radio" name="default-profile" checked={p.id === defaultId} onChange={() => setDefaultId(p.id)} />
-                Default
-              </label>
-              <button className="profile-remove" aria-label="Remove profile" disabled={profiles.length <= 1} onClick={() => remove(i)}>
-                <Icon name="trash" />
-              </button>
-            </div>
-            <div className="settings-field">
-              <label>Name</label>
-              <input value={p.name} onChange={(e) => update(i, { name: e.target.value })} />
-            </div>
-            <div className="settings-field">
-              <label>Description</label>
-              <input value={p.description ?? ''} onChange={(e) => update(i, { description: e.target.value })} placeholder="Shown under the name" />
-            </div>
-            <div className="settings-row">
-              <div className="settings-field">
-                <label>Lowest quality</label>
-                <select value={p.min_resolution ?? ''} onChange={(e) => update(i, { min_resolution: e.target.value || null })}>
-                  {RESOLUTIONS.map((r) => (
-                    <option key={r.value} value={r.value}>
-                      {r.label}
-                    </option>
-                  ))}
-                </select>
+      {!editing && (
+        <>
+          <div className="profile-tiles">
+            {profiles.map((p) => (
+              <div className={`profile-tile${p.id === defaultId ? ' default' : ''}`} key={p.id}>
+                {p.id === defaultId && <span className="tag">Default</span>}
+                <small>Profile</small>
+                <b>{p.name}</b>
+                <p>
+                  {[
+                    p.description,
+                    RESOLUTIONS.find((r) => r.value === (p.min_resolution ?? ''))?.label,
+                    p.typical_size_gb != null ? `about ${p.typical_size_gb} GB` : null,
+                  ]
+                    .filter(Boolean)
+                    .join(' · ')}
+                </p>
+              </div>
+            ))}
+          </div>
+          <div className="settings-btn-row">
+            <button className="settings-btn secondary sm" onClick={() => setEditing(true)}>
+              <Icon name="sliders" /> Edit profiles
+            </button>
+          </div>
+        </>
+      )}
+      {editing && (
+        <div className="profile-list">
+          {profiles.map((p, i) => (
+            <div className={`profile-card${p.id === defaultId ? ' default' : ''}`} key={p.id}>
+              <div className="profile-card-head">
+                <label className="profile-default">
+                  <input type="radio" name="default-profile" checked={p.id === defaultId} onChange={() => setDefaultId(p.id)} />
+                  Default
+                </label>
+                <button className="profile-remove" aria-label="Remove profile" disabled={profiles.length <= 1} onClick={() => remove(i)}>
+                  <Icon name="trash" />
+                </button>
               </div>
               <div className="settings-field">
-                <label>Typical size (GB)</label>
+                <label>Name</label>
+                <input value={p.name} onChange={(e) => update(i, { name: e.target.value })} />
+              </div>
+              <div className="settings-field">
+                <label>Description</label>
                 <input
-                  type="number"
-                  min={1}
-                  step={1}
-                  value={p.typical_size_gb ?? ''}
-                  placeholder="varies"
-                  onChange={(e) => update(i, { typical_size_gb: e.target.value === '' ? null : Number(e.target.value) })}
+                  value={p.description ?? ''}
+                  onChange={(e) => update(i, { description: e.target.value })}
+                  placeholder="Shown under the name"
                 />
               </div>
+              <div className="settings-row">
+                <div className="settings-field">
+                  <label>Lowest quality</label>
+                  <select value={p.min_resolution ?? ''} onChange={(e) => update(i, { min_resolution: e.target.value || null })}>
+                    {RESOLUTIONS.map((r) => (
+                      <option key={r.value} value={r.value}>
+                        {r.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className="settings-field">
+                  <label>Typical size (GB)</label>
+                  <input
+                    type="number"
+                    min={1}
+                    step={1}
+                    value={p.typical_size_gb ?? ''}
+                    placeholder="varies"
+                    onChange={(e) => update(i, { typical_size_gb: e.target.value === '' ? null : Number(e.target.value) })}
+                  />
+                </div>
+              </div>
             </div>
-          </div>
-        ))}
-      </div>
-      <div className="settings-btn-row">
-        <button className="settings-btn secondary" onClick={add}>
-          <Icon name="plus" /> Add profile
-        </button>
-        <button className="settings-btn" disabled={saving} onClick={save}>
-          {saving ? 'Saving…' : 'Save'}
-        </button>
-      </div>
+          ))}
+        </div>
+      )}
+      {editing && (
+        <div className="settings-btn-row">
+          <button className="settings-btn secondary" onClick={add}>
+            <Icon name="plus" /> Add profile
+          </button>
+          <button className="settings-btn ghost" onClick={() => setEditing(false)}>
+            Done
+          </button>
+          <button className="settings-btn" disabled={saving} onClick={save}>
+            {saving ? 'Saving…' : 'Save'}
+          </button>
+        </div>
+      )}
       {error && <div className="settings-save-error">{error}</div>}
       {saved && <div className="settings-save-success">Saved.</div>}
     </div>

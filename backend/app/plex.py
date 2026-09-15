@@ -201,6 +201,19 @@ class PlexClient:
             raise PlexError(f"Plex on-deck fetch failed: {response.status_code}")
         return response.json().get("MediaContainer", {}).get("Metadata", []) or []
 
+    def recently_added(self, server_url: str, server_token: str, limit: int = 24) -> list[dict]:
+        """Plex's own "Recently Added" for the linked server — backs the
+        Home page's "New in your library" row. Raw Metadata dicts."""
+        response = self.session.get(
+            f"{server_url}/library/recentlyAdded",
+            headers={"Accept": "application/json", "X-Plex-Token": server_token},
+            params={"includeGuids": 1, "X-Plex-Container-Start": 0, "X-Plex-Container-Size": limit},
+            timeout=10,
+        )
+        if not response.ok:
+            raise PlexError(f"Plex recently-added fetch failed: {response.status_code}")
+        return response.json().get("MediaContainer", {}).get("Metadata", []) or []
+
     def metadata(self, server_url: str, server_token: str, rating_key: str) -> dict | None:
         """One library item by rating key (used to read a show's external
         ids for an on-deck episode, which only carries its own)."""

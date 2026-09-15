@@ -20,7 +20,7 @@ export default function Tabbar() {
             <Icon name={t.icon} />
             {t.tab === 'requests' && active > 0 && <span className="tab-badge">{badgeLabel(active)}</span>}
           </span>
-          {t.label}
+          <span className="tab-label">{t.label}</span>
         </NavLink>
       ))}
     </nav>

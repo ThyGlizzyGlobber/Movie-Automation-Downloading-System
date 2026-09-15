@@ -31,7 +31,8 @@ export default function ContinueWatchingRow() {
   return (
     <MediaRow
       className="continue-row"
-      title="Continue watching"
+      title="Continue"
+      qualifier="watching"
       items={items}
       mediaType={(it) => it.media_type}
       renderItem={(item) => {

@@ -281,3 +281,27 @@
     max-height: calc(100dvh - var(--topbar-h, 64px) - 170px);
   }
 }
+
+/* Type switch and keyboard hint between the field and the results. */
+.search-overlay-tabs {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 14px 10px 8px;
+}
+.search-overlay-tabs .seg button {
+  padding: 7px 14px;
+  font-size: 12.5px;
+}
+.search-overlay-k {
+  margin-left: auto;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+@media (max-width: 639px) {
+  .search-overlay-k {
+    display: none;
+  }
+}

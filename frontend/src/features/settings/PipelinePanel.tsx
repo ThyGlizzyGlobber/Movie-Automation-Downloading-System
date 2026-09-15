@@ -5,6 +5,7 @@ import LanguageMultiSelect from '../../components/LanguageMultiSelect'
 import LoadingState from '../../components/LoadingState'
 import ErrorState from '../../components/ErrorState'
 import { ApiError } from '../../api/client'
+import SettingRow from '../../components/SettingRow'
 
 const RESOLUTION_OPTIONS = [
   { value: '2160p', label: '2160p / 4K' },
@@ -80,8 +81,7 @@ export default function PipelinePanel() {
     <div className="settings-panel-card">
       <h2>Downloads</h2>
       <p className="settings-sub">What counts as a good enough copy.</p>
-      <div className="settings-field">
-        <label htmlFor="pfMinResolution">Lowest quality to accept</label>
+      <SettingRow label="Lowest quality to accept" hint="Better copies are always preferred. This is just the floor." htmlFor="pfMinResolution">
         <select id="pfMinResolution" value={minResolution} onChange={(e) => setMinResolution(e.target.value)}>
           {RESOLUTION_OPTIONS.map((r) => (
             <option key={r.value} value={r.value}>
@@ -89,17 +89,14 @@ export default function PipelinePanel() {
             </option>
           ))}
         </select>
-        <div className="settings-hint">Better copies are always preferred. This is just the floor.</div>
-      </div>
-      <div className="settings-field">
-        <label>File size (GB)</label>
-        <div className="settings-size-range">
-          <input type="number" min="0" step="1" value={minSize} onChange={(e) => setMinSize(e.target.value)} />
-          <span>to</span>
-          <input type="number" min="0" step="1" value={maxSize} onChange={(e) => setMaxSize(e.target.value)} />
-        </div>
-        <div className="settings-hint">The smallest and largest download you'll accept.</div>
-      </div>
+      </SettingRow>
+      <SettingRow label="File size" hint="The smallest and largest download you'll accept, in GB.">
+        <input type="number" min="0" step="1" value={minSize} onChange={(e) => setMinSize(e.target.value)} aria-label="Smallest size in GB" style={{ width: 90 }} />
+        <span className="setting-unit">to</span>
+        <input type="number" min="0" step="1" value={maxSize} onChange={(e) => setMaxSize(e.target.value)} aria-label="Largest size in GB" style={{ width: 90 }} />
+        <span className="setting-unit">GB</span>
+      </SettingRow>
+      <div style={{ height: 8 }} />
       <div className="settings-field">
         <label htmlFor="pfAllowlist">Only these languages</label>
         <LanguageMultiSelect id="pfAllowlist" selected={allowlist} onChange={setAllowlist} />

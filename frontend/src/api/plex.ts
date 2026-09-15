@@ -1,7 +1,7 @@
 import { putJson, request } from './client'
 import type { PlexStatus } from '../types/settings'
 import type { PlexServerSummary } from '../types/auth'
-import type { OnDeck } from '../types/features'
+import type { OnDeck, RecentlyAdded } from '../types/features'
 
 const SETUP_TOKEN_HEADER = 'X-Setup-Token'
 
@@ -43,4 +43,8 @@ export function selectPlexServer(machineIdentifier: string, setupToken?: string)
 // Plex's Continue Watching for the linked server (Home row).
 export function getOnDeck() {
   return request<OnDeck>('/api/plex/on-deck')
+}
+
+export function getRecentlyAdded() {
+  return request<RecentlyAdded>('/api/plex/recently-added')
 }

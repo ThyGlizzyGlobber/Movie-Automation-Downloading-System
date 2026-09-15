@@ -130,78 +130,115 @@
   display: flex;
   align-items: flex-end;
   min-height: var(--hero-h);
-  padding: 24px var(--edge-inset) 44px;
+  padding: 24px var(--edge-inset) 64px;
 }
-/* Mobile-first floor, not the desktop clamp()s' own 560px/88px floors —
-   those were tuned for a real desktop window and never actually shrink
-   below it (clamp() returns its own floor once the vw term drops under
-   it, regardless of how narrow the viewport actually gets), so a title
-   like "Lioness" ran off the right edge of a 375px phone instead of
-   wrapping. Restored to the original fluid values at 640px, same
-   breakpoint the actions row below already steps at. */
-.home-hero-info {
-  max-width: 100%;
+/* The reference's hero body: eyebrow pill, 120px Outfit title, meta
+   pills, a short synopsis and the action row. */
+.home-hero-body {
+  max-width: 760px;
+  min-width: 0;
 }
-.home-hero-info h1 {
+.hero-eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 14px 7px 10px;
+  border-radius: var(--radius-pill);
+  background: var(--glass);
+  border: 1px solid var(--glass-border);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: var(--meridian-ice);
+}
+.hero-eyebrow b {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--meridian-ice);
+  box-shadow: 0 0 12px var(--meridian-ice);
+}
+.home-hero-body h1 {
   font-family: var(--font-display);
-  font-size: clamp(40px, 12vw, 62px);
+  font-size: var(--text-hero);
   font-weight: 300;
   letter-spacing: var(--tracking-display);
-  margin: 0 0 12px;
-  line-height: 1;
+  line-height: 0.98;
+  margin: 24px 0 20px;
 }
-@media (min-width: 640px) {
-  .home-hero-info {
-    max-width: clamp(560px, 45vw, 760px);
-  }
-  .home-hero-info h1 {
-    font-size: clamp(88px, 6vw + 58px, 128px);
-  }
-}
-.home-hero-badge {
+.hero-meta {
   display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+.hero-pill {
+  display: inline-flex;
   align-items: center;
   gap: 6px;
-  color: var(--status-complete);
-  font-size: 17px;
-  font-weight: 800;
-  margin-bottom: 10px;
+  padding: 7px 12px;
+  border-radius: var(--radius-pill);
+  background: var(--glass);
+  border: 1px solid var(--glass-border);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  font-size: 12px;
+  font-weight: 700;
+  color: #fff;
 }
-.home-hero-badge .icon {
-  font-size: 19px;
+.hero-pill .icon {
+  font-size: 14px;
+}
+.hero-pill .hero-star {
+  color: var(--meridian-star);
+}
+.hero-pill.mute {
+  background: transparent;
+  border: 0;
+  color: var(--text-dim);
+  padding: 0 4px;
+}
+.hero-syn {
+  font-size: var(--text-body);
+  line-height: var(--leading-body);
+  color: rgba(245, 247, 250, 0.72);
+  font-weight: 500;
+  max-width: 56ch;
+  margin: 24px 0 34px;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 .home-hero-actions {
   display: flex;
   align-items: center;
   gap: 10px;
-  margin-top: 16px;
   flex-wrap: wrap;
 }
-.home-hero-actions .add-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 10px;
-  height: 48px;
-  padding: 0 26px;
-  font-size: 16px;
-}
-.home-hero-info-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 48px;
-  height: 48px;
-  font-size: 20px;
-  border-radius: 50%;
-  background: var(--glass);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
-  border: 1px solid var(--glass-border);
-  color: var(--text);
-}
-.home-hero-info-btn:hover {
-  opacity: 1;
-  background: var(--glass-strong);
+@media (max-width: 639px) {
+  .home-hero-content {
+    padding: 24px 20px 22px;
+  }
+  .home-hero-body h1 {
+    font-size: clamp(44px, 14vw, 62px);
+    margin: 14px 0 12px;
+  }
+  .hero-meta {
+    gap: 6px;
+  }
+  .hero-syn {
+    display: none;
+  }
+  .home-hero-actions {
+    margin-top: 18px;
+  }
+  .home-hero-actions .btn.pri {
+    flex: 1 1 auto;
+    justify-content: center;
+  }
 }
 .home-hero-arrow {
   position: absolute;
@@ -231,19 +268,24 @@
 }
 .home-hero-dots {
   position: absolute;
-  left: 50%;
-  transform: translateX(-50%);
-  bottom: 32px;
+  right: var(--edge-inset);
+  bottom: 72px;
   z-index: 3;
   display: flex;
   gap: 6px;
 }
+@media (max-width: 639px) {
+  .home-hero-dots {
+    right: 20px;
+    bottom: 12px;
+  }
+}
 .home-hero-dot {
-  width: 8px;
-  height: 8px;
+  width: 6px;
+  height: 6px;
   border-radius: 999px;
   border: none;
-  background: rgba(255, 255, 255, 0.4);
+  background: rgba(255, 255, 255, 0.3);
   transition:
     width 0.25s ease,
     background 0.25s ease;
@@ -251,53 +293,8 @@
 }
 .home-hero-dot.active {
   width: 22px;
+  border-radius: 3px;
   background: var(--text);
-}
-.home-hero-cert {
-  position: absolute;
-  right: var(--edge-inset);
-  bottom: 32px;
-  z-index: 3;
-  padding: 3px 8px;
-  font-size: 12px;
-  font-weight: 700;
-  color: var(--text-dim);
-  background: color-mix(in srgb, var(--bg) 55%, transparent);
-  border: 1px solid var(--border);
-  border-radius: 4px;
-}
-.home-hero-mute-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 48px;
-  height: 48px;
-  font-size: 20px;
-  z-index: 3;
-  border-radius: 50%;
-  background: var(--glass);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
-  border: 1px solid var(--glass-border);
-  color: var(--text);
-  opacity: 0.85;
-}
-.home-hero-mute-btn:hover {
-  opacity: 1;
-  background: var(--glass-strong);
-}
-@media (min-width: 640px) {
-  .home-hero-actions .add-btn {
-    height: 56px;
-    padding: 0 32px;
-    font-size: 17px;
-  }
-  .home-hero-info-btn,
-  .home-hero-mute-btn {
-    width: 56px;
-    height: 56px;
-    font-size: 22px;
-  }
 }
 
 /* Phones: the backdrop covers the whole hero (the reference's portrait

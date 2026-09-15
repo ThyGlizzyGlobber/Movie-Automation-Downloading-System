@@ -127,7 +127,7 @@ export default function InfiniteGrid({
     <>
       <div className="grid category-grid">
         {items.map((item) => (
-          <PosterCard key={item.id} item={item} mediaType={typeof mediaType === 'function' ? mediaType(item) : mediaType} />
+          <PosterCard key={item.id} item={item} mediaType={typeof mediaType === 'function' ? mediaType(item) : mediaType} mixed={typeof mediaType === 'function'} />
         ))}
       </div>
       <div className="grid-sentinel" ref={sentinelRef}>

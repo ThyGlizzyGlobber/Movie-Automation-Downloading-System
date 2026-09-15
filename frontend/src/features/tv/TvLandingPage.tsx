@@ -72,10 +72,10 @@ export default function TvLandingPage() {
   return (
     <>
       <HeroCarousel items={heroItems} />
-      <MediaRow title="Subscribed Shows" items={subscribedShows} mediaType="tv" expandHref="/tv/watching" />
-      <MediaRow title="Trending TV Shows" items={trending.data?.results ?? []} mediaType="tv" expandHref={browseHref({ type: 'tv', sort: 'trending' })} />
+      <MediaRow title="Shows" qualifier="you follow" items={subscribedShows} mediaType="tv" expandHref="/tv/watching" />
+      <MediaRow title="Trending" qualifier="shows" items={trending.data?.results ?? []} mediaType="tv" expandHref={browseHref({ type: 'tv', sort: 'trending' })} />
       <MediaRow title="Popular" items={popular.data?.results ?? []} mediaType="tv" expandHref={browseHref({ type: 'tv' })} />
-      <MediaRow title="Coming Soon" items={comingSoon.data?.results ?? []} mediaType="tv" expandHref={browseHref({ type: 'tv', list: 'coming-soon' })} />
+      <MediaRow title="Coming" qualifier="soon" items={comingSoon.data?.results ?? []} mediaType="tv" expandHref={browseHref({ type: 'tv', list: 'coming-soon' })} />
       {TV_GENRES.map((g, i) => (
         <MediaRow
           key={g.id}
@@ -86,13 +86,16 @@ export default function TvLandingPage() {
         />
       ))}
       <section className="row">
-        <h2>Browse a Service</h2>
+        <h2>
+          Browse <span className="row-qualifier">by service</span>
+        </h2>
         <ProviderChips type="tv" />
       </section>
       {ROW_PROVIDERS.map((p, i) => (
         <MediaRow
           key={p.id}
-          title={`Popular on ${p.name}`}
+          title="Popular"
+          qualifier={`on ${p.name}`}
           items={providerResults[i].data?.results ?? []}
           mediaType="tv"
           expandHref={browseHref({ type: 'tv', provider: p.id })}

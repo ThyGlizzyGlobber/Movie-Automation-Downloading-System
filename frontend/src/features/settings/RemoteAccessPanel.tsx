@@ -5,6 +5,8 @@ import LoadingState from '../../components/LoadingState'
 import ErrorState from '../../components/ErrorState'
 import EmptyState from '../../components/EmptyState'
 import { ApiError } from '../../api/client'
+import SettingRow from '../../components/SettingRow'
+import Toggle from '../../components/Toggle'
 import './RemoteAccessPanel.css'
 
 type SaveState = 'idle' | 'saving' | 'saved' | 'error'
@@ -53,16 +55,13 @@ function RemoteAccessSettingsSection() {
         Turn this on once Meridian is reachable over HTTPS from outside your home, for example through a reverse proxy
         or a Cloudflare Tunnel. It keeps sign-ins secure.
       </p>
-      <div className="settings-field">
-        <label className="settings-checkbox-label">
-          <input type="checkbox" checked={enabled} onChange={(e) => setEnabled(e.target.checked)} />
-          Meridian is reachable from outside the house
-        </label>
-      </div>
-      <div className="settings-field">
-        <label htmlFor="raPublicDomain">Web address (optional)</label>
+      <SettingRow label="Meridian is reachable from outside the house" hint="Keeps sign-ins secure once HTTPS is in front of it.">
+        <Toggle checked={enabled} onChange={setEnabled} label="Meridian is reachable from outside the house" />
+      </SettingRow>
+      <SettingRow label="Web address" hint="A note of where you've pointed it. Nothing else uses this." htmlFor="raPublicDomain">
         <input
           id="raPublicDomain"
+          className="mono"
           type="text"
           autoComplete="off"
           autoCapitalize="off"
@@ -70,12 +69,14 @@ function RemoteAccessSettingsSection() {
           value={domain}
           onChange={(e) => setDomain(e.target.value)}
           placeholder="meridian.example.com"
+          style={{ width: 240 }}
         />
-        <div className="settings-hint">A note of where you've pointed it. Nothing else uses this.</div>
+      </SettingRow>
+      <div className="settings-btn-row" style={{ marginTop: 18 }}>
+        <button className="settings-btn" disabled={saveState === 'saving'} onClick={save}>
+          {saveState === 'saving' ? 'Saving…' : saveState === 'saved' ? 'Saved' : 'Save'}
+        </button>
       </div>
-      <button className="settings-btn" disabled={saveState === 'saving'} onClick={save}>
-        {saveState === 'saving' ? 'Saving…' : saveState === 'saved' ? 'Saved' : 'Save'}
-      </button>
       {saveState === 'error' && saveError && <div className="settings-save-error">{saveError}</div>}
     </div>
   )
@@ -106,10 +107,12 @@ function RevokeSessionsSection() {
   return (
     <div className="settings-panel-card" style={{ marginBottom: 16 }}>
       <h2>Lost a device?</h2>
-      <p className="settings-sub">Signs everyone out straight away, including you.</p>
-      <button className="settings-btn danger" disabled={busy} onClick={revoke}>
-        {busy ? 'Signing everyone out…' : 'Sign out every device'}
-      </button>
+      <p className="settings-sub">Cut off a lost or stolen device.</p>
+      <SettingRow label="Sign out every device" hint="Signs everyone out straight away, including you.">
+        <button className="settings-btn danger sm" disabled={busy} onClick={revoke}>
+          {busy ? 'Signing out…' : 'Sign out all'}
+        </button>
+      </SettingRow>
       {result && <div className={result.ok ? 'settings-save-success' : 'settings-save-error'}>{result.message}</div>}
     </div>
   )

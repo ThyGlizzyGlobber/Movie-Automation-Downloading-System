@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react'
 import { NavLink, useLocation, useNavigate } from 'react-router-dom'
 import { useSession } from '../features/auth/useSession'
-import { badgeLabel, initialsOf, useActiveRequestCount } from '../lib/useActiveRequestCount'
+import { badgeLabel, initialsOf, useActiveRequestCount, useCompletedTodayCount } from '../lib/useActiveRequestCount'
 import './Topbar.css'
 import Icon from './Icon'
 
@@ -25,6 +25,7 @@ export default function Topbar({ onOpenSearch }: { onOpenSearch: () => void }) {
   const navigate = useNavigate()
   const topbarRef = useRef<HTMLDivElement>(null)
   const active = useActiveRequestCount()
+  const landedToday = useCompletedTodayCount()
 
   // #topbar is fixed, so it reserves no space in normal flow — main's own
   // top padding stands in for that space instead (see global.css), kept
@@ -68,6 +69,15 @@ export default function Topbar({ onOpenSearch }: { onOpenSearch: () => void }) {
           <Icon name="search" />
           <span className="top-search-label">Search</span>
           <kbd className="top-search-kbd">{isMac ? '⌘K' : 'Ctrl K'}</kbd>
+        </button>
+        <button
+          id="bellToggle"
+          aria-label={landedToday ? `${landedToday} added to Plex today` : 'Nothing new today'}
+          title={landedToday ? `${landedToday} added to Plex today` : 'Nothing new today'}
+          onClick={() => navigate('/requests')}
+        >
+          <Icon name="bell" />
+          {landedToday > 0 && <span className="bell-dot" />}
         </button>
         {session.data?.is_admin && (
           <button

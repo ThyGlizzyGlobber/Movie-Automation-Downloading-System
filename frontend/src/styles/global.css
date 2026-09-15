@@ -79,3 +79,81 @@ main {
     transform: rotate(360deg);
   }
 }
+
+/* Buttons — the reference's family: white primary, glass secondary,
+   a circle variant, ghost, danger and a small size. */
+.btn {
+  white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  height: 54px;
+  padding: 0 30px;
+  border-radius: var(--radius-pill);
+  font-family: var(--font-body);
+  font-size: 15px;
+  font-weight: 700;
+  border: 0;
+  color: var(--text);
+  background: none;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease, transform 0.15s ease;
+}
+.btn .icon {
+  font-size: 18px;
+}
+.btn.pri {
+  background: var(--btn-primary-bg);
+  color: var(--btn-primary-text);
+  box-shadow: var(--shadow-primary);
+}
+.btn.pri:hover {
+  transform: translateY(-1px);
+}
+.btn.sec {
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid var(--glass-border);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+}
+.btn.sec:hover {
+  background: var(--glass-strong);
+}
+.btn.circ {
+  width: 54px;
+  padding: 0;
+}
+.btn.ghost {
+  color: var(--text-dim);
+}
+.btn.ghost:hover {
+  color: var(--text);
+}
+.btn.danger {
+  background: color-mix(in srgb, var(--status-failed) 12%, transparent);
+  color: var(--status-failed);
+}
+.btn.sm {
+  height: 38px;
+  padding: 0 16px;
+  font-size: 13px;
+}
+.btn.sm.circ {
+  width: 38px;
+}
+.btn[disabled],
+.btn.dis {
+  opacity: 0.35;
+  pointer-events: none;
+}
+@media (max-width: 639px) {
+  .btn {
+    height: 46px;
+    padding: 0 20px;
+    font-size: 14px;
+  }
+  .btn.circ {
+    width: 46px;
+  }
+}

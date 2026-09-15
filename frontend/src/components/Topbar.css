@@ -71,6 +71,7 @@ body.search-open #topbar::before {
 }
 #searchToggleBtn,
 #accountToggle,
+#bellToggle,
 #settingsToggle {
   flex: 0 0 auto;
   background: var(--glass);
@@ -90,11 +91,13 @@ body.search-open #topbar::before {
 }
 #searchToggleBtn:active,
 #accountToggle:active,
+#bellToggle:active,
 #settingsToggle:active {
   background: var(--glass-strong);
 }
 #searchToggleBtn:hover,
 #settingsToggle:hover,
+#bellToggle:hover,
 body.search-open #searchToggleBtn,
 #settingsToggle.active {
   background: var(--btn-primary-bg);
@@ -194,6 +197,7 @@ body.search-open #searchToggleBtn,
     margin-left: 0;
   }
   #accountToggle,
+  #bellToggle,
   #settingsToggle {
     width: 40px;
     height: 40px;
@@ -240,6 +244,27 @@ body.search-open #searchToggleBtn,
     padding-right: 16px;
   }
   .top-search-kbd {
+    display: none;
+  }
+}
+
+/* Bell: a glowing ice dot when something landed in Plex today. */
+#bellToggle {
+  position: relative;
+}
+.bell-dot {
+  position: absolute;
+  top: 8px;
+  right: 9px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--meridian-ice);
+  box-shadow: 0 0 8px var(--meridian-ice);
+  border: 1.5px solid #0c0c12;
+}
+@media (max-width: 859px) {
+  #bellToggle {
     display: none;
   }
 }
