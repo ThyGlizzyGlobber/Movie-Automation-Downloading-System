@@ -12,10 +12,13 @@
 .retry {
   display: inline-block;
   margin-top: 10px;
-  padding: 8px 16px;
-  background: var(--bg-card);
-  border-radius: 8px;
+  padding: 9px 18px;
+  background: var(--glass);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-pill);
   color: var(--text);
+  font-weight: 700;
+  font-size: 13px;
 }
 
 .spinner {

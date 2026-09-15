@@ -4,7 +4,7 @@ import { listRequests, cancelRequest, clearRequests } from '../../api/requests'
 import { getRetention, setRetention } from '../../api/settings'
 import { useSession } from '../auth/useSession'
 import StatusPill from '../../components/StatusPill'
-import ProgressBar from '../../components/ProgressBar'
+import ProgressRing from '../../components/ProgressRing'
 import LoadingState from '../../components/LoadingState'
 import ErrorState from '../../components/ErrorState'
 import EmptyState from '../../components/EmptyState'
@@ -87,11 +87,11 @@ function RequestLeafRow({
           {label}
         </a>
         <div className="req-sub">{formatDate(row.created_at)}</div>
-        {row.status === 'downloading' && row.download_progress != null && <ProgressBar progress={row.download_progress} />}
       </div>
       <div className="req-actions">
         {row.redownload_mode && <RedownloadTag mode={row.redownload_mode} />}
         <StatusPill status={row.status} />
+        {row.status === 'downloading' && row.download_progress != null && <ProgressRing progress={row.download_progress} />}
         <RequestCancelAction row={row} onChanged={onChanged} />
       </div>
     </div>

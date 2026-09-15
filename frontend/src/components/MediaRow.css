@@ -2,12 +2,12 @@ section.row {
   margin-bottom: 26px;
 }
 section.row h2 {
-  font-size: 15px;
-  font-weight: 600;
-  color: var(--text-dim);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  margin: 0 0 10px var(--row-inset);
+  font-family: var(--font-display);
+  font-size: var(--text-section);
+  font-weight: 400;
+  color: var(--text);
+  letter-spacing: var(--tracking-title);
+  margin: 0 0 14px var(--row-inset);
 }
 /* A row whose title expands to a dedicated full-list page — accent-
    colored with a trailing chevron so it reads as tappable, not just a
@@ -15,18 +15,33 @@ section.row h2 {
 section.row .row-title {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  font-size: 15px;
-  font-weight: 600;
-  color: var(--accent);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  margin: 0 0 10px var(--row-inset);
+  gap: 10px;
+  font-family: var(--font-display);
+  font-size: var(--text-section);
+  font-weight: 400;
+  color: var(--text);
+  letter-spacing: var(--tracking-title);
+  margin: 0 0 14px var(--row-inset);
 }
 section.row .row-title-arrow {
-  font-size: 21px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--glass);
+  border: 1px solid var(--glass-border-soft);
+  font-family: var(--font-body);
+  font-size: 15px;
   line-height: 1;
   font-weight: 700;
+  color: var(--text-dim);
+  transition: background 0.15s ease, color 0.15s ease;
+}
+section.row .row-title:hover .row-title-arrow {
+  background: var(--btn-primary-bg);
+  color: var(--on-light);
 }
 section.row .row-title:active {
   opacity: 0.7;
@@ -34,9 +49,9 @@ section.row .row-title:active {
 
 .hscroll {
   display: flex;
-  gap: var(--row-gap);
+  gap: 14px;
   overflow-x: auto;
-  padding: 8px 0 4px var(--row-inset);
+  padding: 8px 0 18px var(--row-inset);
   margin-right: -14px;
   scroll-snap-type: x proximity;
   -webkit-overflow-scrolling: touch;

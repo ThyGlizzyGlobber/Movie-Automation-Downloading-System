@@ -1,25 +1,27 @@
 .downloads-fab {
   position: fixed;
   right: var(--edge-inset);
-  bottom: calc(84px + var(--safe-bottom));
+  bottom: calc(98px + var(--safe-bottom));
   z-index: 9;
   width: 56px;
   height: 56px;
   border-radius: 50%;
-  background: var(--bg-card);
-  border: 1px solid var(--border);
+  background: var(--glass-overlay);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  border: 1px solid var(--glass-border);
   color: var(--text);
   display: flex;
   align-items: center;
   justify-content: center;
-  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
+  box-shadow: var(--shadow-float), var(--glass-highlight);
 }
 .downloads-fab .material-symbols-rounded {
   font-size: 28px;
 }
 .downloads-fab:hover {
   opacity: 1;
-  background: var(--bg-card);
+  background: rgba(30, 30, 40, 0.8);
 }
 .downloads-fab:active {
   opacity: 0.85;

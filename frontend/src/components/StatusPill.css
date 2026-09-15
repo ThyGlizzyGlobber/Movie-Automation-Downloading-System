@@ -1,67 +1,64 @@
+/* Glass status pill: icon + label, tinted by state. One color per real
+   request state (see tokens.css --status-*); queued/cancelled stay
+   neutral so only states that need attention carry color. */
 .status-pill {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  font-size: 12.5px;
-  font-weight: 600;
-  padding: 4px 10px;
-  border-radius: 999px;
+  gap: 7px;
+  font-size: 12px;
+  font-weight: 700;
+  padding: 6px 12px 6px 9px;
+  border-radius: var(--radius-pill);
   white-space: nowrap;
+  background: var(--glass);
+  border: 1px solid var(--glass-border-soft);
 }
+.status-icon {
+  font-size: 14px;
+  line-height: 1;
+  flex: 0 0 auto;
+  font-variation-settings: 'FILL' 1, 'wght' 600, 'GRAD' 0, 'opsz' 20;
+}
+.status-queued {
+  color: var(--status-queued);
+}
+.status-searching {
+  color: var(--status-searching);
+  background: color-mix(in srgb, var(--status-searching) 10%, transparent);
+}
+.status-searching .status-icon {
+  animation: spin 1.4s linear infinite;
+}
+.status-downloading {
+  color: var(--status-downloading);
+  background: color-mix(in srgb, var(--status-downloading) 10%, transparent);
+}
+.status-complete {
+  color: var(--status-complete);
+  background: color-mix(in srgb, var(--status-complete) 10%, transparent);
+}
+.status-nomatch {
+  color: var(--status-nomatch);
+  background: color-mix(in srgb, var(--status-nomatch) 10%, transparent);
+}
+.status-nospace {
+  color: var(--status-nospace);
+  background: color-mix(in srgb, var(--status-nospace) 10%, transparent);
+}
+.status-failed {
+  color: var(--status-failed);
+  background: color-mix(in srgb, var(--status-failed) 10%, transparent);
+}
+
+/* Legacy dot, still used by WatchingPage's own subscription pill. */
 .status-dot {
   width: 7px;
   height: 7px;
   border-radius: 50%;
   flex: 0 0 auto;
+  background: currentColor;
 }
-.status-queued {
-  background: color-mix(in srgb, var(--status-queued) 22%, transparent);
-  color: var(--status-queued);
-}
-.status-searching {
-  background: color-mix(in srgb, var(--status-searching) 22%, transparent);
-  color: var(--status-searching);
-}
-.status-downloading {
-  background: color-mix(in srgb, var(--status-downloading) 22%, transparent);
-  color: var(--status-downloading);
-}
-.status-complete {
-  background: color-mix(in srgb, var(--status-complete) 22%, transparent);
-  color: var(--status-complete);
-}
-.status-nomatch {
-  background: color-mix(in srgb, var(--status-nomatch) 22%, transparent);
-  color: var(--status-nomatch);
-}
-.status-nospace {
-  background: color-mix(in srgb, var(--status-nospace) 22%, transparent);
-  color: var(--status-nospace);
-}
-.status-failed {
-  background: color-mix(in srgb, var(--status-failed) 22%, transparent);
-  color: var(--status-failed);
-}
-.status-dot.status-queued {
-  background: var(--status-queued);
-}
-.status-dot.status-searching {
-  background: var(--status-searching);
-  animation: pulse 1.1s ease-in-out infinite;
-}
+.status-dot.status-searching,
 .status-dot.status-downloading {
-  background: var(--status-downloading);
   animation: pulse 1.1s ease-in-out infinite;
-}
-.status-dot.status-complete {
-  background: var(--status-complete);
-}
-.status-dot.status-nomatch {
-  background: var(--status-nomatch);
-}
-.status-dot.status-nospace {
-  background: var(--status-nospace);
-}
-.status-dot.status-failed {
-  background: var(--status-failed);
 }

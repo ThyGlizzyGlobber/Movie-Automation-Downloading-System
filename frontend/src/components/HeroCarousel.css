@@ -119,10 +119,12 @@
   max-width: 100%;
 }
 .home-hero-info h1 {
-  font-size: clamp(34px, 11vw, 56px);
-  font-weight: 800;
-  margin: 0 0 10px;
-  line-height: 1.1;
+  font-family: var(--font-display);
+  font-size: clamp(40px, 12vw, 62px);
+  font-weight: 300;
+  letter-spacing: var(--tracking-display);
+  margin: 0 0 12px;
+  line-height: 1;
 }
 @media (min-width: 640px) {
   .home-hero-info {
@@ -167,13 +169,15 @@
   height: 48px;
   font-size: 20px;
   border-radius: 50%;
-  background: color-mix(in srgb, var(--bg-card) 70%, transparent);
-  border: 1px solid var(--border);
+  background: var(--glass);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid var(--glass-border);
   color: var(--text);
 }
 .home-hero-info-btn:hover {
   opacity: 1;
-  background: var(--bg-card);
+  background: var(--glass-strong);
 }
 .home-hero-arrow {
   position: absolute;
@@ -247,14 +251,16 @@
   font-size: 20px;
   z-index: 3;
   border-radius: 50%;
-  background: color-mix(in srgb, var(--bg-card) 70%, transparent);
-  border: 1px solid var(--border);
+  background: var(--glass);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid var(--glass-border);
   color: var(--text);
   opacity: 0.85;
 }
 .home-hero-mute-btn:hover {
   opacity: 1;
-  background: var(--bg-card);
+  background: var(--glass-strong);
 }
 @media (min-width: 640px) {
   .home-hero-actions .add-btn {

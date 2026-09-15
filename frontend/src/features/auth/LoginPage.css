@@ -28,7 +28,10 @@
 
 .login-title {
   font-family: var(--font-display);
-  font-size: 28px;
+  font-size: 40px;
+  font-weight: 300;
+  letter-spacing: var(--tracking-display);
+  line-height: 1;
   margin: 0;
 }
 
@@ -43,9 +46,10 @@
   width: 100%;
   padding: 14px 20px;
   border: none;
-  border-radius: 10px;
-  background: var(--accent);
-  color: var(--accent-text);
+  border-radius: var(--radius-pill);
+  background: var(--btn-primary-bg);
+  color: var(--btn-primary-text);
+  box-shadow: var(--shadow-primary);
   font-size: 16px;
   font-weight: 700;
   cursor: pointer;
@@ -75,6 +79,6 @@
     max-width: 420px;
   }
   .login-title {
-    font-size: 32px;
+    font-size: 48px;
   }
 }

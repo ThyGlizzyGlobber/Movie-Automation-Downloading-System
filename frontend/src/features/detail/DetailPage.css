@@ -99,10 +99,12 @@
   padding-bottom: 2px;
 }
 .detail-info h1 {
-  font-size: 34px;
-  font-weight: 800;
-  margin: 0 0 10px;
-  line-height: 1.15;
+  font-family: var(--font-display);
+  font-size: 40px;
+  font-weight: 300;
+  letter-spacing: var(--tracking-display);
+  margin: 0 0 12px;
+  line-height: 1;
 }
 .detail-info h1 .hero-year {
   font-weight: 400;
@@ -232,8 +234,10 @@
 }
 
 .detail-panel-title {
-  font-size: 20px;
-  font-weight: 800;
+  font-family: var(--font-display);
+  font-size: 22px;
+  font-weight: 400;
+  letter-spacing: var(--tracking-title);
   margin: 0 0 10px;
 }
 .detail-panel-tags {
@@ -343,15 +347,16 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  background: color-mix(in srgb, var(--bg-card) 70%, transparent);
-  border: 1px solid var(--border);
+  background: var(--glass);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid var(--glass-border);
   color: var(--text);
   font-size: 22px;
 }
 .detail-state-icon:hover {
-  background: #fff;
+  background: var(--btn-primary-bg);
   color: var(--on-light);
-  border-radius: 50%;
 }
 .detail-state-icon[disabled] {
   opacity: 0.5;
@@ -361,22 +366,29 @@
 .add-btn {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
   white-space: nowrap;
-  padding: 12px 22px;
+  height: 48px;
+  padding: 0 24px;
   font-size: 15px;
   font-weight: 700;
-  background: var(--accent);
-  color: var(--accent-text);
+  background: var(--btn-primary-bg);
+  color: var(--btn-primary-text);
   border: none;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
+  box-shadow: var(--shadow-primary);
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+.add-btn:hover {
+  box-shadow: 0 14px 44px rgba(255, 255, 255, 0.24);
 }
 .add-btn:active {
-  opacity: 0.85;
+  transform: scale(0.98);
 }
 .add-btn[disabled] {
-  background: var(--bg-card);
+  background: var(--glass);
   color: var(--text-dim);
+  box-shadow: none;
 }
 .add-confirm {
   margin-top: 14px;
@@ -420,10 +432,11 @@
     height: 300px;
   }
   .detail-info h1 {
-    font-size: 40px;
+    font-size: 64px;
   }
   .add-btn {
-    padding: 14px 28px;
+    height: 54px;
+    padding: 0 30px;
     font-size: 16px;
   }
 }
@@ -444,16 +457,17 @@
   margin-top: 10px;
   padding: 13px;
   font-size: 15px;
-  font-weight: 600;
-  background: var(--bg-card);
+  font-weight: 700;
+  background: var(--glass);
   color: var(--text);
-  border: 1px solid var(--border);
-  border-radius: 12px;
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-pill);
 }
 .bulk-btn.primary {
-  background: var(--accent);
-  color: var(--accent-text);
-  border-color: var(--accent);
+  background: var(--btn-primary-bg);
+  color: var(--btn-primary-text);
+  border-color: var(--btn-primary-bg);
+  box-shadow: var(--shadow-primary);
 }
 .bulk-btn:active {
   opacity: 0.85;
@@ -463,9 +477,9 @@
   opacity: 0.6;
 }
 .bulk-btn:not([disabled]):hover {
-  background: #fff;
+  background: var(--btn-primary-bg);
   color: var(--on-light);
-  border-color: #fff;
+  border-color: var(--btn-primary-bg);
 }
 .season-list {
   display: flex;
@@ -490,24 +504,24 @@
 }
 .season-btn {
   font-size: 12.5px;
-  font-weight: 600;
-  padding: 7px 14px;
-  border-radius: 999px;
-  background: none;
-  color: var(--accent);
-  border: 1px solid var(--accent);
+  font-weight: 700;
+  padding: 8px 14px;
+  border-radius: var(--radius-pill);
+  background: var(--glass);
+  color: var(--text);
+  border: 1px solid var(--glass-border);
 }
 .season-btn:active {
-  background: color-mix(in srgb, var(--accent) 18%, transparent);
+  background: var(--glass-strong);
 }
 .season-btn[disabled] {
   color: var(--text-dim);
-  border-color: var(--border);
+  border-color: var(--glass-border-soft);
 }
 .season-btn:not([disabled]):hover {
-  background: #fff;
+  background: var(--btn-primary-bg);
   color: var(--on-light);
-  border-color: #fff;
+  border-color: var(--btn-primary-bg);
 }
 
 /* Per-request resolution picker (Part J4) — sits inline with the bulk-
@@ -516,10 +530,10 @@
   font-size: 12.5px;
   font-weight: 600;
   padding: 6px 10px;
-  border-radius: 999px;
-  background: var(--bg-elevated);
+  border-radius: var(--radius-pill);
+  background: var(--glass);
   color: var(--text);
-  border: 1px solid var(--border);
+  border: 1px solid var(--glass-border);
 }
 
 /* Small "Redownload" tag — mirrors StatusPill's own pill language,

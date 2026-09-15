@@ -1,3 +1,9 @@
+/* The top bar is a floating glass pill (the reference's nav), not a
+   full-width band: #topbar itself stays a full-width fixed box so
+   --topbar-h (measured from its offsetHeight by Topbar.tsx) still
+   reserves the right space in main, and the pill is drawn by ::before
+   inset from the box's edges. Same treatment on every page, hero or
+   not — the pill floats over hero art by design. */
 #topbar {
   position: fixed;
   top: 0;
@@ -6,47 +12,42 @@
   z-index: 10;
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: calc(25px + var(--safe-top)) var(--edge-inset) 25px;
-  background: color-mix(in srgb, var(--bg) 92%, transparent);
-  backdrop-filter: blur(10px);
+  gap: 6px;
+  height: calc(66px + var(--safe-top));
+  padding: calc(12px + var(--safe-top)) 20px 0 26px;
 }
-/* Hero-topped pages: no background of its own at all at the top of the
-   page — the hero's own top fade carries icon/text legibility instead.
-   Applies once a page opts in via useSetHasHero(true) (none built yet). */
-body.has-hero #topbar {
-  background: transparent;
-  backdrop-filter: none;
-  transition: background 0.2s ease;
+#topbar::before {
+  content: '';
+  position: absolute;
+  z-index: -1;
+  top: calc(12px + var(--safe-top));
+  left: 14px;
+  right: 14px;
+  bottom: 0;
+  border-radius: var(--radius-pill);
+  background: var(--glass-overlay);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  border: 1px solid var(--glass-border);
+  box-shadow: var(--shadow-float), var(--glass-highlight);
+  transition: opacity 0.2s ease;
 }
-body.has-hero.scrolled #topbar {
-  background: rgba(0, 0, 0, 0.55);
-  backdrop-filter: blur(20px);
-}
-body.search-open #topbar,
-body.has-hero.search-open #topbar,
-body.has-hero.scrolled.search-open #topbar {
-  background: transparent;
-  backdrop-filter: none;
-}
-body.has-hero #topbar .top-nav-link {
-  color: var(--text);
-}
-body.has-hero #topbar .top-nav-link.active {
-  color: var(--on-light);
+/* The search palette has its own glass; the nav pill fades out under it. */
+body.search-open #topbar::before {
+  opacity: 0;
 }
 
 #searchToggleBtn,
 #accountToggle,
 #settingsToggle {
   flex: 0 0 auto;
-  background: none;
+  background: var(--glass);
   border: none;
   color: var(--text);
-  font-size: 20px;
-  width: 35.5px;
-  height: 35.5px;
-  border-radius: 8px;
+  font-size: 19px;
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
   line-height: 1;
   display: flex;
   align-items: center;
@@ -55,7 +56,7 @@ body.has-hero #topbar .top-nav-link.active {
 #searchToggleBtn:active,
 #accountToggle:active,
 #settingsToggle:active {
-  background: var(--bg-card);
+  background: var(--glass-strong);
 }
 #searchToggleBtn:hover,
 #accountToggle:hover,
@@ -63,9 +64,8 @@ body.has-hero #topbar .top-nav-link.active {
 body.search-open #searchToggleBtn,
 #accountToggle.active,
 #settingsToggle.active {
-  background: #fff;
+  background: var(--btn-primary-bg);
   color: var(--on-light);
-  border-radius: 50%;
 }
 #searchToggleBtn {
   margin-left: auto;
@@ -76,7 +76,7 @@ body.search-open #searchToggleBtn,
   display: flex;
   align-items: center;
   min-width: 0;
-  margin-right: 22px;
+  margin-right: 18px;
 }
 #topbarLogo .brand-wordmark {
   display: inline-flex;
@@ -84,14 +84,14 @@ body.search-open #searchToggleBtn,
   gap: 12px;
   font-family: var(--font-display);
   font-weight: 500;
-  font-size: 24px;
+  font-size: 20px;
   line-height: 1;
   letter-spacing: -0.01em;
   color: var(--text);
 }
 #topbarLogo .brand-mark {
-  width: 32px;
-  height: 32px;
+  width: 30px;
+  height: 30px;
   border-radius: 9px;
   box-shadow: 0 6px 18px rgba(80, 120, 255, 0.35);
 }
@@ -100,28 +100,51 @@ body.search-open #searchToggleBtn,
   display: none;
 }
 .top-nav-link {
-  padding: 8px 14px;
-  border-radius: 999px;
-  font-size: 16px;
-  font-weight: 600;
+  padding: 9px 18px;
+  border-radius: var(--radius-pill);
+  font-size: 14px;
+  font-weight: 700;
   color: var(--text-dim);
   background: none;
   border: none;
+  transition: background 0.15s ease, color 0.15s ease;
 }
 .top-nav-link:hover {
   color: var(--text);
-  background: var(--bg-card);
 }
 .top-nav-link.active {
-  color: var(--on-light);
-  background: #fff;
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.13);
+  box-shadow: var(--glass-highlight);
 }
 
 @media (min-width: 860px) {
+  #topbar {
+    height: calc(88px + var(--safe-top));
+    padding: calc(24px + var(--safe-top)) calc(var(--nav-side) + 12px) 0 calc(var(--nav-side) + 22px);
+  }
+  #topbar::before {
+    top: calc(24px + var(--safe-top));
+    left: var(--nav-side);
+    right: var(--nav-side);
+  }
+  /* Segmented pill of links, centred between the wordmark and the icon
+     cluster (auto margins on both it and the search button split the
+     free space). */
   .top-nav-links {
     display: flex;
     align-items: center;
-    gap: 4px;
+    gap: 2px;
     flex: 0 0 auto;
+    margin: 0 auto;
+    padding: 4px;
+    border-radius: var(--radius-pill);
+    background: rgba(255, 255, 255, 0.04);
+  }
+  #searchToggleBtn,
+  #accountToggle,
+  #settingsToggle {
+    width: 40px;
+    height: 40px;
   }
 }

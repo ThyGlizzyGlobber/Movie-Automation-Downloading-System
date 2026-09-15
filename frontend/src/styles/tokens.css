@@ -122,6 +122,13 @@
   --accent: var(--meridian-ice);
   --accent-text: var(--meridian-black);
   --accent-soft: rgba(156, 192, 255, 0.12);
+  /* Primary buttons are white ink on the black ground (the reference's
+     signature); secondary buttons are glass. */
+  --btn-primary-bg: #ffffff;
+  --btn-primary-text: var(--meridian-black);
+  /* Side inset of the floating nav pill: the page edge inset, or centred
+     at 1180px wide once the viewport is wider than that. */
+  --nav-side: max(var(--edge-inset), calc(50% - 590px));
   /* Storage-used fill and the one detail chip that must read as
      distinct from --accent. Amber is what the reference uses for
      storage. */

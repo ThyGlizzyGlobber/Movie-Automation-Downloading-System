@@ -34,8 +34,11 @@
 
 .setup-step-title {
   font-family: var(--font-display);
-  font-size: 24px;
-  margin: 0 0 6px;
+  font-size: 32px;
+  font-weight: 300;
+  letter-spacing: var(--tracking-display);
+  line-height: 1;
+  margin: 0 0 10px;
 }
 
 .setup-step-copy {
@@ -87,20 +90,21 @@
 .setup-button {
   width: 100%;
   padding: 13px 20px;
-  border-radius: 10px;
+  border-radius: var(--radius-pill);
   font-size: 15px;
   font-weight: 700;
   cursor: pointer;
   border: none;
 }
 .setup-button.primary {
-  background: var(--accent);
-  color: var(--accent-text);
+  background: var(--btn-primary-bg);
+  color: var(--btn-primary-text);
+  box-shadow: var(--shadow-primary);
 }
 .setup-button.secondary {
-  background: var(--bg-card);
+  background: var(--glass);
   color: var(--text);
-  border: 1px solid var(--border);
+  border: 1px solid var(--glass-border);
 }
 .setup-button:disabled {
   opacity: 0.6;

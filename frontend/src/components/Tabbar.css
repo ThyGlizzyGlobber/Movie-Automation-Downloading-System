@@ -1,14 +1,22 @@
+/* Mobile bottom navigation as a floating glass pill above the safe
+   area (the reference's mobile tab bar), replacing the old edge-to-edge
+   band. Fixed elements that used to sit above the band (DownloadsFab,
+   StorageIndicator, the Requests clear button) clear it at 98px. */
 #tabbar {
   position: fixed;
-  left: 0;
-  right: 0;
-  bottom: 0;
+  left: 14px;
+  right: 14px;
+  bottom: calc(14px + var(--safe-bottom));
   z-index: 10;
   display: flex;
-  background: color-mix(in srgb, var(--bg) 94%, transparent);
-  backdrop-filter: blur(10px);
-  border-top: 1px solid var(--border);
-  padding: 6px 0 calc(6px + var(--safe-bottom));
+  gap: 2px;
+  padding: 6px;
+  border-radius: var(--radius-pill);
+  background: var(--glass-overlay);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  border: 1px solid var(--glass-border);
+  box-shadow: var(--shadow-float), var(--glass-highlight);
 }
 .tab {
   flex: 1;
@@ -16,11 +24,14 @@
   flex-direction: column;
   align-items: center;
   gap: 2px;
-  padding: 6px 0;
+  padding: 7px 0 6px;
+  border-radius: var(--radius-pill);
   color: var(--text-dim);
   font-size: 11px;
+  font-weight: 700;
   background: none;
   border: none;
+  transition: background 0.15s ease, color 0.15s ease;
 }
 .tab .icon {
   display: flex;
@@ -29,11 +40,12 @@
   font-size: 22px;
 }
 .tab.active {
-  color: var(--accent);
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.14);
+  box-shadow: var(--glass-highlight);
 }
 
-/* Desktop: a top horizontal bar (Topbar's .top-nav-links) replaces this
-   bottom tab bar above 860px. */
+/* Desktop: the floating top pill's own links replace this bar above 860px. */
 @media (min-width: 860px) {
   #tabbar {
     display: none;

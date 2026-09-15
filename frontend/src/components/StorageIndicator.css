@@ -1,16 +1,18 @@
 .storage-indicator {
   position: fixed;
   left: var(--edge-inset);
-  bottom: calc(84px + var(--safe-bottom));
+  bottom: calc(98px + var(--safe-bottom));
   z-index: 9;
   display: flex;
   align-items: center;
   gap: 10px;
-  background: var(--bg-card);
-  border: 1px solid var(--border);
-  border-radius: 999px;
+  background: var(--glass-overlay);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-pill);
   padding: 11px 18px 11px 14px;
-  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
+  box-shadow: var(--shadow-float), var(--glass-highlight);
 }
 .storage-indicator-icon {
   font-size: 20px;
@@ -21,7 +23,7 @@
   width: 48px;
   height: 6px;
   border-radius: 999px;
-  background: var(--bg-elevated);
+  background: rgba(255, 255, 255, 0.12);
   overflow: hidden;
   flex: 0 0 auto;
 }
@@ -31,11 +33,14 @@
   width: 0%;
   border-radius: 999px;
   background: var(--accent-secondary);
+  box-shadow: 0 0 8px color-mix(in srgb, var(--accent-secondary) 60%, transparent);
   transition: width 0.3s ease;
 }
 .storage-indicator-pct {
-  font-size: 14px;
-  font-weight: 700;
+  font-family: var(--font-display);
+  font-size: 15px;
+  font-weight: 500;
+  letter-spacing: -0.02em;
   color: var(--text);
   white-space: nowrap;
 }

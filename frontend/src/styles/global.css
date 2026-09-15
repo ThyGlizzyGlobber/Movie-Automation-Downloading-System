@@ -59,7 +59,7 @@ button {
    above it. No max-width — the row-based layout fills the real browser
    width edge to edge (Prime/Netflix-style), not centered with gaps. */
 main {
-  padding: calc(var(--topbar-h, 64px) + 14px) 14px calc(130px + var(--safe-bottom));
+  padding: calc(var(--topbar-h, 64px) + 14px) 14px calc(150px + var(--safe-bottom));
   min-height: 60vh;
 }
 @media (min-width: 860px) {
@@ -70,7 +70,11 @@ main {
 
 /* Shared across category/detail/settings pages. */
 .page-title {
-  font-size: 21px;
+  font-family: var(--font-display);
+  font-weight: 300;
+  font-size: clamp(30px, 3.6vw, 52px);
+  letter-spacing: var(--tracking-display);
+  line-height: 1;
   margin: 0 0 22px var(--row-inset);
 }
 .page-title + .page-subtitle {

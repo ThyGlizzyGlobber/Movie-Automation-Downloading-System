@@ -4,45 +4,61 @@
 }
 .poster-art {
   position: relative;
-  border-radius: 10px;
+  border-radius: var(--radius-md);
   overflow: hidden;
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.45);
+}
+/* Faint top sheen so the rounded card reads as a lit surface rather than
+   a flat cut-out, matching the reference's cards. */
+.poster-art::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.08), transparent 38%);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.14);
+  pointer-events: none;
 }
 .poster-card img {
   width: 100%;
   height: auto;
   aspect-ratio: 2 / 3;
   object-fit: cover;
-  border-radius: 10px;
+  border-radius: var(--radius-md);
   background: var(--bg-card);
   display: block;
 }
-/* "On Plex" badge — a quick-glance band across the bottom of any poster
+/* "On Plex" chip — a glass badge in the poster's corner for anything
    already in the household's Plex library, distinct from "I requested
-   this" (the app's own status pills). Green, matching the existing
-   --status-complete "done/good" color language. */
+   this" (the app's own status pills). Mint, matching --status-complete. */
 .on-plex-badge {
   position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: color-mix(in srgb, var(--status-complete) 30%, black 55%);
+  top: 10px;
+  right: 10px;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  padding: 5px 9px;
+  border-radius: var(--radius-pill);
+  background: rgba(5, 5, 8, 0.6);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.12);
   color: var(--status-complete);
   font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  text-align: center;
-  padding: 4px 2px;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
 }
 @media (hover: hover) {
   .poster-art {
     transition:
-      transform 0.15s ease,
-      box-shadow 0.15s ease;
+      transform 0.25s cubic-bezier(0.2, 0.7, 0.2, 1),
+      box-shadow 0.25s ease;
   }
   .poster-card:hover .poster-art {
-    transform: scale(1.045);
-    box-shadow: 0 8px 20px rgba(0, 0, 0, 0.5);
+    transform: translateY(-6px);
+    box-shadow: var(--shadow-card);
     z-index: 1;
   }
 }

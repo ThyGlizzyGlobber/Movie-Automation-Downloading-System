@@ -6,6 +6,8 @@
    own spacing. */
 #requestsList {
   padding: 0 var(--row-inset);
+  display: grid;
+  gap: 10px;
 }
 /* flex-wrap (mobile's own concern, per Part H — three action pills
    easily lose the fight for space against poster+title+date on a narrow
@@ -18,15 +20,21 @@
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 6px 10px;
-  padding: 14px 4px;
-  border-bottom: 1px solid var(--border);
+  gap: 6px 12px;
+  padding: 12px 16px 12px 12px;
+  border-radius: var(--radius-lg);
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--glass-border-soft);
+  transition: background 0.15s ease;
+}
+.req-row:hover {
+  background: rgba(255, 255, 255, 0.065);
 }
 .req-poster {
   flex: 0 0 auto;
-  width: 40px;
-  height: 60px;
-  border-radius: 6px;
+  width: 44px;
+  height: 66px;
+  border-radius: 10px;
   object-fit: cover;
   background: var(--bg-card);
 }
@@ -36,8 +44,10 @@
 }
 .req-title {
   display: block;
-  font-size: 15.5px;
-  font-weight: 600;
+  font-family: var(--font-display);
+  font-size: 17px;
+  font-weight: 400;
+  letter-spacing: var(--tracking-title);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -46,9 +56,10 @@
   opacity: 0.7;
 }
 .req-sub {
-  font-size: 12.5px;
+  font-size: 12px;
+  font-weight: 600;
   color: var(--text-dim);
-  margin-top: 3px;
+  margin-top: 4px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -77,7 +88,7 @@
   cursor: pointer;
 }
 .req-group-header:active {
-  background: var(--bg-card);
+  background: var(--glass-strong);
 }
 .req-group-toggle-btn {
   flex: 0 0 auto;
@@ -92,28 +103,32 @@
   font-size: 11px;
 }
 .req-group-children {
-  padding-left: 30px;
+  display: grid;
+  gap: 6px;
+  padding: 6px 0 4px 30px;
 }
 .req-child-row {
-  padding: 10px 4px;
+  padding: 8px 14px 8px 12px;
+  border-radius: var(--radius-md);
+  background: rgba(255, 255, 255, 0.03);
 }
 .req-child-row .req-title {
-  font-size: 14px;
-  font-weight: 500;
+  font-size: 15px;
   color: var(--text-dim);
 }
 
 .cancel-btn {
-  font-size: 12.5px;
-  font-weight: 600;
-  padding: 5px 12px;
-  border-radius: 999px;
-  background: transparent;
-  color: var(--status-nospace);
-  border: 1px solid var(--status-nospace);
+  font-size: 12px;
+  font-weight: 700;
+  padding: 7px 14px;
+  border-radius: var(--radius-pill);
+  background: color-mix(in srgb, var(--status-failed) 12%, transparent);
+  color: var(--status-failed);
+  border: none;
 }
+.cancel-btn:hover,
 .cancel-btn:active {
-  background: color-mix(in srgb, var(--status-nospace) 18%, transparent);
+  background: color-mix(in srgb, var(--status-failed) 22%, transparent);
 }
 .cancel-btn[disabled] {
   opacity: 0.5;
@@ -122,19 +137,20 @@
    reads simpler than a text pill for that. */
 .req-delete-btn {
   flex: 0 0 auto;
-  width: 28px;
-  height: 28px;
+  width: 32px;
+  height: 32px;
   border-radius: 50%;
-  background: none;
+  background: var(--glass);
   border: none;
-  color: var(--status-nospace);
-  font-size: 15px;
+  color: var(--status-failed);
+  font-size: 14px;
   display: flex;
   align-items: center;
   justify-content: center;
 }
+.req-delete-btn:hover,
 .req-delete-btn:active {
-  background: color-mix(in srgb, var(--status-nospace) 18%, transparent);
+  background: color-mix(in srgb, var(--status-failed) 22%, transparent);
 }
 .req-delete-btn[disabled] {
   opacity: 0.5;
@@ -146,7 +162,7 @@
 .clear-requests-fab {
   position: fixed;
   right: var(--edge-inset);
-  bottom: calc(84px + var(--safe-bottom));
+  bottom: calc(98px + var(--safe-bottom));
   z-index: 9;
 }
 .retention-menu-backdrop {
@@ -157,18 +173,20 @@
 .split-btn {
   display: flex;
   align-items: stretch;
-  background: var(--bg-card);
-  border: 1px solid var(--status-nospace);
-  border-radius: 999px;
+  background: var(--glass-overlay);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-pill);
   overflow: hidden;
-  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
+  box-shadow: var(--shadow-float), var(--glass-highlight);
 }
 .split-btn-main {
   background: none;
   border: none;
-  color: var(--status-nospace);
+  color: var(--status-failed);
   font-size: 13.5px;
-  font-weight: 600;
+  font-weight: 700;
   padding: 10px 16px;
   white-space: nowrap;
 }
@@ -177,14 +195,13 @@
 }
 .split-btn-divider {
   width: 1px;
-  background: var(--status-nospace);
-  opacity: 0.35;
+  background: var(--glass-border);
   margin: 8px 0;
 }
 .split-btn-arrow {
   background: none;
   border: none;
-  color: var(--status-nospace);
+  color: var(--status-failed);
   font-size: 12px;
   padding: 10px 14px;
   display: flex;
@@ -192,7 +209,7 @@
 }
 .split-btn-main:active,
 .split-btn-arrow:active {
-  background: color-mix(in srgb, var(--status-nospace) 18%, transparent);
+  background: color-mix(in srgb, var(--status-failed) 18%, transparent);
 }
 
 .retention-menu {
@@ -201,11 +218,13 @@
   right: 0;
   bottom: calc(100% + 8px);
   min-width: 200px;
-  background: var(--bg-elevated);
-  border: 1px solid var(--border);
-  border-radius: 12px;
+  background: var(--glass-overlay);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-md);
   overflow: hidden;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+  box-shadow: var(--shadow-float), var(--glass-highlight);
 }
 .retention-option {
   display: flex;
@@ -225,7 +244,7 @@
   border-bottom: none;
 }
 .retention-option:active {
-  background: var(--bg-card);
+  background: var(--glass-strong);
 }
 .retention-option .check {
   color: var(--accent);
