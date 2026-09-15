@@ -106,6 +106,7 @@ export interface HouseholdUser {
   plex_user_id: string
   username: string | null
   is_admin: boolean
+  avatar?: boolean
   can_request: boolean
   first_seen_at: string
   last_login_at: string

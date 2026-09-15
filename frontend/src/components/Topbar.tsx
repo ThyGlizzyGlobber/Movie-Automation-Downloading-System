@@ -3,6 +3,7 @@ import { NavLink, useLocation, useNavigate } from 'react-router-dom'
 import { useSession } from '../features/auth/useSession'
 import { badgeLabel, initialsOf, useActiveRequestCount } from '../lib/useActiveRequestCount'
 import NotificationsMenu from './NotificationsMenu'
+import Avatar from './Avatar'
 import './Topbar.css'
 import Icon from './Icon'
 
@@ -85,9 +86,9 @@ export default function Topbar({ onOpenSearch }: { onOpenSearch: () => void }) {
           id="accountToggle"
           aria-label="Account"
           onClick={() => navigate('/account')}
-          className={`${initials ? 'has-initials' : ''}${location.pathname === '/account' ? ' active' : ''}`}
+          className={`${initials || session.data?.avatar ? 'has-initials' : ''}${session.data?.avatar ? ' has-picture' : ''}${location.pathname === '/account' ? ' active' : ''}`}
         >
-          {initials || <Icon name="user" />}
+          <Avatar src="/api/me/avatar" name={session.data?.username} hasPicture={!!session.data?.avatar} />
         </button>
       </div>
     </div>

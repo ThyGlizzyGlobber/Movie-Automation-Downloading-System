@@ -151,7 +151,10 @@ class PlexClient:
         if not response.ok:
             return None
         data = response.json()
-        return {"id": data.get("id"), "username": data.get("username") or data.get("title")}
+        # `thumb` is the account's avatar on plex.tv; its query string is
+        # only a cache-buster, the bare URL always serves the current one.
+        thumb = (data.get("thumb") or "").split("?")[0] or None
+        return {"id": data.get("id"), "username": data.get("username") or data.get("title"), "thumb": thumb}
 
     def check_server_access(self, token: str, machine_identifier: str) -> dict | None:
         """Whether this account has access — owned or shared — to the
@@ -524,6 +527,7 @@ class LoginSession:
                         "plex_user_id": str(identity["id"]),
                         "username": identity.get("username"),
                         "is_admin": access["owned"],
+                        "thumb": identity.get("thumb"),
                     }
                     return
                 await asyncio.sleep(PIN_POLL_INTERVAL_SECONDS)

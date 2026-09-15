@@ -4,6 +4,8 @@ export interface SessionInfo {
   username: string | null
   is_admin: boolean
   has_seen_tutorial: boolean
+  // Whether /api/me/avatar has a picture (the Plex account's avatar).
+  avatar?: boolean
 }
 
 export interface LoginStartResponse {

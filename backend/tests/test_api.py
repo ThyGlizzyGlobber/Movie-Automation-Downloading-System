@@ -2765,3 +2765,18 @@ def test_movie_and_tv_detail_carry_a_logo_path(client_and_deps):
     client, _, _, _, _, _ = client_and_deps
     assert "logo_path" in client.get("/api/movies/1").json()
     assert "logo_path" in client.get("/api/tv/1").json()
+
+
+def test_session_reports_avatar_and_proxy_404s_without_one(client_and_deps):
+    client, _, _, _, _, _ = client_and_deps
+    assert client.get("/api/auth/session").json()["avatar"] is False
+    assert client.get("/api/me/avatar").status_code == 404
+
+
+def test_upsert_user_keeps_an_avatar_when_login_brings_none(tmp_path):
+    from app.db import RequestStore
+
+    store = RequestStore(tmp_path / "a.db")
+    store.upsert_user("u1", "Uno", False, "https://plex.tv/users/abc/avatar")
+    again = store.upsert_user("u1", "Uno", False, None)
+    assert again.avatar_url == "https://plex.tv/users/abc/avatar"

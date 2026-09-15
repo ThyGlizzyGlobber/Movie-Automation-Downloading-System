@@ -213,6 +213,8 @@ class UserRow:
     can_request: bool = True
     notify_own: bool = True
     notify_household: bool = False
+    # plex.tv avatar URL (no query string), refreshed on every sign-in.
+    avatar_url: str | None = None
 
     @classmethod
     def _from_row(cls, row: sqlite3.Row) -> "UserRow":
@@ -227,6 +229,7 @@ class UserRow:
             can_request=bool(row["can_request"]) if "can_request" in keys else True,
             notify_own=bool(row["notify_own"]) if "notify_own" in keys else True,
             notify_household=bool(row["notify_household"]) if "notify_household" in keys else False,
+            avatar_url=row["avatar_url"] if "avatar_url" in keys else None,
         )
 
 
@@ -417,6 +420,7 @@ class RequestStore:
             self._ensure_column("users", "can_request", "can_request INTEGER NOT NULL DEFAULT 1")
             self._ensure_column("users", "notify_own", "notify_own INTEGER NOT NULL DEFAULT 1")
             self._ensure_column("users", "notify_household", "notify_household INTEGER NOT NULL DEFAULT 0")
+            self._ensure_column("users", "avatar_url", "avatar_url TEXT")
             # Per-request "notify me" and the once-only notification mark.
             # Rows that settled before this existed are marked as already
             # notified so the first sweep never fires for old history.
@@ -1083,7 +1087,7 @@ class RequestStore:
 
     # -- users / sessions (frontend migration Part C2) --
 
-    def upsert_user(self, plex_user_id: str, username: str | None, is_admin: bool) -> UserRow:
+    def upsert_user(self, plex_user_id: str, username: str | None, is_admin: bool, avatar_url: str | None = None) -> UserRow:
         """Called on every successful login — `is_admin` is re-derived
         fresh each time from a live Plex access check (see api.py), so a
         change in server ownership is picked up on the next sign-in
@@ -1097,14 +1101,15 @@ class RequestStore:
             ).fetchone()
             if existing:
                 self._conn.execute(
-                    "UPDATE users SET username = ?, is_admin = ?, last_login_at = ? WHERE plex_user_id = ?",
-                    (username, int(is_admin), now, plex_user_id),
+                    "UPDATE users SET username = ?, is_admin = ?, last_login_at = ?, "
+                    "avatar_url = COALESCE(?, avatar_url) WHERE plex_user_id = ?",
+                    (username, int(is_admin), now, avatar_url, plex_user_id),
                 )
             else:
                 self._conn.execute(
                     "INSERT INTO users (plex_user_id, username, is_admin, has_seen_tutorial, "
-                    "first_seen_at, last_login_at) VALUES (?, ?, ?, 0, ?, ?)",
-                    (plex_user_id, username, int(is_admin), now, now),
+                    "first_seen_at, last_login_at, avatar_url) VALUES (?, ?, ?, 0, ?, ?, ?)",
+                    (plex_user_id, username, int(is_admin), now, now, avatar_url),
                 )
             self._conn.commit()
         return self.get_user(plex_user_id)

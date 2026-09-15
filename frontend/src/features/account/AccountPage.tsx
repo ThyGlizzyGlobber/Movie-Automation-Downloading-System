@@ -5,8 +5,7 @@ import { useSession } from '../auth/useSession'
 import { logout } from '../../api/auth'
 import { usePageTitle } from '../../lib/chrome'
 import './AccountPage.css'
-import Icon from '../../components/Icon'
-import { initialsOf } from '../../lib/useActiveRequestCount'
+import Avatar from '../../components/Avatar'
 
 // Deliberately small — this app has almost no per-user preferences to
 // hold (dark-only theme, no notifications system, the request queue is
@@ -41,12 +40,11 @@ export default function AccountPage() {
   }
 
   if (!session.data) return null
-  const initials = initialsOf(session.data.username)
 
   return (
     <div className="account-page">
       <div className="account-card">
-        {initials ? <span className="account-avatar-initials">{initials}</span> : <Icon name="user" className="account-avatar" />}
+        <Avatar src="/api/me/avatar" name={session.data.username} hasPicture={!!session.data.avatar} className="account-avatar-big" />
         <h1 className="account-username">{session.data.username}</h1>
         {session.data.is_admin && <p className="account-role">Admin</p>}
         <div className="account-actions">

@@ -731,6 +731,7 @@
   width: 40px;
   height: 40px;
   border-radius: 50%;
+  object-fit: cover;
   background: linear-gradient(135deg, #ffb88c, #ea6a8b);
   color: var(--on-light);
   display: grid;

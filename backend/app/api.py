@@ -20,6 +20,8 @@ from pathlib import Path
 import re
 import secrets
 import shutil
+
+import requests as _http_requests
 import time
 from contextlib import asynccontextmanager
 from dataclasses import asdict
@@ -1454,7 +1456,7 @@ def select_plex_server(
             identity = None
         if identity and identity.get("id"):
             plex_user_id = str(identity["id"])
-            user = store.upsert_user(plex_user_id, identity.get("username"), True)
+            user = store.upsert_user(plex_user_id, identity.get("username"), True, identity.get("thumb"))
             session_id = secrets.token_urlsafe(32)
             store.create_session(session_id, user.plex_user_id, user.username, True, _new_session_expiry())
             response.set_cookie(
@@ -1499,7 +1501,7 @@ def login_status(
     result = status["result"]
     user = None
     if result:
-        user = store.upsert_user(result["plex_user_id"], result["username"], result["is_admin"])
+        user = store.upsert_user(result["plex_user_id"], result["username"], result["is_admin"], result.get("thumb"))
         session_id = secrets.token_urlsafe(32)
         store.create_session(session_id, user.plex_user_id, user.username, user.is_admin, _new_session_expiry())
         response.set_cookie(
@@ -1539,6 +1541,8 @@ def get_current_session(store: RequestStore = Depends(get_store), session: Sessi
         "username": session.username,
         "is_admin": session.is_admin,
         "has_seen_tutorial": user.has_seen_tutorial if user else False,
+        # The avatar itself is served by /api/me/avatar (same origin).
+        "avatar": bool(user and user.avatar_url),
     }
 
 
@@ -2302,6 +2306,7 @@ class HouseholdUserOut(BaseModel):
     plex_user_id: str
     username: str | None
     is_admin: bool
+    avatar: bool = False
     can_request: bool
     first_seen_at: str
     last_login_at: str
@@ -2323,6 +2328,7 @@ def list_household(store: RequestStore = Depends(get_store)) -> list[HouseholdUs
             plex_user_id=u.plex_user_id,
             username=u.username,
             is_admin=u.is_admin,
+            avatar=bool(u.avatar_url),
             can_request=u.can_request,
             first_seen_at=u.first_seen_at,
             last_login_at=u.last_login_at,
@@ -2377,6 +2383,40 @@ def remove_household_user(
         f"{user.username or plex_user_id}: removed",
     )
     return {"removed": True}
+
+
+_AVATAR_TTL = 60
+
+
+def _avatar_response(avatar_url: str | None) -> RawResponse:
+    """Proxies a plex.tv avatar through this origin (the CSP allows no
+    other image host) with a one-minute cache, so a picture changed on
+    Plex shows here within a minute."""
+    if not avatar_url or not avatar_url.startswith("https://plex.tv/"):
+        raise HTTPException(status_code=404, detail="no avatar")
+    try:
+        upstream = _http_requests.get(avatar_url, timeout=10)
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=502, detail=f"avatar unavailable: {exc}") from exc
+    if not upstream.ok:
+        raise HTTPException(status_code=404, detail="no avatar")
+    return RawResponse(
+        content=upstream.content,
+        media_type=upstream.headers.get("Content-Type", "image/png"),
+        headers={"Cache-Control": f"private, max-age={_AVATAR_TTL}"},
+    )
+
+
+@router.get("/api/me/avatar")
+def my_avatar(session: SessionRow = Depends(require_session), store: RequestStore = Depends(get_store)) -> RawResponse:
+    user = store.get_user(session.plex_user_id)
+    return _avatar_response(user.avatar_url if user else None)
+
+
+@admin_router.get("/api/admin/users/{plex_user_id}/avatar")
+def household_avatar(plex_user_id: str, store: RequestStore = Depends(get_store)) -> RawResponse:
+    user = store.get_user(plex_user_id)
+    return _avatar_response(user.avatar_url if user else None)
 
 
 class LibrarySettingsIn(BaseModel):

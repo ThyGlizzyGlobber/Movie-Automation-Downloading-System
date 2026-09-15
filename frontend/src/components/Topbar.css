@@ -264,3 +264,17 @@ body.search-open #searchToggleBtn,
   box-shadow: 0 0 8px var(--meridian-ice);
   border: 1.5px solid #0c0c12;
 }
+
+/* Plex account picture in the account button. */
+#accountToggle.has-picture {
+  background: var(--glass);
+  overflow: hidden;
+  padding: 0;
+}
+#accountToggle .avatar-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 50%;
+  display: block;
+}

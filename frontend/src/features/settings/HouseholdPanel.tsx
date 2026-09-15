@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { listHousehold, removeHouseholdUser, setHouseholdUser } from '../../api/admin'
-import { initialsOf } from '../../lib/useActiveRequestCount'
+import Avatar from '../../components/Avatar'
 import { relativeTime } from '../../lib/format'
 import { errorText, useToast } from '../../lib/toast'
 import Toggle from '../../components/Toggle'
@@ -55,7 +55,7 @@ export default function HouseholdPanel() {
           return (
             <div className="setting-row household-row" key={u.plex_user_id}>
               <div className="household-who">
-                <span className="household-avatar">{initialsOf(name) || '?'}</span>
+                <Avatar src={`/api/admin/users/${encodeURIComponent(u.plex_user_id)}/avatar`} name={name} hasPicture={!!u.avatar} className="household-avatar" />
                 <div className="setting-row-text">
                   <b>
                     {name}
