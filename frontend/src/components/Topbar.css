@@ -1,9 +1,9 @@
-/* The top bar is a floating glass pill (the reference's nav), not a
-   full-width band: #topbar itself stays a full-width fixed box so
+/* The top bar is a glass tab that drops down from the top edge: square
+   top corners flush with the viewport, rounded bottom corners, inset
+   from the sides. #topbar itself stays a full-width fixed box so
    --topbar-h (measured from its offsetHeight by Topbar.tsx) still
-   reserves the right space in main, and the pill is drawn by ::before
-   inset from the box's edges. Same treatment on every page, hero or
-   not — the pill floats over hero art by design. */
+   reserves the right space in main, and the tab is drawn by ::before
+   inset from the box's side edges. Same treatment on every page. */
 #topbar {
   position: fixed;
   top: 0;
@@ -14,22 +14,39 @@
   align-items: center;
   gap: 6px;
   height: calc(66px + var(--safe-top));
-  padding: calc(12px + var(--safe-top)) 20px 0 26px;
+  padding: calc(10px + var(--safe-top)) 20px 0 26px;
+  transition: transform 0.45s cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+/* While a hero trailer plays the whole tab tucks up, leaving a sliver
+   of its rounded bottom showing; the cursor near the top edge, hovering
+   it, or focus inside it drops it back down. Desktop only — trailers
+   don't autoplay on phones. */
+@media (min-width: 860px) {
+  body.trailer-playing #topbar {
+    transform: translateY(calc(-100% + 14px));
+  }
+  body.trailer-playing.nav-reveal #topbar,
+  body.trailer-playing #topbar:hover,
+  body.trailer-playing #topbar:focus-within,
+  body.trailer-playing.search-open #topbar {
+    transform: none;
+  }
 }
 #topbar::before {
   content: '';
   position: absolute;
   z-index: -1;
-  top: calc(12px + var(--safe-top));
+  top: 0;
   left: 14px;
   right: 14px;
   bottom: 0;
-  border-radius: var(--radius-pill);
+  border-radius: 0 0 var(--radius-xl) var(--radius-xl);
+  border-top: 0;
   background: var(--glass-overlay);
   backdrop-filter: var(--glass-blur);
   -webkit-backdrop-filter: var(--glass-blur);
   border: 1px solid var(--glass-border);
-  box-shadow: var(--shadow-float), var(--glass-highlight);
+  box-shadow: var(--shadow-float);
   transition: opacity 0.2s ease;
 }
 /* The search palette has its own glass; the nav pill fades out under it. */
@@ -174,10 +191,10 @@ body.search-open #searchToggleBtn,
 @media (min-width: 860px) {
   #topbar {
     height: calc(88px + var(--safe-top));
-    padding: calc(24px + var(--safe-top)) calc(var(--nav-side) + 12px) 0 calc(var(--nav-side) + 22px);
+    padding: calc(22px + var(--safe-top)) calc(var(--nav-side) + 12px) 0 calc(var(--nav-side) + 22px);
   }
   #topbar::before {
-    top: calc(24px + var(--safe-top));
+    top: 0;
     left: var(--nav-side);
     right: var(--nav-side);
   }
@@ -277,4 +294,83 @@ body.search-open #searchToggleBtn,
   object-fit: cover;
   border-radius: 50%;
   display: block;
+}
+
+/* ---- Trailer mode: the pill collapses into a menu button ----
+   While a hero trailer plays (body.trailer-playing, set by the hero)
+   the pill springs up and away and a round menu button bounces in at
+   the right; hovering or clicking that button, bringing the cursor near
+   the top edge, opening search, or keyboard focus in the bar brings the
+   pill back with the same spring. Desktop only. */
+#navHamburger {
+  position: fixed;
+  top: calc(24px + var(--safe-top));
+  right: calc(var(--nav-side) + 12px);
+  z-index: 11;
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  border: 1px solid var(--glass-border);
+  background: var(--glass-overlay);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  box-shadow: var(--shadow-float), var(--glass-highlight);
+  color: var(--text);
+  font-size: 20px;
+  display: none;
+  place-items: center;
+  transform: scale(0.4);
+  opacity: 0;
+}
+@media (min-width: 860px) {
+  #topbar {
+    transform-origin: 50% 0;
+  }
+  body.trailer-playing:not(.nav-reveal):not(.search-open) #topbar:not(:hover):not(:focus-within) {
+    animation: nav-away 0.5s cubic-bezier(0.5, -0.4, 0.4, 1) forwards;
+    pointer-events: none;
+  }
+  body.trailer-playing:not(.nav-reveal):not(.search-open) #navHamburger {
+    display: grid;
+    animation: nav-pop 0.55s 0.2s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+  }
+  body.trailer-playing.nav-reveal #topbar,
+  body.trailer-playing #topbar:hover,
+  body.trailer-playing #topbar:focus-within,
+  body.trailer-playing.search-open #topbar {
+    animation: nav-back 0.55s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+  }
+}
+@keyframes nav-away {
+  0% {
+    transform: translateY(0) scale(1);
+    opacity: 1;
+  }
+  25% {
+    transform: translateY(6px) scale(1.01);
+  }
+  100% {
+    transform: translateY(-120%) scale(0.92);
+    opacity: 0;
+  }
+}
+@keyframes nav-back {
+  0% {
+    transform: translateY(-120%) scale(0.92);
+    opacity: 0;
+  }
+  100% {
+    transform: translateY(0) scale(1);
+    opacity: 1;
+  }
+}
+@keyframes nav-pop {
+  0% {
+    transform: scale(0.4);
+    opacity: 0;
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
 }

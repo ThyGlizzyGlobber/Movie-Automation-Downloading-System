@@ -126,6 +126,15 @@ export default function HeroCarousel({ items }: { items: TaggedItem[] }) {
     }
   }, [items])
 
+  // While the active slide's trailer is showing, the nav tab tucks up
+  // to a sliver (Topbar.css's body.trailer-playing rules) and drops
+  // back when the cursor comes near the top.
+  const trailerShowing = !!videoVisible[activeIndex]
+  useEffect(() => {
+    document.body.classList.toggle('trailer-playing', trailerShowing)
+    return () => document.body.classList.remove('trailer-playing')
+  }, [trailerShowing])
+
   // Reset mute to "on" every time the active slide changes — never
   // carried over between titles.
   useEffect(() => {
