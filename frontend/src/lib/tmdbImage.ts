@@ -9,6 +9,9 @@ const POSTER_SIZE = 'w342'
 // "original" on a household NAS connection.
 const BACKDROP_SIZE = 'w1280'
 const PROFILE_SIZE = 'w185'
+// Tiny poster used only for colour sampling (lib/palette.ts) — see the
+// note there on why it must differ from POSTER_SIZE.
+const SAMPLE_SIZE = 'w92'
 
 const PLACEHOLDER_POSTER =
   'data:image/svg+xml;utf8,' +
@@ -27,4 +30,8 @@ export function backdropUrl(path: string | null | undefined): string {
 
 export function profileUrl(path: string | null | undefined): string {
   return path ? IMG_BASE + PROFILE_SIZE + path : PLACEHOLDER_POSTER
+}
+
+export function sampleUrl(path: string | null | undefined): string {
+  return path ? IMG_BASE + SAMPLE_SIZE + path : ''
 }

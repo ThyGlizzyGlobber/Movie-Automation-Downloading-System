@@ -3,6 +3,7 @@ import { getMovie, getMovieTrailer } from '../api/movies'
 import { getTvShow, getTvTrailer } from '../api/tv'
 import { backdropUrl } from '../lib/tmdbImage'
 import { movieHeroBadge, movieCertOf, tvHeroBadge, tvCertOf, type TaggedItem } from '../lib/homeHero'
+import AmbientGlow from './AmbientGlow'
 import './HeroCarousel.css'
 
 const HERO_TRAILER_COUNT = 2 // only the front slides ever get a background video
@@ -211,6 +212,7 @@ export default function HeroCarousel({ items }: { items: TaggedItem[] }) {
 
         return (
           <div className={`home-hero-slide${i === activeIndex ? ' active' : ''}`} key={item.id}>
+            <AmbientGlow posterPath={item.poster_path} />
             <a className="home-hero-media" href={href} aria-label={title}>
               <img
                 className={videoVisible[i] ? 'home-hero-poster-hidden' : ''}

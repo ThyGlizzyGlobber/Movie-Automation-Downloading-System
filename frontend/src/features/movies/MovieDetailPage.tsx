@@ -14,6 +14,7 @@ import ErrorState from '../../components/ErrorState'
 import { DetailOverviewPanel, CreatorsAndCastPanel, DetailsCardPanel, CastLine, DetailProviderIcon } from '../detail/DetailPanels'
 import { usePageTitle, useSetHasHero } from '../../lib/chrome'
 import { posterUrl, backdropUrl } from '../../lib/tmdbImage'
+import AmbientGlow from '../../components/AmbientGlow'
 import { certificationOf, genreLine, languageNameOf, yearOf, statusFollowupText } from '../../lib/detailHelpers'
 import { NON_TERMINAL } from '../../lib/status'
 import type { RedownloadMode, RequestOut } from '../../types/requests'
@@ -120,6 +121,7 @@ export default function MovieDetailPage() {
   return (
     <>
       <div className="detail-hero">
+        <AmbientGlow posterPath={movie.poster_path} />
         {backdrop && <img className="detail-hero-backdrop" src={backdrop} alt="" />}
         <div className="detail-hero-fade" />
         <div className="detail-hero-content">

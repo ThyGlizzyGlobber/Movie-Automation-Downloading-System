@@ -1,0 +1,48 @@
+.ambient-glow {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+.ambient-glow i {
+  position: absolute;
+  display: block;
+  border-radius: 50%;
+  filter: blur(var(--glow-blur));
+  transition: background 0.8s ease, opacity 0.8s ease;
+}
+.ambient-glow i:nth-child(1) {
+  width: 68%;
+  height: 100%;
+  left: 10%;
+  top: -30%;
+  background: var(--g1, var(--glow-1));
+  opacity: 0.55;
+}
+.ambient-glow i:nth-child(2) {
+  width: 52%;
+  height: 85%;
+  right: -10%;
+  top: 5%;
+  background: var(--g2, var(--glow-2));
+  opacity: 0.35;
+}
+.ambient-glow i:nth-child(3) {
+  width: 40%;
+  height: 80%;
+  left: -12%;
+  bottom: -30%;
+  background: var(--g3, var(--glow-3));
+  opacity: 0.4;
+}
+/* Phones: one wide blob reads better than three at 375px. */
+@media (max-width: 639px) {
+  .ambient-glow i:nth-child(2) {
+    width: 80%;
+    right: -30%;
+  }
+  .ambient-glow i:nth-child(3) {
+    opacity: 0.25;
+  }
+}

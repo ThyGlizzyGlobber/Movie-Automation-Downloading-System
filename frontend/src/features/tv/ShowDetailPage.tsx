@@ -13,6 +13,7 @@ import ErrorState from '../../components/ErrorState'
 import { DetailOverviewPanel, CreatorsAndCastPanel, DetailsCardPanel, CastLine, DetailProviderIcon } from '../detail/DetailPanels'
 import { usePageTitle, useSetHasHero } from '../../lib/chrome'
 import { posterUrl, backdropUrl } from '../../lib/tmdbImage'
+import AmbientGlow from '../../components/AmbientGlow'
 import { genreLine, languageNameOf, tvCertificationOf, yearOf } from '../../lib/detailHelpers'
 import type { ShowOut } from '../../types/shows'
 import type { RedownloadMode, RequestOut } from '../../types/requests'
@@ -138,6 +139,7 @@ export default function ShowDetailPage() {
   return (
     <>
       <div className="detail-hero">
+        <AmbientGlow posterPath={show.poster_path} />
         {backdrop && <img className="detail-hero-backdrop" src={backdrop} alt="" />}
         <div className="detail-hero-fade" />
         <div className="detail-hero-content">
