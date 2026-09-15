@@ -1,18 +1,15 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
-import { getPlexStatus, listPlexServers, selectPlexServer, startPlexLink } from '../../api/plex'
-import type { PlexServerSummary } from '../../types/auth'
+import { getPlexStatus, startPlexLink } from '../../api/plex'
 import { ApiError } from '../../api/client'
 
 const POLL_INTERVAL_MS = 2500
 
-type Phase = 'idle' | 'signing-in' | 'picking-server' | 'linking'
+type Phase = 'idle' | 'signing-in' | 'linking'
 
 export default function PlexLinkStep({ setupToken }: { setupToken: string }) {
   const [phase, setPhase] = useState<Phase>('idle')
   const [error, setError] = useState<string | null>(null)
-  const [servers, setServers] = useState<PlexServerSummary[]>([])
-  const [selected, setSelected] = useState<string | null>(null)
   const timerRef = useRef<number | null>(null)
   const queryClient = useQueryClient()
 
@@ -25,17 +22,22 @@ export default function PlexLinkStep({ setupToken }: { setupToken: string }) {
 
   useEffect(() => stopPolling, [stopPolling])
 
-  async function loadServers() {
-    try {
-      const list = await listPlexServers(setupToken)
-      setServers(list)
-      if (list.length === 1) {
-        setSelected(list[0].machine_identifier)
-      }
-      setPhase('picking-server')
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Something went wrong loading your servers.')
-    }
+  // PlexLinker._poll() (backend) already resolves and persists the
+  // account's one owned server as soon as the PIN is approved — the same
+  // auto-selection PlexServerPanel's own "Sign in with Plex" already
+  // relies on (it treats `status.linked && !status.pending` as fully
+  // done, no separate picker). This step used to also call
+  // GET /api/plex/servers + PUT /api/plex/server here, expecting a
+  // distinct "pick a server" step — but by the time that ran,
+  // plex_server_machine_id was already set (by _poll() itself), which
+  // closes require_admin_or_setup_bootstrap's setup-token window, so
+  // that follow-up call 401'd and setup silently finished server-side
+  // while this screen sat stuck showing "waiting for approval." Matching
+  // PlexServerPanel's own handling avoids the race entirely.
+  async function complete() {
+    setPhase('linking')
+    queryClient.invalidateQueries({ queryKey: ['setupStatus'] })
+    queryClient.invalidateQueries({ queryKey: ['session'] })
   }
 
   async function begin() {
@@ -55,7 +57,7 @@ export default function PlexLinkStep({ setupToken }: { setupToken: string }) {
           }
           if (status.linked && !status.pending) {
             stopPolling()
-            await loadServers()
+            await complete()
           }
         } catch (err) {
           setError(err instanceof ApiError ? err.message : 'Something went wrong.')
@@ -66,23 +68,6 @@ export default function PlexLinkStep({ setupToken }: { setupToken: string }) {
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Something went wrong.')
       setPhase('idle')
-    }
-  }
-
-  async function finish() {
-    if (!selected) return
-    setPhase('linking')
-    setError(null)
-    try {
-      await selectPlexServer(selected, setupToken)
-      // Setup is genuinely complete now, and the response set a session
-      // cookie for this account — both the setup-status gate and the
-      // session itself need to reflect that on the next render.
-      queryClient.invalidateQueries({ queryKey: ['setupStatus'] })
-      queryClient.invalidateQueries({ queryKey: ['session'] })
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Something went wrong finishing setup.')
-      setPhase('picking-server')
     }
   }
 
@@ -105,31 +90,6 @@ export default function PlexLinkStep({ setupToken }: { setupToken: string }) {
         <p className="setup-step-copy">
           Approve the sign-in in the tab that just opened, then come back here — this updates on its own.
         </p>
-      )}
-
-      {phase === 'picking-server' && (
-        <>
-          {servers.length === 0 ? (
-            <p className="setup-error">This account doesn't own any Plex servers.</p>
-          ) : (
-            <div className="setup-server-list">
-              {servers.map((s) => (
-                <button
-                  key={s.machine_identifier}
-                  className={`setup-server-option${selected === s.machine_identifier ? ' selected' : ''}`}
-                  onClick={() => setSelected(s.machine_identifier)}
-                >
-                  {s.name}
-                </button>
-              ))}
-            </div>
-          )}
-          <div className="setup-actions">
-            <button className="setup-button primary" disabled={!selected} onClick={finish}>
-              Finish setup
-            </button>
-          </div>
-        </>
       )}
 
       {phase === 'linking' && <p className="setup-step-copy">Finishing setup…</p>}
