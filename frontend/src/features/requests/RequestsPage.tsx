@@ -12,10 +12,9 @@ import EmptyState from '../../components/EmptyState'
 import { usePageTitle, useSetHasHero } from '../../lib/chrome'
 import { posterUrl } from '../../lib/tmdbImage'
 import { relativeTime } from '../../lib/format'
-import { CANCELLABLE, NON_TERMINAL, statusDetail } from '../../lib/status'
+import { CANCELLABLE, NON_TERMINAL, statusDetail, statusMeta } from '../../lib/status'
 import {
   dominantStatus,
-  episodeLabelAndHref,
   groupRequestsForDisplay,
   packScopeLabel,
   requestLabelAndHref,
@@ -44,110 +43,86 @@ function matchesFilter(status: string, filter: Filter): boolean {
   return FAILED_STATES.has(status)
 }
 
-function formatDate(iso: string): string {
-  return new Date(iso).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })
-}
-
 function isToday(iso: string): boolean {
   const d = new Date(iso)
   const now = new Date()
   return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth() && d.getDate() === now.getDate()
 }
 
-// The reference's request row: poster, title and a one-line description,
-// the state pill with a plain sentence under it, a ring with the timing,
-// and circle actions. Groups (a show, then its seasons) use the same row
-// with a chevron where the poster would be.
-function RequestRow({
+// One card per title. Movies are a single line; a show's card expands
+// into its seasons, each a strip of small episode pills, so a long-
+// running show never turns into a wall of nested rows.
+function Row({
   poster,
-  chevron,
   title,
   href,
   meta,
   status,
-  detail,
-  detailTitle,
   progress,
-  updatedAt,
-  createdAt,
   actions,
-  depth = 0,
   onToggle,
   expanded,
+  children,
 }: {
   poster?: string | null
-  chevron?: boolean
   title: string
   href: string
   meta: string
   status: string
-  detail: string
-  detailTitle?: string
   progress: number | null
-  updatedAt: string
-  createdAt: string
   actions?: ReactNode
-  depth?: number
   onToggle?: () => void
   expanded?: boolean
+  children?: ReactNode
 }) {
   const [open, setOpen] = useState(false)
   const clickable = !!onToggle
   return (
-    <div
-      className={`rq-row depth-${depth}${clickable ? ' rq-clickable' : ''}${open ? ' rq-open' : ''}`}
-      onClick={() => (onToggle ? onToggle() : setOpen((o) => !o))}
-    >
-      <div className="rq-art">
-        {poster !== undefined ? (
-          <img src={posterUrl(poster)} alt="" />
-        ) : chevron ? (
-          <span className={`rq-chev${expanded ? ' on' : ''}`}>
-            <Icon name="next" />
+    <div className={`rq-card${expanded ? ' rq-expanded' : ''}`}>
+      <div
+        className={`rq-row${clickable ? ' rq-clickable' : ''}${open ? ' rq-open' : ''}`}
+        onClick={() => (onToggle ? onToggle() : setOpen((o) => !o))}
+      >
+        <div className="rq-art">
+          <img src={posterUrl(poster ?? null)} alt="" />
+        </div>
+        <div className="rq-t">
+          <a className="rq-title" href={href} onClick={(e) => e.stopPropagation()}>
+            {title}
+          </a>
+          <small>{meta}</small>
+          <span className="rq-pill-m">
+            <StatusPill status={status} />
           </span>
-        ) : null}
-      </div>
-      <div className="rq-t">
-        <a className="rq-title" href={href} onClick={(e) => e.stopPropagation()}>
-          {title}
-        </a>
-        <small>{meta}</small>
-        <span className="rq-pill-m">
+        </div>
+        <div className="rq-state">
           <StatusPill status={status} />
-        </span>
-      </div>
-      <div className="rq-state">
-        <StatusPill status={status} />
-        <div className="rq-detail" title={detailTitle}>
-          {detail}
+        </div>
+        <div className="rq-prog">
+          <StatusRing status={status} progress={progress} size={44} />
+        </div>
+        <div className="rq-acts" onClick={(e) => e.stopPropagation()}>
+          {actions}
+          {onToggle && (
+            <button className={`rq-circ${expanded ? ' on' : ''}`} aria-label={expanded ? 'Collapse' : 'Expand'} onClick={onToggle}>
+              <Icon name="next" />
+            </button>
+          )}
         </div>
       </div>
-      <div className="rq-prog">
-        <StatusRing status={status} progress={progress} />
-        <div className="rq-k">
-          {relativeTime(updatedAt)}
-          <small>Requested {formatDate(createdAt)}</small>
-        </div>
-      </div>
-      <div className="rq-acts" onClick={(e) => e.stopPropagation()}>
-        {chevron && onToggle && (
-          <button className={`rq-circ${expanded ? ' on' : ''}`} aria-label={expanded ? 'Collapse' : 'Expand'} onClick={onToggle}>
-            <Icon name="next" />
-          </button>
-        )}
-        {actions}
-      </div>
+      {expanded && children}
     </div>
   )
 }
 
 // Cancel while something is still in flight; delete the file once it
 // has finished. Both go through the same cancel route.
-function CancelAction({ row, onChanged }: { row: RequestOut; onChanged: () => void }) {
+function CancelAction({ row, onChanged, compact = false }: { row: RequestOut; onChanged: () => void; compact?: boolean }) {
   const [busy, setBusy] = useState(false)
   const { toast } = useToast()
   if (!CANCELLABLE.has(row.status)) return null
   const isDelete = row.status === 'complete'
+  if (compact && isDelete) return null
   async function handleClick() {
     if (isDelete && !confirm(`Delete ${row.title} from Plex?`)) return
     setBusy(true)
@@ -159,6 +134,13 @@ function CancelAction({ row, onChanged }: { row: RequestOut; onChanged: () => vo
       setBusy(false)
     }
   }
+  if (compact) {
+    return (
+      <button className="rq-ep-x" aria-label="Cancel" disabled={busy} onClick={handleClick}>
+        <Icon name="close" />
+      </button>
+    )
+  }
   return (
     <button className={`rq-circ${isDelete ? ' danger' : ''}`} aria-label={isDelete ? 'Delete' : 'Cancel'} disabled={busy} onClick={handleClick}>
       <Icon name={isDelete ? 'trash' : 'close'} />
@@ -166,133 +148,106 @@ function CancelAction({ row, onChanged }: { row: RequestOut; onChanged: () => vo
   )
 }
 
-function rowMeta(r: RequestOut): string {
+function leafMeta(r: RequestOut): string {
   const bits: string[] = []
   if (r.media_type === 'movie') {
     if (r.release_year) bits.push(String(r.release_year))
     bits.push('Movie')
   } else if (r.media_type === 'episode') {
-    bits.push('Episode')
+    bits.push(`S${String(r.season_number).padStart(2, '0')}E${String(r.episode_number).padStart(2, '0')}`)
   } else {
     bits.push(packScopeLabel(r))
   }
   if (r.requested_by_username) bits.push(r.requested_by_username)
   if (r.redownload_mode) bits.push(r.redownload_mode === 'overwrite' ? 'Replacing' : 'Upgrading')
+  bits.push(relativeTime(r.updated_at))
+  if (FAILED_STATES.has(r.status)) bits.push(statusDetail(r.status, r.download_progress))
   return bits.join(' · ')
 }
 
-function LeafRow({ row, variant, onChanged, depth }: { row: RequestOut; variant: 'standalone' | 'child'; onChanged: () => void; depth: number }) {
-  const { label, href } = variant === 'standalone' ? requestLabelAndHref(row) : episodeLabelAndHref(row)
+function LeafRow({ row, onChanged }: { row: RequestOut; onChanged: () => void }) {
+  const { href } = requestLabelAndHref(row)
   return (
-    <RequestRow
-      poster={variant === 'standalone' ? row.poster_path : undefined}
-      title={label}
+    <Row
+      poster={row.poster_path}
+      title={row.title}
       href={href}
-      meta={rowMeta(row)}
+      meta={leafMeta(row)}
       status={row.status}
-      detail={statusDetail(row.status, row.download_progress)}
-      detailTitle={row.status === 'failed' && row.error_message ? row.error_message : undefined}
       progress={row.download_progress}
-      updatedAt={row.updated_at}
-      createdAt={row.created_at}
-      depth={depth}
       actions={<CancelAction row={row} onChanged={onChanged} />}
     />
   )
 }
 
-function groupDetail(rows: RequestOut[]): string {
+function episodePillLabel(r: RequestOut): string {
+  if (r.media_type === 'episode') return `E${String(r.episode_number).padStart(2, '0')}`
+  return r.season_number == null ? 'Whole series' : 'Season pack'
+}
+
+// A season inside a show's card: a heading with its count and a strip
+// of pills, one per episode (or pack), coloured by state.
+function SeasonStrip({ season, onChanged }: { season: SeasonGroup; onChanged: () => void }) {
+  const rows = season.rows.slice().sort((a, b) => {
+    if (a.media_type !== b.media_type) return a.media_type === 'pack' ? -1 : 1
+    return (a.episode_number ?? 0) - (b.episode_number ?? 0)
+  })
   const ready = rows.filter((r) => r.status === 'complete').length
-  const active = rows.filter((r) => NON_TERMINAL.has(r.status)).length
-  const bits = [`${ready} in Plex`]
-  if (active) bits.push(`${active} on the way`)
-  return bits.join(' · ')
-}
-
-function latest(rows: RequestOut[], key: 'updated_at' | 'created_at'): string {
-  return rows.reduce((best, r) => (r[key] > best ? r[key] : best), rows[0][key])
-}
-
-function SeasonRow({ tmdbId, season, expanded, onToggle, onChanged }: { tmdbId: number; season: SeasonGroup; expanded: boolean; onToggle: () => void; onChanged: () => void }) {
   return (
-    <div className="rq-group">
-      <RequestRow
-        chevron
-        title={season.label}
-        href={`#/tv/${tmdbId}`}
-        meta={`${season.rows.length} item${season.rows.length === 1 ? '' : 's'}`}
-        status={dominantStatus(season.rows)}
-        detail={groupDetail(season.rows)}
-        progress={null}
-        updatedAt={latest(season.rows, 'updated_at')}
-        createdAt={latest(season.rows, 'created_at')}
-        depth={1}
-        expanded={expanded}
-        onToggle={onToggle}
-      />
-      {expanded && (
-        <div className="rq-children">
-          {season.rows
-            .slice()
-            .sort((a, b) => b.id - a.id)
-            .map((r) => (
-              <LeafRow key={r.id} row={r} variant="child" onChanged={onChanged} depth={2} />
-            ))}
-        </div>
-      )}
+    <div className="rq-season">
+      <div className="rq-season-head">
+        <b>{season.label}</b>
+        <small>
+          {ready} of {rows.length} in Plex
+        </small>
+      </div>
+      <div className="rq-eps">
+        {rows.map((r) => {
+          const meta = statusMeta(r.status)
+          const pct = r.status === 'downloading' && r.download_progress != null ? ` ${Math.round(r.download_progress * 100)}%` : ''
+          return (
+            <span key={r.id} className={`rq-ep ${meta.cls}`} title={`${episodePillLabel(r)} · ${meta.label} · ${statusDetail(r.status, r.download_progress)}`}>
+              <Icon name={meta.icon} />
+              {episodePillLabel(r)}
+              {pct}
+              <CancelAction row={r} onChanged={onChanged} compact />
+            </span>
+          )
+        })}
+      </div>
     </div>
   )
 }
 
-function ShowRow({
-  group,
-  expanded,
-  onToggle,
-  expandedSeasons,
-  onToggleSeason,
-  onChanged,
-}: {
-  group: ShowGroup
-  expanded: boolean
-  onToggle: () => void
-  expandedSeasons: Set<string>
-  onToggleSeason: (key: string) => void
-  onChanged: () => void
-}) {
+function ShowRow({ group, expanded, onToggle, onChanged }: { group: ShowGroup; expanded: boolean; onToggle: () => void; onChanged: () => void }) {
+  const ready = group.rows.filter((r) => r.status === 'complete').length
+  const active = group.rows.filter((r) => NON_TERMINAL.has(r.status)).length
+  const meta = [
+    'Series',
+    `${group.rows.length} item${group.rows.length === 1 ? '' : 's'}`,
+    `${ready} in Plex`,
+    active ? `${active} on the way` : null,
+    relativeTime(group.rows.reduce((best, r) => (r.updated_at > best ? r.updated_at : best), group.rows[0].updated_at)),
+  ]
+    .filter(Boolean)
+    .join(' · ')
   return (
-    <div className="rq-group">
-      <RequestRow
-        poster={group.posterPath}
-        chevron
-        title={group.title}
-        href={`#/tv/${group.tmdbId}`}
-        meta={`Series · ${group.rows.length} item${group.rows.length === 1 ? '' : 's'}`}
-        status={dominantStatus(group.rows)}
-        detail={groupDetail(group.rows)}
-        progress={null}
-        updatedAt={latest(group.rows, 'updated_at')}
-        createdAt={latest(group.rows, 'created_at')}
-        expanded={expanded}
-        onToggle={onToggle}
-      />
-      {expanded && (
-        <div className="rq-children">
-          {group.seasons.map((season) => {
-            const key = `${group.showId}:${season.key}`
-            return (
-              <SeasonRow
-                key={key}
-                tmdbId={group.tmdbId}
-                season={season}
-                expanded={expandedSeasons.has(key)}
-                onToggle={() => onToggleSeason(key)}
-                onChanged={onChanged}
-              />
-            )
-          })}
-        </div>
-      )}
-    </div>
+    <Row
+      poster={group.posterPath}
+      title={group.title}
+      href={`#/tv/${group.tmdbId}`}
+      meta={meta}
+      status={dominantStatus(group.rows)}
+      progress={null}
+      expanded={expanded}
+      onToggle={onToggle}
+    >
+      <div className="rq-seasons">
+        {group.seasons.map((season) => (
+          <SeasonStrip key={season.key} season={season} onChanged={onChanged} />
+        ))}
+      </div>
+    </Row>
   )
 }
 
@@ -310,7 +265,6 @@ export default function RequestsPage() {
 
   const [filter, setFilter] = useState<Filter>('all')
   const [expandedShows, setExpandedShows] = useState<Set<number>>(new Set())
-  const [expandedSeasons, setExpandedSeasons] = useState<Set<string>>(new Set())
   const [clearing, setClearing] = useState(false)
   const [retentionOpen, setRetentionOpen] = useState(false)
 
@@ -462,15 +416,13 @@ export default function RequestsPage() {
         ) : (
           items.map((item) =>
             item.type === 'standalone' ? (
-              <LeafRow key={`req-${item.row.id}`} row={item.row} variant="standalone" onChanged={onChanged} depth={0} />
+              <LeafRow key={`req-${item.row.id}`} row={item.row} onChanged={onChanged} />
             ) : (
               <ShowRow
                 key={`show-${item.showId}`}
                 group={item}
                 expanded={expandedShows.has(item.showId)}
                 onToggle={() => setExpandedShows((s) => toggleIn(s, item.showId))}
-                expandedSeasons={expandedSeasons}
-                onToggleSeason={(key) => setExpandedSeasons((s) => toggleIn(s, key))}
                 onChanged={onChanged}
               />
             ),

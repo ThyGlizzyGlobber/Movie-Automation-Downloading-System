@@ -201,7 +201,7 @@
   color: var(--text-dim);
 }
 
-/* ---- Requests page (the reference's Requests tab) ---- */
+/* ---- Requests page ---- */
 .rq {
   padding: 0 var(--row-inset);
 }
@@ -227,7 +227,6 @@
   font-weight: 600;
   font-size: 14px;
 }
-/* On phones the stat tiles are hidden and their counts join the lead. */
 .rq-lead-m {
   display: none;
 }
@@ -322,72 +321,36 @@
   display: grid;
   gap: 10px;
 }
-.rq-group {
-  display: grid;
-  gap: 6px;
-}
-.rq-children {
-  display: grid;
-  gap: 6px;
-  padding-left: 24px;
-}
-/* One row: poster · title · state · ring · actions. */
-.rq-row {
-  display: grid;
-  grid-template-columns: 56px minmax(0, 1.5fr) minmax(0, 1.4fr) 200px auto;
-  gap: 28px;
-  align-items: center;
-  padding: 14px 20px 14px 14px;
+/* One card per title: the row, plus (for a show) its season strips. */
+.rq-card {
   border-radius: var(--radius-lg);
   background: rgba(255, 255, 255, 0.04);
   border: 1px solid var(--glass-border-soft);
   transition: background 0.15s ease;
 }
-.rq-row:hover {
-  background: rgba(255, 255, 255, 0.065);
+.rq-card:hover {
+  background: rgba(255, 255, 255, 0.055);
+}
+.rq-row {
+  display: grid;
+  grid-template-columns: 56px minmax(0, 1fr) auto 44px auto;
+  gap: 20px;
+  align-items: center;
+  padding: 12px 16px 12px 12px;
 }
 .rq-clickable {
   cursor: pointer;
 }
-.rq-row.depth-1 {
-  background: rgba(255, 255, 255, 0.03);
-}
-.rq-row.depth-2 {
-  background: rgba(255, 255, 255, 0.02);
-  padding-top: 10px;
-  padding-bottom: 10px;
-}
-.rq-art {
-  width: 56px;
-  height: 84px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
+.rq-art,
 .rq-art img {
   width: 56px;
   height: 84px;
+}
+.rq-art img {
   object-fit: cover;
   border-radius: 11px;
   background: var(--bg-card);
   display: block;
-}
-.depth-2 .rq-art {
-  height: 40px;
-}
-.rq-chev {
-  width: 32px;
-  height: 32px;
-  border-radius: 50%;
-  background: var(--glass);
-  display: grid;
-  place-items: center;
-  color: var(--text-dim);
-  font-size: 15px;
-  transition: transform 0.2s ease;
-}
-.rq-chev.on {
-  transform: rotate(90deg);
 }
 .rq-t {
   min-width: 0;
@@ -402,9 +365,6 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.depth-2 .rq-title {
-  font-size: 16px;
-}
 .rq-t small {
   display: block;
   color: var(--text-dim);
@@ -418,34 +378,16 @@
 .rq-pill-m {
   display: none;
 }
-.rq-state {
-  min-width: 0;
-}
-.rq-detail {
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--text-dim);
-  margin-top: 8px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
 .rq-prog {
   display: flex;
   align-items: center;
-  gap: 16px;
 }
-.rq-k {
+.rq-prog .status-ring > span,
+.rq-prog .progress-ring span {
   font-size: 13px;
-  font-weight: 700;
-  white-space: nowrap;
 }
-.rq-k small {
-  display: block;
-  font-size: 11px;
-  font-weight: 600;
-  color: var(--text-dim);
-  margin-top: 3px;
+.rq-prog .status-ring > span .icon {
+  font-size: 15px;
 }
 .rq-acts {
   display: flex;
@@ -460,7 +402,7 @@
   border: none;
   background: var(--glass);
   color: var(--text);
-  font-size: 16px;
+  font-size: 15px;
   display: grid;
   place-items: center;
   transition: background 0.15s ease, color 0.15s ease, transform 0.2s ease;
@@ -482,9 +424,108 @@
 .rq-circ[disabled] {
   opacity: 0.5;
 }
+/* Seasons inside an expanded show card. */
+.rq-seasons {
+  display: grid;
+  gap: 4px;
+  padding: 0 16px 14px 16px;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+.rq-season {
+  padding: 12px 0 6px;
+}
+.rq-season + .rq-season {
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+}
+.rq-season-head {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+.rq-season-head b {
+  font-family: var(--font-display);
+  font-weight: 400;
+  font-size: 15px;
+  letter-spacing: var(--tracking-title);
+}
+.rq-season-head small {
+  color: var(--text-dim);
+  font-size: 12px;
+  font-weight: 600;
+}
+.rq-eps {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+/* An episode pill: state colour, tiny icon, number, and an × while it
+   can still be cancelled. */
+.rq-ep {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 28px;
+  padding: 0 10px 0 8px;
+  border-radius: var(--radius-pill);
+  background: var(--glass);
+  border: 1px solid var(--glass-border-soft);
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  color: var(--text-dim);
+}
+.rq-ep .icon {
+  font-size: 12px;
+}
+.rq-ep.status-searching .icon {
+  animation: spin 2.4s linear infinite;
+}
+.rq-ep.status-downloading {
+  color: var(--status-downloading);
+  background: color-mix(in srgb, var(--status-downloading) 10%, transparent);
+}
+.rq-ep.status-searching {
+  color: var(--status-searching);
+  background: color-mix(in srgb, var(--status-searching) 10%, transparent);
+}
+.rq-ep.status-complete {
+  color: var(--status-complete);
+  background: color-mix(in srgb, var(--status-complete) 10%, transparent);
+}
+.rq-ep.status-failed {
+  color: var(--status-failed);
+  background: color-mix(in srgb, var(--status-failed) 10%, transparent);
+}
+.rq-ep.status-nomatch {
+  color: var(--status-nomatch);
+  background: color-mix(in srgb, var(--status-nomatch) 10%, transparent);
+}
+.rq-ep.status-nospace {
+  color: var(--status-nospace);
+  background: color-mix(in srgb, var(--status-nospace) 10%, transparent);
+}
+.rq-ep-x {
+  width: 18px;
+  height: 18px;
+  margin: 0 -4px 0 2px;
+  border-radius: 50%;
+  border: none;
+  background: transparent;
+  color: inherit;
+  font-size: 10px;
+  display: grid;
+  place-items: center;
+  opacity: 0.7;
+}
+.rq-ep-x:hover {
+  background: rgba(255, 255, 255, 0.14);
+  opacity: 1;
+}
 
-/* Phones: one compact glass row (poster, title and pill, ring); a tap
-   reveals the actions underneath. */
+/* Phones: one compact row (poster, title and pill, ring); a tap reveals
+   the actions underneath. */
 @media (max-width: 859px) {
   .rq-head {
     margin-bottom: 14px;
@@ -503,6 +544,8 @@
     grid-template-columns: 44px minmax(0, 1fr) 44px;
     gap: 12px;
     padding: 10px 12px 10px 10px;
+  }
+  .rq-card {
     border-radius: 18px;
   }
   .rq-art,
@@ -513,15 +556,14 @@
   .rq-art img {
     border-radius: 9px;
   }
-  .rq-chev {
-    width: 28px;
-    height: 28px;
-  }
   .rq-title {
     font-size: 15px;
   }
   .rq-t small {
-    display: none;
+    white-space: normal;
+    display: -webkit-box;
+    -webkit-line-clamp: 1;
+    -webkit-box-orient: vertical;
   }
   .rq-pill-m {
     display: block;
@@ -531,28 +573,27 @@
     font-size: 10px;
     padding: 4px 8px 4px 6px;
   }
-  .rq-state,
-  .rq-k {
+  .rq-state {
     display: none;
-  }
-  .rq-prog .status-ring,
-  .rq-prog .progress-ring {
-    width: 44px !important;
-    height: 44px !important;
   }
   .rq-acts {
     display: none;
     grid-column: 1 / -1;
     justify-content: flex-end;
   }
-  .rq-open .rq-acts,
-  .rq-clickable .rq-acts {
+  .rq-open .rq-acts {
     display: flex;
   }
-  .rq-clickable .rq-acts .rq-circ:not(.danger) {
+  /* A show card expands on tap, so its chevron is redundant here. */
+  .rq-clickable .rq-acts {
     display: none;
   }
-  .rq-children {
-    padding-left: 12px;
+  .rq-seasons {
+    padding: 0 12px 10px;
+  }
+  .rq-ep {
+    height: 26px;
+    padding: 0 8px 0 7px;
+    font-size: 11px;
   }
 }

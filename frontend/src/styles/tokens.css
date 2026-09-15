@@ -177,3 +177,12 @@
      uses 72px at 1440; 64px was settled on live and kept. */
   --edge-inset: 64px;
 }
+
+/* Phones: the page inset drops to 16px on top of main's own 14px (the
+   reference's 20px phone gutter, near enough), so lists and grids use
+   the width instead of a desktop-sized margin. */
+@media (max-width: 639px) {
+  :root {
+    --edge-inset: 30px;
+  }
+}

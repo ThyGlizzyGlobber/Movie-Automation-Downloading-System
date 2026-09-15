@@ -1,6 +1,8 @@
 .poster-card {
   display: block;
   scroll-snap-align: start;
+  min-width: 0;
+  max-width: 100%;
 }
 .poster-art {
   position: relative;
@@ -32,6 +34,8 @@
 .poster-caption {
   display: block;
   min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
 }
 .poster-caption b {
   display: block;

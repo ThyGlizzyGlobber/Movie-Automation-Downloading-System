@@ -146,12 +146,18 @@ section.row .row-head-right {
   -ms-overflow-style: none;
   scroll-padding-inline: var(--row-inset) 0;
 }
+/* min-width: 0 matters: a card's caption is nowrap, and a flex item's
+   default min-width (auto) would let a long title push the card wider
+   than its poster. */
 .hscroll .poster-card {
   flex: 0 0 var(--poster-w);
+  width: var(--poster-w);
+  min-width: 0;
 }
 .hscroll .hscroll-item > .poster-card {
   display: block;
   width: var(--poster-w);
+  min-width: 0;
 }
 .hscroll::-webkit-scrollbar {
   display: none;

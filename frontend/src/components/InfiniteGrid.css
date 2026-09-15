@@ -9,6 +9,7 @@
 }
 .grid .poster-card {
   width: auto;
+  min-width: 0;
 }
 .grid .poster-card img {
   width: 100%;

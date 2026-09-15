@@ -183,12 +183,13 @@ body.search-open #searchToggleBtn,
   }
   /* Segmented pill of links, centred between the wordmark and the
      right-hand cluster (auto margins on both split the free space). */
+  /* Links sit right beside the search field, not centred in the pill. */
   .top-nav-links {
     display: flex;
     align-items: center;
     gap: 2px;
     flex: 0 0 auto;
-    margin: 0 auto;
+    margin: 0 12px 0 auto;
     padding: 4px;
     border-radius: var(--radius-pill);
     background: rgba(255, 255, 255, 0.04);
