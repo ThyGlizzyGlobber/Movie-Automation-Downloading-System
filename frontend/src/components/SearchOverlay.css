@@ -115,3 +115,169 @@
 .search-clear-btn:active {
   background: var(--glass-strong);
 }
+
+/* Live results (components/SearchResults.tsx) */
+.search-results {
+  display: grid;
+  gap: 2px;
+  padding: 8px 0 2px;
+}
+.search-result {
+  display: grid;
+  grid-template-columns: 40px minmax(0, 1fr) auto auto;
+  gap: 14px;
+  align-items: center;
+  padding: 8px 10px;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: background 0.12s ease;
+}
+.search-result:hover,
+.search-result.on {
+  background: rgba(255, 255, 255, 0.07);
+}
+.search-result-poster {
+  width: 40px;
+  height: 60px;
+  object-fit: cover;
+  border-radius: 8px;
+  background: var(--bg-card);
+  display: block;
+}
+.search-result-text {
+  min-width: 0;
+}
+.search-result-title {
+  font-family: var(--font-display);
+  font-size: 16px;
+  font-weight: 400;
+  letter-spacing: var(--tracking-title);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.search-result-meta {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-dim);
+  margin-top: 2px;
+}
+.search-result-rating {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-dim);
+}
+.search-result-rating .icon {
+  color: var(--meridian-star);
+  font-size: 12px;
+}
+.search-result-action,
+.search-result-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 34px;
+  padding: 0 14px;
+  border-radius: var(--radius-pill);
+  font-size: 12.5px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.search-result-action {
+  border: none;
+  background: var(--btn-primary-bg);
+  color: var(--btn-primary-text);
+}
+.search-result-action:disabled {
+  opacity: 0.7;
+}
+.search-result-action.error {
+  background: color-mix(in srgb, var(--status-failed) 14%, transparent);
+  color: var(--status-failed);
+}
+.search-result-state.in-plex {
+  background: color-mix(in srgb, var(--status-complete) 12%, transparent);
+  color: var(--status-complete);
+}
+.search-result-state.pending {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.search-result .icon {
+  font-size: 14px;
+}
+.search-overlay-all {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  margin-top: 4px;
+  padding: 10px;
+  border: none;
+  border-radius: var(--radius-md);
+  background: none;
+  color: var(--text-dim);
+  font-size: 13px;
+  font-weight: 700;
+}
+.search-overlay-all:hover {
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.05);
+}
+.search-overlay-none {
+  padding: 16px 10px 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-dim);
+}
+.search-result-meta {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.search-results {
+  max-height: calc(100dvh - var(--topbar-h, 64px) - 190px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+@media (max-width: 639px) {
+  /* Phone: the palette uses the page's own 14px gutters, not the
+     desktop chrome inset, so result rows keep room for their titles. */
+  #searchOverlay {
+    padding-left: 14px;
+    padding-right: 14px;
+    padding-top: calc(var(--topbar-h, 64px) + 10px);
+  }
+  .search-overlay-panel {
+    padding: 8px;
+  }
+  .search-overlay-kbd,
+  .search-result-rating {
+    display: none;
+  }
+  .search-result {
+    grid-template-columns: 36px minmax(0, 1fr) auto;
+    gap: 10px;
+    padding: 6px 6px;
+  }
+  .search-result-poster {
+    width: 36px;
+    height: 54px;
+  }
+  .search-result-title {
+    font-size: 15px;
+  }
+  .search-result-action,
+  .search-result-state {
+    height: 32px;
+    padding: 0 11px;
+    font-size: 12px;
+  }
+  .search-results {
+    max-height: calc(100dvh - var(--topbar-h, 64px) - 170px);
+  }
+}
