@@ -4,6 +4,12 @@
   z-index: 0;
   overflow: hidden;
   pointer-events: none;
+  transition: opacity 1.2s ease;
+}
+/* While a trailer plays the glow steps back; it comes up again when the
+   trailer stops (the same 1.2s ease in both directions). */
+.ambient-glow.dimmed {
+  opacity: 0.3;
 }
 .ambient-glow i {
   position: absolute;

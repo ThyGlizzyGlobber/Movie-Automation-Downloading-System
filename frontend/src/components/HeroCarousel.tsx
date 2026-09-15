@@ -265,7 +265,7 @@ export default function HeroCarousel({ items }: { items: TaggedItem[] }) {
 
         return (
           <div className={`home-hero-slide${i === activeIndex ? ' active' : ''}`} key={item.id}>
-            <AmbientGlow posterPath={item.poster_path} />
+            <AmbientGlow posterPath={item.poster_path} dimmed={!!videoVisible[i]} />
             <a className="home-hero-media" href={href} aria-label={title}>
               <img
                 className={videoVisible[i] ? 'home-hero-poster-hidden' : ''}
