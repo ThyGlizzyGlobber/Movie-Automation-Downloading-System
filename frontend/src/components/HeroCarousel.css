@@ -10,7 +10,7 @@
   margin: calc(-1 * (var(--topbar-h, 64px) + 14px)) -14px 18px;
   min-height: clamp(450px, 38vw, 720px);
   overflow: hidden;
-  background: #000;
+  background: var(--bg);
 }
 .home-hero-slide {
   position: absolute;
@@ -30,7 +30,7 @@
   position: absolute;
   inset: 0;
   overflow: hidden;
-  background: #000;
+  background: var(--bg);
   z-index: 0;
 }
 .home-hero-media img {
@@ -223,7 +223,7 @@
 }
 .home-hero-dot.active {
   width: 22px;
-  background: var(--smithflix-dot-active);
+  background: var(--text);
 }
 .home-hero-cert {
   position: absolute;

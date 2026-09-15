@@ -8,7 +8,7 @@ export default function LoginPage() {
     <div className="login-page">
       <div className="login-card">
         <img className="login-brand" src="/brand-icon.svg" alt="" />
-        <h1 className="login-title">Smithflix</h1>
+        <h1 className="login-title">Meridian</h1>
         <p className="login-copy">
           Sign in with the Plex account that has access to this household's server.
         </p>

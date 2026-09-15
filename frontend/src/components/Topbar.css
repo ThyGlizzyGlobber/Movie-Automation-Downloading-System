@@ -33,7 +33,7 @@ body.has-hero #topbar .top-nav-link {
   color: var(--text);
 }
 body.has-hero #topbar .top-nav-link.active {
-  color: var(--smithflix-charcoal);
+  color: var(--on-light);
 }
 
 #searchToggleBtn,
@@ -64,7 +64,7 @@ body.search-open #searchToggleBtn,
 #accountToggle.active,
 #settingsToggle.active {
   background: #fff;
-  color: var(--smithflix-charcoal);
+  color: var(--on-light);
   border-radius: 50%;
 }
 #searchToggleBtn {
@@ -79,16 +79,21 @@ body.search-open #searchToggleBtn,
   margin-right: 22px;
 }
 #topbarLogo .brand-wordmark {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
   font-family: var(--font-display);
-  font-weight: 800;
-  font-size: 34px;
+  font-weight: 500;
+  font-size: 24px;
   line-height: 1;
-}
-#topbarLogo .brand-word-smith {
+  letter-spacing: -0.01em;
   color: var(--text);
 }
-#topbarLogo .brand-word-flix {
-  color: var(--accent);
+#topbarLogo .brand-mark {
+  width: 32px;
+  height: 32px;
+  border-radius: 9px;
+  box-shadow: 0 6px 18px rgba(80, 120, 255, 0.35);
 }
 
 .top-nav-links {
@@ -108,7 +113,7 @@ body.search-open #searchToggleBtn,
   background: var(--bg-card);
 }
 .top-nav-link.active {
-  color: var(--smithflix-charcoal);
+  color: var(--on-light);
   background: #fff;
 }
 

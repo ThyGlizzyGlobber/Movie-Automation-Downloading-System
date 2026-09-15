@@ -277,8 +277,8 @@ export default function ShowDetailPage() {
 
       <div className="detail-footer">
         <span className="brand-wordmark">
-          <span className="brand-word-smith">smith</span>
-          <span className="brand-word-flix">flix</span>
+          <img className="brand-mark" src="/brand-icon.svg" alt="" />
+          Meridian
         </span>
       </div>
 

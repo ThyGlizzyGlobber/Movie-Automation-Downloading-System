@@ -2337,13 +2337,13 @@ def test_set_remote_access_persists_and_reads_back(client_and_deps):
 
     response = client.put(
         "/api/settings/remote-access",
-        json={"remote_access_enabled": True, "public_domain": "smithflix.example.com"},
+        json={"remote_access_enabled": True, "public_domain": "meridian.example.com"},
     )
 
     assert response.status_code == 200
-    assert response.json() == {"remote_access_enabled": True, "public_domain": "smithflix.example.com"}
+    assert response.json() == {"remote_access_enabled": True, "public_domain": "meridian.example.com"}
     assert store.get_settings()["remote_access_enabled"] is True
-    assert store.get_settings()["public_domain"] == "smithflix.example.com"
+    assert store.get_settings()["public_domain"] == "meridian.example.com"
 
 
 def test_set_remote_access_blanks_a_whitespace_only_domain_to_none(client_and_deps):

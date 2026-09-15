@@ -1,79 +1,162 @@
-/* Smithflix brand palette — charcoal ground + a cool blue accent,
-   picked live via the theme-lab exercise against a "cool/moody blue"
-   Coolors board (superseding the original teal/cream/coral kit in
-   brand_identity/, and before that a light-red repaint; that folder is
-   left as-is, this is a live in-app repaint, not yet folded back into
-   the reference kit). Dark is the only theme — no light mode, no
-   toggle: removed per direct request rather than left dormant, since
-   the header icon slot it used is earmarked for a future profile icon
-   instead. --accent-secondary (also from the same board) is a second,
-   independent accent for elements that need to read as visually
-   distinct from the primary one (currently just the storage-used
-   fill, sitting right next to primary-accent buttons in the same
-   corner of the screen). */
+/* Meridian design tokens — the "Obsidian" direction, chosen from the
+   three-way exploration in design-exploration/redesign-directions.html
+   and expanded in design-exploration/obsidian.html. Those two files are
+   the visual reference for every value here; when a token changes, the
+   obsidian.html System tab should be updated in the same pass so the
+   reference and the live app don't drift.
+
+   The language in one line: cinema in a dark room. A blue-black ground
+   (not pure black — see --meridian-black), ambient blurred light behind
+   hero art, translucent "glass" surfaces with real backdrop blur, pills
+   and large radii, Outfit at light weights for display, Manrope for UI.
+   Dark is the only theme; there is no light mode and no toggle.
+
+   Two layers:
+   1. Primitives (--meridian-*, --glass-*, --glow-*, --radius-*, --font-*):
+      the raw palette and scale, named after what they are.
+   2. Semantic aliases (--bg, --text, --accent, --border, --status-*):
+      what the components actually consume. Their names predate this
+      repaint and are kept so the existing CSS keeps working; only their
+      values changed. New work should reach for the semantic layer first
+      and a primitive only when no alias fits. */
 :root {
-  --smithflix-cream: #f3ede2;
-  /* Literal black, not a dark charcoal — per direct request, so the
-     page background blends seamlessly with the hero's own (also
-     literal-black) fade instead of reading as two adjacent, slightly
-     different dark tones. --bg-card/--bg-elevated (card/surface
-     layering) are deliberately untouched — this is scoped to the
-     page background specifically, not every dark surface in the app. */
-  --smithflix-charcoal: #000000;
-  /* Blended toward --smithflix-accent (a fixed 9% mix) rather than a
-     standalone warm-toned hex — per direct request to have every
-     actual charcoal surface (this, --bg-elevated, --border) lean
-     cool/blue like the accent instead of warm, tied to the accent
-     itself so they stay in sync if it ever changes. --smithflix-
-     charcoal above is deliberately excluded (see its own comment). */
-  --smithflix-charcoal-card: color-mix(in srgb, var(--smithflix-accent) 9%, #201e1c);
-  --smithflix-accent: #b4c5e4;
-  /* Near-white with just enough of the board's own cream cast to not
-     read as flatly pure white — the hero carousel's active dot. */
-  --smithflix-dot-active: #fbfff1;
+  /* ---- Primitives: ground and ink ---- */
+  /* Not #000. A hair of blue in the black is what makes the ambient
+     glows and glass read as depth rather than as grey boxes on a void.
+     The hero/detail fades use var(--bg) so they blend into this exactly. */
+  --meridian-black: #050508;
+  --meridian-ink: #f5f7fa;
+  --meridian-ink-muted: rgba(245, 247, 250, 0.55);
+  --meridian-ink-faint: rgba(245, 247, 250, 0.3);
 
-  --font-display: 'Baloo 2', sans-serif;
-  --font-body: 'Inter', -apple-system, BlinkMacSystemFont, "Helvetica Neue", Arial, sans-serif;
+  /* ---- Primitives: color ----
+     One cool accent (ice) carries interactive/downloading; the others
+     are reserved for status and never used decoratively, so a colored
+     chip always means something. */
+  --meridian-ice: #9cc0ff;
+  --meridian-mint: #6fe3c1;
+  --meridian-violet: #c39cff;
+  --meridian-coral: #ff8a80;
+  --meridian-amber: #ffcf7a;
+  --meridian-orange: #ffb086;
+  --meridian-star: #ffd166;
 
-  --bg: var(--smithflix-charcoal);
-  --bg-elevated: color-mix(in srgb, var(--smithflix-accent) 9%, #1a1816);
-  --bg-card: var(--smithflix-charcoal-card);
-  --text: var(--smithflix-cream);
-  --text-dim: #a39a8b;
-  --accent: var(--smithflix-accent);
-  --accent-text: #141312;
-  --accent-secondary: #3d52d5;
-  /* Higher than the other two charcoal surfaces' 9% — #332f2b's own
-     warm bias is stronger, so an equal mix barely moved the needle
-     (confirmed live: R/G/B landed within 1 unit of each other, still
-     reading as neutral rather than blue-leaning). */
-  --border: color-mix(in srgb, var(--smithflix-accent) 15%, #332f2b);
-  --status-queued: #6b7280;
-  --status-searching: #3b82f6;
-  --status-downloading: #a855f7;
-  --status-complete: #22c55e;
-  --status-nomatch: #f59e0b;
-  --status-nospace: #ef4444;
-  --status-failed: #dc2626;
+  /* ---- Primitives: glass ----
+     A surface is white at low alpha over the ground, a 1px lighter
+     border, and backdrop blur. --glass-overlay is the heavier tint for
+     things that float over content (search palette, modals, the nav
+     pill) and need to stay legible over bright art. */
+  --glass: rgba(255, 255, 255, 0.06);
+  --glass-strong: rgba(255, 255, 255, 0.1);
+  --glass-hover: rgba(255, 255, 255, 0.09);
+  --glass-border: rgba(255, 255, 255, 0.1);
+  --glass-border-soft: rgba(255, 255, 255, 0.07);
+  --glass-overlay: rgba(16, 16, 24, 0.72);
+  --glass-blur: blur(30px) saturate(150%);
+  --glass-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.12);
+
+  /* ---- Primitives: ambient glow ----
+     Three blurred blobs behind hero/detail art. These are the house
+     defaults; a page with featured artwork overrides them from the
+     poster's own colors (see the obsidian.html reference: the main glow
+     takes the poster hue, the second sits ~48° warmer, the third ~60°
+     cooler). Pages without a featured title keep these. */
+  --glow-1: #3644d6;
+  --glow-2: #1aa79c;
+  --glow-3: #6f3ad6;
+  --glow-blur: 90px;
+
+  /* ---- Primitives: shape ---- */
+  --radius-sm: 10px;
+  --radius-md: 16px;
+  --radius-lg: 22px;
+  --radius-xl: 30px;
+  --radius-pill: 999px;
+  --shadow-card: 0 24px 44px rgba(0, 0, 0, 0.55);
+  --shadow-float: 0 20px 60px rgba(0, 0, 0, 0.5);
+  --shadow-primary: 0 12px 40px rgba(255, 255, 255, 0.18);
+
+  /* ---- Primitives: type ----
+     Outfit is loaded 200–700 (display only ever uses 200–500; the
+     lighter the bigger). Manrope 400–800 is every label, body and
+     button. IBM Plex Mono is reserved for paths, hosts and other
+     technical strings in Settings. All three come from Google Fonts
+     via index.html; nginx.conf's CSP already allows those hosts. */
+  --font-display: 'Outfit', 'Manrope', -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-body: 'Manrope', -apple-system, BlinkMacSystemFont, 'Helvetica Neue', Arial, sans-serif;
+  --font-mono: 'IBM Plex Mono', ui-monospace, Menlo, monospace;
+
+  /* Fluid display scale. Hero and page titles are Outfit 300 with tight
+     tracking; section heads are Outfit 400 with the qualifier word in
+     300 muted ("Continue watching"). Card titles are Outfit 400. */
+  --text-hero: clamp(56px, 8.3vw, 120px);
+  --text-page: clamp(40px, 5vw, 72px);
+  --text-section: clamp(20px, 1.8vw, 26px);
+  --text-card: 15px;
+  --text-body: 17px;
+  --text-label: 12px;
+  --tracking-display: -0.045em;
+  --tracking-title: -0.02em;
+  --leading-display: 1;
+  --leading-body: 1.65;
+
+  /* ---- Semantic aliases (consumed by components) ---- */
+  --bg: var(--meridian-black);
+  /* Opaque equivalents of the glass tints over the ground, for the
+     places that stack surfaces or can't afford a transparent
+     background (modals, the tab bar). Prefer --glass on anything that
+     sits directly over art. */
+  --bg-card: #101016;
+  --bg-elevated: #17171f;
+  --text: var(--meridian-ink);
+  --text-dim: var(--meridian-ink-muted);
+  /* Ink for anything drawn on a white/light surface (a white primary
+     button, a white active pill, the hover state of a glass row). */
+  --on-light: var(--meridian-black);
+
+  /* Ice is the interactive accent: links, active nav, score rings,
+     focus outlines, and (for now) filled primary buttons — the
+     reference draws primary buttons white; that move belongs to the
+     button/component pass rather than the token pass, and --accent
+     stays a single value until then. */
+  --accent: var(--meridian-ice);
+  --accent-text: var(--meridian-black);
+  --accent-soft: rgba(156, 192, 255, 0.12);
+  /* Storage-used fill and the one detail chip that must read as
+     distinct from --accent. Amber is what the reference uses for
+     storage. */
+  --accent-secondary: var(--meridian-amber);
+  --border: var(--glass-border);
+
+  /* Status colors — one per real request state, matching the pills and
+     rings on the obsidian.html Components tab. Queued is deliberately
+     neutral so only the states that need attention carry color. */
+  --status-queued: #8a8f9a;
+  --status-searching: var(--meridian-violet);
+  --status-downloading: var(--meridian-ice);
+  --status-complete: var(--meridian-mint);
+  --status-nomatch: var(--meridian-amber);
+  --status-nospace: var(--meridian-orange);
+  --status-failed: var(--meridian-coral);
+
+  /* ---- Layout (unchanged by the repaint) ---- */
   --safe-top: env(safe-area-inset-top, 0px);
   --safe-bottom: env(safe-area-inset-bottom, 0px);
   --row-gap: 10px;
   /* Left-aligns a row's title and first poster with the header/hero
      column at --edge-inset, on top of #app's own 14px edge padding
      this sits inside of (so the two track together if --edge-inset
-     ever changes again, rather than needing to stay in sync by hand —
-     was a flat, independent 20px before). Shared by .hscroll's own
-     left padding and the row title's left margin below. Deliberately
-     asymmetric: the right side is NOT mirrored at this same inset —
-     see .hscroll/.provider-row, which instead cancel #app's own right
-     padding so a row's content reaches the true viewport edge, per
-     direct request. */
+     ever changes again, rather than needing to stay in sync by hand).
+     Deliberately asymmetric: the right side is NOT mirrored at this
+     same inset — see .hscroll/.provider-row, which instead cancel
+     #app's own right padding so a row's content reaches the true
+     viewport edge, per direct request. */
   --row-inset: calc(var(--edge-inset) - 14px);
   /* Poster card width scales continuously with viewport width (14vw)
      between a mobile floor and a desktop ceiling, rather than jumping
      between a handful of hand-picked breakpoint values — see .hscroll/
-     .grid below. Scaled down slightly from an earlier 140/275px pass
-     per feedback that the cards were reading a touch too large. */
+     .grid. Scaled down slightly from an earlier 140/275px pass per
+     feedback that the cards were reading a touch too large. */
   --poster-w: clamp(120px, 14vw, 240px);
   /* Same continuous-scaling idea as --poster-w, just a smaller range —
      a circular cast photo reads fine noticeably smaller than a poster,
@@ -83,9 +166,7 @@
      logo/icons, the home hero's text column, and the floating
      downloads/storage pills — so they all line up on the same edge.
      Deliberately NOT used by row-inset/content rows (.hscroll/.grid),
-     which stay full-bleed by their own separate design. Matches
-     Prime Video's own wider storefront-header margin, bumped up first
-     from an earlier, tighter 32px pass, then again from 48px per
-     direct request for more breathing room. */
+     which stay full-bleed by their own separate design. The reference
+     uses 72px at 1440; 64px was settled on live and kept. */
   --edge-inset: 64px;
 }

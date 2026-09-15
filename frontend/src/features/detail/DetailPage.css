@@ -10,7 +10,7 @@
   margin: calc(-1 * (var(--topbar-h, 64px) + 14px)) -14px 40px;
   padding-top: calc(var(--topbar-h, 64px) + 14px);
   min-height: clamp(450px, 38vw, 720px);
-  background: #000;
+  background: var(--bg);
 }
 .detail-hero-backdrop {
   position: absolute;
@@ -318,15 +318,18 @@
   text-align: center;
 }
 .detail-footer .brand-wordmark {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
   font-family: var(--font-display);
-  font-weight: 800;
-  font-size: 28px;
-}
-.detail-footer .brand-word-smith {
+  font-weight: 400;
+  font-size: 24px;
+  letter-spacing: var(--tracking-title);
   color: var(--text);
 }
-.detail-footer .brand-word-flix {
-  color: var(--accent);
+.detail-footer .brand-mark {
+  width: 28px;
+  height: 28px;
 }
 
 /* Add/subscribe-state indicator (tick/cross circle next to the score
@@ -347,7 +350,7 @@
 }
 .detail-state-icon:hover {
   background: #fff;
-  color: var(--smithflix-charcoal);
+  color: var(--on-light);
   border-radius: 50%;
 }
 .detail-state-icon[disabled] {
@@ -400,7 +403,7 @@
   text-align: center;
   justify-content: center;
   background: #fff;
-  color: var(--smithflix-charcoal);
+  color: var(--on-light);
   border: none;
 }
 .section-heading {
@@ -461,7 +464,7 @@
 }
 .bulk-btn:not([disabled]):hover {
   background: #fff;
-  color: var(--smithflix-charcoal);
+  color: var(--on-light);
   border-color: #fff;
 }
 .season-list {
@@ -503,7 +506,7 @@
 }
 .season-btn:not([disabled]):hover {
   background: #fff;
-  color: var(--smithflix-charcoal);
+  color: var(--on-light);
   border-color: #fff;
 }
 

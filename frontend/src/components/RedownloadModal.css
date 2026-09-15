@@ -47,7 +47,7 @@
 }
 .redownload-option:not([disabled]):hover {
   background: #fff;
-  color: var(--smithflix-charcoal);
+  color: var(--on-light);
   border-color: #fff;
 }
 .redownload-option .redownload-option-sub {
@@ -58,7 +58,7 @@
   color: var(--text-dim);
 }
 .redownload-option:not([disabled]):hover .redownload-option-sub {
-  color: color-mix(in srgb, var(--smithflix-charcoal) 70%, transparent);
+  color: color-mix(in srgb, var(--on-light) 70%, transparent);
 }
 .redownload-option.danger {
   color: var(--status-nospace);

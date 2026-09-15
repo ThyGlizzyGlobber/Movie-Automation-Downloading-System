@@ -24,7 +24,7 @@ export default function UpdatesPanel() {
       <button className="settings-btn" disabled={deploying} onClick={checkForUpdates}>
         {deploying ? 'Deploying…' : 'Check for updates'}
       </button>
-      <div className="about-footer">Smithflix</div>
+      <div className="about-footer">Meridian</div>
     </div>
   )
 }

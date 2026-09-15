@@ -143,7 +143,7 @@ async def lifespan(app: FastAPI):
         store.close()
 
 
-app = FastAPI(title="The Family Downloader", lifespan=lifespan)
+app = FastAPI(title="Meridian", lifespan=lifespan)
 
 # Frontend migration Part G4 — rate limiting on the routes an internet
 # attacker would actually script against once remote access is enabled:

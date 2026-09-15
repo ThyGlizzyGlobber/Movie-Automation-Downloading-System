@@ -40,9 +40,9 @@ export function useSetHasHero(value: boolean) {
 // Ports setChrome({title})'s document.title job.
 export function usePageTitle(title: string | null) {
   useEffect(() => {
-    document.title = title ? `${title} — Smithflix` : 'Smithflix'
+    document.title = title ? `${title} — Meridian` : 'Meridian'
     return () => {
-      document.title = 'Smithflix'
+      document.title = 'Meridian'
     }
   }, [title])
 }

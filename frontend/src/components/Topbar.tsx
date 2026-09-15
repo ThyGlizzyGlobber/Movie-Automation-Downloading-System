@@ -33,10 +33,10 @@ export default function Topbar({ onOpenSearch }: { onOpenSearch: () => void }) {
 
   return (
     <div id="topbar" ref={topbarRef}>
-      <NavLink id="topbarLogo" to="/home" aria-label="Smithflix home">
+      <NavLink id="topbarLogo" to="/home" aria-label="Meridian home">
         <span className="brand-wordmark">
-          <span className="brand-word-smith">smith</span>
-          <span className="brand-word-flix">flix</span>
+          <img className="brand-mark" src="/brand-icon.svg" alt="" />
+          Meridian
         </span>
       </NavLink>
       <nav className="top-nav-links">

@@ -70,7 +70,7 @@ function RemoteAccessSettingsSection() {
           spellCheck={false}
           value={domain}
           onChange={(e) => setDomain(e.target.value)}
-          placeholder="smithflix.example.com"
+          placeholder="meridian.example.com"
         />
         <div className="settings-hint">Just for your own reference here — confirms what you've pointed the proxy at.</div>
       </div>

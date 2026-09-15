@@ -22,7 +22,7 @@ from app.cache import TTLCache
 from app.normalize import normalize_text, titles_match
 
 PLEX_TV_BASE = "https://plex.tv"
-PRODUCT_NAME = "The Family Downloader"
+PRODUCT_NAME = "Meridian"
 PIN_POLL_INTERVAL_SECONDS = 2
 PIN_TIMEOUT_SECONDS = 900  # Plex PINs expire ~15 minutes after creation
 YEAR_TOLERANCE = 1
