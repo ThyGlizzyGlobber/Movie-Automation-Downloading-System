@@ -2,6 +2,7 @@ import { useRef, useState, type ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import PosterCard, { type PosterCardItem } from './PosterCard'
 import './MediaRow.css'
+import Icon from './Icon'
 
 export default function MediaRow<T extends PosterCardItem>({
   title,
@@ -79,10 +80,10 @@ export default function MediaRow<T extends PosterCardItem>({
           )}
         </div>
         <button className="hscroll-arrow hscroll-arrow-left" aria-label="Scroll left" onClick={() => scrollByPage(-1)}>
-          <span className="material-symbols-rounded">chevron_left</span>
+          <Icon name="back" />
         </button>
         <button className="hscroll-arrow hscroll-arrow-right" aria-label="Scroll right" onClick={() => scrollByPage(1)}>
-          <span className="material-symbols-rounded">chevron_right</span>
+          <Icon name="next" />
         </button>
       </div>
     </section>

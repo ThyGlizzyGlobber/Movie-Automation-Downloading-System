@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query'
 import { getStorage } from '../api/system'
 import './StorageIndicator.css'
+import Icon from './Icon'
 
 // Disk usage moves far slower than the request queue, so this polls on
 // its own, much longer interval than DownloadsFab's 5s. Hidden entirely
@@ -20,7 +21,7 @@ export default function StorageIndicator() {
 
   return (
     <div className="storage-indicator">
-      <span className="material-symbols-rounded storage-indicator-icon">hard_drive</span>
+      <Icon name="drive" className="storage-indicator-icon" />
       <span className="storage-indicator-bar">
         <span className="storage-indicator-fill" style={{ width: `${pct}%` }} />
       </span>

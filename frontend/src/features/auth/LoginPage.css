@@ -1,6 +1,8 @@
 /* Mobile-first, single-column — per Part H, the first screen a new user
    most likely sees is on their phone. */
 .login-page {
+  position: relative;
+  overflow: hidden;
   min-height: 100vh;
   min-height: 100dvh;
   display: flex;
@@ -10,20 +12,35 @@
     calc(20px + env(safe-area-inset-left));
 }
 
+.login-page .ambient-glow i {
+  opacity: 0.3;
+}
+
 .login-card {
+  position: relative;
+  z-index: 1;
   width: 100%;
-  max-width: 380px;
+  max-width: 400px;
   text-align: center;
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 6px;
+  padding: 36px 30px 30px;
+  border-radius: var(--radius-xl);
+  background: var(--glass-overlay);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  border: 1px solid var(--glass-border);
+  box-shadow: var(--shadow-float), var(--glass-highlight);
 }
 
 .login-brand {
-  width: 56px;
-  height: 56px;
-  margin-bottom: 8px;
+  width: 60px;
+  height: 60px;
+  margin-bottom: 12px;
+  border-radius: 17px;
+  box-shadow: 0 10px 30px rgba(80, 120, 255, 0.35);
 }
 
 .login-title {
@@ -38,8 +55,9 @@
 .login-copy {
   color: var(--text-dim);
   font-size: 14.5px;
-  line-height: 1.5;
-  margin: 4px 0 20px;
+  font-weight: 500;
+  line-height: 1.55;
+  margin: 8px 0 22px;
 }
 
 .login-button {
@@ -67,7 +85,7 @@
 }
 
 .login-error {
-  color: var(--status-nospace);
+  color: var(--status-failed);
   font-size: 13.5px;
   margin-top: 14px;
 }
@@ -76,7 +94,8 @@
    layout (Part H's own "real pass per tier", not inherited-by-default). */
 @media (min-width: 640px) {
   .login-card {
-    max-width: 420px;
+    max-width: 440px;
+    padding: 40px 40px 34px;
   }
   .login-title {
     font-size: 48px;

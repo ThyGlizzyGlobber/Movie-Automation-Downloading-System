@@ -33,10 +33,10 @@
   border: none;
   transition: background 0.15s ease, color 0.15s ease;
 }
-.tab .icon {
+.tab-icon {
   display: flex;
 }
-.tab .icon .material-symbols-rounded {
+.tab-icon .icon {
   font-size: 22px;
 }
 .tab.active {

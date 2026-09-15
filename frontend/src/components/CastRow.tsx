@@ -4,6 +4,7 @@ import { profileUrl } from '../lib/tmdbImage'
 import type { CastMember } from '../types/movies'
 import './MediaRow.css'
 import './CastRow.css'
+import Icon from './Icon'
 
 // The "Top Billed Cast" photo-card row at the bottom of a detail page —
 // shares the same hscroll shell/scroll-arrow behavior as MediaRow's
@@ -43,10 +44,10 @@ export default function CastRow({ cast }: { cast?: CastMember[] }) {
           ))}
         </div>
         <button className="hscroll-arrow hscroll-arrow-left" aria-label="Scroll left" onClick={() => scrollByPage(-1)}>
-          <span className="material-symbols-rounded">chevron_left</span>
+          <Icon name="back" />
         </button>
         <button className="hscroll-arrow hscroll-arrow-right" aria-label="Scroll right" onClick={() => scrollByPage(1)}>
-          <span className="material-symbols-rounded">chevron_right</span>
+          <Icon name="next" />
         </button>
       </div>
     </section>

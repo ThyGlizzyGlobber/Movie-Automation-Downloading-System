@@ -1,4 +1,9 @@
+/* First-run setup, in the Obsidian language: a glass card centred on the
+   blue-black ground with the house ambient glow behind it (no poster to
+   derive from yet), step progress as a glowing ice line, glass inputs. */
 .setup-page {
+  position: relative;
+  overflow: hidden;
   min-height: 100vh;
   min-height: 100dvh;
   display: flex;
@@ -7,29 +12,45 @@
   padding: 24px calc(20px + env(safe-area-inset-right)) calc(24px + env(safe-area-inset-bottom))
     calc(20px + env(safe-area-inset-left));
 }
+.setup-page .ambient-glow i {
+  opacity: 0.3;
+}
 
 .setup-card {
+  position: relative;
+  z-index: 1;
   width: 100%;
-  max-width: 420px;
+  max-width: 440px;
   display: flex;
   flex-direction: column;
   gap: 4px;
+  padding: 30px 28px 28px;
+  border-radius: var(--radius-xl);
+  background: var(--glass-overlay);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  border: 1px solid var(--glass-border);
+  box-shadow: var(--shadow-float), var(--glass-highlight);
 }
 
 .setup-progress {
   display: flex;
   gap: 6px;
-  margin-bottom: 20px;
+  margin-bottom: 24px;
 }
 .setup-progress-dot {
   flex: 1;
   height: 4px;
   border-radius: 2px;
-  background: var(--border);
+  background: rgba(255, 255, 255, 0.12);
+  transition: background 0.3s ease, box-shadow 0.3s ease;
 }
 .setup-progress-dot.done,
 .setup-progress-dot.active {
   background: var(--accent);
+}
+.setup-progress-dot.active {
+  box-shadow: 0 0 10px color-mix(in srgb, var(--accent) 70%, transparent);
 }
 
 .setup-step-title {
@@ -44,7 +65,8 @@
 .setup-step-copy {
   color: var(--text-dim);
   font-size: 14px;
-  line-height: 1.5;
+  font-weight: 500;
+  line-height: 1.55;
   margin: 0 0 20px;
 }
 
@@ -55,21 +77,24 @@
   margin-bottom: 14px;
 }
 .setup-field label {
-  font-size: 13px;
+  font-size: 12px;
+  font-weight: 700;
   color: var(--text-dim);
 }
 .setup-field input {
   padding: 12px 14px;
-  border-radius: 8px;
-  border: 1px solid var(--border);
-  background: var(--bg-card);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--glass-border);
+  background: var(--glass);
   color: var(--text);
   font-size: 15px;
   font-family: inherit;
+  transition: border-color 0.15s ease;
 }
 .setup-field input:focus {
-  outline: 2px solid var(--accent);
-  outline-offset: -1px;
+  outline: none;
+  border-color: color-mix(in srgb, var(--accent) 60%, transparent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
 }
 
 .setup-row {
@@ -107,23 +132,26 @@
   border: 1px solid var(--glass-border);
 }
 .setup-button:disabled {
-  opacity: 0.6;
+  opacity: 0.45;
   cursor: default;
+  box-shadow: none;
 }
 
 .setup-skip-note {
   font-size: 13px;
+  font-weight: 500;
   color: var(--text-dim);
-  background: var(--bg-card);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 10px 12px;
+  background: var(--glass);
+  border: 1px solid var(--glass-border-soft);
+  border-radius: var(--radius-md);
+  padding: 12px 14px;
   margin-bottom: 14px;
 }
 
 .setup-error {
-  color: var(--status-nospace);
+  color: var(--status-failed);
   font-size: 13.5px;
+  font-weight: 600;
   margin: 10px 0 0;
 }
 
@@ -137,24 +165,24 @@
   display: block;
   width: 100%;
   text-align: left;
-  padding: 12px 14px;
-  border-radius: 8px;
-  border: 1px solid var(--border);
-  background: var(--bg-card);
+  padding: 14px 16px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--glass-border-soft);
+  background: var(--glass);
   color: var(--text);
   font-size: 15px;
+  font-weight: 600;
   cursor: pointer;
 }
 .setup-server-option.selected {
-  border-color: var(--accent);
-  background: color-mix(in srgb, var(--accent) 12%, var(--bg-card));
+  border-color: color-mix(in srgb, var(--accent) 50%, transparent);
+  background: var(--accent-soft);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 25%, transparent);
 }
 
 @media (min-width: 640px) {
   .setup-card {
-    max-width: 460px;
-  }
-  .setup-step-title {
-    font-size: 26px;
+    max-width: 480px;
+    padding: 36px 36px 32px;
   }
 }

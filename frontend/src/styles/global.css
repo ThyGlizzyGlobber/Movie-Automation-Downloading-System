@@ -5,27 +5,8 @@
   -webkit-tap-highlight-color: transparent;
 }
 
-/* Every icon in the app is Material Symbols Rounded at one fixed style
-   (filled, weight 700, grade 0, optical size 48 — set on the element
-   itself as a fallback/override in case the URL-baked @48,700,1,0
-   defaults from the <link> in <head> don't apply for any reason).
-   Google's own standard boilerplate for using the variable font as an
-   icon set; font-size controls the rendered size per placement,
-   independent of the opsz axis. color inherits from the parent, same
-   as the SVG icons this replaces (fill: currentColor). */
-.material-symbols-rounded {
-  font-family: 'Material Symbols Rounded';
-  font-weight: normal;
-  font-style: normal;
-  line-height: 1;
-  letter-spacing: normal;
-  text-transform: none;
-  display: inline-block;
-  white-space: nowrap;
-  word-wrap: normal;
-  direction: ltr;
-  font-variation-settings: 'FILL' 1, 'wght' 700, 'GRAD' 0, 'opsz' 48;
-}
+/* Icons are inline SVG strokes (components/Icon.tsx), sized by
+   font-size like the icon font they replaced. */
 
 html,
 body {

@@ -15,9 +15,6 @@
 }
 .status-icon {
   font-size: 14px;
-  line-height: 1;
-  flex: 0 0 auto;
-  font-variation-settings: 'FILL' 1, 'wght' 600, 'GRAD' 0, 'opsz' 20;
 }
 .status-queued {
   color: var(--status-queued);
@@ -25,9 +22,6 @@
 .status-searching {
   color: var(--status-searching);
   background: color-mix(in srgb, var(--status-searching) 10%, transparent);
-}
-.status-searching .status-icon {
-  animation: spin 1.4s linear infinite;
 }
 .status-downloading {
   color: var(--status-downloading);

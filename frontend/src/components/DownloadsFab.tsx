@@ -3,6 +3,7 @@ import { useLocation, useNavigate } from 'react-router-dom'
 import { listRequests } from '../api/requests'
 import { NON_TERMINAL } from '../lib/status'
 import './DownloadsFab.css'
+import Icon from './Icon'
 
 // Polls independently of any per-page query so the badge count stays
 // live no matter which page is showing — same query key ['requests']
@@ -23,7 +24,7 @@ export default function DownloadsFab() {
 
   return (
     <button className="downloads-fab" aria-label="Requests" onClick={() => navigate('/requests')}>
-      <span className="material-symbols-rounded">download</span>
+      <Icon name="download" />
       {active > 0 && <span className="downloads-badge">{active > 99 ? '99+' : active}</span>}
     </button>
   )

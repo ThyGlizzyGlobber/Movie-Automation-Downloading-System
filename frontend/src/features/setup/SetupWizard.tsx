@@ -7,6 +7,7 @@ import PlexLinkStep from './PlexLinkStep'
 import LoadingState from '../../components/LoadingState'
 import ErrorState from '../../components/ErrorState'
 import './SetupWizard.css'
+import AmbientGlow from '../../components/AmbientGlow'
 
 type WizardStep = 'token' | 'tmdb' | 'qbittorrent' | 'plex'
 
@@ -40,6 +41,7 @@ export default function SetupWizard() {
 
   return (
     <div className="setup-page">
+      <AmbientGlow posterPath={null} />
       <div className="setup-card">
         <div className="setup-progress">
           {steps.map((s, i) => (

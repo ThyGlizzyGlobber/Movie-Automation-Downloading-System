@@ -18,6 +18,7 @@ import { genreLine, languageNameOf, tvCertificationOf, yearOf } from '../../lib/
 import type { ShowOut } from '../../types/shows'
 import type { RedownloadMode, RequestOut } from '../../types/requests'
 import '../detail/DetailPage.css'
+import Icon from '../../components/Icon'
 
 type Phase = 'idle' | 'busy' | 'done' | 'error'
 
@@ -158,7 +159,7 @@ export default function ShowDetailPage() {
                 disabled={stateIconDisabled}
                 onClick={subscription ? handleUnsubscribe : handleSubscribeClick}
               >
-                <span className="material-symbols-rounded">{subscription ? 'close' : 'add'}</span>
+                <Icon name={subscription ? 'close' : 'plus'} />
               </button>
             </div>
             {!subscription && show.is_coming_soon ? (

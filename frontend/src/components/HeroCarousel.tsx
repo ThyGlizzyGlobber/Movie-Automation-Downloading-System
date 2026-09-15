@@ -5,6 +5,7 @@ import { backdropUrl } from '../lib/tmdbImage'
 import { movieHeroBadge, movieCertOf, tvHeroBadge, tvCertOf, type TaggedItem } from '../lib/homeHero'
 import AmbientGlow from './AmbientGlow'
 import './HeroCarousel.css'
+import Icon from './Icon'
 
 const HERO_TRAILER_COUNT = 2 // only the front slides ever get a background video
 const HERO_AUTOPLAY_MS = 7000 // flat dwell time for a poster-only slide
@@ -205,7 +206,7 @@ export default function HeroCarousel({ items }: { items: TaggedItem[] }) {
         const title = item.title || item.name || item.original_title || item.original_name || ''
         const href = isTv ? `#/tv/${item.id}` : `#/movies/${item.id}`
         const onPlex = !!item.on_plex
-        const ctaIcon = onPlex ? 'play_arrow' : 'add'
+        const ctaIcon = onPlex ? 'play' : 'plus'
         const ctaLabel = onPlex ? 'Watch on Plex' : 'Add to Plex'
         const info = enrichment[i]
         const hasVideo = i < HERO_TRAILER_COUNT && !!videoUrls[i]
@@ -261,18 +262,18 @@ export default function HeroCarousel({ items }: { items: TaggedItem[] }) {
               <div className="home-hero-info">
                 {info?.badge && (
                   <div className="home-hero-badge">
-                    <span className="material-symbols-rounded">campaign</span>
+                    <Icon name="megaphone" />
                     {info.badge}
                   </div>
                 )}
                 <h1>{title}</h1>
                 <div className="home-hero-actions">
                   <a className="add-btn" href={href}>
-                    <span className="material-symbols-rounded">{ctaIcon}</span>
+                    <Icon name={ctaIcon} />
                     {ctaLabel}
                   </a>
                   <a className="home-hero-info-btn" href={href} aria-label="More info">
-                    <span className="material-symbols-rounded">info</span>
+                    <Icon name="info" />
                   </a>
                   {i === activeIndex && hasVideo && (
                     <button
@@ -280,7 +281,7 @@ export default function HeroCarousel({ items }: { items: TaggedItem[] }) {
                       aria-label={muted ? 'Unmute trailer' : 'Mute trailer'}
                       onClick={() => setMuted((m) => !m)}
                     >
-                      <span className="material-symbols-rounded">{muted ? 'volume_off' : 'volume_up'}</span>
+                      <Icon name={muted ? 'volume-off' : 'volume-on'} />
                     </button>
                   )}
                 </div>
@@ -294,10 +295,10 @@ export default function HeroCarousel({ items }: { items: TaggedItem[] }) {
       {items.length > 1 && (
         <>
           <button className="home-hero-arrow home-hero-arrow-left" aria-label="Previous slide" onClick={() => goToSlide(activeIndex - 1)}>
-            <span className="material-symbols-rounded">chevron_left</span>
+            <Icon name="back" />
           </button>
           <button className="home-hero-arrow home-hero-arrow-right" aria-label="Next slide" onClick={() => goToSlide(activeIndex + 1)}>
-            <span className="material-symbols-rounded">chevron_right</span>
+            <Icon name="next" />
           </button>
           <div className="home-hero-dots">
             {items.map((item, i) => (

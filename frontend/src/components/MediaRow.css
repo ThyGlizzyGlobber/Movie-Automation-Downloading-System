@@ -138,7 +138,7 @@ section.row .row-head-right {
   transition: opacity 0.15s ease;
   background: none;
 }
-.hscroll-arrow .material-symbols-rounded {
+.hscroll-arrow .icon {
   font-size: 34px;
 }
 .hscroll-arrow-left {

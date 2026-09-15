@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react'
 import { NavLink, useLocation, useNavigate } from 'react-router-dom'
 import { useSession } from '../features/auth/useSession'
 import './Topbar.css'
+import Icon from './Icon'
 
 const SECTION_LINKS = [
   { tab: 'home', label: 'Home', href: '/home' },
@@ -51,7 +52,7 @@ export default function Topbar({ onOpenSearch }: { onOpenSearch: () => void }) {
         ))}
       </nav>
       <button id="searchToggleBtn" aria-label="Search" aria-expanded="false" onClick={onOpenSearch}>
-        <span className="material-symbols-rounded">search</span>
+        <Icon name="search" />
       </button>
       <button
         id="accountToggle"
@@ -59,7 +60,7 @@ export default function Topbar({ onOpenSearch }: { onOpenSearch: () => void }) {
         onClick={() => navigate('/account')}
         className={location.pathname === '/account' ? 'active' : undefined}
       >
-        <span className="material-symbols-rounded">account_circle</span>
+        <Icon name="user" />
       </button>
       {session.data?.is_admin && (
         <button
@@ -68,7 +69,7 @@ export default function Topbar({ onOpenSearch }: { onOpenSearch: () => void }) {
           onClick={() => navigate('/settings')}
           className={settingsActive ? 'active' : undefined}
         >
-          <span className="material-symbols-rounded">settings</span>
+          <Icon name="gear" />
         </button>
       )}
     </div>

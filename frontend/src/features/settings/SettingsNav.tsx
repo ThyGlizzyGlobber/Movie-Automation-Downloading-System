@@ -1,33 +1,45 @@
+import Icon, { type IconName } from '../../components/Icon'
+
 export interface SettingsSection {
   key: string
   label: string
-  icon: string
+  icon: IconName
+  group: 'Server' | 'Access' | 'System'
 }
 
+// Grouped the way the reference's settings sidebar is (Server / Access /
+// System); the panel keys are unchanged.
 export const SETTINGS_SECTIONS: SettingsSection[] = [
-  { key: 'pipeline', label: 'Pipeline & Quality', icon: 'tune' },
-  { key: 'tv', label: 'TV Schedule', icon: 'schedule' },
-  { key: 'retention', label: 'Retention', icon: 'auto_delete' },
-  { key: 'connections', label: 'Connections', icon: 'cable' },
-  { key: 'plex', label: 'Plex Server', icon: 'dns' },
-  { key: 'remote-access', label: 'Remote Access', icon: 'lock' },
-  { key: 'activity', label: 'Activity Dashboard', icon: 'insights' },
-  { key: 'updates', label: 'Updates', icon: 'system_update' },
+  { key: 'plex', label: 'Plex Server', icon: 'plex', group: 'Server' },
+  { key: 'connections', label: 'Connections', icon: 'plug', group: 'Server' },
+  { key: 'pipeline', label: 'Pipeline & Quality', icon: 'sliders', group: 'Server' },
+  { key: 'tv', label: 'TV Schedule', icon: 'clock', group: 'Server' },
+  { key: 'retention', label: 'Retention', icon: 'trash', group: 'Server' },
+  { key: 'remote-access', label: 'Remote Access', icon: 'lock', group: 'Access' },
+  { key: 'activity', label: 'Activity Dashboard', icon: 'chart', group: 'System' },
+  { key: 'updates', label: 'Updates', icon: 'refresh', group: 'System' },
 ]
+
+const GROUPS: SettingsSection['group'][] = ['Server', 'Access', 'System']
 
 export default function SettingsNav({ active, onSelect }: { active: string | null; onSelect: (key: string) => void }) {
   return (
     <nav className="settings-nav-list">
-      {SETTINGS_SECTIONS.map((s) => (
-        <button
-          key={s.key}
-          className={`settings-nav-item${active === s.key ? ' active' : ''}`}
-          onClick={() => onSelect(s.key)}
-        >
-          <span className="material-symbols-rounded">{s.icon}</span>
-          {s.label}
-          <span className="material-symbols-rounded settings-nav-item-chevron">chevron_right</span>
-        </button>
+      {GROUPS.map((group) => (
+        <div className="settings-nav-group" key={group}>
+          <div className="settings-nav-group-label">{group}</div>
+          {SETTINGS_SECTIONS.filter((s) => s.group === group).map((s) => (
+            <button
+              key={s.key}
+              className={`settings-nav-item${active === s.key ? ' active' : ''}`}
+              onClick={() => onSelect(s.key)}
+            >
+              <Icon name={s.icon} />
+              {s.label}
+              <Icon name="next" className="settings-nav-item-chevron" />
+            </button>
+          ))}
+        </div>
       ))}
     </nav>
   )

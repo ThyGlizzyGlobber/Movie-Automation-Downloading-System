@@ -19,6 +19,7 @@ import { certificationOf, genreLine, languageNameOf, yearOf, statusFollowupText 
 import { NON_TERMINAL } from '../../lib/status'
 import type { RedownloadMode, RequestOut } from '../../types/requests'
 import '../detail/DetailPage.css'
+import Icon from '../../components/Icon'
 
 type AddPhase = 'idle' | 'adding' | 'added' | 'error'
 
@@ -140,7 +141,7 @@ export default function MovieDetailPage() {
                 disabled={movie.is_coming_soon || addPhase === 'added'}
                 onClick={handleAddClick}
               >
-                <span className="material-symbols-rounded">{addPhase === 'added' ? 'check' : movie.on_plex ? 'check' : 'add'}</span>
+                <Icon name={addPhase === 'added' || movie.on_plex ? 'check' : 'plus'} />
               </button>
             </div>
             {movie.is_coming_soon ? (

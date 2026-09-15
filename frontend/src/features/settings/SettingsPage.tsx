@@ -11,6 +11,7 @@ import RemoteAccessPanel from './RemoteAccessPanel'
 import ActivityDashboardPanel from './ActivityDashboardPanel'
 import UpdatesPanel from './UpdatesPanel'
 import './SettingsPage.css'
+import Icon from '../../components/Icon'
 
 function renderPanel(key: string) {
   switch (key) {
@@ -56,7 +57,7 @@ export default function SettingsPage() {
         {effectiveSection && (
           <>
             <button className="settings-back-btn" onClick={() => setActiveSection(null)}>
-              <span className="material-symbols-rounded">chevron_left</span>
+              <Icon name="back" />
               Settings
             </button>
             {renderPanel(effectiveSection)}
