@@ -41,3 +41,9 @@ export function stillUrl(path: string | null | undefined): string {
 export function sampleUrl(path: string | null | undefined): string {
   return path ? IMG_BASE + SAMPLE_SIZE + path : ''
 }
+
+// Title logos: transparent PNGs, served at 500px wide which is plenty
+// for a hero at 2x.
+export function logoUrl(path: string | null | undefined): string | null {
+  return path ? `https://image.tmdb.org/t/p/w500${path}` : null
+}

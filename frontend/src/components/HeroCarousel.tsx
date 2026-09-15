@@ -1,7 +1,7 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react'
 import { getMovie, getMovieTrailer } from '../api/movies'
 import { getTvShow, getTvTrailer } from '../api/tv'
-import { backdropUrl } from '../lib/tmdbImage'
+import { backdropUrl, logoUrl } from '../lib/tmdbImage'
 import { movieHeroBadge, movieCertOf, tvHeroBadge, tvCertOf, type TaggedItem } from '../lib/homeHero'
 import AmbientGlow from './AmbientGlow'
 import './HeroCarousel.css'
@@ -13,12 +13,34 @@ const HERO_AUTOPLAY_MS = 7000 // flat dwell time for a poster-only slide
 // trailer starts and again after it finishes, before actually advancing.
 const HERO_POSTER_LEAD_MS = 3000
 
+// The primary button's label rolls from what the title *is* ("On Plex")
+// to what tapping it *does* ("Watch now") a moment after the slide
+// shows, the way Prime's hero settles. Re-runs whenever the slide
+// becomes active again.
+function FlipLabel({ first, second, active }: { first: string; second: string; active: boolean }) {
+  const [flipped, setFlipped] = useState(false)
+  useEffect(() => {
+    setFlipped(false)
+    if (!active) return
+    const t = window.setTimeout(() => setFlipped(true), 1600)
+    return () => window.clearTimeout(t)
+  }, [active, first, second])
+  return (
+    <span className={`flip${flipped ? ' flipped' : ''}`} aria-label={flipped ? second : first}>
+      <span aria-hidden="true">{first}</span>
+      <span aria-hidden="true">{second}</span>
+    </span>
+  )
+}
+
 interface Enrichment {
   badge: string | null
   cert: string
   /* "2h 14m" for a movie, "2 seasons" for a show. */
   length: string
   genres: string
+  /* Title logo (transparent art) when TMDB has one. */
+  logo: string | null
 }
 
 function movieLength(runtime: number | null): string {
@@ -35,6 +57,10 @@ export default function HeroCarousel({ items }: { items: TaggedItem[] }) {
   const [videoVisible, setVideoVisible] = useState<Record<number, boolean>>({})
   const [enrichment, setEnrichment] = useState<Record<number, Enrichment>>({})
   const [scheduleTick, setScheduleTick] = useState(0)
+  // While a trailer plays the blurb steps aside; it comes back when the
+  // cursor is near the hero's text (Prime's behaviour).
+  const [cursorNear, setCursorNear] = useState(false)
+  const heroRef = useRef<HTMLDivElement>(null)
 
   const videoRefs = useRef<(HTMLVideoElement | null)[]>([])
   const timerRef = useRef<number | null>(null)
@@ -72,6 +98,7 @@ export default function HeroCarousel({ items }: { items: TaggedItem[] }) {
         let cert: string
         let length: string
         let genres: string
+        let logo: string | null
         if (item.mediaType === 'tv') {
           const detail = await getTvShow(item.id)
           badge = tvHeroBadge(detail)
@@ -79,15 +106,17 @@ export default function HeroCarousel({ items }: { items: TaggedItem[] }) {
           const seasons = (detail.seasons ?? []).filter((se) => se.season_number > 0).length
           length = seasons ? `${seasons} season${seasons === 1 ? '' : 's'}` : ''
           genres = (detail.genres ?? []).slice(0, 2).map((g) => g.name).join(' · ')
+          logo = logoUrl(detail.logo_path)
         } else {
           const detail = await getMovie(item.id)
           badge = movieHeroBadge(detail)
           cert = movieCertOf(detail)
           length = movieLength(detail.runtime)
           genres = (detail.genres ?? []).slice(0, 2).map((g) => g.name).join(' · ')
+          logo = logoUrl(detail.logo_path)
         }
         if (cancelled) return
-        setEnrichment((prev) => ({ ...prev, [i]: { badge, cert, length, genres } }))
+        setEnrichment((prev) => ({ ...prev, [i]: { badge, cert, length, genres, logo } }))
       } catch {
         // badge/cert just stay empty
       }
@@ -212,12 +241,20 @@ export default function HeroCarousel({ items }: { items: TaggedItem[] }) {
   }
   function handleMouseLeave() {
     setScheduleTick((t) => t + 1)
+    setCursorNear(false)
+  }
+  function handleMouseMove(e: ReactMouseEvent) {
+    const body = heroRef.current?.querySelector<HTMLElement>('.home-hero-slide.active .home-hero-body')
+    if (!body) return
+    const r = body.getBoundingClientRect()
+    const pad = 96
+    setCursorNear(e.clientX > r.left - pad && e.clientX < r.right + pad && e.clientY > r.top - pad && e.clientY < r.bottom + pad)
   }
 
   if (!items.length) return null
 
   return (
-    <div className="home-hero" onMouseEnter={handleMouseEnter} onMouseLeave={handleMouseLeave}>
+    <div className="home-hero" ref={heroRef} onMouseEnter={handleMouseEnter} onMouseLeave={handleMouseLeave} onMouseMove={handleMouseMove}>
       {items.map((item, i) => {
         const isTv = item.mediaType === 'tv'
         const title = item.title || item.name || item.original_title || item.original_name || ''
@@ -225,9 +262,6 @@ export default function HeroCarousel({ items }: { items: TaggedItem[] }) {
         const onPlex = !!item.on_plex
         const info = enrichment[i]
         const hasVideo = i < HERO_TRAILER_COUNT && !!videoUrls[i]
-        const year = (item.release_date || item.first_air_date || '').slice(0, 4)
-        const rating = item.vote_average ? item.vote_average.toFixed(1) : ''
-        const eyebrow = info?.badge ?? (isTv ? 'Trending series' : 'Trending this week')
 
         return (
           <div className={`home-hero-slide${i === activeIndex ? ' active' : ''}`} key={item.id}>
@@ -278,28 +312,23 @@ export default function HeroCarousel({ items }: { items: TaggedItem[] }) {
             <div className="home-hero-fade" />
             <div className="home-hero-content">
               <div className="home-hero-body">
-                <span className="hero-eyebrow">
-                  <b />
-                  {eyebrow}
-                </span>
-                <h1>{title}</h1>
-                <div className="hero-meta">
-                  {rating && (
-                    <span className="hero-pill">
-                      <Icon name="star" className="hero-star" />
-                      {rating}
-                    </span>
-                  )}
-                  {year && <span className="hero-pill">{year}</span>}
-                  {info?.cert && <span className="hero-pill">{info.cert}</span>}
-                  {info?.length && <span className="hero-pill">{info.length}</span>}
-                  {info?.genres && <span className="hero-pill mute">{info.genres}</span>}
+                {/* The title logo when TMDB has one, the text title
+                    otherwise; the h1 keeps the name for screen readers
+                    either way. */}
+                <h1 className={info?.logo ? 'has-logo' : undefined}>
+                  {info?.logo ? <img className="hero-logo" src={info.logo} alt={title} /> : title}
+                </h1>
+                <div className="hero-line">
+                  <Icon name={info?.badge ? 'megaphone' : 'chart'} />
+                  {info?.badge ?? `#${i + 1} trending this week`}
                 </div>
-                {item.overview && <p className="hero-syn">{item.overview}</p>}
+                {item.overview && (
+                  <p className={`hero-syn${videoVisible[i] && !cursorNear ? ' hidden-for-video' : ''}`}>{item.overview}</p>
+                )}
                 <div className="home-hero-actions">
                   <a className="btn pri" href={href}>
                     <Icon name={onPlex ? 'play' : 'plus'} />
-                    {onPlex ? 'Play' : 'Request'}
+                    <FlipLabel first={onPlex ? 'On Plex' : 'Not in Plex yet'} second={onPlex ? 'Watch now' : 'Request'} active={i === activeIndex} />
                   </a>
                   <a className="btn sec circ" href={href} aria-label="More info">
                     <Icon name="info" />
@@ -316,6 +345,7 @@ export default function HeroCarousel({ items }: { items: TaggedItem[] }) {
                 </div>
               </div>
             </div>
+            {info?.cert && <div className="home-hero-cert">{info.cert}</div>}
           </div>
         )
       })}

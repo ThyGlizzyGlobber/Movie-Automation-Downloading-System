@@ -56,6 +56,8 @@ export interface ReleaseDatesResult {
 }
 
 export interface MovieDetail extends Omit<TmdbListItem, 'genre_ids'> {
+  // Title logo (transparent art) chosen server-side, or null.
+  logo_path?: string | null
   runtime: number | null
   original_language?: string
   genres: Genre[]

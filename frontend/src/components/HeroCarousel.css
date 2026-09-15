@@ -132,33 +132,11 @@
   min-height: var(--hero-h);
   padding: 24px var(--edge-inset) 64px;
 }
-/* The reference's hero body: eyebrow pill, 120px Outfit title, meta
-   pills, a short synopsis and the action row. */
+/* Prime-style hero body: logo or title, one status line, the buttons,
+   and an availability line. Nothing else competes with the artwork. */
 .home-hero-body {
-  max-width: 760px;
+  max-width: 640px;
   min-width: 0;
-}
-.hero-eyebrow {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  padding: 7px 14px 7px 10px;
-  border-radius: var(--radius-pill);
-  background: var(--glass);
-  border: 1px solid var(--glass-border);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
-  font-size: 12px;
-  font-weight: 700;
-  letter-spacing: 0.02em;
-  color: var(--meridian-ice);
-}
-.hero-eyebrow b {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--meridian-ice);
-  box-shadow: 0 0 12px var(--meridian-ice);
 }
 .home-hero-body h1 {
   font-family: var(--font-display);
@@ -166,51 +144,31 @@
   font-weight: 300;
   letter-spacing: var(--tracking-display);
   line-height: 0.98;
-  margin: 24px 0 20px;
+  margin: 0 0 18px;
 }
-.hero-meta {
+.home-hero-body h1.has-logo {
+  line-height: 0;
+}
+.hero-logo {
+  display: block;
+  width: auto;
+  max-width: min(480px, 50vw);
+  max-height: 170px;
+  object-fit: contain;
+  object-position: left bottom;
+  filter: drop-shadow(0 12px 30px rgba(0, 0, 0, 0.55));
+}
+.hero-line {
   display: flex;
-  flex-wrap: wrap;
+  align-items: center;
   gap: 8px;
-  align-items: center;
-}
-.hero-pill {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 7px 12px;
-  border-radius: var(--radius-pill);
-  background: var(--glass);
-  border: 1px solid var(--glass-border);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
-  font-size: 12px;
+  color: var(--status-complete);
+  font-size: 15px;
   font-weight: 700;
-  color: #fff;
+  margin-bottom: 22px;
 }
-.hero-pill .icon {
-  font-size: 14px;
-}
-.hero-pill .hero-star {
-  color: var(--meridian-star);
-}
-.hero-pill.mute {
-  background: transparent;
-  border: 0;
-  color: var(--text-dim);
-  padding: 0 4px;
-}
-.hero-syn {
-  font-size: var(--text-body);
-  line-height: var(--leading-body);
-  color: rgba(245, 247, 250, 0.72);
-  font-weight: 500;
-  max-width: 56ch;
-  margin: 24px 0 34px;
-  display: -webkit-box;
-  -webkit-line-clamp: 3;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
+.hero-line .icon {
+  font-size: 18px;
 }
 .home-hero-actions {
   display: flex;
@@ -218,26 +176,93 @@
   gap: 10px;
   flex-wrap: wrap;
 }
+/* The blurb: shown until the trailer plays, then collapsed; it comes
+   back while the cursor is near the text. */
+.hero-syn {
+  font-size: 16px;
+  line-height: 1.6;
+  color: rgba(245, 247, 250, 0.78);
+  font-weight: 500;
+  max-width: 52ch;
+  margin: 0 0 26px;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  max-height: 5.2em;
+  opacity: 1;
+  transition: max-height 0.45s ease, opacity 0.35s ease, margin 0.45s ease;
+}
+.hero-syn.hidden-for-video {
+  max-height: 0;
+  opacity: 0;
+  margin-bottom: 0;
+}
+/* Rolling button label ("On Plex" → "Watch now"). */
+.flip {
+  display: inline-grid;
+  height: 1.25em;
+  line-height: 1.25em;
+  overflow: hidden;
+  text-align: left;
+}
+.flip > span {
+  grid-area: 1 / 1;
+  display: block;
+  white-space: nowrap;
+  transition: transform 0.5s cubic-bezier(0.2, 0.7, 0.2, 1), opacity 0.4s ease;
+}
+.flip > span:last-child {
+  transform: translateY(110%);
+  opacity: 0;
+}
+.flip.flipped > span:first-child {
+  transform: translateY(-110%);
+  opacity: 0;
+}
+.flip.flipped > span:last-child {
+  transform: translateY(0);
+  opacity: 1;
+}
+.home-hero-cert {
+  position: absolute;
+  right: var(--edge-inset);
+  bottom: 64px;
+  z-index: 3;
+  padding: 4px 9px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-dim);
+  background: color-mix(in srgb, var(--bg) 55%, transparent);
+  border: 1px solid var(--glass-border);
+  border-radius: 6px;
+}
 @media (max-width: 639px) {
   .home-hero-content {
-    padding: 24px 20px 22px;
+    padding: 24px 20px 40px;
   }
   .home-hero-body h1 {
     font-size: clamp(44px, 14vw, 62px);
-    margin: 14px 0 12px;
+    margin: 0 0 12px;
   }
-  .hero-meta {
-    gap: 6px;
+  .hero-logo {
+    max-width: 78vw;
+    max-height: 110px;
+  }
+  .hero-line {
+    font-size: 13px;
+    margin-bottom: 16px;
   }
   .hero-syn {
     display: none;
   }
-  .home-hero-actions {
-    margin-top: 18px;
-  }
   .home-hero-actions .btn.pri {
     flex: 1 1 auto;
     justify-content: center;
+  }
+  .home-hero-cert {
+    right: 20px;
+    bottom: 40px;
   }
 }
 .home-hero-arrow {
@@ -268,15 +293,15 @@
 }
 .home-hero-dots {
   position: absolute;
-  right: var(--edge-inset);
-  bottom: 72px;
+  left: 50%;
+  transform: translateX(-50%);
+  bottom: 28px;
   z-index: 3;
   display: flex;
   gap: 6px;
 }
 @media (max-width: 639px) {
   .home-hero-dots {
-    right: 20px;
     bottom: 12px;
   }
 }

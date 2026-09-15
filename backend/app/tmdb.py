@@ -132,6 +132,28 @@ BROWSE_SORTS_MOVIE = {"popular": "popularity.desc", "newest": "primary_release_d
 BROWSE_SORTS_TV = {"popular": "popularity.desc", "newest": "first_air_date.desc", "rated": "vote_average.desc"}
 
 
+def best_logo_path(images: dict | None) -> str | None:
+    """The one title logo worth showing: English over language-less,
+    PNG over SVG (the browser gets a plain <img>), then the most-voted.
+    None when TMDB has no logo for the title."""
+    logos = (images or {}).get("logos") or []
+    if not logos:
+        return None
+
+    def rank(logo: dict) -> tuple:
+        lang = logo.get("iso_639_1")
+        path = logo.get("file_path") or ""
+        return (
+            0 if lang == "en" else 1 if lang in (None, "") else 2,
+            0 if path.lower().endswith(".png") else 1,
+            -(logo.get("vote_count") or 0),
+            -(logo.get("vote_average") or 0),
+        )
+
+    best = sorted(logos, key=rank)[0]
+    return best.get("file_path") or None
+
+
 class TMDBClient:
     def __init__(self, api_key: str, session: requests.Session | None = None):
         # Deliberately not raised here (frontend migration Part E): the
@@ -173,7 +195,13 @@ class TMDBClient:
         # production company isn't the streamer — e.g. a Lionsgate-made
         # film Netflix only holds exclusive distribution rights to).
         return self._get(
-            f"/movie/{tmdb_id}", {"append_to_response": "credits,release_dates,recommendations,watch/providers"}
+            f"/movie/{tmdb_id}",
+            {
+                "append_to_response": "credits,release_dates,recommendations,watch/providers,images",
+                # Title logos (transparent art) for the hero and detail
+                # page — English first, then language-less marks.
+                "include_image_language": "en,null",
+            },
         )
 
     def get_alternative_titles(self, tmdb_id: int) -> list[dict]:
@@ -286,7 +314,10 @@ class TMDBClient:
         # the home hero carousel's AU rating badge reads this straight off
         # this same call, no separate request. recommendations backs the
         # detail page's "Related" row.
-        return self._get(f"/tv/{tmdb_id}", {"append_to_response": "credits,content_ratings,recommendations"})
+        return self._get(
+            f"/tv/{tmdb_id}",
+            {"append_to_response": "credits,content_ratings,recommendations,images", "include_image_language": "en,null"},
+        )
 
     def get_person(self, person_id: int) -> dict:
         # append_to_response folds their whole filmography (movies + TV)

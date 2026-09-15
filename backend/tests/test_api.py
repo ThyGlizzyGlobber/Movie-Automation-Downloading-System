@@ -2745,3 +2745,23 @@ def test_request_notify_flag_off_skips_the_requester(tmp_path):
     store.set_request_notify(row.id, False)
     store.update_status(row.id, "failed", error_message="boom")
     assert notifications.sweep(store) == 0
+
+
+def test_best_logo_prefers_english_png_with_votes():
+    from app.tmdb import best_logo_path
+
+    assert best_logo_path(None) is None
+    assert best_logo_path({"logos": []}) is None
+    logos = [
+        {"iso_639_1": None, "file_path": "/plain.png", "vote_count": 9},
+        {"iso_639_1": "en", "file_path": "/en.svg", "vote_count": 20},
+        {"iso_639_1": "en", "file_path": "/en-low.png", "vote_count": 1},
+        {"iso_639_1": "en", "file_path": "/en-top.png", "vote_count": 5},
+    ]
+    assert best_logo_path({"logos": logos}) == "/en-top.png"
+
+
+def test_movie_and_tv_detail_carry_a_logo_path(client_and_deps):
+    client, _, _, _, _, _ = client_and_deps
+    assert "logo_path" in client.get("/api/movies/1").json()
+    assert "logo_path" in client.get("/api/tv/1").json()

@@ -47,7 +47,7 @@ from app.plex import LoginSession, PlexClient, PlexError, PlexLinker, new_client
 from app.quality_profiles import DEFAULT_PROFILE_ID, profile_min_resolution, resolve_profiles, validate_profiles
 from app.qbt import QBTClient
 from app.resolve import resolve
-from app.tmdb import BROWSE_SORTS, TMDBClient, TMDBError, best_trailer_key, is_movie_coming_soon, is_tv_upcoming
+from app.tmdb import BROWSE_SORTS, TMDBClient, TMDBError, best_logo_path, best_trailer_key, is_movie_coming_soon, is_tv_upcoming
 from app.tv_resolve import resolve_show
 from app.tv_settings import resolve_tv_settings
 from app.worker import Worker
@@ -701,6 +701,7 @@ def get_movie_detail(
         **movie,
         "on_plex": _on_plex_for(movie.get("title") or "", year, "movie", store),
         "is_coming_soon": is_coming_soon,
+        "logo_path": best_logo_path(movie.get("images")),
         # Frontend migration Part K2 — true only when this app has a
         # confirmed record of having organized a file for this title
         # itself, never derived from the same fuzzy on_plex title/year
@@ -846,6 +847,7 @@ def get_tv_detail(tmdb_id: int, store: RequestStore = Depends(get_store), tmdb: 
         **show,
         "on_plex": _on_plex_for(show.get("name") or "", year, "show", store),
         "is_coming_soon": is_tv_upcoming(show),
+        "logo_path": best_logo_path(show.get("images")),
         # Frontend migration Part K3 — TV parity with the movie route
         # above. A show's organized history is episode/pack rows, never
         # a single fixed media_type the way a movie's always is.

@@ -1,11 +1,9 @@
 import { useEffect, useState, type CSSProperties } from 'react'
 import { sampleUrl } from './tmdbImage'
 
-// Poster-derived ambient glow. The reference (design-exploration/
-// obsidian.html) tints each hero/detail page from its own artwork: the
-// main glow takes the poster's dominant hue, the second sits ~48°
-// warmer, the third ~60° cooler. Here the hue comes from sampling the
-// real TMDB poster on a small canvas. Everything is best effort: no
+// Poster-derived ambient glow: the three blobs take the poster's three
+// main colours (see dominantColours), sampled from the real TMDB poster
+// on a small canvas. Everything is best effort: no
 // poster, a CORS-tainted canvas, or an unsupported browser all fall
 // back to the house glow colours in tokens.css.
 //
@@ -15,8 +13,15 @@ import { sampleUrl } from './tmdbImage'
 // can otherwise hand the CORS request that cached, header-less copy
 // and the load fails outright (confirmed live in Chrome).
 
-const SAMPLE_SIZE = 24
-const hueCache = new Map<string, Promise<number | null>>()
+const SAMPLE_SIZE = 32
+const paletteCache = new Map<string, Promise<Swatch[] | null>>()
+
+export interface Swatch {
+  h: number
+  s: number
+  l: number
+  weight: number
+}
 
 function rgbToHsl(r: number, g: number, b: number): [number, number, number] {
   r /= 255
@@ -35,52 +40,102 @@ function rgbToHsl(r: number, g: number, b: number): [number, number, number] {
   return [h * 360, s, l]
 }
 
-// Dominant hue of an image: pixels that are reasonably saturated and
-// neither near-black nor near-white are binned by hue (15° bins),
-// weighted by saturation so a vivid accent outweighs a large muddy
-// area. The winning bin's saturation-weighted mean hue is returned.
-function dominantHue(img: HTMLImageElement): number | null {
+// The poster's three main colours. Pixels that aren't near-black or
+// near-white are binned by hue (24 bins); each bin keeps its pixel
+// count and its mean saturation and lightness. Bins are ranked by
+// count × (a floor plus saturation), so a large soft area (a sky-blue
+// wash) still wins over a tiny vivid accent, and the top three that
+// sit at least two bins apart come back. A mostly grey poster yields
+// low-saturation swatches, so its glow reads grey-blue, not neon.
+function dominantColours(img: HTMLImageElement): Swatch[] {
   const canvas = document.createElement('canvas')
   canvas.width = SAMPLE_SIZE
   canvas.height = SAMPLE_SIZE
   const ctx = canvas.getContext('2d', { willReadFrequently: true })
-  if (!ctx) return null
+  if (!ctx) return []
   ctx.drawImage(img, 0, 0, SAMPLE_SIZE, SAMPLE_SIZE)
   const { data } = ctx.getImageData(0, 0, SAMPLE_SIZE, SAMPLE_SIZE)
   const bins = 24
-  const weight = new Array<number>(bins).fill(0)
+  const count = new Array<number>(bins).fill(0)
   const hueSum = new Array<number>(bins).fill(0)
+  const satSum = new Array<number>(bins).fill(0)
+  const lightSum = new Array<number>(bins).fill(0)
+  let greyCount = 0
+  let greyLight = 0
+  // Near-greys keep a faint hue (a grey sky is still blue-grey); it is
+  // averaged as a vector so hues either side of 0° do not cancel.
+  let greyX = 0
+  let greyY = 0
+  let greySat = 0
   for (let i = 0; i < data.length; i += 4) {
     if (data[i + 3] < 128) continue
-    const [h, s, l] = rgbToHsl(data[i], data[i + 1], data[i + 2])
-    if (s < 0.22 || l < 0.12 || l > 0.9) continue
-    const bin = Math.floor(h / (360 / bins)) % bins
-    weight[bin] += s
-    hueSum[bin] += h * s
-  }
-  let best = -1
-  let bestWeight = 0
-  for (let b = 0; b < bins; b++) {
-    if (weight[b] > bestWeight) {
-      bestWeight = weight[b]
-      best = b
+    const [h, sat, l] = rgbToHsl(data[i], data[i + 1], data[i + 2])
+    if (l < 0.08 || l > 0.94) continue
+    if (sat < 0.12) {
+      greyCount++
+      greyLight += l
+      greySat += sat
+      greyX += Math.cos((h * Math.PI) / 180) * sat
+      greyY += Math.sin((h * Math.PI) / 180) * sat
+      continue
     }
+    const bin = Math.floor(h / (360 / bins)) % bins
+    count[bin]++
+    hueSum[bin] += h
+    satSum[bin] += sat
+    lightSum[bin] += l
   }
-  if (best === -1) return null
-  return hueSum[best] / weight[best]
+  const ranked = count
+    .map((n, b) => ({
+      bin: b,
+      n,
+      score: n * (0.35 + satSum[b] / Math.max(1, n)),
+      h: hueSum[b] / Math.max(1, n),
+      s: satSum[b] / Math.max(1, n),
+      l: lightSum[b] / Math.max(1, n),
+    }))
+    .filter((x) => x.n > 0)
+    .sort((a, b) => b.score - a.score)
+  const chosen: Swatch[] = []
+  for (const x of ranked) {
+    if (chosen.length === 3) break
+    const far = chosen.every((c) => {
+      const d = Math.abs(c.h - x.h)
+      return Math.min(d, 360 - d) >= 30
+    })
+    if (far) chosen.push({ h: x.h, s: x.s, l: x.l, weight: x.n })
+  }
+  // A poster that is mostly greys gets a muted swatch in its own
+  // grey's tint (blue-grey, warm grey), and when greys are the bulk of
+  // the image that swatch leads, so the glow follows the poster instead
+  // of amplifying a small accent into neon.
+  const total = count.reduce((a, b) => a + b, 0) + greyCount
+  const greyShare = greyCount / Math.max(1, total)
+  if (greyCount > 0 && greyShare > 0.3) {
+    // A grey with no real tint of its own reads as cool blue-grey on a
+    // black ground; only a measurable cast (a sepia or teal grade) is
+    // followed.
+    const meanGreySat = greySat / greyCount
+    const greyHue = meanGreySat >= 0.07 ? ((Math.atan2(greyY, greyX) * 180) / Math.PI + 360) % 360 : 215
+    const grey: Swatch = { h: greyHue, s: Math.max(0.1, meanGreySat), l: greyLight / greyCount, weight: greyCount }
+    if (greyShare > 0.5) chosen.unshift(grey)
+    else chosen.push(grey)
+  }
+  return chosen.slice(0, 3)
 }
 
-export function posterHue(posterPath: string | null | undefined): Promise<number | null> {
+export function posterPalette(posterPath: string | null | undefined): Promise<Swatch[] | null> {
   if (!posterPath) return Promise.resolve(null)
   const url = sampleUrl(posterPath)
-  let cached = hueCache.get(url)
+  let cached = paletteCache.get(url)
   if (!cached) {
-    cached = new Promise<number | null>((resolve) => {
+    cached = new Promise<Swatch[] | null>((resolve) => {
       const img = new Image()
       img.crossOrigin = 'anonymous'
       img.onload = () => {
         try {
-          resolve(dominantHue(img))
+          const swatches = dominantColours(img)
+          resolve(swatches.length ? swatches : null)
         } catch {
           resolve(null) // tainted canvas or similar — keep the defaults
         }
@@ -88,18 +143,25 @@ export function posterHue(posterPath: string | null | undefined): Promise<number
       img.onerror = () => resolve(null)
       img.src = url
     })
-    hueCache.set(url, cached)
+    paletteCache.set(url, cached)
   }
   return cached
 }
 
-export function glowVarsForHue(hue: number): CSSProperties {
-  const h = Math.round(((hue % 360) + 360) % 360)
-  return {
-    '--g1': `hsl(${h} 68% 46%)`,
-    '--g2': `hsl(${(h + 48) % 360} 62% 42%)`,
-    '--g3': `hsl(${(h + 300) % 360} 60% 46%)`,
-  } as CSSProperties
+function glow(sw: Swatch): string {
+  const h = Math.round(((sw.h % 360) + 360) % 360)
+  // Saturation follows the poster within a band that still glows; the
+  // lightness is pinned so blobs never wash out or vanish.
+  const s = Math.round(Math.min(78, Math.max(14, sw.s * 100 * 1.15)))
+  const l = Math.round(Math.min(52, Math.max(34, 30 + sw.l * 26)))
+  return `hsl(${h} ${s}% ${l}%)`
+}
+
+export function glowVarsForPalette(swatches: Swatch[]): CSSProperties {
+  const [a, b, c] = swatches
+  const second = b ?? { ...a, h: a.h + 36 }
+  const third = c ?? { ...a, h: a.h - 36, s: a.s * 0.8 }
+  return { '--g1': glow(a), '--g2': glow(second), '--g3': glow(third) } as CSSProperties
 }
 
 // Returns inline CSS variables for the three glow colours once the
@@ -110,8 +172,8 @@ export function usePosterGlow(posterPath: string | null | undefined): CSSPropert
   useEffect(() => {
     let cancelled = false
     setVars(undefined)
-    posterHue(posterPath).then((hue) => {
-      if (!cancelled && hue != null) setVars(glowVarsForHue(hue))
+    posterPalette(posterPath).then((swatches) => {
+      if (!cancelled && swatches) setVars(glowVarsForPalette(swatches))
     })
     return () => {
       cancelled = true
