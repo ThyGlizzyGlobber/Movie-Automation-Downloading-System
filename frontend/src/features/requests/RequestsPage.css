@@ -479,9 +479,6 @@
 .rq-ep .icon {
   font-size: 12px;
 }
-.rq-ep.status-searching .icon {
-  animation: spin 2.4s linear infinite;
-}
 .rq-ep.status-downloading {
   color: var(--status-downloading);
   background: color-mix(in srgb, var(--status-downloading) 10%, transparent);

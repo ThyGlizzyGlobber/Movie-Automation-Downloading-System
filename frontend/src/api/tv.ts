@@ -47,14 +47,6 @@ export function createShow(tmdbId: number) {
   return postJson<ShowOut>('/api/shows', { tmdb_id: tmdbId })
 }
 
-export function pauseShow(id: number) {
-  return request<ShowOut>(`/api/shows/${id}/pause`, { method: 'POST' })
-}
-
-export function resumeShow(id: number) {
-  return request<ShowOut>(`/api/shows/${id}/resume`, { method: 'POST' })
-}
-
 export function deleteShow(id: number) {
   return request<{ deleted: true }>(`/api/shows/${id}`, { method: 'DELETE' })
 }

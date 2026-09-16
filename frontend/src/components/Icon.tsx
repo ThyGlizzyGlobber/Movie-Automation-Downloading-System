@@ -49,7 +49,14 @@ const GLYPHS = {
   more: <path d="M5 12h.3M12 12h.3M19 12h.3" />,
   hd: <><rect x="2.5" y="5.5" width="19" height="13" rx="2" /><path d="M7 9v6M7 12h3.5M10.5 9v6M14 9v6h2a3 3 0 0 0 0-6z" /></>,
   bell: <path d="M6 16v-5a6 6 0 0 1 12 0v5l1.5 2h-15zM10 20.5a2 2 0 0 0 4 0" />,
-  scan: <path d="M3 8V5a2 2 0 0 1 2-2h3M16 3h3a2 2 0 0 1 2 2v3M21 16v3a2 2 0 0 1-2 2h-3M8 21H5a2 2 0 0 1-2-2v-3M3 12h18" />,
+  // Viewfinder corners with a line that sweeps top to bottom (Icon.css)
+  // wherever the icon appears: the "searching" state site-wide.
+  scan: (
+    <>
+      <path d="M3 8V5a2 2 0 0 1 2-2h3M16 3h3a2 2 0 0 1 2 2v3M21 16v3a2 2 0 0 1-2 2h-3M8 21H5a2 2 0 0 1-2-2v-3" />
+      <path className="scan-line" d="M4 12h16" />
+    </>
+  ),
 } as const
 
 export type IconName = keyof typeof GLYPHS

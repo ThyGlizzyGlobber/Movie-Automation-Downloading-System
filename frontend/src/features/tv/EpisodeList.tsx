@@ -47,7 +47,7 @@ function EpisodeAction({ tmdbId, season, ep, onDone }: { tmdbId: number; season:
       await requestEpisode(tmdbId, season, ep.episode_number)
       onDone()
       setPhase('idle')
-      toast({ tone: 'info', title: `Requested S${String(season).padStart(2, '0')}E${String(ep.episode_number).padStart(2, '0')}`, body: ep.name || 'Looking for a copy now' })
+      toast({ tone: 'info', title: `Adding S${String(season).padStart(2, '0')}E${String(ep.episode_number).padStart(2, '0')} to Plex`, body: ep.name || 'Looking for the best copy now' })
     } catch (err) {
       setPhase('error')
       toast({ tone: 'error', title: "Couldn't request that episode", body: errorText(err) })
@@ -56,7 +56,7 @@ function EpisodeAction({ tmdbId, season, ep, onDone }: { tmdbId: number; season:
   return (
     <button className={`episode-request-btn${phase === 'error' ? ' error' : ''}`} disabled={phase === 'busy'} onClick={act}>
       <Icon name={phase === 'busy' ? 'loader' : phase === 'error' ? 'alert-circle' : ep.state === 'failed' ? 'refresh' : 'plus'} />
-      {phase === 'busy' ? 'Adding…' : phase === 'error' ? 'Try again' : ep.state === 'failed' ? 'Retry' : 'Request'}
+      {phase === 'busy' ? 'Adding…' : phase === 'error' ? 'Try again' : ep.state === 'failed' ? 'Retry' : 'Add to Plex'}
     </button>
   )
 }

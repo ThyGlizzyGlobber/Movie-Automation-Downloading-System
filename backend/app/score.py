@@ -68,27 +68,44 @@ def contains_phrase(tokens: list[str], phrase: str) -> bool:
     return any(tokens[i : i + n] == phrase_tokens for i in range(len(tokens) - n + 1))
 
 
-# What may follow a *partial* title in a release name for the match to
-# count: the release metadata a scene name puts straight after the
-# title. Anything else between the title and this metadata means the
-# name belongs to a different, longer title.
+# What may follow a title in a release name for the match to count: the
+# release metadata a scene name puts straight after the title (season
+# and episode markers, a year, resolution, source, codec, edition, region
+# and language tags, streaming-service tags). Anything else between the
+# title and this metadata is more title — the name belongs to a
+# different, longer title ("Ted Lasso" for "Ted", "Batman Beyond" for
+# "Batman").
+_TITLE_BOUNDARY_WORDS = (
+    "season seasons episode complete series miniseries tv show "
+    "4k uhd sd hd fhd hdr hdr10 dv dovi sdr "
+    "web webrip webdl dl bluray bdrip brrip remux hdtv pdtv dvdrip dvd dvdr hdrip tvrip cam ts tc "
+    "x264 x265 h264 h265 hevc avc xvid divx aac ac3 dts ddp atmos truehd "
+    "unrated extended theatrical directors remastered proper repack rerip internal limited imax hybrid multi dual dubbed subbed uncut "
+    "us uk au ca nz eng english ita italian french german spanish latino hindi korean japanese "
+    "amzn nf dsnp atvp pcok hmax hulu max "
+    "mkv mp4 avi"
+).split()
 _TITLE_BOUNDARY_RE = re.compile(
-    r"^(s\d{1,2}(e\d{1,3})?|e\d{1,3}|season|complete|series|(19|20)\d{2}|2160p|1080p|720p|480p|4k|uhd|hdr|web|webrip|web-dl|bluray|brrip|hdtv|dvdrip)$"
+    r"^(s\d{1,2}(e\d{1,3})?|e\d{1,3}|(19|20)\d{2}|\d{3,4}p|\d{1,2}bit|" + "|".join(_TITLE_BOUNDARY_WORDS) + r")$"
 )
+
+
+# Two-word metadata that starts with an ordinary word ("The Complete
+# Series", "All Seasons", "Full Series").
+_TITLE_BOUNDARY_PAIRS = {("the", "complete"), ("the", "movie"), ("all", "seasons"), ("full", "series"), ("entire", "series"), ("the", "series")}
+
+
+def _metadata_follows(tokens: list[str], after: int) -> bool:
+    if after >= len(tokens):
+        return True
+    if _TITLE_BOUNDARY_RE.match(tokens[after]):
+        return True
+    return after + 1 < len(tokens) and (tokens[after], tokens[after + 1]) in _TITLE_BOUNDARY_PAIRS
 
 
 def _phrase_positions(tokens: list[str], phrase_tokens: list[str]) -> list[int]:
     n = len(phrase_tokens)
     return [i for i in range(len(tokens) - n + 1) if tokens[i : i + n] == phrase_tokens]
-
-
-def _is_partial_variant(variant_tokens: list[str], full_tokens: list[str]) -> bool:
-    """A variant cut from the full title (the head before a colon, or the
-    subtitle after it) is a strict whole-token prefix or suffix of it."""
-    n = len(variant_tokens)
-    if not full_tokens or n >= len(full_tokens):
-        return False
-    return full_tokens[:n] == variant_tokens or full_tokens[-n:] == variant_tokens
 
 
 def matches_any_variant(tokens: list[str], variants: list[str]) -> bool:
@@ -97,17 +114,15 @@ def matches_any_variant(tokens: list[str], variants: list[str]) -> bool:
     takes the plain variant list rather than a MediaIdentity, decoupling it
     from any one identity type).
 
-    The full title (and any other complete title, e.g. the original-
-    language one) matches anywhere in the name. A *partial* variant — the
-    head or subtitle cut out of "Batman: The Brave and the Bold" — only
-    matches when the release metadata follows it directly ("Batman.S01E01",
-    "Lioness.S01E01"), never when more title words do ("Batman.Beyond.
-    S01E01"). Confirmed live 2026-09-16: every request for Batman: The
-    Brave and the Bold was fetching Batman Beyond, because "batman" alone
-    was enough to pass this gate and the better-looking pack won."""
+    A variant matches when the release metadata follows it directly
+    ("Ted.S01E01", "Batman.S01E01", "Lioness.S01E01"), never when more
+    title words do ("Ted.Lasso.S01E01", "Batman.Beyond.S01E01"). Confirmed
+    live twice: every request for Batman: The Brave and the Bold fetched
+    Batman Beyond (2026-09-16), and a season of Ted fetched Ted Lasso
+    (2026-09-17) — "batman" and "ted" alone were enough to pass this gate
+    and the better-looking pack won."""
     if not variants:
         return False
-    full_tokens = tokenize(variants[0])
     for variant in variants:
         phrase_tokens = tokenize(variant)
         if not phrase_tokens:
@@ -115,11 +130,8 @@ def matches_any_variant(tokens: list[str], variants: list[str]) -> bool:
         positions = _phrase_positions(tokens, phrase_tokens)
         if not positions:
             continue
-        if not _is_partial_variant(phrase_tokens, full_tokens):
-            return True
         for start in positions:
-            after = start + len(phrase_tokens)
-            if after >= len(tokens) or _TITLE_BOUNDARY_RE.match(tokens[after]):
+            if _metadata_follows(tokens, start + len(phrase_tokens)):
                 return True
     return False
 

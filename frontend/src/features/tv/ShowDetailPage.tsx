@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useParams } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { getTvShow, listShows, createShow, pauseShow, resumeShow, deleteShow, bulkDownload } from '../../api/tv'
+import { getTvShow, listShows, createShow, deleteShow, bulkDownload } from '../../api/tv'
 import RequestModal from '../../components/RequestModal'
 import EpisodeList from './EpisodeList'
 import MediaRow from '../../components/MediaRow'
@@ -72,26 +72,14 @@ export default function ShowDetailPage() {
       setSubscribeBusy(false)
     }
   }
-  async function togglePause() {
-    if (!subscription) return
-    setSubscribeBusy(true)
-    try {
-      setSubscription(subscription.status === 'paused' ? await resumeShow(subscription.id) : await pauseShow(subscription.id))
-      queryClient.invalidateQueries({ queryKey: ['shows'] })
-    } catch (err) {
-      toast({ tone: 'error', title: "Couldn't update this show", body: errorText(err) })
-    } finally {
-      setSubscribeBusy(false)
-    }
-  }
   async function unfollow() {
     if (!subscription) return
-    if (!confirm('Stop following this show? Its downloads stay in Requests.')) return
     setSubscribeBusy(true)
     try {
       await deleteShow(subscription.id)
       setSubscription(null)
       queryClient.invalidateQueries({ queryKey: ['shows'] })
+      toast({ tone: 'info', title: `Unfollowed ${title}`, body: 'Anything already on the way stays in Requests.' })
     } catch (err) {
       toast({ tone: 'error', title: "Couldn't stop following", body: errorText(err) })
     } finally {
@@ -110,11 +98,16 @@ export default function ShowDetailPage() {
       })
       queryClient.invalidateQueries({ queryKey: ['requests'] })
       queryClient.invalidateQueries({ queryKey: ['episodes', tmdbId] })
-      if (!subscription) {
-        const shows = await listShows()
-        setSubscription(shows.find((s) => s.tmdb_id === tmdbId) ?? null)
-      }
-      toast({ tone: 'info', title: `Requested ${title}`, body: `${scope === 'series' ? 'Whole series' : `Season ${seasonNumber}`} · looking for a copy now` })
+      // Re-read: a whole-series add on a returning show also follows it.
+      const shows = await listShows()
+      setSubscription(shows.find((s) => s.tmdb_id === tmdbId) ?? null)
+      queryClient.invalidateQueries({ queryKey: ['shows'] })
+      const follows = scope === 'series' && !(show?.status === 'Ended' || show?.status === 'Canceled')
+      toast({
+        tone: 'info',
+        title: `Adding ${title} to Plex`,
+        body: `${scope === 'series' ? 'Whole series' : `Season ${seasonNumber}`} · looking for the best copy now${follows ? ' · following for new episodes' : ''}`,
+      })
     } catch (err) {
       toast({ tone: 'error', title: "Couldn't request that", body: errorText(err) })
     } finally {
@@ -138,7 +131,6 @@ export default function ShowDetailPage() {
   const certification = tvCertificationOf(show)
   const genres = (show.genres ?? []).slice(0, 3).map((g) => g.name).join(' · ')
   const badge = tvHeroBadge(show)
-  const isPaused = subscription?.status === 'paused'
   const network = show.networks?.[0]?.name
 
   const eyebrow = show.is_coming_soon
@@ -174,12 +166,22 @@ export default function ShowDetailPage() {
     : show.status === 'Ended' || show.status === 'Canceled'
       ? 'No more episodes'
       : 'Not scheduled'
+  // An ended or cancelled show has nothing left to follow: no Follow
+  // button, and the tile shows the years it ran instead.
+  const ended = show.status === 'Ended' || show.status === 'Canceled'
+  const following = subscription?.status === 'watching'
+  const firstYear = show.first_air_date?.slice(0, 4)
+  const lastYear = show.last_air_date?.slice(0, 4)
   const sideTiles: DetailTile[] = []
-  sideTiles.push(
-    subscription
-      ? { label: 'Following', value: (<><Icon name="check-circle" />{isPaused ? 'Paused' : 'Yes'}</>), tone: isPaused ? 'dim' : 'mint' }
-      : { label: 'Following', value: 'No', tone: 'dim' },
-  )
+  if (ended) {
+    sideTiles.push({ label: show.status === 'Canceled' ? 'Cancelled' : 'Ended', value: firstYear ? `${firstYear}${lastYear && lastYear !== firstYear ? ` – ${lastYear}` : ''}` : '—', tone: 'dim' })
+  } else {
+    sideTiles.push(
+      following
+        ? { label: 'Following', value: (<><Icon name="check-circle" />Yes</>), tone: 'mint' }
+        : { label: 'Following', value: 'No', tone: 'dim' },
+    )
+  }
   sideTiles.push({ label: 'Seasons', value: String(seasons.length || '—') })
   sideTiles.push({ label: 'Next episode', value: nextLabel, tone: next ? 'ice' : 'dim', wide: true })
 
@@ -210,26 +212,24 @@ export default function ShowDetailPage() {
             Play
           </span>
         ))}
-      {!subscription ? (
+      {/* One button: Follow, or Unfollow once followed. A show is
+          followed only while its row is "watching" — a paused row is the
+          anchor a one-off season add leaves behind, not a follow. */}
+      {ended ? null : !following ? (
         <button className={`btn ${show.on_plex ? 'sec' : 'pri'}`} disabled={subscribeBusy || show.is_coming_soon} onClick={follow}>
           <Icon name="plus" />
           {show.is_coming_soon ? 'Coming soon' : 'Follow'}
         </button>
       ) : (
-        <button className="btn sec" disabled={subscribeBusy} onClick={togglePause}>
-          <Icon name={isPaused ? 'play' : 'pause'} />
-          {isPaused ? 'Resume following' : 'Following'}
+        <button className="btn sec" disabled={subscribeBusy} onClick={unfollow}>
+          <Icon name="check" />
+          Unfollow
         </button>
       )}
-      <button className="btn sec" disabled={bulkBusyKey === 'series'} onClick={() => handleBulkClick('series', null, 'Complete series', 'series')}>
+      <button className={`btn ${ended && !show.on_plex ? 'pri' : 'sec'}`} disabled={bulkBusyKey === 'series'} onClick={() => handleBulkClick('series', null, 'Complete series', 'series')}>
         <Icon name="download" />
-        {bulkBusyKey === 'series' ? 'Adding…' : 'Request all'}
+        {bulkBusyKey === 'series' ? 'Adding…' : 'Add all to Plex'}
       </button>
-      {subscription && (
-        <button className="btn ghost sm" disabled={subscribeBusy} onClick={unfollow}>
-          Stop following
-        </button>
-      )}
     </>
   )
 
@@ -270,7 +270,7 @@ export default function ShowDetailPage() {
           ))}
           <button className="btn sec sm" disabled={bulkBusyKey === `season-${currentSeason}`} onClick={() => handleBulkClick('season', currentSeason, currentSeasonLabel, `season-${currentSeason}`)}>
             <Icon name="download" />
-            {bulkBusyKey === `season-${currentSeason}` ? 'Adding…' : `Request ${/^season \d/i.test(currentSeasonLabel) ? currentSeasonLabel.toLowerCase() : currentSeasonLabel}`}
+            {bulkBusyKey === `season-${currentSeason}` ? 'Adding…' : `Add ${/^season \d/i.test(currentSeasonLabel) ? currentSeasonLabel.toLowerCase() : currentSeasonLabel} to Plex`}
           </button>
         </div>
         <EpisodeList tmdbId={tmdbId} season={currentSeason} />
@@ -286,7 +286,7 @@ export default function ShowDetailPage() {
         title={requestModal?.scope === 'series' ? title : `${title} · ${requestModal?.label ?? ''}`}
         subtitle={requestModal?.scope === 'series' ? 'Complete series' : 'One season'}
         posterPath={show.poster_path}
-        submitLabel="Request"
+        submitLabel="Add to Plex"
         onClose={() => {
           setRequestModal(null)
           setBulkBusyKey(null)

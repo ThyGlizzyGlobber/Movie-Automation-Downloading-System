@@ -306,7 +306,7 @@ class Worker:
         elif result.status in _DIRECT_TERMINAL_STATUSES:
             await asyncio.to_thread(self.store.update_status, request_id, result.status, result=summary)
             if row.media_type == "pack" and result.status == "no qualifying results":
-                await self._fall_back_to_episodes(row, result.identity)
+                await self._fall_back_from_pack(row, result.identity)
         elif result.status == "add failed":
             # Every fitting candidate across every variant failed to
             # actually add (see pipeline.py) — request status is "failed"
@@ -328,21 +328,29 @@ class Worker:
                 result=summary,
             )
 
-    async def _fall_back_to_episodes(self, row, identity: ShowIdentity) -> None:
-        """A season/series request that found no pack is re-issued as one request per
-        aired episode in that scope. Plenty of older or smaller shows only
-        ever circulate as single episodes — "Request all" still has to
-        mean the whole show. Episodes already in the ledger (handled by an
-        earlier request, or found on disk) are left alone; the new rows
-        inherit the request's floor and notify choice, and the pack row
-        keeps its "no match" but says what happened next."""
+    async def _fall_back_from_pack(self, row, identity: ShowIdentity) -> None:
+        """A pack request that found nothing steps down one level: a
+        whole-series (or season-range) request becomes one request per
+        season, and a season request becomes one request per aired
+        episode. Confirmed live 2026-09-17 (PEN15): the series pack didn't
+        exist, but each season had a well-seeded pack of its own — going
+        straight to single episodes would have meant dozens of poorly
+        seeded downloads instead of two good ones."""
+        if row.season_number is None or row.season_range_end is not None:
+            await self._fall_back_to_seasons(row, identity)
+        else:
+            await self._fall_back_to_episodes(row, identity)
+
+    async def _fall_back_to_seasons(self, row, identity: ShowIdentity) -> None:
+        """One season-pack request per season in the failed request's
+        scope, skipping seasons that have nothing aired, that are already
+        fully in the ledger, or that already have a pack in flight or
+        done. Each of those can still drop to episodes on its own."""
         show = await asyncio.to_thread(self.store.get_show, row.show_id)
         if show is None:
             return
         if row.season_range_end is not None:
             seasons = list(range(row.season_number, row.season_range_end + 1))
-        elif row.season_number is not None:
-            seasons = [row.season_number]
         else:
             try:
                 show_data = await asyncio.to_thread(self.tmdb.get_tv, row.tmdb_id)
@@ -350,6 +358,63 @@ class Worker:
                 logger.exception("pack fallback: couldn't fetch TMDB data for %s", _request_label(row))
                 return
             seasons = list(range(1, (show_data.get("number_of_seasons") or 0) + 1))
+
+        tv_settings = await asyncio.to_thread(resolve_tv_settings, self.store)
+        created: list[int] = []
+        for season_number in seasons:
+            try:
+                episodes = await asyncio.to_thread(self.tmdb.get_tv_season, row.tmdb_id, season_number)
+            except TMDBError:
+                logger.exception("pack fallback: couldn't fetch season %d for %s", season_number, _request_label(row))
+                continue
+            aired = aired_episode_numbers(episodes, buffer_hours=tv_settings.episode_air_buffer_hours)
+            if not aired:
+                continue
+            handled = [await asyncio.to_thread(self.store.has_show_episode, show.id, season_number, e) for e in aired]
+            if all(handled):
+                continue
+            attempts = await asyncio.to_thread(self.store.list_pack_requests_for_show, show.id, season_number, None)
+            if attempts and (attempts[0].status in NON_TERMINAL_STATUSES or attempts[0].status in self._PACK_DONE_STATUSES):
+                continue
+            season_row = await asyncio.to_thread(
+                self.store.create_pack_request,
+                show.tmdb_id,
+                show.id,
+                identity.title,
+                season_number,
+                None,
+                row.requested_by_plex_id,
+                row.requested_by_username,
+                row.min_resolution,
+                None,
+                show.poster_path or identity.poster_path,
+            )
+            if row.notify is not None:
+                await asyncio.to_thread(self.store.set_request_notify, season_row.id, row.notify)
+            created.append(season_row.id)
+
+        scope = "series pack" if row.season_number is None else "season-range pack"
+        if created:
+            n = len(created)
+            message = f"No {scope} found, so its {n} season{'s were' if n != 1 else ' was'} requested one at a time."
+        else:
+            message = f"No {scope} found, and every season is already requested or in Plex."
+        await asyncio.to_thread(self.store.update_status, row.id, "no qualifying results", error_message=message)
+        logger.info("pack fallback: %s -> %d per-season request(s)", _request_label(row), len(created))
+        for season_id in created:
+            self.enqueue(season_id)
+
+    async def _fall_back_to_episodes(self, row, identity: ShowIdentity) -> None:
+        """A season request that found no pack is re-issued as one request
+        per aired episode. Plenty of older or smaller shows only ever
+        circulate as single episodes. Episodes already in the ledger
+        (handled by an earlier request, or found on disk) are left alone;
+        the new rows inherit the request's floor and notify choice, and
+        the pack row keeps its "no match" but says what happened next."""
+        show = await asyncio.to_thread(self.store.get_show, row.show_id)
+        if show is None:
+            return
+        seasons = [row.season_number]
 
         tv_settings = await asyncio.to_thread(resolve_tv_settings, self.store)
         created: list[int] = []
@@ -377,11 +442,11 @@ class Worker:
                     await asyncio.to_thread(self.store.set_request_notify, episode_row.id, row.notify)
                 created.append(episode_row.id)
 
-        scope = "series pack" if row.season_number is None else "season pack"
         if created:
-            message = f"No {scope} found, so its {len(created)} episode{'s' if len(created) != 1 else ''} were requested one by one."
+            n = len(created)
+            message = f"No season pack found, so its {n} episode{'s were' if n != 1 else ' was'} requested one by one."
         else:
-            message = f"No {scope} found, and every aired episode is already requested."
+            message = "No season pack found, and every aired episode is already requested."
         await asyncio.to_thread(self.store.update_status, row.id, "no qualifying results", error_message=message)
         logger.info("pack fallback: %s -> %d per-episode request(s)", _request_label(row), len(created))
         for episode_id in created:
@@ -888,12 +953,15 @@ class Worker:
         unhandled (`_unhandled_episodes_for_season`):
         - `season_complete=False` (still airing) — per-episode requests,
           same as always; packs don't exist yet for an incomplete season.
-        - `season_complete=True` and `pack_due=True` — a single season-pack
-          request covers the whole season instead of one search per
-          episode: an older, fully-aired season is realistically far more
-          likely to still have one well-seeded pack release than
-          well-seeded individual episodes, which tend to go cold once a
-          show has moved on.
+        - `season_complete=True`, none of it in the ledger yet, and
+          `pack_due=True` — a single season-pack request covers the whole
+          season instead of one search per episode: an older, fully-aired
+          season is realistically far more likely to still have one
+          well-seeded pack release than well-seeded individual episodes,
+          which tend to go cold once a show has moved on. A season the
+          household has been following (some episodes already handled)
+          never switches to a pack when it finishes — its last episodes
+          come one at a time like the rest.
         - `season_complete=True` and `pack_due=False` (a pack was already
           tried — succeeded, still in flight, or failed and not yet due
           for a retry per `_should_attempt_pack()`) — nothing is created
@@ -910,7 +978,15 @@ class Worker:
         if not unhandled:
             return 0
 
-        if season_complete:
+        # A pack is for a season the household has none of. Once any of
+        # its episodes are in the ledger — a show being followed week to
+        # week — the rest arrive one at a time, finale included. Confirmed
+        # live 2026-09-17 (Reacher): the season finale dropped and the
+        # check queued the whole season pack instead of the one episode.
+        aired = set(aired_episode_numbers(episodes, buffer_hours=buffer_hours))
+        untouched = len(unhandled) == len(aired)
+
+        if season_complete and untouched:
             if not pack_due:
                 return 0
             # Deliberately not added to show_episodes here — a pack row
@@ -936,6 +1012,13 @@ class Worker:
             )
             return 1
 
+        # A pack that covers this season (its own, a range, or the whole
+        # series) is still on the way: its episodes reach the ledger once
+        # it's organized, so asking for them one by one now would fetch
+        # them twice.
+        if self._pack_in_flight_for(show, season_number):
+            return 0
+
         created = 0
         for episode_number in unhandled:
             request_row = self.store.create_episode_request(
@@ -951,6 +1034,17 @@ class Worker:
             created += 1
 
         return created
+
+    def _pack_in_flight_for(self, show: ShowRow, season_number: int) -> bool:
+        for row in self.store.list_requests():
+            if row.media_type != "pack" or row.show_id != show.id or row.status not in NON_TERMINAL_STATUSES:
+                continue
+            if row.season_number is None:
+                return True  # whole series
+            end = row.season_range_end if row.season_range_end is not None else row.season_number
+            if row.season_number <= season_number <= end:
+                return True
+        return False
 
     _PACK_DONE_STATUSES = {"complete"}
 
@@ -1138,7 +1232,11 @@ class Worker:
         tv_settings = resolve_tv_settings(self.store)
 
         show_ended = show_data.get("status") in ("Ended", "Canceled")
-        if show_ended and self._should_attempt_pack(show, None, tv_settings):
+        nothing_handled = not self.store.list_show_episodes(show.id)
+        # A complete-series pack is for a show the household has none of;
+        # a followed show that has just ended gets its last episodes one
+        # at a time, same rule as a season below.
+        if show_ended and nothing_handled and self._should_attempt_pack(show, None, tv_settings):
             request_row = self.store.create_pack_request(
                 tmdb_id=show.tmdb_id,
                 show_id=show.id,

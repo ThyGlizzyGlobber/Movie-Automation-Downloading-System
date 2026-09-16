@@ -1781,6 +1781,41 @@ def test_bulk_download_accepts_redownload_mode_and_never_sets_a_floor(client_and
     assert body["redownload_mode"] == "upgrade"
 
 
+def test_following_a_show_a_season_add_left_paused_switches_it_on(client_and_deps):
+    client, store, _, _, _, _ = client_and_deps
+    anchor = client.post("/api/tv/95350/bulk-download", json={"scope": "season", "season_number": 1})
+    assert anchor.status_code == 201 and store.get_show_by_tmdb_id(95350).status == "paused"
+
+    followed = client.post("/api/shows", json={"tmdb_id": 95350})
+
+    assert followed.status_code == 201, followed.text
+    assert followed.json()["status"] == "watching"
+    assert store.get_show_by_tmdb_id(95350).status == "watching"
+    assert client.post("/api/shows", json={"tmdb_id": 95350}).status_code == 409
+
+
+def test_bulk_download_of_a_whole_returning_show_also_follows_it(client_and_deps):
+    client, store, _, _, _, _ = client_and_deps  # SHOW's status is "Returning Series"
+
+    response = client.post("/api/tv/95350/bulk-download", json={"scope": "series", "season_number": None})
+
+    assert response.status_code == 201, response.text
+    assert store.get_show_by_tmdb_id(95350).status == "watching"
+
+
+def test_bulk_download_of_one_season_or_an_ended_show_does_not_follow(client_and_deps):
+    client, store, tmdb, _, _, _ = client_and_deps
+
+    one_season = client.post("/api/tv/95350/bulk-download", json={"scope": "season", "season_number": 1})
+    assert one_season.status_code == 201, one_season.text
+    assert store.get_show_by_tmdb_id(95350).status == "paused"
+
+    tmdb.get_tv = lambda tmdb_id: dict(SHOW, id=tmdb_id, status="Ended")
+    ended = client.post("/api/tv/95350/bulk-download", json={"scope": "series", "season_number": None})
+    assert ended.status_code == 201, ended.text
+    assert store.get_show_by_tmdb_id(95350).status == "paused"
+
+
 def test_bulk_download_rejects_unknown_redownload_mode(client_and_deps):
     client, store, _, _, _, _ = client_and_deps
     show = store.create_show(tmdb_id=95350, title="Lanterns")
@@ -1815,7 +1850,9 @@ def test_bulk_download_creates_a_paused_show_when_not_already_subscribed(client_
     client, store, _, worker, _, _ = client_and_deps
     assert store.get_show_by_tmdb_id(95350) is None
 
-    response = client.post("/api/tv/95350/bulk-download", json={"scope": "series"})
+    # A single season: a whole-series add on a returning show now also
+    # follows it (see test_bulk_download_of_a_whole_returning_show_also_follows_it).
+    response = client.post("/api/tv/95350/bulk-download", json={"scope": "season", "season_number": 1})
 
     assert response.status_code == 201
     show = store.get_show_by_tmdb_id(95350)

@@ -22,7 +22,7 @@ const SORTS: { id: BrowseSort; label: string }[] = [
 const AVAILABILITY: { id: Availability; label: string }[] = [
   { id: 'all', label: 'All' },
   { id: 'plex', label: 'In Plex' },
-  { id: 'requested', label: 'Requested' },
+  { id: 'requested', label: 'On the way' },
   { id: 'missing', label: 'Not yet' },
 ]
 const THIS_YEAR = new Date().getFullYear()

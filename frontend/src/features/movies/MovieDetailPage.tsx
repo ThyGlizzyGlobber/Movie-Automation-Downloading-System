@@ -3,7 +3,6 @@ import { useParams } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { getMovie } from '../../api/movies'
 import { createRequest } from '../../api/requests'
-import StatusPill from '../../components/StatusPill'
 import MediaRow from '../../components/MediaRow'
 import RedownloadModal from '../../components/RedownloadModal'
 import RequestModal from '../../components/RequestModal'
@@ -13,9 +12,9 @@ import Icon from '../../components/Icon'
 import DetailShell, { type DetailPill, type DetailRow, type DetailTile } from '../detail/DetailShell'
 import { DetailCast, DetailTrailer, FactTiles, peopleLinks, qualityFromName, serviceTile, sourceFromName, usePlexHref, useTitleRequests } from '../detail/DetailBits'
 import { usePageTitle, useSetHasHero } from '../../lib/chrome'
-import { certificationOf, languageNameOf, yearOf, statusFollowupText } from '../../lib/detailHelpers'
+import { certificationOf, languageNameOf, yearOf } from '../../lib/detailHelpers'
 import { formatBytes } from '../../lib/format'
-import { NON_TERMINAL } from '../../lib/status'
+import { NON_TERMINAL, statusMeta } from '../../lib/status'
 import { errorText, useToast } from '../../lib/toast'
 import type { RedownloadMode } from '../../types/requests'
 import '../detail/DetailPage.css'
@@ -62,7 +61,7 @@ export default function MovieDetailPage() {
         notify: notify ?? null,
       })
       queryClient.invalidateQueries({ queryKey: ['requests'] })
-      toast({ tone: 'info', title: `Requested ${title}`, body: 'Looking for the best copy now' })
+      toast({ tone: 'info', title: `Adding ${title} to Plex`, body: 'Looking for the best copy now' })
     } catch (err) {
       toast({ tone: 'error', title: "Couldn't request that", body: errorText(err) })
     } finally {
@@ -158,10 +157,20 @@ export default function MovieDetailPage() {
     </>
   ) : (
     <>
-      <button className="btn pri" disabled={!!busy || !!active} onClick={() => setRequestOpen(true)}>
-        <Icon name="plus" />
-        {active ? 'Requested' : busy ? 'Adding…' : 'Request'}
-      </button>
+      {/* Once requested, the button itself shows where the request is:
+          searching, downloading with its percentage, and so on. */}
+      {active ? (
+        <span className={`btn pri dis detail-live ${statusMeta(active.status).cls}`}>
+          <Icon name={statusMeta(active.status).icon} />
+          {statusMeta(active.status).label}
+          {active.status === 'downloading' && active.download_progress != null ? ` ${Math.round(active.download_progress * 100)}%` : ''}
+        </span>
+      ) : (
+        <button className="btn pri" disabled={!!busy} onClick={() => setRequestOpen(true)}>
+          <Icon name="plus" />
+          {busy ? 'Adding…' : 'Add to Plex'}
+        </button>
+      )}
     </>
   )
 
@@ -177,20 +186,9 @@ export default function MovieDetailPage() {
         eyebrowTone={eyebrow.tone}
         pills={pills}
         overview={movie.overview}
-        actions={
-          <>
-            {actions}
-            {active && (
-              <div className="detail-status">
-                <StatusPill status={active.status} />
-                <span>{statusFollowupText(active.status, active.error_message)}</span>
-              </div>
-            )}
-          </>
-        }
+        actions={actions}
         tiles={sideTiles}
         details={details}
-        requests={requests}
         aside={<DetailCast cast={movie.credits?.cast} limit={8} />}
       >
         <DetailTrailer type="movie" tmdbId={tmdbId} backdropPath={movie.backdrop_path} />

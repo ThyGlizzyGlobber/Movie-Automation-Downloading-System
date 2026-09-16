@@ -689,3 +689,11 @@ def test_an_explicit_resolution_still_outranks_an_sd_source_word():
 
 def test_no_source_or_resolution_word_still_fails_every_floor():
     assert passes_resolution_floor(tokenize("Batman - The Brave And The Bold - Complete"), "480p") is False
+
+
+# A movie title is only a match when release metadata follows it.
+def test_relevance_gate_rejects_a_sequel_or_longer_title_for_a_short_one():
+    ted = MediaIdentity(tmdb_id=1, title="Ted", original_title="Ted", release_year=2012, variants=["Ted", "Ted 2012"])
+    assert passes_relevance_gate("Ted.2.2015.2160p.BluRay.mkv", ted) is False
+    assert passes_relevance_gate("Ted.2012.UNRATED.2160p.BluRay.mkv", ted) is True
+    assert passes_relevance_gate("Ted.UNRATED.2012.2160p.BluRay.mkv", ted) is True

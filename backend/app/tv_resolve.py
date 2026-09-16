@@ -4,7 +4,7 @@ search queries — the Stage 1 equivalent for TV. Family disambiguates
 separate problem, same split as movies' resolve.py/score.py."""
 
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 
 from app.normalize import generate_variants
 from app.tmdb import TMDBClient
@@ -25,6 +25,13 @@ class ShowIdentity:
     # release labelled as a season range ("S01-S03", "Complete Seasons 1
     # to 3") when that range covers the whole show. None when unknown.
     number_of_seasons: int | None = None
+    # How many of those seasons have finished airing (None when TMDB gave
+    # no season list). While the last season is still airing, a pack
+    # spanning every *finished* season is the best "whole series" there
+    # is, and the series-pack gate accepts it.
+    finished_seasons: int | None = None
+    # TMDB says the show is over (Ended / Canceled): nothing new to follow.
+    ended: bool = False
     # Deliberately unused by matching (Stage 9's episode-token signal is
     # tighter than any year check) — carried only for Stage 11's Plex
     # folder-naming convention, "<Show> (<year>) {tmdb-<id>}", which wants
@@ -169,6 +176,19 @@ def season_is_complete(episodes: list[dict], now: datetime | None = None, buffer
     return all(ep.get("air_date") and ep["air_date"] <= cutoff for ep in episodes)
 
 
+def _finished_seasons(show: dict, today: str | None = None) -> int | None:
+    """Seasons (specials excluded) that have started airing, minus the
+    one `next_episode_to_air` says is still going. None without a season
+    list."""
+    seasons = [s for s in show.get("seasons") or [] if (s.get("season_number") or 0) >= 1]
+    if not seasons:
+        return None
+    today = today or date.today().isoformat()
+    started = {s["season_number"] for s in seasons if s.get("air_date") and s["air_date"] <= today}
+    airing = (show.get("next_episode_to_air") or {}).get("season_number")
+    return len(started - {airing})
+
+
 def resolve_show(tmdb_id: int, client: TMDBClient) -> ShowIdentity:
     show = client.get_tv(tmdb_id)
 
@@ -188,6 +208,8 @@ def resolve_show(tmdb_id: int, client: TMDBClient) -> ShowIdentity:
         original_title=original_title,
         variants=variants,
         number_of_seasons=show.get("number_of_seasons") or None,
+        finished_seasons=_finished_seasons(show),
+        ended=show.get("status") in ("Ended", "Canceled"),
         first_air_year=first_air_year,
         poster_path=show.get("poster_path"),
     )

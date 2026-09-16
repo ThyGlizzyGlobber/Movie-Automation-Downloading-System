@@ -940,24 +940,116 @@ def test_pack_with_no_pack_at_all_falls_back_to_one_request_per_aired_episode():
     assert not store.has_show_episode(show.id, 1, 3)
 
 
-def test_series_pack_fallback_covers_every_season_and_skips_handled_episodes():
+def test_check_show_fetches_a_followed_season_finale_as_one_episode_not_a_pack():
+    """Reacher (2026-09-17): episodes 1–7 arrived week by week, the
+    finale aired and the check queued the whole season pack. A season the
+    household already has part of finishes one episode at a time."""
+    store = RequestStore(":memory:")
+    show = store.create_show(tmdb_id=95350, title="Lanterns")
+    for ep in (1, 2):
+        row = store.create_episode_request(tmdb_id=95350, show_id=show.id, title="Lanterns", season_number=1, episode_number=ep)
+        store.update_status(row.id, "complete")
+        store.add_show_episode(show.id, 1, ep, row.id)
+    tmdb = FakeTMDBClient(
+        show={**SHOW, "number_of_seasons": 1},
+        season_episodes={
+            1: [
+                {"episode_number": 1, "air_date": "2020-01-01"},
+                {"episode_number": 2, "air_date": "2020-01-08"},
+                {"episode_number": 3, "air_date": "2020-01-15"},  # the finale, just aired
+            ]
+        },
+    )
+    worker = Worker(store, tmdb, FakeQBTClient())
+
+    assert worker.check_show(show) == 1
+    new_rows = [r for r in store.list_requests() if r.status == "queued"]
+    assert [(r.media_type, r.season_number, r.episode_number) for r in new_rows] == [("episode", 1, 3)]
+
+
+def test_check_show_ended_show_with_episodes_in_the_ledger_finishes_by_episode():
+    store = RequestStore(":memory:")
+    show = store.create_show(tmdb_id=95350, title="Lanterns")
+    row = store.create_episode_request(tmdb_id=95350, show_id=show.id, title="Lanterns", season_number=1, episode_number=1)
+    store.update_status(row.id, "complete")
+    store.add_show_episode(show.id, 1, 1, row.id)
+    tmdb = FakeTMDBClient(
+        show={**SHOW, "number_of_seasons": 1, "status": "Ended"},
+        season_episodes={1: [{"episode_number": 1, "air_date": "2020-01-01"}, {"episode_number": 2, "air_date": "2020-01-08"}]},
+    )
+    worker = Worker(store, tmdb, FakeQBTClient())
+
+    assert worker.check_show(show) == 1
+    new_rows = [r for r in store.list_requests() if r.status == "queued"]
+    assert [(r.media_type, r.season_number, r.episode_number) for r in new_rows] == [("episode", 1, 2)]
+
+
+def test_check_show_leaves_an_airing_season_alone_while_a_series_pack_is_on_the_way():
+    """Following a show right after "Add all to Plex": the scheduler must
+    not also ask for the airing season's episodes one by one while the
+    pack that covers them is still downloading."""
+    store = RequestStore(":memory:")
+    show = store.create_show(tmdb_id=95350, title="Lanterns")
+    in_flight = store.create_pack_request(tmdb_id=95350, show_id=show.id, title="Lanterns", season_number=None)
+    store.update_status(in_flight.id, "downloading")
+    tmdb = FakeTMDBClient(show={**SHOW, "number_of_seasons": 1}, season_episodes={1: _TWO_AIRED_ONE_FUTURE})
+    worker = Worker(store, tmdb, FakeQBTClient())
+
+    assert worker.check_show(show) == 0
+    assert [r for r in store.list_requests() if r.media_type == "episode"] == []
+
+    # Once the pack is done (or gone), the usual per-episode catch-up resumes.
+    store.update_status(in_flight.id, "cancelled")
+    assert worker.check_show(show) == 2
+
+
+def test_series_pack_fallback_asks_for_each_season_not_each_episode():
+    """PEN15 (2026-09-17): no series pack existed but every season had a
+    well-seeded pack. A failed series request steps down to one request
+    per season; a fully handled season and an unaired one are skipped."""
     store = RequestStore(":memory:")
     show = store.create_show(tmdb_id=95350, title="Lanterns")
     earlier = store.create_episode_request(tmdb_id=95350, show_id=show.id, title="Lanterns", season_number=1, episode_number=1)
     store.add_show_episode(show.id, 1, 1, earlier.id)
-    row = store.create_pack_request(tmdb_id=95350, show_id=show.id, title="Lanterns", season_number=None)
+    row = store.create_pack_request(
+        tmdb_id=95350, show_id=show.id, title="Lanterns", season_number=None, requested_by_username="bejay"
+    )
+    store.set_request_notify(row.id, True)
     tmdb = FakeTMDBClient(
-        show={**SHOW, "number_of_seasons": 2},
-        season_episodes={1: _TWO_AIRED_ONE_FUTURE, 2: [{"episode_number": 1, "air_date": "2021-01-01"}]},
+        show={**SHOW, "number_of_seasons": 3},
+        season_episodes={
+            1: [{"episode_number": 1, "air_date": "2020-01-01"}],  # fully handled already
+            2: _TWO_AIRED_ONE_FUTURE,
+            3: [{"episode_number": 1, "air_date": "2999-01-01"}],  # nothing aired yet
+        },
     )
     worker = Worker(store, tmdb, FakeQBTClient())
 
     asyncio.run(worker._run_one(row.id))
 
     pack = store.get_request(row.id)
-    assert pack.error_message == "No series pack found, so its 2 episodes were requested one by one."
-    new_rows = [r for r in store.list_requests() if r.media_type == "episode" and r.id != earlier.id]
-    assert sorted((r.season_number, r.episode_number) for r in new_rows) == [(1, 2), (2, 1)]
+    assert pack.status == "no qualifying results"
+    assert pack.error_message == "No series pack found, so its 1 season was requested one at a time."
+    seasons = [r for r in store.list_requests() if r.media_type == "pack" and r.id != row.id]
+    assert [(r.season_number, r.status, r.requested_by_username, r.notify) for r in seasons] == [(2, "queued", "bejay", True)]
+    assert [r for r in store.list_requests() if r.media_type == "episode" and r.id != earlier.id] == []
+    assert worker.queue.get_nowait() == seasons[0].id
+
+
+def test_season_pack_from_a_series_fallback_still_drops_to_episodes():
+    store = RequestStore(":memory:")
+    show = store.create_show(tmdb_id=95350, title="Lanterns")
+    row = store.create_pack_request(tmdb_id=95350, show_id=show.id, title="Lanterns", season_number=None)
+    tmdb = FakeTMDBClient(show={**SHOW, "number_of_seasons": 1}, season_episodes={1: _TWO_AIRED_ONE_FUTURE})
+    worker = Worker(store, tmdb, FakeQBTClient())
+
+    asyncio.run(worker._run_one(row.id))
+    season_row = next(r for r in store.list_requests() if r.media_type == "pack" and r.season_number == 1)
+    asyncio.run(worker._run_one(season_row.id))
+
+    assert store.get_request(season_row.id).error_message == "No season pack found, so its 2 episodes were requested one by one."
+    episodes = [r for r in store.list_requests() if r.media_type == "episode"]
+    assert sorted((r.season_number, r.episode_number) for r in episodes) == [(1, 1), (1, 2)]
 
 
 def test_check_downloading_organizes_pack_and_fans_out_episode_rows(tmp_path, monkeypatch):

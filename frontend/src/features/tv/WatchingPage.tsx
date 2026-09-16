@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { listShows, pauseShow, resumeShow, deleteShow } from '../../api/tv'
+import { listShows, deleteShow } from '../../api/tv'
 import ProgressBar from '../../components/ProgressBar'
 import LoadingState from '../../components/LoadingState'
 import ErrorState from '../../components/ErrorState'
@@ -16,17 +16,6 @@ import type { RequestOut } from '../../types/requests'
 import '../requests/RequestsPage.css'
 import '../../components/BrowsePage.css'
 import './WatchingPage.css'
-
-function SubscriptionStatusPill({ status }: { status: 'watching' | 'paused' }) {
-  const cls = status === 'paused' ? 'status-queued' : 'status-complete'
-  const label = status === 'paused' ? 'Paused' : 'Following'
-  return (
-    <span className={`status-pill ${cls}`}>
-      <span className={`status-dot ${cls}`} />
-      {label}
-    </span>
-  )
-}
 
 // The second pill on a Watching row: what the show's most recent
 // episode/pack request actually did, or a plain "not checked yet" when
@@ -54,21 +43,7 @@ function WatchingRow({ show, onChanged }: { show: ShowOut; onChanged: () => void
   const { toast } = useToast()
   const req = show.latest_request
 
-  async function handleToggle() {
-    setBusy(true)
-    try {
-      if (show.status === 'paused') await resumeShow(show.id)
-      else await pauseShow(show.id)
-      onChanged()
-    } catch (err) {
-      toast({ tone: 'error', title: "Couldn't update this show", body: errorText(err) })
-    } finally {
-      setBusy(false)
-    }
-  }
-
   async function handleUnsubscribe() {
-    if (!confirm('Stop following this show? Its downloads stay in Requests.')) return
     setBusy(true)
     try {
       await deleteShow(show.id)
@@ -88,17 +63,13 @@ function WatchingRow({ show, onChanged }: { show: ShowOut; onChanged: () => void
         </a>
         <div className="req-sub">Last checked {relativeTime(show.last_checked_at)}</div>
         <div className="watch-pills">
-          <SubscriptionStatusPill status={show.status} />
           <LatestRequestPill req={req} />
         </div>
         {req?.status === 'downloading' && req.download_progress != null && <ProgressBar progress={req.download_progress} />}
       </div>
       <div className="req-actions">
-        <button className="toggle-show-btn" disabled={busy} onClick={handleToggle}>
-          {show.status === 'paused' ? 'Resume' : 'Pause'}
-        </button>
         <button className="watch-link" disabled={busy} onClick={handleUnsubscribe}>
-          Stop following
+          Unfollow
         </button>
       </div>
     </div>
@@ -109,7 +80,7 @@ export default function WatchingPage() {
   usePageTitle('Following')
   useSetHasHero(false)
   const queryClient = useQueryClient()
-  const showsQuery = useQuery({ queryKey: ['shows'], queryFn: () => listShows() })
+  const showsQuery = useQuery({ queryKey: ['shows'], queryFn: () => listShows('watching') })
 
   function onChanged() {
     queryClient.invalidateQueries({ queryKey: ['shows'] })

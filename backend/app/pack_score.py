@@ -206,19 +206,25 @@ def passes_season_range_pack_gate(
     )
 
 
-def is_series_shaped(tokens: list[str], number_of_seasons: int | None) -> bool:
+def is_series_shaped(tokens: list[str], number_of_seasons: int | None, finished_seasons: int | None = None) -> bool:
     """A positive whole-series signal, in one of three real-world shapes:
     an explicit phrase ("Complete Series", "All Seasons"…); a season range
     that spans every season the show has ("S01-S03", "Complete Seasons 1
-    to 3" for a three-season show — which needs `number_of_seasons`); or
-    the bare word "Complete" with nothing narrowing it. An explicit range
-    always has the last word: "Complete Seasons 1 to 2" of a three-season
-    show is not the whole show, however it's phrased."""
+    to 3" for a three-season show — which needs `number_of_seasons`) or,
+    while the last season is still airing, every *finished* season
+    (`finished_seasons`); or the bare word "Complete" with nothing
+    narrowing it. An explicit range always has the last word: "Complete
+    Seasons 1 to 2" of a finished three-season show is not the whole
+    show, however it's phrased."""
     found = parse_season_range(tokens)
     if found is not None:
         if number_of_seasons is None:
             return has_complete_series_marker(tokens)
-        return found[0] <= 1 and found[1] >= number_of_seasons and not has_any_episode_token(tokens)
+        if has_any_episode_token(tokens) or found[0] > 1:
+            return False
+        if found[1] >= number_of_seasons:
+            return True
+        return finished_seasons is not None and 0 < finished_seasons < number_of_seasons and found[1] >= finished_seasons
     return has_complete_series_marker(tokens) or _is_bare_complete(tokens)
 
 
@@ -233,7 +239,7 @@ def passes_series_pack_gate(
     tokens = tokenize(file_name)
     return (
         matches_any_variant(tokens, identity.variants)
-        and is_series_shaped(tokens, identity.number_of_seasons)
+        and is_series_shaped(tokens, identity.number_of_seasons, identity.finished_seasons)
         and passes_resolution_floor(tokens, settings.min_resolution)
         and passes_language_filter(
             tokens, settings.language_allowlist, settings.language_blocklist, settings.language_required

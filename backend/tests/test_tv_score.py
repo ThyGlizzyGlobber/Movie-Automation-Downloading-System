@@ -175,3 +175,28 @@ def test_episode_gate_rejects_batman_beyond_for_brave_and_the_bold():
     identity = ShowIdentity(tmdb_id=1, title=title, original_title=title, variants=generate_variants(title, title, None))
     assert not passes_episode_relevance_gate("Batman.Beyond.S01E01.2160p.WEB-DL.x265.mkv", identity, 1, 1)
     assert passes_episode_relevance_gate("Batman.The.Brave.and.the.Bold.S01E01.2160p.WEB-DL.x265.mkv", identity, 1, 1)
+
+
+# ---------------------------------------------------------------------------
+# A whole title is still only a match when release metadata follows it —
+# "Ted" is not "Ted Lasso" (confirmed live 2026-09-17: a Ted season
+# request fetched Ted Lasso).
+# ---------------------------------------------------------------------------
+
+TED = ShowIdentity(tmdb_id=1, title="Ted", original_title="Ted", variants=["Ted"])
+OFFICE = ShowIdentity(tmdb_id=2, title="The Office", original_title="The Office", variants=["The Office"])
+
+
+def test_episode_gate_rejects_a_longer_title_that_starts_the_same():
+    assert passes_episode_relevance_gate("Ted.Lasso.S01E04.2160p.WEB-DL.mkv", TED, 1, 4) is False
+    assert passes_episode_relevance_gate("Ted Lasso S01E04 2160p", TED, 1, 4) is False
+
+
+def test_episode_gate_accepts_the_title_when_metadata_follows_it():
+    assert passes_episode_relevance_gate("Ted.S01E04.2160p.WEB-DL.mkv", TED, 1, 4) is True
+    assert passes_episode_relevance_gate("Ted.2024.S01E04.2160p.PCOK.WEB-DL.mkv", TED, 1, 4) is True
+    assert passes_episode_relevance_gate("Ted (TV Series) S01E04 2160p", TED, 1, 4) is True
+
+
+def test_episode_gate_accepts_region_tags_after_the_title():
+    assert passes_episode_relevance_gate("The.Office.US.S01E04.2160p.WEB-DL.mkv", OFFICE, 1, 4) is True

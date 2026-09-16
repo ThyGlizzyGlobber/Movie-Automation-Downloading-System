@@ -271,3 +271,39 @@ def test_resolve_show_carries_the_season_count_for_the_series_pack_gate():
 
     client._get = lambda path, params=None: {"id": 1, "name": "Lanterns"}
     assert resolve_show(1, client).number_of_seasons is None
+
+
+def test_resolve_show_counts_finished_seasons_and_whether_the_show_has_ended():
+    client = TMDBClient(api_key="test-key")
+    client._get = lambda path, params=None: {
+        "id": 1,
+        "name": "Reacher",
+        "status": "Returning Series",
+        "number_of_seasons": 4,
+        "seasons": [
+            {"season_number": 0, "air_date": "2022-01-01"},
+            {"season_number": 1, "air_date": "2022-02-03"},
+            {"season_number": 2, "air_date": "2023-12-15"},
+            {"season_number": 3, "air_date": "2025-02-20"},
+            {"season_number": 4, "air_date": "2026-08-12"},
+        ],
+        "next_episode_to_air": {"season_number": 4, "episode_number": 8},
+    }
+    identity = resolve_show(1, client)
+    assert identity.number_of_seasons == 4
+    assert identity.finished_seasons == 3
+    assert identity.ended is False
+
+    client._get = lambda path, params=None: {"id": 2, "name": "Batman", "status": "Ended", "number_of_seasons": 3}
+    identity = resolve_show(2, client)
+    assert identity.finished_seasons is None  # no season list from TMDB
+    assert identity.ended is True
+
+
+def test_finished_seasons_ignores_a_season_announced_for_the_future():
+    from app.tv_resolve import _finished_seasons
+
+    show = {
+        "seasons": [{"season_number": 1, "air_date": "2020-01-01"}, {"season_number": 2, "air_date": "2999-01-01"}],
+    }
+    assert _finished_seasons(show, today="2026-09-17") == 1

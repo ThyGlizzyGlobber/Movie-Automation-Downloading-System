@@ -1090,14 +1090,20 @@ def create_show(
     tmdb: TMDBClient = Depends(get_tmdb),
     worker: Worker = Depends(get_worker),
 ) -> ShowOut:
-    if store.get_show_by_tmdb_id(body.tmdb_id) is not None:
-        raise HTTPException(status_code=409, detail="already subscribed to this show")
-    try:
-        identity = resolve_show(body.tmdb_id, tmdb)
-    except TMDBError as exc:
-        raise HTTPException(status_code=404, detail=f"tmdb_id {body.tmdb_id} not found") from exc
-
-    row = store.create_show(tmdb_id=body.tmdb_id, title=identity.title, poster_path=identity.poster_path)
+    existing = store.get_show_by_tmdb_id(body.tmdb_id)
+    if existing is not None and existing.status == "watching":
+        raise HTTPException(status_code=409, detail="already following this show")
+    if existing is not None:
+        # A paused row is the anchor a one-off season add left behind;
+        # following the show now is just switching that row on.
+        store.update_show_status(existing.id, "watching")
+        row = store.get_show(existing.id)
+    else:
+        try:
+            identity = resolve_show(body.tmdb_id, tmdb)
+        except TMDBError as exc:
+            raise HTTPException(status_code=404, detail=f"tmdb_id {body.tmdb_id} not found") from exc
+        row = store.create_show(tmdb_id=body.tmdb_id, title=identity.title, poster_path=identity.poster_path)
     worker.check_show(row, full_backfill=True)
     return _show_out(store, store.get_show(row.id))
 
@@ -1169,15 +1175,22 @@ def bulk_download_show(
     worker: Worker = Depends(get_worker),
     session: SessionRow = Depends(require_can_request),
 ) -> RequestOut:
+    try:
+        identity = resolve_show(tmdb_id, tmdb)
+    except TMDBError as exc:
+        raise HTTPException(status_code=404, detail=f"tmdb_id {tmdb_id} not found") from exc
     show = store.get_show_by_tmdb_id(tmdb_id)
     if show is None:
-        try:
-            identity = resolve_show(tmdb_id, tmdb)
-        except TMDBError as exc:
-            raise HTTPException(status_code=404, detail=f"tmdb_id {tmdb_id} not found") from exc
         show = store.create_show(
             tmdb_id=tmdb_id, title=identity.title, status="paused", poster_path=identity.poster_path
         )
+    # "Add all to Plex" on a show that is still going also follows it, so
+    # the episodes that haven't aired yet keep arriving; a one-off season
+    # add, or a show that has ended, leaves following alone.
+    if body.scope == "series" and not identity.ended and show.status != "watching":
+        store.update_show_status(show.id, "watching")
+        show = store.get_show(show.id)
+        logger.info("show %d (%s): whole-series add on a returning show — now following", show.id, show.title)
 
     # A bulk download makes this show's own still-queued requests it
     # covers redundant — series scope covers every season, a season scope

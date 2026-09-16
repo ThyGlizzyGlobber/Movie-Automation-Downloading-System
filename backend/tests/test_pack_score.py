@@ -320,3 +320,22 @@ def test_series_gate_accepts_a_bare_complete_but_not_a_loose_season_number():
 def test_series_gate_accepts_the_other_whole_series_phrases():
     for name in ("Lanterns All Seasons 2160p", "Lanterns Full Series 2160p", "Lanterns Entire Series 2160p"):
         assert passes_series_pack_gate(name, LANTERNS) is True, name
+
+
+def test_season_pack_gate_rejects_a_longer_title_that_starts_the_same():
+    ted = ShowIdentity(tmdb_id=1, title="Ted", original_title="Ted", variants=["Ted"])
+    assert passes_season_pack_gate("Ted.Lasso.S01.2160p.WEB-DL", ted, 1) is False
+    assert passes_season_pack_gate("Ted.S01.2160p.WEB-DL", ted, 1) is True
+    assert passes_season_pack_gate("Ted Season 1 Complete 2160p", ted, 1) is True
+
+
+def test_series_gate_accepts_every_finished_season_while_the_last_one_airs():
+    """Reacher mid-season-4: an S01-S03 pack is the whole series so far."""
+    airing = ShowIdentity(tmdb_id=1, title="Reacher", original_title="Reacher", variants=["Reacher"], number_of_seasons=4, finished_seasons=3)
+    assert passes_series_pack_gate("Reacher.S01-S03.2160p.WEB-DL", airing) is True
+    assert passes_series_pack_gate("Reacher Complete Seasons 1 to 3 2160p", airing) is True
+    # …but not a range that stops short of the finished seasons.
+    assert passes_series_pack_gate("Reacher.S01-S02.2160p.WEB-DL", airing) is False
+    # Once the show has finished, only the full range counts again.
+    done = ShowIdentity(tmdb_id=1, title="Reacher", original_title="Reacher", variants=["Reacher"], number_of_seasons=4, finished_seasons=4)
+    assert passes_series_pack_gate("Reacher.S01-S03.2160p.WEB-DL", done) is False

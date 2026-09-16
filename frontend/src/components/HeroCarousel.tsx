@@ -337,7 +337,7 @@ export default function HeroCarousel({ items }: { items: TaggedItem[] }) {
                 <div className="home-hero-actions">
                   <a className="btn pri" href={href}>
                     <Icon name={onPlex ? 'play' : 'plus'} />
-                    <FlipLabel first={onPlex ? 'On Plex' : 'Not on Plex yet'} second={onPlex ? 'Watch now' : 'Request'} active={i === activeIndex} />
+                    <FlipLabel first={onPlex ? 'On Plex' : 'Not on Plex yet'} second={onPlex ? 'Watch now' : 'Add to Plex'} active={i === activeIndex} />
                   </a>
                   <a className="btn sec circ" href={href} aria-label="More info">
                     <Icon name="info" />

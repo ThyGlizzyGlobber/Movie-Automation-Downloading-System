@@ -54,7 +54,7 @@ function RowAction({
     return (
       <span className="search-result-state pending">
         <Icon name={meta?.icon ?? 'clock'} />
-        {meta?.label ?? 'Requested'}
+        {meta?.label ?? 'Adding'}
       </span>
     )
   }
@@ -71,7 +71,7 @@ function RowAction({
       toast(
         hit.mediaType === 'tv'
           ? { tone: 'ok', title: `Following ${hitTitle(hit)}`, body: 'New episodes are picked up on their own.' }
-          : { tone: 'info', title: `Requested ${hitTitle(hit)}`, body: 'Looking for a copy now' },
+          : { tone: 'info', title: `Adding ${hitTitle(hit)} to Plex`, body: 'Looking for the best copy now' },
       )
     } catch (err) {
       setPhase('error')
@@ -82,7 +82,7 @@ function RowAction({
   return (
     <button className={`search-result-action${phase === 'error' ? ' error' : ''}`} disabled={phase === 'busy'} onClick={act}>
       <Icon name={phase === 'error' ? 'alert-circle' : phase === 'busy' ? 'loader' : 'plus'} />
-      {phase === 'error' ? 'Try again' : phase === 'busy' ? 'Adding…' : hit.mediaType === 'tv' ? 'Add show' : 'Request'}
+      {phase === 'error' ? 'Try again' : phase === 'busy' ? 'Adding…' : hit.mediaType === 'tv' ? 'Follow show' : 'Add to Plex'}
     </button>
   )
 }

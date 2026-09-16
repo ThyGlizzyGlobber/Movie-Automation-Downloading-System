@@ -668,6 +668,12 @@
   display: flex;
   gap: 8px;
 }
+/* A requested title's primary button becomes its live status (the scan
+   icon animates on its own, see Icon.css), keeping the primary look so
+   it still reads as the main action. */
+.detail-live .icon {
+  font-size: 18px;
+}
 /* Live request state under the actions (inside the actions row). */
 .detail-status {
   flex: 1 1 100%;

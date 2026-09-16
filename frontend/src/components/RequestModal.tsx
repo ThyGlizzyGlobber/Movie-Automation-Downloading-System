@@ -16,7 +16,7 @@ export default function RequestModal({
   title,
   subtitle,
   posterPath,
-  submitLabel = 'Request',
+  submitLabel = 'Add to Plex',
   onClose,
   onSubmit,
 }: {

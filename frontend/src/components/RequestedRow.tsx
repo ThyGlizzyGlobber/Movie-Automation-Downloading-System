@@ -33,8 +33,8 @@ export default function RequestedRow() {
   if (!items.length) return null
   return (
     <MediaRow
-      title="Requested"
-      qualifier="by the household"
+      title="On the way"
+      qualifier="for the household"
       items={items}
       mediaType={(r) => (r.media_type === 'movie' ? 'movie' : 'tv')}
       expandHref="/requests"

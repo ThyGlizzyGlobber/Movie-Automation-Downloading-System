@@ -30,6 +30,7 @@ export interface EpisodeToAir {
 export interface TvDetail extends Omit<TmdbListItem, 'genre_ids'> {
   logo_path?: string | null
   status: string // "Returning Series" | "Ended" | "Canceled" | ...
+  last_air_date?: string | null
   original_language?: string
   genres: Genre[]
   networks: Network[]
