@@ -7,7 +7,7 @@ from app import config
 from app.pipeline import download, download_episode, download_pack, find_best_episode_candidate
 from app.pipeline_settings import PipelineSettings
 from app.qbt import QBTError
-from app.tv_resolve import ShowIdentity
+from app.tv_resolve import ShowIdentity, season_pack_queries
 
 _BTIH_RE = re.compile(r"btih:([a-zA-Z0-9]+)")
 
@@ -1071,8 +1071,45 @@ def test_download_pack_series_finds_a_range_pack_only_the_bare_title_search_surf
     assert result.status == "added"
     assert result.query_used == "Batman: The Brave and the Bold"
     assert result.winner["fileName"].startswith("Batman The Brave and the Bold 2008 Complete Seasons 1 to 3")
-    assert qbt.searched_variants == [
+    # The three series shapes, then the season-1 probe that checks the
+    # seasons aren't available at a better quality than the series pack.
+    assert qbt.searched_variants[:3] == [
         "Batman: The Brave and the Bold complete series",
         "Batman: The Brave and the Bold complete",
         "Batman: The Brave and the Bold",
     ]
+    assert qbt.searched_variants[3:] == season_pack_queries("Batman: The Brave and the Bold", 1)
+
+
+def test_download_pack_series_steps_aside_when_the_seasons_come_in_better():
+    """Ted (2026-09-17): the only series pack was S01-S02 at 720p while
+    season 1 had a 2160p pack. The series request declines on purpose so
+    the worker asks for each season instead."""
+    two = ShowIdentity(tmdb_id=1, title="Ted", original_title="Ted", variants=["Ted"], number_of_seasons=2, finished_seasons=2)
+    qbt = FakeQBTClient(
+        results_by_variant={
+            "Ted complete series": [_pack_result(fileName="Ted.2024.S01-S02.720p.WEB-DL.x265", fileSize=4_500_000_000)],
+            "Ted Season 01": [_pack_result(fileName="Ted.2024.S01.2160p.PCOK.WEB-DL.H.265", fileUrl="magnet:?xt=urn:btih:BBBB", fileSize=35_000_000_000)],
+        }
+    )
+
+    result = download_pack(two, "series", qbt, dataclasses.replace(PipelineSettings.from_config(), min_resolution="480p"))
+
+    assert result.status == "no qualifying results"
+    assert result.note == "The only whole-series pack is 720p; the seasons come in 2160p"
+    assert qbt.added == []
+
+
+def test_download_pack_series_keeps_the_series_pack_when_it_is_as_good_as_the_seasons():
+    two = ShowIdentity(tmdb_id=1, title="Ted", original_title="Ted", variants=["Ted"], number_of_seasons=2, finished_seasons=2)
+    qbt = FakeQBTClient(
+        results_by_variant={
+            "Ted complete series": [_pack_result(fileName="Ted.2024.S01-S02.2160p.WEB-DL.x265", fileSize=60_000_000_000)],
+            "Ted Season 01": [_pack_result(fileName="Ted.2024.S01.2160p.PCOK.WEB-DL.H.265", fileUrl="magnet:?xt=urn:btih:BBBB", fileSize=35_000_000_000)],
+        }
+    )
+
+    result = download_pack(two, "series", qbt, dataclasses.replace(PipelineSettings.from_config(), min_resolution="480p"))
+
+    assert result.status == "added"
+    assert result.winner["fileName"] == "Ted.2024.S01-S02.2160p.WEB-DL.x265"

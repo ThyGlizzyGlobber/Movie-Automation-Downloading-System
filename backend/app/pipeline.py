@@ -76,6 +76,9 @@ class PackDownloadResult:
     candidates_considered: int = 0
     torrent_hash: str | None = None
     error: str | None = None
+    # Why a "no qualifying results" was chosen on purpose (a series pack
+    # was found, but the seasons are available at a higher quality).
+    note: str | None = None
 
 
 def _search_variant(
@@ -458,6 +461,27 @@ def _search_pack_queries(
     return dedup_candidates(combined)
 
 
+def _best_season_pack_tier(qbt: QBTClient, identity: ShowIdentity, existing_hashes: set[str], settings: PipelineSettings) -> int:
+    """The best resolution tier a season pack offers, probing season 1
+    with the show's main title only — enough to tell whether the seasons
+    are better than a whole-series pack, without a full second search."""
+
+    def gate(file_name: str, s: PipelineSettings) -> bool:
+        return passes_season_pack_gate(file_name, identity, 1, s)
+
+    found = _search_pack_queries(qbt, season_pack_queries(identity.variants[0], 1), gate, existing_hashes, settings)
+    if not found:
+        return 0
+    return rank_candidates(found)[0][1].resolution_score
+
+
+def _tier_label(tier: int) -> str:
+    for score, phrases in config.RESOLUTION_TIERS:
+        if score == tier:
+            return phrases[0]
+    return "unknown quality"
+
+
 def download_pack(
     identity: ShowIdentity,
     scope: str,
@@ -526,6 +550,23 @@ def download_pack(
             status="no qualifying results", identity=identity, scope=scope, season=season,
             season_range_end=season_range_end,
         )
+
+    if scope == "series":
+        # A whole-series pack is convenient, not sacred. Confirmed live
+        # 2026-09-17 (Ted): the only series pack was S01-S02 at 720p while
+        # every season had 2160p and 1080p packs of its own. When the
+        # seasons come in better, skip the series pack and let the
+        # worker's fallback ask for each season instead.
+        best_series = rank_candidates(candidates)[0][1].resolution_score
+        best_season = _best_season_pack_tier(qbt, identity, existing_hashes, settings)
+        if best_season > best_series:
+            return PackDownloadResult(
+                status="no qualifying results",
+                identity=identity,
+                scope=scope,
+                candidates_considered=len(candidates),
+                note=f"The only whole-series pack is {_tier_label(best_series)}; the seasons come in {_tier_label(best_season)}",
+            )
 
     fitting, attempt = _rank_and_add(qbt, candidates, free_space_bytes, config.TV_CATEGORY, existing_hashes)
     if not fitting or attempt is None:

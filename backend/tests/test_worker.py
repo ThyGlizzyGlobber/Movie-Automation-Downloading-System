@@ -1036,6 +1036,29 @@ def test_series_pack_fallback_asks_for_each_season_not_each_episode():
     assert worker.queue.get_nowait() == seasons[0].id
 
 
+def test_series_fallback_message_says_why_when_a_better_season_pack_exists():
+    store = RequestStore(":memory:")
+    show = store.create_show(tmdb_id=95350, title="Lanterns")
+    row = store.create_pack_request(tmdb_id=95350, show_id=show.id, title="Lanterns", season_number=None)
+    qbt = FakeQBTClient(
+        results_by_variant={
+            "Lanterns complete series": [_pack_result(fileName="Lanterns.S01-S02.720p.WEB-DL")],
+            "Lanterns Season 01": [_pack_result(fileName="Lanterns.S01.2160p.WEB-DL", fileUrl="magnet:?xt=urn:btih:BBBB")],
+        }
+    )
+    tmdb = FakeTMDBClient(
+        show={**SHOW, "number_of_seasons": 2},
+        season_episodes={1: _TWO_AIRED_ONE_FUTURE, 2: [{"episode_number": 1, "air_date": "2021-01-01"}]},
+    )
+    worker = Worker(store, tmdb, qbt)
+
+    asyncio.run(worker._run_one(row.id))
+
+    pack = store.get_request(row.id)
+    assert pack.error_message == "The only whole-series pack is 720p; the seasons come in 2160p, so its 2 seasons were requested one at a time."
+    assert sorted(r.season_number for r in store.list_requests() if r.media_type == "pack" and r.id != row.id) == [1, 2]
+
+
 def test_season_pack_from_a_series_fallback_still_drops_to_episodes():
     store = RequestStore(":memory:")
     show = store.create_show(tmdb_id=95350, title="Lanterns")

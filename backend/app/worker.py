@@ -306,7 +306,7 @@ class Worker:
         elif result.status in _DIRECT_TERMINAL_STATUSES:
             await asyncio.to_thread(self.store.update_status, request_id, result.status, result=summary)
             if row.media_type == "pack" and result.status == "no qualifying results":
-                await self._fall_back_from_pack(row, result.identity)
+                await self._fall_back_from_pack(row, result.identity, getattr(result, "note", None))
         elif result.status == "add failed":
             # Every fitting candidate across every variant failed to
             # actually add (see pipeline.py) — request status is "failed"
@@ -328,7 +328,7 @@ class Worker:
                 result=summary,
             )
 
-    async def _fall_back_from_pack(self, row, identity: ShowIdentity) -> None:
+    async def _fall_back_from_pack(self, row, identity: ShowIdentity, note: str | None = None) -> None:
         """A pack request that found nothing steps down one level: a
         whole-series (or season-range) request becomes one request per
         season, and a season request becomes one request per aired
@@ -337,11 +337,11 @@ class Worker:
         straight to single episodes would have meant dozens of poorly
         seeded downloads instead of two good ones."""
         if row.season_number is None or row.season_range_end is not None:
-            await self._fall_back_to_seasons(row, identity)
+            await self._fall_back_to_seasons(row, identity, note)
         else:
             await self._fall_back_to_episodes(row, identity)
 
-    async def _fall_back_to_seasons(self, row, identity: ShowIdentity) -> None:
+    async def _fall_back_to_seasons(self, row, identity: ShowIdentity, note: str | None = None) -> None:
         """One season-pack request per season in the failed request's
         scope, skipping seasons that have nothing aired, that are already
         fully in the ledger, or that already have a pack in flight or
@@ -394,11 +394,12 @@ class Worker:
             created.append(season_row.id)
 
         scope = "series pack" if row.season_number is None else "season-range pack"
+        lead = f"{note}, so" if note else f"No {scope} found, so"
         if created:
             n = len(created)
-            message = f"No {scope} found, so its {n} season{'s were' if n != 1 else ' was'} requested one at a time."
+            message = f"{lead} its {n} season{'s were' if n != 1 else ' was'} requested one at a time."
         else:
-            message = f"No {scope} found, and every season is already requested or in Plex."
+            message = f"{lead} nothing was added: every season is already requested or on Plex."
         await asyncio.to_thread(self.store.update_status, row.id, "no qualifying results", error_message=message)
         logger.info("pack fallback: %s -> %d per-season request(s)", _request_label(row), len(created))
         for season_id in created:
