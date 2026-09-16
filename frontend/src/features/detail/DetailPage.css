@@ -46,7 +46,7 @@
    it, the title and runtime under it, and the Request button. */
 .episode-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(176px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
   gap: 14px 12px;
 }
 .episode-card {

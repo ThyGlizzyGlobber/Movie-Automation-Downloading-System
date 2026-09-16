@@ -11,7 +11,8 @@ import LoadingState from '../../components/LoadingState'
 import ErrorState from '../../components/ErrorState'
 import Icon from '../../components/Icon'
 import DetailShell, { type DetailPill, type DetailRow, type DetailTile } from '../detail/DetailShell'
-import { DetailCast, peopleLinks, usePlexHref } from '../detail/DetailBits'
+import { DetailCast, peopleLinks, usePlexHref, useTitleRequests } from '../detail/DetailBits'
+import { latestRequestLabel } from '../../lib/requestGrouping'
 import { usePageTitle, useSetHasHero } from '../../lib/chrome'
 import { errorText, useToast } from '../../lib/toast'
 import { languageNameOf, tvCertificationOf, yearOf } from '../../lib/detailHelpers'
@@ -53,6 +54,7 @@ export default function ShowDetailPage() {
   const title = show?.name || show?.original_name || ''
   const year = yearOf(show?.first_air_date)
   const plexHref = usePlexHref('show', title, year, !!show?.on_plex)
+  const requests = useTitleRequests(tmdbId, ['episode', 'pack'])
 
   if (showQuery.isLoading) return <LoadingState />
   if (showQuery.isError || !show) {
@@ -242,10 +244,19 @@ export default function ShowDetailPage() {
         actions={actions}
         tiles={sideTiles}
         details={details}
+        requests={requests}
+        requestLabel={latestRequestLabel}
       >
-        {seasons.length > 0 && currentSeason != null && (
-          <>
-            <div className="detail-seasons">
+        <DetailCast cast={show.credits?.cast} />
+      </DetailShell>
+
+      {seasons.length > 0 && currentSeason != null && (
+        <section className="detail-section">
+          <div className="detail-section-head">
+            <h2>
+              Episodes <span>{currentSeasonLabel}</span>
+            </h2>
+            <div className="detail-season-actions">
               <div className="seg season-picker" role="tablist" aria-label="Season">
                 {seasons.map((s) => (
                   <button key={s.id} role="tab" aria-selected={s.season_number === currentSeason} className={s.season_number === currentSeason ? 'active' : ''} onClick={() => setActiveSeason(s.season_number)}>
@@ -253,18 +264,15 @@ export default function ShowDetailPage() {
                   </button>
                 ))}
               </div>
-              <div className="detail-season-actions">
-                <button className="btn sec sm" disabled={bulkBusyKey === `season-${currentSeason}`} onClick={() => handleBulkClick('season', currentSeason, currentSeasonLabel, `season-${currentSeason}`)}>
-                  <Icon name="download" />
-                  {bulkBusyKey === `season-${currentSeason}` ? 'Adding…' : `Request ${currentSeasonLabel.toLowerCase()}`}
-                </button>
-              </div>
+              <button className="btn sec sm" disabled={bulkBusyKey === `season-${currentSeason}`} onClick={() => handleBulkClick('season', currentSeason, currentSeasonLabel, `season-${currentSeason}`)}>
+                <Icon name="download" />
+                {bulkBusyKey === `season-${currentSeason}` ? 'Adding…' : `Request ${/^season \d/i.test(currentSeasonLabel) ? currentSeasonLabel.toLowerCase() : currentSeasonLabel}`}
+              </button>
             </div>
-            <EpisodeList tmdbId={tmdbId} season={currentSeason} />
-          </>
-        )}
-        <DetailCast cast={show.credits?.cast} />
-      </DetailShell>
+          </div>
+          <EpisodeList tmdbId={tmdbId} season={currentSeason} />
+        </section>
+      )}
 
       <div className="detail-rows">
         <MediaRow title="More" qualifier="like this" items={show.recommendations?.results ?? []} mediaType="tv" />

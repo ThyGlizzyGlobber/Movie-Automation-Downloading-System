@@ -192,6 +192,7 @@ export default function MovieDetailPage() {
         actions={actions}
         tiles={sideTiles}
         details={details}
+        requests={requests}
       >
         {active && (
           <div className="detail-status">

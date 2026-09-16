@@ -3,6 +3,9 @@ import { Link } from 'react-router-dom'
 import AmbientGlow from '../../components/AmbientGlow'
 import Icon from '../../components/Icon'
 import { backdropUrl, logoUrl, posterUrl } from '../../lib/tmdbImage'
+import { relativeTime } from '../../lib/format'
+import StatusPill from '../../components/StatusPill'
+import type { RequestOut } from '../../types/requests'
 import './DetailShell.css'
 
 export interface DetailTile {
@@ -43,6 +46,8 @@ export default function DetailShell({
   actions,
   tiles,
   details = [],
+  requests = [],
+  requestLabel,
   children,
 }: {
   backTo: string
@@ -60,6 +65,9 @@ export default function DetailShell({
   tiles: DetailTile[]
   /* Key / value facts under the tiles (rated, language, network…). */
   details?: DetailRow[]
+  /* The household's requests for this title, newest first. */
+  requests?: RequestOut[]
+  requestLabel?: (r: RequestOut) => string
   children?: ReactNode
 }) {
   const logo = logoUrl(logoPath)
@@ -101,6 +109,23 @@ export default function DetailShell({
                   </div>
                 ))}
               </dl>
+            )}
+            {requests.length > 0 && (
+              <div className="detail-requests">
+                <small>In the household</small>
+                {requests.slice(0, 5).map((r) => (
+                  <a className="detail-request" key={r.id} href="#/requests">
+                    <span className="detail-request-text">
+                      <b>{requestLabel ? requestLabel(r) : r.requested_by_username || 'Someone'}</b>
+                      <i>
+                        {requestLabel && r.requested_by_username ? `${r.requested_by_username} · ` : ''}
+                        {relativeTime(r.updated_at)}
+                      </i>
+                    </span>
+                    <StatusPill status={r.status} />
+                  </a>
+                ))}
+              </div>
             )}
           </aside>
           <section className="detail-card">
