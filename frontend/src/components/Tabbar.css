@@ -33,8 +33,14 @@
   transition: background 0.15s ease, color 0.15s ease;
 }
 /* The reference shows the label on the active tab only. */
+.tab-label {
+  white-space: nowrap;
+}
 .tab:not(.active) .tab-label {
   display: none;
+}
+.tab.active {
+  flex: 1.4;
 }
 .tab-icon {
   position: relative;
