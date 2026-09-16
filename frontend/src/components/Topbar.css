@@ -15,6 +15,19 @@
   gap: 6px;
   height: calc(66px + var(--safe-top));
   padding: calc(12px + var(--safe-top)) 20px 0 26px;
+  transition: opacity 0.7s ease;
+}
+/* While a hero trailer plays and the page sits at the top, the pill
+   fades most of the way out so it stops sitting on the video. It fades
+   back on scroll (body.scrolled), when the trailer stops, on hover,
+   with keyboard focus inside it, or when search opens. */
+body.trailer-playing:not(.scrolled) #topbar {
+  opacity: 0.22;
+}
+body.trailer-playing:not(.scrolled) #topbar:hover,
+body.trailer-playing:not(.scrolled) #topbar:focus-within,
+body.trailer-playing.search-open #topbar {
+  opacity: 1;
 }
 #topbar::before {
   content: '';
