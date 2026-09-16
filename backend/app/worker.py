@@ -360,6 +360,7 @@ class Worker:
             seasons = list(range(1, (show_data.get("number_of_seasons") or 0) + 1))
 
         tv_settings = await asyncio.to_thread(resolve_tv_settings, self.store)
+        on_plex = await asyncio.to_thread(self._episodes_on_plex, identity)
         created: list[int] = []
         for season_number in seasons:
             try:
@@ -370,8 +371,15 @@ class Worker:
             aired = aired_episode_numbers(episodes, buffer_hours=tv_settings.episode_air_buffer_hours)
             if not aired:
                 continue
-            handled = [await asyncio.to_thread(self.store.has_show_episode, show.id, season_number, e) for e in aired]
-            if all(handled):
+            had = []
+            for e in aired:
+                if (season_number, e) in on_plex:
+                    if not await asyncio.to_thread(self.store.has_live_show_episode, show.id, season_number, e):
+                        await asyncio.to_thread(self._mark_found, show, identity, season_number, e, "already on Plex, not downloaded by this app")
+                    had.append(True)
+                else:
+                    had.append(await asyncio.to_thread(self.store.has_live_show_episode, show.id, season_number, e))
+            if all(had):
                 continue
             attempts = await asyncio.to_thread(self.store.list_pack_requests_for_show, show.id, season_number, None)
             if attempts and (attempts[0].status in NON_TERMINAL_STATUSES or attempts[0].status in self._PACK_DONE_STATUSES):
@@ -418,6 +426,7 @@ class Worker:
         seasons = [row.season_number]
 
         tv_settings = await asyncio.to_thread(resolve_tv_settings, self.store)
+        on_plex = await asyncio.to_thread(self._episodes_on_plex, identity)
         created: list[int] = []
         for season_number in seasons:
             try:
@@ -426,7 +435,10 @@ class Worker:
                 logger.exception("pack fallback: couldn't fetch season %d for %s", season_number, _request_label(row))
                 continue
             for episode_number in aired_episode_numbers(episodes, buffer_hours=tv_settings.episode_air_buffer_hours):
-                if await asyncio.to_thread(self.store.has_show_episode, show.id, season_number, episode_number):
+                if await asyncio.to_thread(self.store.has_live_show_episode, show.id, season_number, episode_number):
+                    continue
+                if (season_number, episode_number) in on_plex:
+                    await asyncio.to_thread(self._mark_found, show, identity, season_number, episode_number, "already on Plex, not downloaded by this app")
                     continue
                 episode_row = await asyncio.to_thread(
                     self.store.create_episode_request,
@@ -898,40 +910,56 @@ class Worker:
         straight through to `aired_episode_numbers` — see tv_resolve.py's
         `_cutoff_date` for what it does and why."""
         aired = set(aired_episode_numbers(episodes, buffer_hours=buffer_hours))
+        on_plex = self._episodes_on_plex(identity)
         unhandled = []
         for episode_number in sorted(aired):
             if self.store.has_show_episode(show.id, season_number, episode_number):
                 continue
 
+            # Plex is the verifier: an episode the server already holds is
+            # done, whatever this app's own ledger says about it.
+            if (season_number, episode_number) in on_plex:
+                self._mark_found(show, identity, season_number, episode_number, "already on Plex, not downloaded by this app")
+                continue
+
             existing_path = find_existing_episode_file(identity, season_number, episode_number)
             if existing_path is not None:
-                request_row = self.store.create_episode_request(
-                    tmdb_id=show.tmdb_id,
-                    show_id=show.id,
-                    title=identity.title,
-                    season_number=season_number,
-                    episode_number=episode_number,
-                    poster_path=identity.poster_path,
-                )
-                self.store.update_status(
-                    request_row.id,
-                    "complete",
-                    result={"note": "found already on disk, not downloaded by this app", "path": str(existing_path)},
-                )
-                self.store.add_show_episode(show.id, season_number, episode_number, request_row.id)
-                logger.info(
-                    "show check: show %d (%s) S%02dE%02d already on disk (%s) — not downloading",
-                    show.id,
-                    show.title,
-                    season_number,
-                    episode_number,
-                    existing_path,
+                self._mark_found(
+                    show, identity, season_number, episode_number, "found already on disk, not downloaded by this app", str(existing_path)
                 )
                 continue
 
             unhandled.append(episode_number)
 
         return unhandled
+
+    def _episodes_on_plex(self, identity: ShowIdentity) -> set[tuple[int, int]]:
+        """What Plex holds of this show, or nothing when Plex isn't linked
+        or can't be reached (never a reason to stop a check)."""
+        try:
+            return plex.plex_show_episodes(self.store, identity.title, identity.first_air_year) or set()
+        except Exception:  # noqa: BLE001 — a Plex hiccup must not break a check
+            logger.exception("show check: couldn't list %s on Plex", identity.title)
+            return set()
+
+    def _mark_found(self, show: ShowRow, identity: ShowIdentity, season_number: int, episode_number: int, note: str, path: str | None = None) -> None:
+        """Records an episode the household already has (on Plex, or on
+        disk) as complete, so it's visible in the same history as anything
+        else and never requested again."""
+        request_row = self.store.create_episode_request(
+            tmdb_id=show.tmdb_id,
+            show_id=show.id,
+            title=identity.title,
+            season_number=season_number,
+            episode_number=episode_number,
+            poster_path=identity.poster_path,
+        )
+        result = {"note": note}
+        if path:
+            result["path"] = path
+        self.store.update_status(request_row.id, "complete", result=result)
+        self.store.add_show_episode(show.id, season_number, episode_number, request_row.id)
+        logger.info("show check: show %d (%s) S%02dE%02d %s — not downloading", show.id, show.title, season_number, episode_number, note)
 
     def _check_show_season(
         self,

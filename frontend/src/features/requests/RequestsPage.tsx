@@ -237,12 +237,17 @@ function groupProgress(rows: RequestOut[]): number | null {
 function ShowRow({ group, expanded, onToggle, onChanged }: { group: ShowGroup; expanded: boolean; onToggle: () => void; onChanged: () => void }) {
   const ready = group.rows.filter((r) => r.status === 'complete').length
   const active = group.rows.filter((r) => NON_TERMINAL.has(r.status)).length
+  const status = dominantStatus(group.rows)
+  // When the show as a whole reads as failed, say why: the newest failed
+  // row's own explanation (a pack that stepped aside, a floor miss…).
+  const explained = FAILED_STATES.has(status) ? group.rows.filter((r) => FAILED_STATES.has(r.status)).sort((a, b) => b.id - a.id)[0] : null
   const meta = [
     'Series',
     `${group.rows.length} item${group.rows.length === 1 ? '' : 's'}`,
     `${ready} on Plex`,
     active ? `${active} on the way` : null,
     relativeTime(group.rows.reduce((best, r) => (r.updated_at > best ? r.updated_at : best), group.rows[0].updated_at)),
+    explained ? statusDetail(explained.status, explained.download_progress, explained.error_message) : null,
   ]
     .filter(Boolean)
     .join(' · ')
@@ -252,7 +257,7 @@ function ShowRow({ group, expanded, onToggle, onChanged }: { group: ShowGroup; e
       title={group.title}
       href={`#/tv/${group.tmdbId}`}
       meta={meta}
-      status={dominantStatus(group.rows)}
+      status={status}
       progress={groupProgress(group.rows)}
       expanded={expanded}
       onToggle={onToggle}

@@ -265,6 +265,23 @@ class PlexClient:
         count = items[0].get("leafCount")
         return int(count) if count is not None else None
 
+    def show_episodes(self, server_url: str, server_token: str, rating_key: str) -> set[tuple[int, int]]:
+        """Every episode the server holds for a show, as (season, episode)
+        pairs — Plex's `allLeaves` listing, `parentIndex`/`index`."""
+        response = self.session.get(
+            f"{server_url}/library/metadata/{rating_key}/allLeaves",
+            headers={"Accept": "application/json", "X-Plex-Token": server_token},
+            timeout=15,
+        )
+        if not response.ok:
+            raise PlexError(f"Plex episode listing failed: {response.status_code}")
+        out: set[tuple[int, int]] = set()
+        for item in response.json().get("MediaContainer", {}).get("Metadata", []) or []:
+            season, episode = item.get("parentIndex"), item.get("index")
+            if season is not None and episode is not None:
+                out.add((int(season), int(episode)))
+        return out
+
     def sections(self, server_url: str, server_token: str) -> list[dict]:
         """The server's libraries: [{key, type ('movie'|'show'), title,
         locations: [paths]}], for the after-import refresh."""
@@ -614,3 +631,34 @@ def refresh_after_import(store, media_type: str, organized_path: str | None) -> 
     except Exception as exc:  # noqa: BLE001
         logger.info("plex refresh after import skipped: %s", exc)
         return False
+
+
+# Plex as the verifier of what a household actually has of a show: the
+# worker's follow check and pack fallbacks ask this before requesting
+# anything, so an episode already on the server is marked done rather
+# than fetched again — whatever the request ledger says about it.
+_show_episodes_cache: dict[tuple[str, str, int | None], tuple[float, set[tuple[int, int]] | None]] = {}
+_SHOW_EPISODES_TTL_SECONDS = 60.0
+
+
+def plex_show_episodes(store, title: str, year: int | None) -> set[tuple[int, int]] | None:
+    """The (season, episode) pairs Plex holds for `title`, or None when
+    Plex isn't linked or doesn't have the show at all. Cached a minute
+    per show so a check that walks every season asks once."""
+    settings = store.get_settings()
+    server_url, server_token = settings.get("plex_server_url"), settings.get("plex_server_token")
+    if not server_url or not server_token:
+        return None
+    key = (server_url, title, year)
+    hit = _show_episodes_cache.get(key)
+    now = time.monotonic()
+    if hit and now - hit[0] < _SHOW_EPISODES_TTL_SECONDS:
+        return hit[1]
+    client = PlexClient(settings.get("plex_client_id") or new_client_identifier())
+    try:
+        item = client.locate(server_url, server_token, "show", title, year)
+        episodes = client.show_episodes(server_url, server_token, item["rating_key"]) if item else None
+    except PlexError:
+        episodes = None
+    _show_episodes_cache[key] = (now, episodes)
+    return episodes

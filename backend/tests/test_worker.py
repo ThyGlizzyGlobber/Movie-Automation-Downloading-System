@@ -1059,6 +1059,59 @@ def test_series_fallback_message_says_why_when_a_better_season_pack_exists():
     assert sorted(r.season_number for r in store.list_requests() if r.media_type == "pack" and r.id != row.id) == [1, 2]
 
 
+def test_plex_is_the_verifier_for_the_follow_check(monkeypatch):
+    """An episode Plex already holds is marked done and never requested,
+    whatever the ledger says."""
+    from app import plex as plex_module
+
+    monkeypatch.setattr(plex_module, "plex_show_episodes", lambda store, title, year: {(1, 1)})
+    store = RequestStore(":memory:")
+    show = store.create_show(tmdb_id=95350, title="Lanterns")
+    tmdb = FakeTMDBClient(show={**SHOW, "number_of_seasons": 1}, season_episodes={1: _TWO_AIRED_ONE_FUTURE})
+    worker = Worker(store, tmdb, FakeQBTClient())
+
+    assert worker.check_show(show) == 1  # only episode 2 is fetched
+    rows = {(r.season_number, r.episode_number): r for r in store.list_requests() if r.media_type == "episode"}
+    assert rows[(1, 1)].status == "complete" and rows[(1, 1)].result == {"note": "already on Plex, not downloaded by this app"}
+    assert rows[(1, 2)].status == "queued"
+
+
+def test_plex_is_the_verifier_for_the_season_fallback(monkeypatch):
+    from app import plex as plex_module
+
+    monkeypatch.setattr(plex_module, "plex_show_episodes", lambda store, title, year: {(1, 1), (1, 2)})
+    store = RequestStore(":memory:")
+    show = store.create_show(tmdb_id=95350, title="Lanterns")
+    row = store.create_pack_request(tmdb_id=95350, show_id=show.id, title="Lanterns", season_number=None)
+    tmdb = FakeTMDBClient(
+        show={**SHOW, "number_of_seasons": 2},
+        season_episodes={1: _TWO_AIRED_ONE_FUTURE, 2: [{"episode_number": 1, "air_date": "2021-01-01"}]},
+    )
+    worker = Worker(store, tmdb, FakeQBTClient())
+
+    asyncio.run(worker._run_one(row.id))
+
+    # Season 1 is on Plex, so only season 2 is asked for; the two on-Plex episodes are recorded as done.
+    assert [r.season_number for r in store.list_requests() if r.media_type == "pack" and r.id != row.id] == [2]
+    assert sorted((r.season_number, r.episode_number) for r in store.list_requests() if r.media_type == "episode" and r.status == "complete") == [(1, 1), (1, 2)]
+
+
+def test_series_fallback_ignores_episodes_whose_own_attempts_failed():
+    store = RequestStore(":memory:")
+    show = store.create_show(tmdb_id=95350, title="Lanterns")
+    for ep in (1, 2):
+        old = store.create_episode_request(tmdb_id=95350, show_id=show.id, title="Lanterns", season_number=1, episode_number=ep)
+        store.add_show_episode(show.id, 1, ep, old.id)
+        store.update_status(old.id, "no qualifying results")
+    row = store.create_pack_request(tmdb_id=95350, show_id=show.id, title="Lanterns", season_number=None)
+    tmdb = FakeTMDBClient(show={**SHOW, "number_of_seasons": 1}, season_episodes={1: _TWO_AIRED_ONE_FUTURE})
+    worker = Worker(store, tmdb, FakeQBTClient())
+
+    asyncio.run(worker._run_one(row.id))
+
+    assert [r.season_number for r in store.list_requests() if r.media_type == "pack" and r.id != row.id] == [1]
+
+
 def test_series_fallback_ignores_episodes_a_person_cancelled():
     """Ted on the NAS: per-episode rows from an earlier fallback were
     cancelled, but still sat in the ledger, so the season fallback saw

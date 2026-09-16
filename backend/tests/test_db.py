@@ -649,3 +649,21 @@ def test_a_cancelled_request_releases_its_ledger_slot():
     assert store.has_show_episode(show.id, 1, 1) is True
     store.add_show_episode(show.id, 1, 1, first.id)
     assert store.list_show_episodes(show.id)[0].request_id == second.id
+
+
+def test_a_failed_request_does_not_count_as_live_and_gives_up_its_slot():
+    store = RequestStore(":memory:")
+    show = store.create_show(tmdb_id=95350, title="Lanterns")
+    first = store.create_episode_request(tmdb_id=95350, show_id=show.id, title="Lanterns", season_number=1, episode_number=1)
+    store.add_show_episode(show.id, 1, 1, first.id)
+    assert store.has_live_show_episode(show.id, 1, 1) is True  # queued counts as on the way
+
+    store.update_status(first.id, "no qualifying results")
+    assert store.has_show_episode(show.id, 1, 1) is True  # the scheduler's recheck still owns it
+    assert store.has_live_show_episode(show.id, 1, 1) is False
+
+    second = store.create_episode_request(tmdb_id=95350, show_id=show.id, title="Lanterns", season_number=1, episode_number=1)
+    store.add_show_episode(show.id, 1, 1, second.id)
+    assert store.list_show_episodes(show.id)[0].request_id == second.id
+    store.update_status(second.id, "complete")
+    assert store.has_live_show_episode(show.id, 1, 1) is True

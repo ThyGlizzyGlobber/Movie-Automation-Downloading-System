@@ -1038,17 +1038,39 @@ class RequestStore:
         ).fetchone()
         return row is not None
 
+    # A ledger slot whose request ended this way isn't getting the
+    # episode anywhere: a fresh request (a season pack's fallback, a new
+    # add) may take it over.
+    _DEAD_END_STATUSES = ("cancelled", "no qualifying results", "insufficient free space", "failed")
+
+    def has_live_show_episode(self, show_id: int, season_number: int, episode_number: int) -> bool:
+        """Whether the episode is on the way or already landed: in the
+        ledger with a request that is queued, searching, downloading,
+        importing or complete. Unlike `has_show_episode`, a slot held by
+        a request that failed doesn't count — the pack fallbacks use this
+        so a season with failed single-episode attempts still gets its
+        season pack (live 2026-09-17: Ted's seasons were skipped as
+        "handled" by dead per-episode rows)."""
+        row = self._conn.execute(
+            "SELECT 1 FROM show_episodes e JOIN requests r ON r.id = e.request_id "
+            "WHERE e.show_id = ? AND e.season_number = ? AND e.episode_number = ? "
+            "AND r.status IN ('queued', 'searching', 'downloading', 'downloaded, not filed', 'complete')",
+            (show_id, season_number, episode_number),
+        ).fetchone()
+        return row is not None
+
     def add_show_episode(self, show_id: int, season_number: int, episode_number: int, request_id: int) -> None:
         """Claims the episode's ledger slot for `request_id`. An existing
-        claim stands, unless its request was cancelled — then the new
-        request takes the slot over."""
+        claim stands, unless its request was cancelled or failed — then
+        the new request takes the slot over."""
         with self._lock:
             self._conn.execute(
                 "INSERT INTO show_episodes (show_id, season_number, episode_number, request_id, created_at) "
                 "VALUES (?, ?, ?, ?, ?) "
                 "ON CONFLICT(show_id, season_number, episode_number) DO UPDATE SET "
                 "request_id = excluded.request_id, created_at = excluded.created_at "
-                "WHERE (SELECT status FROM requests WHERE id = show_episodes.request_id) = 'cancelled'",
+                "WHERE (SELECT status FROM requests WHERE id = show_episodes.request_id) "
+                "IN ('cancelled', 'no qualifying results', 'insufficient free space', 'failed')",
                 (show_id, season_number, episode_number, request_id, _now()),
             )
             self._conn.commit()
