@@ -433,14 +433,24 @@
     grid-template-columns: 1fr;
     gap: 22px;
   }
+  /* Poster beside the tiles; the tile block stretches to the poster's
+     height so the two read as one row. */
   .detail-side {
     display: grid;
     grid-template-columns: 150px minmax(0, 1fr);
-    gap: 18px;
-    align-items: start;
+    gap: 14px;
+    align-items: stretch;
   }
   .detail-side .detail-tiles {
     margin-top: 0;
+    grid-template-rows: 1fr 1fr;
+    gap: 10px;
+  }
+  .detail-side .detail-tile {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    padding: 10px 14px;
   }
   .detail-side .detail-facts {
     grid-column: 1 / -1;
@@ -483,6 +493,9 @@
     padding-right: 20px;
   }
   .detail-side {
-    grid-template-columns: 120px minmax(0, 1fr);
+    grid-template-columns: 124px minmax(0, 1fr);
+  }
+  .detail-side .detail-tile b {
+    font-size: 16px;
   }
 }
