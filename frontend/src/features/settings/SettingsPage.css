@@ -14,19 +14,44 @@
   display: none;
 }
 @media (min-width: 860px) {
+  /* As wide as the top bar's pill (which sits --nav-side in from each
+     viewport edge; main already pads 14px). */
+  .settings-page {
+    margin: 0 calc(var(--nav-side) - 14px);
+    padding: 6px 14px 0;
+  }
   .settings-shell {
     flex-direction: row;
-    align-items: flex-start;
+    align-items: stretch;
     gap: 28px;
+    max-width: none;
   }
   .settings-nav-col {
     flex: 0 0 240px;
+  }
+  .settings-nav-list {
     position: sticky;
     top: calc(var(--topbar-h, 64px) + 20px);
   }
+  /* The two columns share a height: a short section's last card grows
+     to the nav's height; a long one simply scrolls past the sticky nav. */
   .settings-panel-col {
     flex: 1 1 auto;
     min-width: 0;
+    display: flex;
+    flex-direction: column;
+  }
+  .settings-section {
+    flex: 1 1 auto;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+  .settings-section > :last-child {
+    flex: 1 1 auto;
+  }
+  .settings-section .settings-panel-card {
+    margin-bottom: 0;
   }
   .settings-hide-mobile {
     display: block;

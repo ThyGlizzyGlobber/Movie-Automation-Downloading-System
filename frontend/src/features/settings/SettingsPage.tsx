@@ -1,7 +1,8 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useMediaQuery } from '../../lib/hooks'
 import { usePageTitle, useSetHasHero } from '../../lib/chrome'
 import SettingsNav, { SETTINGS_SECTIONS } from './SettingsNav'
+import DashboardPanel from './DashboardPanel'
 import PipelinePanel from './PipelinePanel'
 import TvSchedulePanel from './TvSchedulePanel'
 import RetentionPanel from './RetentionPanel'
@@ -17,8 +18,10 @@ import AboutPanel from './AboutPanel'
 import './SettingsPage.css'
 import Icon from '../../components/Icon'
 
-function renderPanel(key: string) {
+function renderPanel(key: string, jump: (key: string) => void) {
   switch (key) {
+    case 'dashboard':
+      return <DashboardPanel onOpen={jump} />
     case 'pipeline':
       return <PipelinePanel />
     case 'tv':
@@ -48,62 +51,48 @@ function renderPanel(key: string) {
   }
 }
 
-// Desktop: the reference's one long page of cards with a sticky sidebar
-// that follows the scroll and jumps to a card on click. Phones: a
-// section list that drills into one card at a time.
+function sectionFromHash(): string | null {
+  const hash = window.location.hash.split('#')[2]
+  const key = hash?.startsWith('settings-') ? hash.slice('settings-'.length) : null
+  return key && SETTINGS_SECTIONS.some((s) => s.key === key) ? key : null
+}
+
+// Desktop: a sticky sidebar and one section at a time, opening on the
+// dashboard, no page title. Phones: the section list, drilling into one section.
 export default function SettingsPage() {
   usePageTitle('Settings')
   useSetHasHero(false)
   const isDesktop = useMediaQuery('(min-width: 860px)')
-  const [activeSection, setActiveSection] = useState<string | null>(null)
-  const [spy, setSpy] = useState<string>(SETTINGS_SECTIONS[0].key)
-  const listRef = useRef<HTMLDivElement>(null)
+  const [section, setSection] = useState<string | null>(() => sectionFromHash())
 
   useEffect(() => {
-    if (!isDesktop || !listRef.current) return
-    const sections = Array.from(listRef.current.querySelectorAll<HTMLElement>('[data-section]'))
-    const observer = new IntersectionObserver(
-      (entries) => {
-        const visible = entries.filter((e) => e.isIntersecting).sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top)
-        if (visible[0]) setSpy((visible[0].target as HTMLElement).dataset.section!)
-      },
-      { rootMargin: '-120px 0px -60% 0px', threshold: 0 },
-    )
-    sections.forEach((s) => observer.observe(s))
-    return () => observer.disconnect()
-  }, [isDesktop])
-
-  useEffect(() => {
-    const hash = window.location.hash.split('#')[2]
-    if (hash?.startsWith('settings-')) jump(hash.slice('settings-'.length))
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isDesktop])
+    function onHash() {
+      const key = sectionFromHash()
+      if (key) setSection(key)
+    }
+    window.addEventListener('hashchange', onHash)
+    return () => window.removeEventListener('hashchange', onHash)
+  }, [])
 
   function jump(key: string) {
-    if (!isDesktop) {
-      setActiveSection(key)
-      return
-    }
-    setSpy(key)
-    listRef.current?.querySelector<HTMLElement>(`[data-section="${key}"]`)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    setSection(key)
+    window.scrollTo({ top: 0, behavior: 'smooth' })
   }
+
+  const current = isDesktop ? (section ?? 'dashboard') : section
 
   if (isDesktop) {
     return (
-      <div className="settings-shell">
-        <div className="settings-nav-col">
-          <SettingsNav active={spy} onSelect={jump} />
-        </div>
-        <div className="settings-panel-col" ref={listRef}>
-          <div className="settings-heading">
-            <h1 className="settings-title">Settings</h1>
-            <p className="settings-lead">Plex, downloads, storage and who can get in</p>
+      <div className="settings-page">
+        <div className="settings-shell">
+          <div className="settings-nav-col">
+            <SettingsNav active={current} onSelect={jump} />
           </div>
-          {SETTINGS_SECTIONS.map((s) => (
-            <section key={s.key} className="settings-section" data-section={s.key} id={`settings-${s.key}`}>
-              {renderPanel(s.key)}
+          <div className="settings-panel-col">
+            <section className="settings-section" key={current}>
+              {renderPanel(current!, jump)}
             </section>
-          ))}
+          </div>
         </div>
       </div>
     )
@@ -111,17 +100,17 @@ export default function SettingsPage() {
 
   return (
     <div className="settings-shell">
-      <div className={`settings-nav-col${activeSection ? ' settings-hide-mobile' : ''}`}>
-        <SettingsNav active={activeSection} onSelect={jump} />
+      <div className={`settings-nav-col${section ? ' settings-hide-mobile' : ''}`}>
+        <SettingsNav active={section} onSelect={jump} />
       </div>
-      <div className={`settings-panel-col${!activeSection ? ' settings-hide-mobile' : ''}`}>
-        {activeSection && (
+      <div className={`settings-panel-col${!section ? ' settings-hide-mobile' : ''}`}>
+        {section && (
           <>
-            <button className="settings-back-btn" onClick={() => setActiveSection(null)}>
+            <button className="settings-back-btn" onClick={() => setSection(null)}>
               <Icon name="back" />
               Settings
             </button>
-            {renderPanel(activeSection)}
+            {renderPanel(section, jump)}
           </>
         )}
       </div>

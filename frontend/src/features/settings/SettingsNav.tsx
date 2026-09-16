@@ -4,12 +4,13 @@ export interface SettingsSection {
   key: string
   label: string
   icon: IconName
-  group: 'Server' | 'Access' | 'System'
+  group: 'Overview' | 'Server' | 'Access' | 'System'
 }
 
 // Grouped the way the reference's settings sidebar is (Server / Access /
 // System); the panel keys are unchanged.
 export const SETTINGS_SECTIONS: SettingsSection[] = [
+  { key: 'dashboard', label: 'Dashboard', icon: 'home', group: 'Overview' },
   { key: 'plex', label: 'Plex', icon: 'plex', group: 'Server' },
   { key: 'connections', label: 'Services', icon: 'plug', group: 'Server' },
   { key: 'pipeline', label: 'Downloads', icon: 'sliders', group: 'Server' },
@@ -24,7 +25,7 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
   { key: 'about', label: 'About', icon: 'info', group: 'System' },
 ]
 
-const GROUPS: SettingsSection['group'][] = ['Server', 'Access', 'System']
+const GROUPS: SettingsSection['group'][] = ['Overview', 'Server', 'Access', 'System']
 
 export default function SettingsNav({ active, onSelect }: { active: string | null; onSelect: (key: string) => void }) {
   return (
