@@ -17,7 +17,6 @@ const GLYPHS = {
   next: <path d="M9 5l7 7-7 7" />,
   arrow: <path d="M4 12h16M13 5l7 7-7 7" />,
   plus: <path d="M12 5v14M5 12h14" />,
-  menu: <path d="M4 7h16M4 12h16M4 17h16" />,
   close: <path d="M6 6l12 12M18 6 6 18" />,
   check: <path d="M4.5 12.5l5 5L19.5 7" />,
   'check-circle': <><circle cx="12" cy="12" r="8.5" /><path d="M8.5 12.5l2.5 2.5 5-5.5" /></>,

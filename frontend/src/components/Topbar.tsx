@@ -42,47 +42,11 @@ export default function Topbar({ onOpenSearch }: { onOpenSearch: () => void }) {
     return () => observer.disconnect()
   }, [])
 
-  // With a trailer playing the tab is tucked away; the cursor coming
-  // within reach of the top edge (or focus landing in the bar) drops it
-  // back down — see Topbar.css's body.nav-reveal rules.
-  useEffect(() => {
-    let raf = 0
-    function onMove(e: MouseEvent) {
-      if (raf) return
-      raf = window.requestAnimationFrame(() => {
-        raf = 0
-        document.body.classList.toggle('nav-reveal', e.clientY < 120)
-      })
-    }
-    function onLeave() {
-      document.body.classList.remove('nav-reveal')
-    }
-    window.addEventListener('mousemove', onMove, { passive: true })
-    document.documentElement.addEventListener('mouseleave', onLeave)
-    return () => {
-      window.removeEventListener('mousemove', onMove)
-      document.documentElement.removeEventListener('mouseleave', onLeave)
-      document.body.classList.remove('nav-reveal')
-    }
-  }, [])
-
   const settingsActive = location.pathname.startsWith('/settings')
   const initials = initialsOf(session.data?.username)
 
   return (
-    <>
-      {/* While a hero trailer plays the pill bounces away into this
-          button; hovering or clicking it (or bringing the cursor near
-          the top) brings the pill back. */}
-      <button
-        id="navHamburger"
-        aria-label="Show navigation"
-        onMouseEnter={() => document.body.classList.add('nav-reveal')}
-        onClick={() => document.body.classList.add('nav-reveal')}
-      >
-        <Icon name="menu" />
-      </button>
-      <div id="topbar" ref={topbarRef}>
+    <div id="topbar" ref={topbarRef}>
       <NavLink id="topbarLogo" to="/home" aria-label="Meridian home">
         <span className="brand-wordmark">
           <img className="brand-mark" src="/brand-icon.svg" alt="" />
@@ -127,7 +91,6 @@ export default function Topbar({ onOpenSearch }: { onOpenSearch: () => void }) {
           <Avatar src="/api/me/avatar" name={session.data?.username} hasPicture={!!session.data?.avatar} />
         </button>
       </div>
-      </div>
-    </>
+    </div>
   )
 }
