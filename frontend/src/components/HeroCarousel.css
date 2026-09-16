@@ -260,9 +260,11 @@
     flex: 1 1 auto;
     justify-content: center;
   }
+  /* Out of the way of the wrapped action row: top corner, under the nav. */
   .home-hero-cert {
     right: 20px;
-    bottom: 40px;
+    bottom: auto;
+    top: calc(var(--topbar-h, 64px) + 14px);
   }
 }
 .home-hero-arrow {
