@@ -46,12 +46,25 @@ DEFAULT_PROFILE_ID = "default"
 _ID_RE = __import__("re").compile(r"^[a-z0-9][a-z0-9_-]{0,31}$")
 
 
+SHIPPED_SEEN_KEY = "shipped_profiles_seen"
+
+
 def resolve_profiles(settings: dict) -> dict:
     """The stored profiles (or the shipped defaults when none were ever
-    saved), always with a valid `default_profile_id`."""
+    saved), always with a valid `default_profile_id`. A shipped profile
+    added after the household last saved its list is appended, so a new
+    release's profile still shows up; one the household has already seen
+    (recorded on save, see `shipped_ids_seen`) and removed stays gone."""
     profiles = settings.get("quality_profiles")
     if not isinstance(profiles, list) or not profiles:
         profiles = [dict(p) for p in DEFAULT_PROFILES]
+    else:
+        profiles = [dict(p) for p in profiles]
+        seen = set(settings.get(SHIPPED_SEEN_KEY) or [])
+        present = {p.get("id") for p in profiles}
+        for shipped in DEFAULT_PROFILES:
+            if shipped["id"] not in present and shipped["id"] not in seen:
+                profiles.append(dict(shipped))
     default_id = settings.get("default_profile_id")
     if not any(p.get("id") == default_id for p in profiles):
         default_id = profiles[0]["id"]
@@ -88,3 +101,9 @@ def profile_min_resolution(settings: dict, profile_id: str) -> str | None:
         if p["id"] == profile_id:
             return p.get("min_resolution")
     raise KeyError(profile_id)
+
+
+def shipped_ids_seen() -> list[str]:
+    """Every shipped profile id, recorded alongside a saved list so a later
+    deletion of one of them is respected rather than undone on reload."""
+    return [p["id"] for p in DEFAULT_PROFILES]

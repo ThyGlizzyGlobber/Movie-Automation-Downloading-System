@@ -46,7 +46,14 @@ from app.pipeline_settings import (
     settings_from_raw,
 )
 from app.plex import LoginSession, PlexClient, PlexError, PlexLinker, new_client_identifier, plex_library_lookup
-from app.quality_profiles import DEFAULT_PROFILE_ID, profile_min_resolution, resolve_profiles, validate_profiles
+from app.quality_profiles import (
+    DEFAULT_PROFILE_ID,
+    SHIPPED_SEEN_KEY,
+    profile_min_resolution,
+    resolve_profiles,
+    shipped_ids_seen,
+    validate_profiles,
+)
 from app.qbt import QBTClient
 from app.resolve import resolve
 from app.tmdb import BROWSE_SORTS, TMDBClient, TMDBError, best_logo_path, best_trailer_key, is_movie_coming_soon, is_tv_upcoming
@@ -1839,7 +1846,13 @@ def set_quality_profiles(body: QualityProfilesIn, store: RequestStore = Depends(
         validate_profiles(profiles, body.default_profile_id)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
-    store.update_settings({"quality_profiles": profiles, "default_profile_id": body.default_profile_id})
+    store.update_settings(
+        {
+            "quality_profiles": profiles,
+            "default_profile_id": body.default_profile_id,
+            SHIPPED_SEEN_KEY: shipped_ids_seen(),
+        }
+    )
     return resolve_profiles(store.get_settings())
 
 

@@ -2584,6 +2584,39 @@ def api_state_login_session(client) -> "FakeLoginSession":
 #    details, Plex on-deck --
 
 
+def test_a_newly_shipped_profile_appears_even_after_the_household_saved_its_list(client_and_deps):
+    """The live NAS case: Quality profiles had been saved once (three
+    profiles), so the stored list masked the newly shipped "Anything"."""
+    client, store, *_ = client_and_deps
+    store.update_settings(
+        {
+            "quality_profiles": [
+                {"id": "default", "name": "Household default", "description": "", "min_resolution": None, "typical_size_gb": None},
+                {"id": "1080p", "name": "1080p", "description": "", "min_resolution": "1080p", "typical_size_gb": 8},
+            ],
+            "default_profile_id": "default",
+        }
+    )
+
+    ids = [p["id"] for p in client.get("/api/quality-profiles").json()["profiles"]]
+    assert ids == ["default", "1080p", "4k", "any"]
+
+    # Saving records the shipped set; deleting a shipped profile then sticks.
+    saved = client.put(
+        "/api/settings/quality-profiles",
+        json={
+            "profiles": [
+                {"id": "default", "name": "Household default", "description": "", "min_resolution": None, "typical_size_gb": None},
+                {"id": "any", "name": "Anything", "description": "", "min_resolution": "480p", "typical_size_gb": 2},
+            ],
+            "default_profile_id": "default",
+        },
+    )
+    assert saved.status_code == 200, saved.text
+    assert [p["id"] for p in saved.json()["profiles"]] == ["default", "any"]
+    assert [p["id"] for p in client.get("/api/quality-profiles").json()["profiles"]] == ["default", "any"]
+
+
 def test_quality_profiles_default_and_update(client_and_deps):
     client, store, _, _, _, _ = client_and_deps
     body = client.get("/api/quality-profiles").json()
