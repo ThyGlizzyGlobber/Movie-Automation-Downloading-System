@@ -62,10 +62,18 @@ body.search-open #topbar::before {
   align-items: center;
   font-family: var(--font-display);
   font-weight: 500;
-  font-size: 20px;
+  font-size: 24px;
   line-height: 1;
-  letter-spacing: -0.01em;
+  letter-spacing: -0.02em;
   color: var(--text);
+}
+@media (min-width: 860px) {
+  #topbarLogo .brand-wordmark {
+    font-size: 27px;
+  }
+  #topbarLogo {
+    margin-right: 22px;
+  }
 }
 
 /* Right-hand cluster: search, settings (admins), account. */
