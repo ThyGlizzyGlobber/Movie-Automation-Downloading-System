@@ -24,13 +24,18 @@
   justify-content: center;
   gap: 8px;
   height: 52px;
+  padding: 0;
   border-radius: var(--radius-pill);
   color: var(--text-dim);
+  font-family: inherit;
   font-size: 12px;
   font-weight: 700;
   background: none;
   border: none;
   transition: background 0.15s ease, color 0.15s ease;
+}
+button.tab:active {
+  background: rgba(255, 255, 255, 0.08);
 }
 /* Icons only: the label is kept for screen readers. */
 .tab-label {

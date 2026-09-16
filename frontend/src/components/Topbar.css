@@ -14,7 +14,9 @@
   align-items: center;
   gap: 6px;
   height: calc(66px + var(--safe-top));
-  padding: calc(12px + var(--safe-top)) 20px 0 26px;
+  /* The wordmark starts where the pill's left corner stops curving:
+     one radius (half the pill height) in from its edge. */
+  padding: calc(12px + var(--safe-top)) 20px 0 calc(14px + 27px);
   transition: opacity 0.7s ease;
 }
 /* While a hero trailer plays and the page sits at the top, the pill
@@ -85,7 +87,7 @@ body.search-open #topbar::before {
 }
 #searchToggleBtn,
 #accountToggle,
-#bellToggle {
+#topbar .bell-toggle {
   flex: 0 0 auto;
   background: var(--glass);
   border: none;
@@ -104,11 +106,11 @@ body.search-open #topbar::before {
 }
 #searchToggleBtn:active,
 #accountToggle:active,
-#bellToggle:active {
+.bell-toggle:active {
   background: var(--glass-strong);
 }
 #searchToggleBtn:hover,
-#bellToggle:hover,
+.bell-toggle:hover,
 body.search-open #searchToggleBtn {
   background: var(--btn-primary-bg);
   color: var(--on-light);
@@ -178,7 +180,7 @@ body.search-open #searchToggleBtn {
 @media (min-width: 860px) {
   #topbar {
     height: calc(88px + var(--safe-top));
-    padding: calc(24px + var(--safe-top)) calc(var(--nav-side) + 12px) 0 calc(var(--nav-side) + 22px);
+    padding: calc(24px + var(--safe-top)) calc(var(--nav-side) + 12px) 0 calc(var(--nav-side) + 32px);
   }
   #topbar::before {
     top: calc(24px + var(--safe-top));
@@ -199,7 +201,7 @@ body.search-open #searchToggleBtn {
     background: rgba(255, 255, 255, 0.04);
   }
   #accountToggle,
-  #bellToggle,
+  .bell-toggle,
   #searchToggleBtn {
     width: 40px;
     height: 40px;
@@ -207,7 +209,7 @@ body.search-open #searchToggleBtn {
 }
 
 /* Bell: a glowing ice dot when something landed in Plex today. */
-#bellToggle {
+.bell-toggle {
   position: relative;
 }
 .bell-dot {
@@ -299,4 +301,44 @@ body.search-open #searchToggleBtn {
 }
 .account-menu-item.danger .icon {
   color: var(--status-failed);
+}
+
+/* Phones: bell on the left, wordmark centred, avatar on the right;
+   search lives in the tab bar. */
+@media (max-width: 859px) {
+  #topbar {
+    padding-left: 22px;
+    padding-right: 22px;
+    justify-content: space-between;
+  }
+  #searchToggleBtn {
+    display: none;
+  }
+  /* The right cluster dissolves so the bell can sit at the far left
+     and the avatar at the far right. */
+  .top-nav-right {
+    display: contents;
+  }
+  #topbar .notif {
+    order: -1;
+    margin-right: auto;
+  }
+  #accountToggle {
+    margin-left: auto;
+  }
+  #topbarLogo {
+    position: absolute;
+    left: 50%;
+    top: calc(12px + var(--safe-top));
+    bottom: 0;
+    transform: translateX(-50%);
+    margin: 0;
+  }
+  .notif-top .notif-panel {
+    position: fixed;
+    top: calc(var(--topbar-h, 64px) + 4px);
+    right: 14px;
+    left: 14px;
+    width: auto;
+  }
 }

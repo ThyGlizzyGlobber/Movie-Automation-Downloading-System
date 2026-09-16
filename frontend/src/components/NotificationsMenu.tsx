@@ -9,7 +9,7 @@ import './NotificationsMenu.css'
 // The bell: unread dot, and a glass panel listing what landed or failed.
 // While a tab is open, new items also fire the browser's own
 // notification when that permission was granted.
-export default function NotificationsMenu() {
+export default function NotificationsMenu({ variant = 'top' }: { variant?: 'top' | 'tab' }) {
   const [open, setOpen] = useState(false)
   const navigate = useNavigate()
   const queryClient = useQueryClient()
@@ -41,8 +41,15 @@ export default function NotificationsMenu() {
     function onDoc(e: MouseEvent) {
       if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
     }
+    function onKey(e: KeyboardEvent) {
+      if (e.key === 'Escape') setOpen(false)
+    }
     document.addEventListener('mousedown', onDoc)
-    return () => document.removeEventListener('mousedown', onDoc)
+    document.addEventListener('keydown', onKey)
+    return () => {
+      document.removeEventListener('mousedown', onDoc)
+      document.removeEventListener('keydown', onKey)
+    }
   }, [open])
 
   async function toggle() {
@@ -55,10 +62,24 @@ export default function NotificationsMenu() {
   }
 
   return (
-    <div className="notif" ref={ref}>
-      <button id="bellToggle" aria-label={unread ? `${unread} new notifications` : 'Notifications'} aria-expanded={open} onClick={toggle}>
-        <Icon name="bell" />
-        {unread > 0 && <span className="bell-dot" />}
+    <div className={`notif notif-${variant}`} ref={ref}>
+      <button
+        className={variant === 'tab' ? `tab bell-toggle${open ? ' active' : ''}` : 'bell-toggle'}
+        aria-label={unread ? `${unread} new notifications` : 'Notifications'}
+        aria-expanded={open}
+        onClick={toggle}
+      >
+        {variant === 'tab' ? (
+          <span className="tab-icon">
+            <Icon name="bell" />
+            {unread > 0 && <span className="tab-badge">{unread > 99 ? '99+' : unread}</span>}
+          </span>
+        ) : (
+          <>
+            <Icon name="bell" />
+            {unread > 0 && <span className="bell-dot" />}
+          </>
+        )}
       </button>
       {open && (
         <div className="notif-panel" role="dialog" aria-label="Notifications">

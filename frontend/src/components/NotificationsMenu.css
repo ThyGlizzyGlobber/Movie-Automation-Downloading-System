@@ -103,15 +103,15 @@
   color: var(--text-dim);
   white-space: nowrap;
 }
-@media (max-width: 859px) {
-  .notif {
-    display: block;
-  }
-  .notif-panel {
-    position: fixed;
-    top: calc(var(--topbar-h, 64px) + 4px);
-    right: 14px;
-    left: 14px;
-    width: auto;
-  }
+/* In a tab bar the panel opens upward, above the bar. */
+.notif-tab {
+  display: contents;
+}
+.notif-tab .notif-panel {
+  position: fixed;
+  top: auto;
+  bottom: calc(92px + var(--safe-bottom));
+  right: 14px;
+  left: 14px;
+  width: auto;
 }

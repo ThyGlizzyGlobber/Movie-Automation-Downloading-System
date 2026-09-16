@@ -45,7 +45,7 @@ export default function AppShell() {
         <main>
           <Outlet />
         </main>
-        <Tabbar />
+        <Tabbar onOpenSearch={() => setSearchOpen(true)} />
         <StorageIndicator />
         <TutorialOverlay />
         <ToastStack />
