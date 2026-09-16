@@ -17,6 +17,14 @@
   overflow: hidden;
   background: var(--bg);
 }
+/* Tablets: at half the width the hero would sit right under the nav,
+   so it takes a bigger share of the width here and the text lands
+   lower, clear of the pill. */
+@media (min-width: 640px) and (max-width: 1099px) {
+  .home-hero {
+    --hero-h: clamp(520px, 66vw, 680px);
+  }
+}
 @media (max-width: 639px) {
   .home-hero {
     --hero-h: clamp(360px, 72svh, 560px);
