@@ -4,14 +4,13 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { getTvShow, listShows, createShow, pauseShow, resumeShow, deleteShow, bulkDownload } from '../../api/tv'
 import RequestModal from '../../components/RequestModal'
 import EpisodeList from './EpisodeList'
-import ScoreRing from '../../components/ScoreRing'
 import MediaRow from '../../components/MediaRow'
 import RedownloadModal from '../../components/RedownloadModal'
 import LoadingState from '../../components/LoadingState'
 import ErrorState from '../../components/ErrorState'
 import Icon from '../../components/Icon'
 import DetailShell, { type DetailPill, type DetailRow, type DetailTile } from '../detail/DetailShell'
-import { DetailCast, peopleLinks, usePlexHref, useTitleRequests } from '../detail/DetailBits'
+import { DetailCast, DetailTrailer, peopleLinks, usePlexHref, useTitleRequests } from '../detail/DetailBits'
 import { latestRequestLabel } from '../../lib/requestGrouping'
 import { usePageTitle, useSetHasHero } from '../../lib/chrome'
 import { errorText, useToast } from '../../lib/toast'
@@ -168,7 +167,6 @@ export default function ShowDetailPage() {
   const next = show.next_episode_to_air?.air_date
   const nextLabel = next ? new Date(`${next}T00:00:00`).toLocaleDateString(undefined, { weekday: 'short' }) : show.status === 'Ended' ? 'Ended' : '—'
   const sideTiles: DetailTile[] = []
-  if (show.vote_average) sideTiles.push({ label: 'Score', value: <ScoreRing voteAverage={show.vote_average} /> })
   sideTiles.push({ label: 'Seasons', value: String(seasons.length || '—') })
   sideTiles.push(
     subscription
@@ -248,6 +246,7 @@ export default function ShowDetailPage() {
         requestLabel={latestRequestLabel}
       >
         <DetailCast cast={show.credits?.cast} />
+        <DetailTrailer type="tv" tmdbId={tmdbId} backdropPath={show.backdrop_path} />
       </DetailShell>
 
       {seasons.length > 0 && currentSeason != null && (

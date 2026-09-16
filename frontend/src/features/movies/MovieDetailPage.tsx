@@ -4,7 +4,6 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { getMovie } from '../../api/movies'
 import { createRequest } from '../../api/requests'
 import StatusPill from '../../components/StatusPill'
-import ScoreRing from '../../components/ScoreRing'
 import MediaRow from '../../components/MediaRow'
 import RedownloadModal from '../../components/RedownloadModal'
 import RequestModal from '../../components/RequestModal'
@@ -12,7 +11,7 @@ import LoadingState from '../../components/LoadingState'
 import ErrorState from '../../components/ErrorState'
 import Icon from '../../components/Icon'
 import DetailShell, { type DetailPill, type DetailRow, type DetailTile } from '../detail/DetailShell'
-import { DetailCast, FactTiles, peopleLinks, qualityFromName, serviceTile, sourceFromName, usePlexHref, useTitleRequests } from '../detail/DetailBits'
+import { DetailCast, DetailTrailer, FactTiles, peopleLinks, qualityFromName, serviceTile, sourceFromName, usePlexHref, useTitleRequests } from '../detail/DetailBits'
 import { usePageTitle, useSetHasHero } from '../../lib/chrome'
 import { certificationOf, languageNameOf, yearOf, statusFollowupText } from '../../lib/detailHelpers'
 import { formatBytes } from '../../lib/format'
@@ -105,7 +104,6 @@ export default function MovieDetailPage() {
   if (genres) pills.push({ text: genres, mute: true })
 
   const sideTiles: DetailTile[] = []
-  if (movie.vote_average) sideTiles.push({ label: 'Score', value: <ScoreRing voteAverage={movie.vote_average} /> })
   const service = serviceTile(movie, false)
   if (service) sideTiles.push(service)
   sideTiles.push(
@@ -201,6 +199,7 @@ export default function MovieDetailPage() {
           </div>
         )}
         <DetailCast cast={movie.credits?.cast} />
+        <DetailTrailer type="movie" tmdbId={tmdbId} backdropPath={movie.backdrop_path} />
         {fileTiles && (
           <>
             <h4 className="detail-h4">File</h4>

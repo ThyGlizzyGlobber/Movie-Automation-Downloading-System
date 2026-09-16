@@ -2,6 +2,9 @@ import { Link } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { listRequests } from '../../api/requests'
 import { locateOnPlex } from '../../api/plex'
+import { getMovieTrailer } from '../../api/movies'
+import { getTvTrailer } from '../../api/tv'
+import { backdropUrl } from '../../lib/tmdbImage'
 import { profileUrl } from '../../lib/tmdbImage'
 import { plexWebUrl } from '../../lib/format'
 import { originalServiceMatch } from '../../lib/providers'
@@ -111,4 +114,24 @@ export function serviceTile(item: Parameters<typeof originalServiceMatch>[0], is
       </>
     ),
   }
+}
+
+// The title's trailer, played inline in the card when one is on file
+// (the same self-hosted file the home hero uses).
+export function DetailTrailer({ type, tmdbId, backdropPath }: { type: 'movie' | 'tv'; tmdbId: number; backdropPath: string | null | undefined }) {
+  const query = useQuery({
+    queryKey: ['trailer', type, tmdbId],
+    queryFn: () => (type === 'tv' ? getTvTrailer(tmdbId) : getMovieTrailer(tmdbId)),
+    staleTime: 600_000,
+    retry: false,
+  })
+  const url = query.data?.url
+  if (!url) return null
+  const poster = backdropUrl(backdropPath) ?? undefined
+  return (
+    <>
+      <DetailH4>Trailer</DetailH4>
+      <video className="detail-trailer" src={url} poster={poster} controls playsInline preload="metadata" />
+    </>
+  )
 }

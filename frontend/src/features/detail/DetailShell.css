@@ -89,6 +89,10 @@
   gap: 10px;
   margin-top: 16px;
 }
+/* A lone tile takes the full row. */
+.detail-tiles > .detail-tile:only-child {
+  grid-column: 1 / -1;
+}
 /* The side column's tiles are compact so the facts list fits below. */
 .detail-side .detail-tile {
   padding: 12px 14px;
@@ -100,13 +104,6 @@
 }
 .detail-side .detail-tile small {
   font-size: 10px;
-}
-.detail-side .detail-tile .score-ring {
-  width: 28px;
-  height: 28px;
-}
-.detail-side .detail-tile .score-ring span {
-  font-size: 9px;
 }
 /* Facts under the tiles: label / value rows. */
 .detail-facts {
@@ -186,13 +183,6 @@
 }
 .detail-tile.dim b {
   color: var(--text-dim);
-}
-.detail-tile .score-ring {
-  width: 34px;
-  height: 34px;
-}
-.detail-tile .score-ring span {
-  font-size: 10px;
 }
 .detail-tile img.detail-tile-icon {
   width: 24px;
@@ -450,6 +440,16 @@
 }
 .detail-cast a:hover b {
   color: var(--meridian-ice);
+}
+/* Trailer inside the card. */
+.detail-trailer {
+  display: block;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  border-radius: 18px;
+  background: #000;
+  box-shadow: 0 24px 44px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.12);
+  object-fit: cover;
 }
 /* Key rows (creators) inside the card. */
 .detail-krow {
