@@ -13,18 +13,12 @@ import { posterUrl } from '../../lib/tmdbImage'
 import { NON_TERMINAL, statusDetail } from '../../lib/status'
 import { requestLabelAndHref } from '../../lib/requestGrouping'
 import type { RequestOut } from '../../types/requests'
+import { RESOLUTION_OPTIONS } from './PipelinePanel'
 import './DashboardPanel.css'
 
 // Settings opens here: the household at a glance. Four numbers, the
 // library drive, who is downloading what right now, what Plex added
-// lately, and the two download knobs people actually reach for.
-
-const RESOLUTIONS = [
-  { value: '480p', label: 'Anything' },
-  { value: '720p', label: '720p or better' },
-  { value: '1080p', label: '1080p or better' },
-  { value: '2160p', label: '4K only' },
-]
+// lately, and the two Downloads settings people reach for.
 
 function Stat({ icon, tone, value, label }: { icon: Parameters<typeof Icon>[0]['name']; tone: string; value: string | number; label: string }) {
   return (
@@ -74,38 +68,50 @@ function ActiveRow({ r, hasAvatar }: { r: RequestOut; hasAvatar: boolean }) {
 
 function QuickSettings() {
   const queryClient = useQueryClient()
-  const query = useQuery({ queryKey: ['settings', 'pipeline'], queryFn: getPipelineSettings })
+  const pipeline = useQuery({ queryKey: ['settings', 'pipeline'], queryFn: getPipelineSettings })
   const [floor, setFloor] = useState<string | null>(null)
   const [maxSize, setMaxSize] = useState<string | null>(null)
   const [flash, setFlash] = useState<'saved' | 'error' | null>(null)
   useEffect(() => {
-    if (!query.data) return
-    setFloor(query.data.min_resolution)
-    setMaxSize(String(query.data.max_size_gb))
-  }, [query.data])
+    if (!pipeline.data) return
+    setFloor(pipeline.data.min_resolution)
+    setMaxSize(String(pipeline.data.max_size_gb))
+  }, [pipeline.data])
 
-  async function save(patch: { min_resolution?: string; max_size_gb?: number }) {
-    const s = query.data
-    if (!s) return
-    try {
-      await setPipelineSettings({
-        category: s.category,
-        min_resolution: patch.min_resolution ?? s.min_resolution,
-        min_size_gb: s.min_size_gb,
-        max_size_gb: patch.max_size_gb ?? s.max_size_gb,
-        language_allowlist: s.language_allowlist,
-        language_blocklist: s.language_blocklist,
-        language_required: s.language_required,
-      })
-      queryClient.invalidateQueries({ queryKey: ['settings', 'pipeline'] })
-      setFlash('saved')
-    } catch {
-      setFlash('error')
-    }
+  function done(ok: boolean) {
+    setFlash(ok ? 'saved' : 'error')
     window.setTimeout(() => setFlash(null), 1400)
   }
+  async function saveFloor(value: string) {
+    const s = pipeline.data
+    if (!s) return
+    setFloor(value)
+    try {
+      await setPipelineSettings({ ...s, min_resolution: value })
+      queryClient.invalidateQueries({ queryKey: ['settings', 'pipeline'] })
+      done(true)
+    } catch {
+      done(false)
+    }
+  }
+  async function saveMaxSize() {
+    const s = pipeline.data
+    if (!s) return
+    const n = Number(maxSize)
+    if (!(n > s.min_size_gb) || n === s.max_size_gb) {
+      setMaxSize(String(s.max_size_gb))
+      return
+    }
+    try {
+      await setPipelineSettings({ ...s, max_size_gb: n })
+      queryClient.invalidateQueries({ queryKey: ['settings', 'pipeline'] })
+      done(true)
+    } catch {
+      done(false)
+    }
+  }
 
-  if (!query.data || floor == null || maxSize == null) return null
+  if (floor == null || maxSize == null) return null
   return (
     <div className="dash-card">
       <div className="dash-card-head">
@@ -115,14 +121,8 @@ function QuickSettings() {
       <div className="dash-quick">
         <label>
           <span>Lowest quality to accept</span>
-          <select
-            value={floor}
-            onChange={(e) => {
-              setFloor(e.target.value)
-              save({ min_resolution: e.target.value })
-            }}
-          >
-            {RESOLUTIONS.map((r) => (
+          <select value={floor} onChange={(e) => saveFloor(e.target.value)}>
+            {RESOLUTION_OPTIONS.map((r) => (
               <option key={r.value} value={r.value}>
                 {r.label}
               </option>
@@ -132,23 +132,12 @@ function QuickSettings() {
         <label>
           <span>Largest download</span>
           <span className="dash-quick-unit">
-            <input
-              type="number"
-              min="1"
-              step="1"
-              value={maxSize}
-              onChange={(e) => setMaxSize(e.target.value)}
-              onBlur={() => {
-                const n = Number(maxSize)
-                if (n > query.data!.min_size_gb && n !== query.data!.max_size_gb) save({ max_size_gb: n })
-                else setMaxSize(String(query.data!.max_size_gb))
-              }}
-            />
+            <input type="number" min="1" step="1" value={maxSize} onChange={(e) => setMaxSize(e.target.value)} onBlur={saveMaxSize} />
             GB
           </span>
         </label>
       </div>
-      <p className="dash-card-foot">Everything else lives under Downloads in the list on the left.</p>
+      <p className="dash-card-foot">The same two settings as under Downloads, close to hand.</p>
     </div>
   )
 }

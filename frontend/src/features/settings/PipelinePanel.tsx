@@ -7,7 +7,8 @@ import ErrorState from '../../components/ErrorState'
 import { ApiError } from '../../api/client'
 import SettingRow from '../../components/SettingRow'
 
-const RESOLUTION_OPTIONS = [
+// Shared with the dashboard's quick settings so both read as one setting.
+export const RESOLUTION_OPTIONS = [
   { value: '2160p', label: '2160p / 4K' },
   { value: '1080p', label: '1080p' },
   { value: '720p', label: '720p' },
