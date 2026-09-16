@@ -67,6 +67,46 @@
 .search-overlay-recent-chip:hover {
   background: var(--glass-strong);
 }
+/* Poster strips while the field is empty (components/SearchSuggestions.tsx). */
+.search-suggestions {
+  display: grid;
+  gap: 6px;
+  padding: 10px 8px 4px;
+  min-width: 0;
+}
+.search-suggest {
+  min-width: 0;
+}
+.search-suggest-label {
+  display: block;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-dim);
+  margin-bottom: 8px;
+}
+.search-suggest-row {
+  --poster-w: 118px;
+  display: flex;
+  gap: 12px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 4px 0 10px;
+  scrollbar-width: none;
+  scroll-snap-type: x proximity;
+}
+.search-suggest-row::-webkit-scrollbar {
+  display: none;
+}
+.search-suggest-row .poster-card {
+  flex: 0 0 auto;
+  width: var(--poster-w);
+}
+.search-suggest-row .poster-caption b {
+  font-size: 12.5px;
+}
+.search-suggest-row .poster-caption small {
+  font-size: 11px;
+}
 .search-overlay-icon-btn {
   flex: 0 0 auto;
   background: none;

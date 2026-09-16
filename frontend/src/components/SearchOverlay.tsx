@@ -2,60 +2,15 @@ import { useEffect, useRef, useState, type KeyboardEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
 import Icon from './Icon'
 import SearchResults from './SearchResults'
+import SearchSuggestions from './SearchSuggestions'
 import { readRecentSearches, rememberSearch } from '../lib/recentSearches'
 import { hitHref, useLiveSearch, type SearchHit } from '../lib/liveSearch'
 import './SearchOverlay.css'
 
-const SEARCH_SUGGESTIONS = ['Dune', 'The Godfather', 'Inception', 'Interstellar', 'Parasite', 'The Dark Knight']
-const TYPE_MS = 90
-const DELETE_MS = 45
-const HOLD_MS = 2400
-const BETWEEN_MS = 1000
-
-// Revolving placeholder: types a suggested title out, holds, deletes it,
-// then moves to the next one — a terminal-style typing effect. Only ever
-// shows while the field is genuinely empty (a placeholder disappears the
-// instant there's real text), so it never interferes with typing/search.
-function useSearchPlaceholderTypewriter(active: boolean) {
-  const [placeholder, setPlaceholder] = useState('')
-  useEffect(() => {
-    if (!active) return
-    let phrase = 0
-    let chars = 0
-    let deleting = false
-    let timer: number
-    function tick() {
-      const target = `Search "${SEARCH_SUGGESTIONS[phrase]}"…`
-      if (!deleting) {
-        chars++
-        setPlaceholder(target.slice(0, chars))
-        if (chars === target.length) {
-          deleting = true
-          timer = window.setTimeout(tick, HOLD_MS)
-          return
-        }
-        timer = window.setTimeout(tick, TYPE_MS)
-      } else {
-        chars--
-        setPlaceholder(target.slice(0, chars))
-        if (chars === 0) {
-          deleting = false
-          phrase = (phrase + 1) % SEARCH_SUGGESTIONS.length
-          timer = window.setTimeout(tick, BETWEEN_MS)
-          return
-        }
-        timer = window.setTimeout(tick, DELETE_MS)
-      }
-    }
-    tick()
-    return () => window.clearTimeout(timer)
-  }, [active])
-  return placeholder
-}
-
 // The search palette: a glass panel with the query field, live results
-// with inline request actions (SearchResults), and recent searches while
-// the field is empty. Enter opens the highlighted result, or runs the
+// with inline request actions (SearchResults), and, while the field is
+// empty, recent searches plus what's trending and titles like the
+// household's latest request (SearchSuggestions). Enter opens the highlighted result, or runs the
 // full search page when nothing is highlighted.
 export default function SearchOverlay({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) {
   const [value, setValue] = useState('')
@@ -64,7 +19,6 @@ export default function SearchOverlay({ isOpen, onClose }: { isOpen: boolean; on
   const [tab, setTab] = useState<'all' | 'movie' | 'tv'>('all')
   const navigate = useNavigate()
   const inputRef = useRef<HTMLInputElement>(null)
-  const placeholder = useSearchPlaceholderTypewriter(isOpen)
   const live = useLiveSearch(value)
   const typed = value.trim()
   const allHits: SearchHit[] = typed.length >= 2 ? (live.data ?? []) : []
@@ -149,7 +103,7 @@ export default function SearchOverlay({ isOpen, onClose }: { isOpen: boolean; on
             enterKeyHint="search"
             aria-label="Search movies and TV shows"
             value={value}
-            placeholder={placeholder}
+            placeholder="Search movies and TV shows"
             onChange={(e) => setValue(e.target.value)}
             onKeyDown={onInputKeyDown}
           />
@@ -209,6 +163,7 @@ export default function SearchOverlay({ isOpen, onClose }: { isOpen: boolean; on
             ))}
           </div>
         )}
+        {!typed && <SearchSuggestions onPick={finish} />}
       </div>
     </div>
   )

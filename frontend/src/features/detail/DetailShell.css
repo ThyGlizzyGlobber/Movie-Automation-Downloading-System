@@ -38,7 +38,7 @@
   gap: 40px 64px;
   align-items: start;
 }
-/* Wide desktops: the landscape banner that replaces the poster. */
+/* Desktop (860px and up): the landscape banner that replaces the poster. */
 .detail-banner {
   display: none;
   position: relative;
@@ -88,7 +88,7 @@
   top: 18px;
   right: 18px;
 }
-@media (min-width: 1440px) {
+@media (min-width: 860px) {
   .detail-banner {
     display: block;
   }
@@ -122,6 +122,18 @@
     flex-direction: column;
     justify-content: space-between;
     min-height: 100%;
+    container-type: inline-size;
+  }
+  /* When the three buttons no longer fit on one line, the primary takes
+     the full column and the other two share the next row. */
+  @container (max-width: 540px) {
+    .detail-actions .btn {
+      flex: 1 1 calc(50% - 5px);
+      justify-content: center;
+    }
+    .detail-actions .btn.pri {
+      flex: 1 1 100%;
+    }
   }
   .detail-card-main .detail-syn {
     margin: 24px 0;
@@ -136,15 +148,18 @@
   .detail-card-aside .detail-h4 {
     margin-top: 0;
   }
-  /* Four across, two rows for the top eight; no strip, no arrows. */
+  /* Four across, two rows for the top eight; no strip, no arrows. A
+     wrapping row rather than a grid so a short last row sits centred. */
   .detail-card-aside .detail-cast {
-    display: grid;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
     gap: 22px 12px;
     overflow: visible;
     padding-bottom: 0;
   }
   .detail-card-aside .detail-cast a {
+    flex: 0 0 calc((100% - 36px) / 4);
     width: auto;
     min-width: 0;
   }
@@ -164,8 +179,32 @@
     margin-top: 40px;
   }
 }
-/* Narrower screens: one column, cast then trailer as before. */
-@media (max-width: 1439px) {
+/* The frame is the size container for the card: unless the frame is
+   wide enough for the text column to keep its buttons on one line with
+   the cast beside it (roughly a 1530px window), the cast drops under
+   the text instead of squeezing beside it. */
+@media (min-width: 860px) {
+  .detail-grid {
+    container-type: inline-size;
+  }
+  @container (max-width: 1400px) {
+    .detail-card {
+      grid-template-columns: minmax(0, 1fr);
+      grid-template-areas:
+        'main'
+        'aside'
+        'more';
+    }
+    .detail-card-main {
+      min-height: auto;
+    }
+    .detail-card-aside > .detail-h4 {
+      margin-top: 36px;
+    }
+  }
+}
+/* Phones and portrait tablets: one column, cast then trailer. */
+@media (max-width: 859px) {
   .detail-card {
     display: flex;
     flex-direction: column;
@@ -528,6 +567,8 @@
   top: 0;
   bottom: 30px;
   width: 48px;
+  /* Just the arrow over the faces, no fade behind it. */
+  background: none;
 }
 .detail-cast {
   display: flex;
