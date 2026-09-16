@@ -2136,6 +2136,28 @@ def get_plex_on_deck(store: RequestStore = Depends(get_store)) -> dict:
     return {"available": True, "machine_id": settings.get("plex_server_machine_id"), "items": items}
 
 
+@router.get("/api/plex/locate")
+def plex_locate(type: str, title: str, year: int | None = None, store: RequestStore = Depends(get_store)) -> dict:
+    """Where a title lives on the linked server, for the detail page's
+    Play button: {available, rating_key, machine_id}. Degrades to
+    available: false rather than erroring."""
+    if type not in ("movie", "show"):
+        raise HTTPException(status_code=400, detail="type must be movie or show")
+    settings = store.get_settings()
+    url, token = settings.get("plex_server_url"), settings.get("plex_server_token")
+    if not url or not token:
+        return {"available": False}
+    client = PlexClient(settings.get("plex_client_id") or new_client_identifier())
+    try:
+        found = client.locate(url, token, type, title, year)
+    except Exception as exc:  # noqa: BLE001
+        logger.info("plex locate unavailable: %s", exc)
+        return {"available": False}
+    if not found:
+        return {"available": False}
+    return {"available": True, "machine_id": settings.get("plex_server_machine_id"), **found}
+
+
 @router.get("/api/plex/recently-added")
 def get_plex_recently_added(store: RequestStore = Depends(get_store)) -> dict:
     """Plex's Recently Added, shaped for the Home row: one card per movie

@@ -18,6 +18,7 @@ export interface TmdbListItem {
   release_date?: string // movies
   first_air_date?: string // tv
   vote_average?: number
+  vote_count?: number
   genre_ids?: number[]
   // Home's hero carousel sorts trending movies+TV into one mixed list by
   // this — TMDB includes it on every list/trending/discover item.

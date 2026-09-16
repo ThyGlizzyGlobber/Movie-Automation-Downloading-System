@@ -48,3 +48,12 @@ export function getOnDeck() {
 export function getRecentlyAdded() {
   return request<RecentlyAdded>('/api/plex/recently-added')
 }
+
+export type PlexLocate = { available: false } | { available: true; rating_key: string; machine_id: string | null; title: string | null; year: number | null }
+
+// Where a title lives on the linked server (detail page Play button).
+export function locateOnPlex(type: 'movie' | 'show', title: string, year?: string | number | null) {
+  const q = new URLSearchParams({ type, title })
+  if (year) q.set('year', String(year))
+  return request<PlexLocate>(`/api/plex/locate?${q.toString()}`)
+}

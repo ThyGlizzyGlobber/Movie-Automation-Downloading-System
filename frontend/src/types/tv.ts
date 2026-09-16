@@ -22,6 +22,9 @@ export interface ContentRatingEntry {
 
 export interface EpisodeToAir {
   air_date: string | null
+  season_number?: number
+  episode_number?: number
+  name?: string
 }
 
 export interface TvDetail extends Omit<TmdbListItem, 'genre_ids'> {
