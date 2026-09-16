@@ -15,10 +15,10 @@ import type { CastMember } from '../../types/movies'
 import type { RequestOut } from '../../types/requests'
 import { DetailH4, type DetailTile } from './DetailShell'
 
-export function DetailCast({ cast }: { cast?: CastMember[] }) {
+export function DetailCast({ cast, limit = 16 }: { cast?: CastMember[]; limit?: number }) {
   const trackRef = useRef<HTMLDivElement>(null)
   const [atStart, setAtStart] = useState(true)
-  const top = (cast || []).slice(0, 16)
+  const top = (cast || []).slice(0, limit)
   if (!top.length) return null
   function scrollByPage(dir: number) {
     const track = trackRef.current

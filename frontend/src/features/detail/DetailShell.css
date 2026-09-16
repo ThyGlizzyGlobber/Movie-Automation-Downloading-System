@@ -32,34 +32,144 @@
   position: relative;
   z-index: 2;
 }
-.detail-back {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 13px;
-  font-weight: 700;
-  color: var(--text-dim);
-  margin-bottom: 28px;
-}
-.detail-back:hover {
-  color: var(--text);
-}
-.detail-circ {
-  width: 32px;
-  height: 32px;
-  border-radius: 50%;
-  background: var(--glass);
-  border: 1px solid var(--glass-border);
-  display: grid;
-  place-items: center;
-  font-size: 15px;
-  color: var(--text);
-}
 .detail-grid {
   display: grid;
   grid-template-columns: 330px minmax(0, 1fr);
   gap: 40px 64px;
   align-items: start;
+}
+/* Wide desktops: the landscape banner that replaces the poster. */
+.detail-banner {
+  display: none;
+  position: relative;
+  width: 100%;
+  aspect-ratio: 21 / 8;
+  max-height: 540px;
+  border-radius: 30px;
+  overflow: hidden;
+  margin-bottom: 40px;
+  background: var(--bg-card);
+  box-shadow: 0 50px 100px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(255, 255, 255, 0.12), inset 0 1px 0 rgba(255, 255, 255, 0.2);
+}
+.detail-banner-img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center 20%;
+}
+.detail-banner-fade {
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(0deg, rgba(5, 5, 8, 0.82) 0%, rgba(5, 5, 8, 0.35) 38%, transparent 70%),
+    linear-gradient(90deg, rgba(5, 5, 8, 0.55) 0%, transparent 55%);
+  pointer-events: none;
+}
+.detail-banner-text {
+  position: absolute;
+  left: 48px;
+  right: 48px;
+  bottom: 40px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 16px;
+}
+.detail-banner-text .detail-title {
+  margin: 0;
+}
+.detail-banner-text .detail-logo {
+  max-width: min(720px, 44%);
+  max-height: 240px;
+}
+.detail-banner .on-plex-badge {
+  top: 18px;
+  right: 18px;
+}
+@media (min-width: 1440px) {
+  .detail-banner {
+    display: block;
+  }
+  .detail-poster-wrap {
+    display: none;
+  }
+  .detail-side .detail-tiles {
+    margin-top: 0;
+  }
+  /* The banner carries the eyebrow and title; the card starts at the pills. */
+  .detail-card > .detail-eyebrow,
+  .detail-card > .detail-title {
+    display: none;
+  }
+  /* Two columns inside the card: pills at the top, the synopsis centred
+     and the actions at the bottom on the left, the cast (top eight,
+     larger faces, four across) beside them; the trailer
+     and anything else full width below. */
+  .detail-card {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(400px, 46%);
+    grid-template-areas:
+      'main aside'
+      'more more';
+    column-gap: 48px;
+    align-items: stretch;
+  }
+  .detail-card-main {
+    grid-area: main;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    min-height: 100%;
+  }
+  .detail-card-main .detail-syn {
+    margin: 24px 0;
+  }
+  .detail-card-aside {
+    grid-area: aside;
+    min-width: 0;
+  }
+  .detail-card-more {
+    grid-area: more;
+  }
+  .detail-card-aside .detail-h4 {
+    margin-top: 0;
+  }
+  /* Four across, two rows for the top eight; no strip, no arrows. */
+  .detail-card-aside .detail-cast {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 22px 12px;
+    overflow: visible;
+    padding-bottom: 0;
+  }
+  .detail-card-aside .detail-cast a {
+    width: auto;
+    min-width: 0;
+  }
+  .detail-card-aside .detail-cast img {
+    width: min(84px, 100%);
+    height: auto;
+    aspect-ratio: 1;
+  }
+  .detail-card-aside .hscroll-arrow {
+    display: none;
+  }
+  .detail-card-aside .detail-cast b {
+    font-size: 13px;
+    margin-top: 10px;
+  }
+  .detail-card-more > .detail-h4:first-child {
+    margin-top: 40px;
+  }
+}
+/* Narrower screens: one column, cast then trailer as before. */
+@media (max-width: 1439px) {
+  .detail-card {
+    display: flex;
+    flex-direction: column;
+  }
 }
 
 @media (min-width: 860px) {
@@ -270,11 +380,37 @@
   color: var(--text-dim);
   font-weight: 300;
 }
-.detail-section-head .detail-season-actions {
+/* Season buttons on the left, the request button on the same row. */
+.detail-season-bar {
   display: flex;
-  gap: 10px;
   align-items: center;
+  gap: 8px;
   flex-wrap: wrap;
+  margin-bottom: 18px;
+}
+.detail-season-bar .season-btn {
+  height: 36px;
+  padding: 0 16px;
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--glass-border);
+  background: var(--glass);
+  color: var(--text-dim);
+  font-size: 13px;
+  font-weight: 700;
+  white-space: nowrap;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+.detail-season-bar .season-btn:hover {
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.1);
+}
+.detail-season-bar .season-btn.active {
+  background: var(--btn-primary-bg);
+  border-color: transparent;
+  color: var(--on-light);
+}
+.detail-season-bar .btn {
+  margin-left: auto;
 }
 /* The glass card. */
 .detail-card {
@@ -287,37 +423,24 @@
   box-shadow: var(--glass-highlight);
   min-width: 0;
 }
+/* The status line, styled like the home hero's tag: plain green text
+   with an icon, no pill. Amber (coming soon) and dim keep their colour. */
 .detail-eyebrow {
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  padding: 7px 14px 7px 10px;
-  border-radius: var(--radius-pill);
-  background: var(--glass);
-  border: 1px solid var(--glass-border);
-  font-size: 12px;
-  font-weight: 700;
-  letter-spacing: 0.02em;
-  color: var(--meridian-ice);
-}
-.detail-eyebrow b {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: currentColor;
-  box-shadow: 0 0 12px currentColor;
-}
-.detail-eyebrow.mint {
   color: var(--status-complete);
+  font-size: 15px;
+  font-weight: 700;
+}
+.detail-eyebrow .icon {
+  font-size: 18px;
 }
 .detail-eyebrow.amber {
   color: var(--status-nomatch);
 }
 .detail-eyebrow.dim {
   color: var(--text-dim);
-}
-.detail-eyebrow.dim b {
-  box-shadow: none;
 }
 .detail-eyebrow + .detail-title {
   margin-top: 16px;
@@ -504,19 +627,24 @@
   display: flex;
   gap: 8px;
 }
-/* Live request state under the actions. */
+/* Live request state under the actions (inside the actions row). */
 .detail-status {
+  flex: 1 1 100%;
   display: flex;
   align-items: center;
   gap: 12px;
-  margin-top: 18px;
+  margin-top: 8px;
   font-size: 13px;
   font-weight: 600;
   color: var(--text-dim);
 }
-/* Rows below the frame sit at the normal page inset. */
+/* Rows below the frame sit at the normal page inset. After the episodes
+   section they keep the same gap the frame leaves above the episodes. */
 .detail-rows {
   margin-top: 8px;
+}
+.detail-section + .detail-rows {
+  margin-top: 62px;
 }
 
 @media (max-width: 1099px) {
@@ -533,53 +661,93 @@
     padding-top: calc(var(--topbar-h, 64px) + 20px);
     padding-bottom: 24px;
   }
-  .detail-grid {
-    grid-template-columns: 1fr;
-    gap: 22px;
+  /* One column, read top to bottom: the banner (status line and logo
+     inside it, as on wide desktops), pills, tiles, synopsis, buttons,
+     cast, facts, household requests, trailer. The side column and card
+     dissolve into the grid so their blocks can be ordered together. */
+  .detail-banner {
+    display: block;
+    aspect-ratio: 16 / 9;
+    max-height: none;
+    border-radius: 22px;
+    margin-bottom: 18px;
   }
-
-  /* Poster beside the tiles; the tile block stretches to the poster's
-     height so the two read as one row. */
-  .detail-side {
-    display: grid;
-    grid-template-columns: 150px minmax(0, 1fr);
-    gap: 14px;
-    align-items: stretch;
+  .detail-banner-text {
+    left: 22px;
+    right: 22px;
+    bottom: 20px;
+    gap: 10px;
+  }
+  .detail-banner-text .detail-logo {
+    max-width: 70%;
+    max-height: 120px;
+  }
+  .detail-banner .detail-eyebrow {
+    font-size: 13px;
+  }
+  .detail-banner .on-plex-badge {
+    top: 12px;
+    right: 12px;
+  }
+  .detail-grid {
+    /* minmax(0, …): a wide block (the cast strip's track) must never
+       stretch the column past the viewport. */
+    grid-template-columns: minmax(0, 1fr);
+    gap: 18px;
+  }
+  .detail-side,
+  .detail-card,
+  .detail-card-main,
+  .detail-poster-row {
+    display: contents;
+  }
+  .detail-grid > * {
+    min-width: 0;
+  }
+  /* The banner carries the eyebrow, title and poster art. */
+  .detail-card > .detail-eyebrow,
+  .detail-card > .detail-title,
+  .detail-poster-wrap {
+    display: none;
+  }
+  .detail-meta {
+    order: 3;
+  }
+  .detail-side .detail-tiles {
+    order: 4;
+  }
+  .detail-syn {
+    order: 5;
+    margin: 0;
+  }
+  .detail-actions {
+    order: 6;
+  }
+  .detail-card-aside {
+    order: 7;
+  }
+  .detail-facts {
+    order: 8;
+    margin: 0;
+  }
+  .detail-requests {
+    order: 9;
+    margin: 0;
+  }
+  .detail-card-more {
+    order: 10;
+  }
+  .detail-card-aside > .detail-h4:first-child,
+  .detail-card-more > .detail-h4:first-child {
+    margin-top: 6px;
   }
   .detail-side .detail-tiles {
     margin-top: 0;
-    grid-template-rows: 1fr 1fr;
     gap: 10px;
-  }
-  .detail-side .detail-tile {
-    display: flex;
-    flex-direction: column;
-    justify-content: center;
-    padding: 10px 14px;
-  }
-  .detail-side .detail-facts,
-  .detail-side .detail-requests {
-    grid-column: 1 / -1;
-  }
-  .detail-card {
-    padding: 0;
-    background: none;
-    border: 0;
-    backdrop-filter: none;
-    -webkit-backdrop-filter: none;
-    box-shadow: none;
-  }
-  .detail-title {
-    font-size: clamp(40px, 11vw, 56px);
-  }
-  .detail-logo {
-    max-height: 110px;
-    max-width: 80vw;
   }
   .detail-syn {
     font-size: 14px;
     line-height: 1.55;
-    margin: 16px 0 18px;
   }
   /* The primary button takes the full width; the rest share the next
      row two across. */
@@ -597,9 +765,10 @@
   .detail-tiles.four {
     grid-template-columns: 1fr 1fr;
   }
-  .detail-seasons .detail-season-actions {
+  .detail-season-bar .btn {
     margin-left: 0;
     width: 100%;
+    justify-content: center;
   }
 }
 @media (max-width: 639px) {
@@ -607,10 +776,44 @@
     padding-left: 20px;
     padding-right: 20px;
   }
-  .detail-side {
+  /* Phones: no banner or logo; the 2:3 poster carries the name, with
+     the tiles beside it, under the status line. */
+  .detail-banner {
+    display: none;
+  }
+  .detail-card > .detail-eyebrow {
+    display: inline-flex;
+    order: 1;
+    font-size: 13px;
+  }
+  .detail-poster-row {
+    display: grid;
     grid-template-columns: 124px minmax(0, 1fr);
+    gap: 12px;
+    align-items: stretch;
+    order: 2;
+  }
+  .detail-poster-wrap {
+    display: block;
+  }
+  .detail-poster {
+    border-radius: 16px;
+  }
+  .detail-poster-wrap .on-plex-badge {
+    top: 8px;
+    right: 8px;
+  }
+  .detail-side .detail-tiles {
+    order: initial;
+    grid-template-rows: 1fr 1fr;
+  }
+  .detail-side .detail-tile {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    padding: 10px 12px;
   }
   .detail-side .detail-tile b {
-    font-size: 16px;
+    font-size: 15px;
   }
 }

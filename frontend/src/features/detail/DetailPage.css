@@ -1,10 +1,6 @@
 /* Episode list on the show page (features/tv/EpisodeList.tsx); the
    page frame itself lives in DetailShell.css. */
 
-.season-picker {
-  margin-bottom: 16px;
-  flex-wrap: wrap;
-}
 .episode-progress {
   display: flex;
   align-items: center;
@@ -46,8 +42,13 @@
    it, the title and runtime under it, and the Request button. */
 .episode-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-  gap: 14px 12px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 16px 14px;
+}
+@media (max-width: 1099px) {
+  .episode-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
 }
 .episode-card {
   min-width: 0;

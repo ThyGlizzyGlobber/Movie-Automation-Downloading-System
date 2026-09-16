@@ -168,8 +168,6 @@ export default function MovieDetailPage() {
   return (
     <>
       <DetailShell
-        backTo="/movies"
-        backLabel="Movies"
         backdropPath={movie.backdrop_path}
         posterPath={movie.poster_path}
         logoPath={movie.logo_path}
@@ -179,18 +177,22 @@ export default function MovieDetailPage() {
         eyebrowTone={eyebrow.tone}
         pills={pills}
         overview={movie.overview}
-        actions={actions}
+        actions={
+          <>
+            {actions}
+            {active && (
+              <div className="detail-status">
+                <StatusPill status={active.status} />
+                <span>{statusFollowupText(active.status, active.error_message)}</span>
+              </div>
+            )}
+          </>
+        }
         tiles={sideTiles}
         details={details}
         requests={requests}
+        aside={<DetailCast cast={movie.credits?.cast} limit={8} />}
       >
-        {active && (
-          <div className="detail-status">
-            <StatusPill status={active.status} />
-            <span>{statusFollowupText(active.status, active.error_message)}</span>
-          </div>
-        )}
-        <DetailCast cast={movie.credits?.cast} />
         <DetailTrailer type="movie" tmdbId={tmdbId} backdropPath={movie.backdrop_path} />
         {fileTiles && (
           <>

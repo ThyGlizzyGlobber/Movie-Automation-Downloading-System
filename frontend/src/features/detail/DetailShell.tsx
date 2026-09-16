@@ -1,5 +1,4 @@
 import type { ReactNode } from 'react'
-import { Link } from 'react-router-dom'
 import AmbientGlow from '../../components/AmbientGlow'
 import Icon from '../../components/Icon'
 import { backdropUrl, logoUrl, posterUrl } from '../../lib/tmdbImage'
@@ -28,14 +27,15 @@ export interface DetailPill {
 }
 
 // The content page frame from the reference: a blurred backdrop with
-// the poster glow, a back link, the poster and four fact tiles on the
-// left, and a glass card on the right holding the eyebrow, the title
-// logo (or text), meta pills, the synopsis, the actions and whatever
-// the page adds beneath (cast, tiles, episodes). On phones the card is
-// dropped and the page itself is the surface.
+// the poster glow, the poster and fact tiles on the left, and a glass
+// card on the right holding the eyebrow, the title logo (or text), meta
+// pills, the synopsis, the actions and whatever the page adds beneath
+// (cast, trailer). On wide desktops the poster gives way to a landscape
+// banner spanning the frame with the eyebrow and logo inside it, and
+// both columns sit underneath; narrower screens keep the poster and
+// two-column layout, and on phones the card is dropped and the page
+// itself is the surface.
 export default function DetailShell({
-  backTo,
-  backLabel,
   backdropPath,
   posterPath,
   logoPath,
@@ -50,10 +50,9 @@ export default function DetailShell({
   details = [],
   requests = [],
   requestLabel,
+  aside,
   children,
 }: {
-  backTo: string
-  backLabel: string
   backdropPath: string | null | undefined
   posterPath: string | null | undefined
   logoPath: string | null | undefined
@@ -71,6 +70,9 @@ export default function DetailShell({
   /* The household's requests for this title, newest first. */
   requests?: RequestOut[]
   requestLabel?: (r: RequestOut) => string
+  /* Sits beside the synopsis and actions on wide desktops (the cast),
+     and between them and the children everywhere else. */
+  aside?: ReactNode
   children?: ReactNode
 }) {
   const logo = logoUrl(logoPath)
@@ -81,28 +83,40 @@ export default function DetailShell({
       {backdrop && <img className="detail-bd" src={backdrop} alt="" />}
       <div className="detail-fade" />
       <div className="detail-in">
-        <Link className="detail-back" to={backTo}>
-          <span className="detail-circ">
-            <Icon name="back" />
-          </span>
-          {backLabel}
-        </Link>
+        {backdrop && (
+          <div className="detail-banner">
+            <img className="detail-banner-img" src={backdropUrl(backdropPath, 'original')} alt="" />
+            <div className="detail-banner-fade" />
+            <div className="detail-banner-text">
+              <div className={`detail-title${logo ? ' has-logo' : ''}`}>{logo ? <img className="detail-logo" src={logoUrl(logoPath, 'original') ?? logo} alt={title} /> : title}</div>
+              {eyebrow && (
+                <span className={`detail-eyebrow ${eyebrowTone}`}>
+                  <Icon name="megaphone" />
+                  {eyebrow}
+                </span>
+              )}
+            </div>
+            {onPlex && <span className="on-plex-badge">On Plex</span>}
+          </div>
+        )}
         <div className="detail-grid">
           <aside className="detail-side">
-            <div className="detail-poster-wrap">
-              <img className="detail-poster" src={posterUrl(posterPath)} alt="" />
-              {onPlex && <span className="on-plex-badge">On Plex</span>}
-            </div>
-            {tiles.length > 0 && (
-              <div className="detail-tiles">
-                {tiles.map((t) => (
-                  <div className={`detail-tile${t.tone ? ` ${t.tone}` : ''}${t.wide ? ' wide' : ''}`} key={t.label}>
-                    <small>{t.label}</small>
-                    <b>{t.value}</b>
-                  </div>
-                ))}
+            <div className="detail-poster-row">
+              <div className="detail-poster-wrap">
+                <img className="detail-poster" src={posterUrl(posterPath)} alt="" />
+                {onPlex && <span className="on-plex-badge">On Plex</span>}
               </div>
-            )}
+              {tiles.length > 0 && (
+                <div className="detail-tiles">
+                  {tiles.map((t) => (
+                    <div className={`detail-tile${t.tone ? ` ${t.tone}` : ''}${t.wide ? ' wide' : ''}`} key={t.label}>
+                      <small>{t.label}</small>
+                      <b>{t.value}</b>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
             {details.length > 0 && (
               <dl className="detail-facts">
                 {details.map((d) => (
@@ -134,22 +148,25 @@ export default function DetailShell({
           <section className="detail-card">
             {eyebrow && (
               <span className={`detail-eyebrow ${eyebrowTone}`}>
-                <b />
+                <Icon name="megaphone" />
                 {eyebrow}
               </span>
             )}
             <h1 className={`detail-title${logo ? ' has-logo' : ''}`}>{logo ? <img className="detail-logo" src={logo} alt={title} /> : title}</h1>
-            <div className="detail-meta">
-              {pills.map((p, i) => (
-                <span key={i} className={`detail-pill${p.mute ? ' mute' : ''}`}>
-                  {p.star && <Icon name="star" className="detail-star" />}
-                  {p.text}
-                </span>
-              ))}
+            <div className="detail-card-main">
+              <div className="detail-meta">
+                {pills.map((p, i) => (
+                  <span key={i} className={`detail-pill${p.mute ? ' mute' : ''}`}>
+                    {p.star && <Icon name="star" className="detail-star" />}
+                    {p.text}
+                  </span>
+                ))}
+              </div>
+              {overview && <p className="detail-syn">{overview}</p>}
+              <div className="detail-actions">{actions}</div>
             </div>
-            {overview && <p className="detail-syn">{overview}</p>}
-            <div className="detail-actions">{actions}</div>
-            {children}
+            {aside && <div className="detail-card-aside">{aside}</div>}
+            <div className="detail-card-more">{children}</div>
           </section>
         </div>
       </div>

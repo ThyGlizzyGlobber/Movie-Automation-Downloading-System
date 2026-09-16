@@ -236,8 +236,6 @@ export default function ShowDetailPage() {
   return (
     <>
       <DetailShell
-        backTo="/tv"
-        backLabel="TV Shows"
         backdropPath={show.backdrop_path}
         posterPath={show.poster_path}
         logoPath={show.logo_path}
@@ -252,8 +250,8 @@ export default function ShowDetailPage() {
         details={details}
         requests={requests}
         requestLabel={latestRequestLabel}
+        aside={<DetailCast cast={show.credits?.cast} limit={8} />}
       >
-        <DetailCast cast={show.credits?.cast} />
         <DetailTrailer type="tv" tmdbId={tmdbId} backdropPath={show.backdrop_path} />
       </DetailShell>
 
@@ -263,19 +261,17 @@ export default function ShowDetailPage() {
           <h2>
             Episodes <span>{currentSeasonLabel}</span>
           </h2>
-          <div className="detail-season-actions">
-            <div className="seg season-picker" role="tablist" aria-label="Season">
-              {seasons.map((s) => (
-                <button key={s.id} role="tab" aria-selected={s.season_number === currentSeason} className={s.season_number === currentSeason ? 'active' : ''} onClick={() => setActiveSeason(s.season_number)}>
-                  {s.name || `Season ${s.season_number}`}
-                </button>
-              ))}
-            </div>
-            <button className="btn sec sm" disabled={bulkBusyKey === `season-${currentSeason}`} onClick={() => handleBulkClick('season', currentSeason, currentSeasonLabel, `season-${currentSeason}`)}>
-              <Icon name="download" />
-              {bulkBusyKey === `season-${currentSeason}` ? 'Adding…' : `Request ${/^season \d/i.test(currentSeasonLabel) ? currentSeasonLabel.toLowerCase() : currentSeasonLabel}`}
+        </div>
+        <div className="detail-season-bar" role="tablist" aria-label="Season">
+          {seasons.map((s) => (
+            <button key={s.id} role="tab" aria-selected={s.season_number === currentSeason} className={`season-btn${s.season_number === currentSeason ? ' active' : ''}`} onClick={() => setActiveSeason(s.season_number)}>
+              {s.name || `Season ${s.season_number}`}
             </button>
-          </div>
+          ))}
+          <button className="btn sec sm" disabled={bulkBusyKey === `season-${currentSeason}`} onClick={() => handleBulkClick('season', currentSeason, currentSeasonLabel, `season-${currentSeason}`)}>
+            <Icon name="download" />
+            {bulkBusyKey === `season-${currentSeason}` ? 'Adding…' : `Request ${/^season \d/i.test(currentSeasonLabel) ? currentSeasonLabel.toLowerCase() : currentSeasonLabel}`}
+          </button>
         </div>
         <EpisodeList tmdbId={tmdbId} season={currentSeason} />
       </section>

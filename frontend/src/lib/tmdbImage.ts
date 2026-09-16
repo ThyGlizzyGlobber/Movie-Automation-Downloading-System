@@ -24,8 +24,8 @@ export function posterUrl(path: string | null | undefined): string {
   return path ? IMG_BASE + POSTER_SIZE + path : PLACEHOLDER_POSTER
 }
 
-export function backdropUrl(path: string | null | undefined): string {
-  return path ? IMG_BASE + BACKDROP_SIZE + path : ''
+export function backdropUrl(path: string | null | undefined, size: string = BACKDROP_SIZE): string {
+  return path ? IMG_BASE + size + path : ''
 }
 
 export function profileUrl(path: string | null | undefined): string {
@@ -44,6 +44,6 @@ export function sampleUrl(path: string | null | undefined): string {
 
 // Title logos: transparent PNGs, served at 500px wide which is plenty
 // for a hero at 2x.
-export function logoUrl(path: string | null | undefined): string | null {
-  return path ? `https://image.tmdb.org/t/p/w500${path}` : null
+export function logoUrl(path: string | null | undefined, size: 'w500' | 'original' = 'w500'): string | null {
+  return path ? `https://image.tmdb.org/t/p/${size}${path}` : null
 }
