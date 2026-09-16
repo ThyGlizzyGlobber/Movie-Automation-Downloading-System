@@ -629,3 +629,23 @@ def test_add_rejected_torrent_allows_multiple_hashes_for_the_same_movie():
     store.add_rejected_torrent(693134, "BBBB")
 
     assert store.get_rejected_torrent_hashes(693134) == {"aaaa", "bbbb"}
+
+
+def test_a_cancelled_request_releases_its_ledger_slot():
+    store = RequestStore(":memory:")
+    show = store.create_show(tmdb_id=95350, title="Lanterns")
+    first = store.create_episode_request(tmdb_id=95350, show_id=show.id, title="Lanterns", season_number=1, episode_number=1)
+    store.add_show_episode(show.id, 1, 1, first.id)
+    assert store.has_show_episode(show.id, 1, 1) is True
+
+    store.update_status(first.id, "cancelled")
+    assert store.has_show_episode(show.id, 1, 1) is False
+
+    # A new request takes the slot over; a live claim would have stood.
+    second = store.create_episode_request(tmdb_id=95350, show_id=show.id, title="Lanterns", season_number=1, episode_number=1)
+    store.add_show_episode(show.id, 1, 1, second.id)
+    [ledger] = store.list_show_episodes(show.id)
+    assert ledger.request_id == second.id
+    assert store.has_show_episode(show.id, 1, 1) is True
+    store.add_show_episode(show.id, 1, 1, first.id)
+    assert store.list_show_episodes(show.id)[0].request_id == second.id

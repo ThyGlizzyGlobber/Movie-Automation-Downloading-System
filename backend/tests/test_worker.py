@@ -1059,6 +1059,26 @@ def test_series_fallback_message_says_why_when_a_better_season_pack_exists():
     assert sorted(r.season_number for r in store.list_requests() if r.media_type == "pack" and r.id != row.id) == [1, 2]
 
 
+def test_series_fallback_ignores_episodes_a_person_cancelled():
+    """Ted on the NAS: per-episode rows from an earlier fallback were
+    cancelled, but still sat in the ledger, so the season fallback saw
+    both seasons as handled and asked for nothing."""
+    store = RequestStore(":memory:")
+    show = store.create_show(tmdb_id=95350, title="Lanterns")
+    for ep in (1, 2):
+        old = store.create_episode_request(tmdb_id=95350, show_id=show.id, title="Lanterns", season_number=1, episode_number=ep)
+        store.add_show_episode(show.id, 1, ep, old.id)
+        store.update_status(old.id, "cancelled")
+    row = store.create_pack_request(tmdb_id=95350, show_id=show.id, title="Lanterns", season_number=None)
+    tmdb = FakeTMDBClient(show={**SHOW, "number_of_seasons": 1}, season_episodes={1: _TWO_AIRED_ONE_FUTURE})
+    worker = Worker(store, tmdb, FakeQBTClient())
+
+    asyncio.run(worker._run_one(row.id))
+
+    assert store.get_request(row.id).error_message == "No series pack found, so its 1 season was requested one at a time."
+    assert [r.season_number for r in store.list_requests() if r.media_type == "pack" and r.id != row.id] == [1]
+
+
 def test_season_pack_from_a_series_fallback_still_drops_to_episodes():
     store = RequestStore(":memory:")
     show = store.create_show(tmdb_id=95350, title="Lanterns")

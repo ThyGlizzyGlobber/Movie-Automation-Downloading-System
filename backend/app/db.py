@@ -1024,17 +1024,31 @@ class RequestStore:
     # -- show_episodes (Stage 12 per-episode dedup ledger) --
 
     def has_show_episode(self, show_id: int, season_number: int, episode_number: int) -> bool:
+        """Whether this episode is handled: in the ledger with a request
+        that wasn't cancelled. A cancelled request is a person saying
+        "not this one" — it must not keep the episode off the table for
+        every later season, series or follow request (live 2026-09-17:
+        cancelled per-episode rows for Ted made the season fallback skip
+        both seasons as "already handled")."""
         row = self._conn.execute(
-            "SELECT 1 FROM show_episodes WHERE show_id = ? AND season_number = ? AND episode_number = ?",
+            "SELECT 1 FROM show_episodes e LEFT JOIN requests r ON r.id = e.request_id "
+            "WHERE e.show_id = ? AND e.season_number = ? AND e.episode_number = ? "
+            "AND COALESCE(r.status, '') != 'cancelled'",
             (show_id, season_number, episode_number),
         ).fetchone()
         return row is not None
 
     def add_show_episode(self, show_id: int, season_number: int, episode_number: int, request_id: int) -> None:
+        """Claims the episode's ledger slot for `request_id`. An existing
+        claim stands, unless its request was cancelled — then the new
+        request takes the slot over."""
         with self._lock:
             self._conn.execute(
-                "INSERT OR IGNORE INTO show_episodes "
-                "(show_id, season_number, episode_number, request_id, created_at) VALUES (?, ?, ?, ?, ?)",
+                "INSERT INTO show_episodes (show_id, season_number, episode_number, request_id, created_at) "
+                "VALUES (?, ?, ?, ?, ?) "
+                "ON CONFLICT(show_id, season_number, episode_number) DO UPDATE SET "
+                "request_id = excluded.request_id, created_at = excluded.created_at "
+                "WHERE (SELECT status FROM requests WHERE id = show_episodes.request_id) = 'cancelled'",
                 (show_id, season_number, episode_number, request_id, _now()),
             )
             self._conn.commit()
