@@ -115,7 +115,7 @@ export default function HomePage() {
     <MediaRow key="trending" title="Trending" qualifier="now" items={mixedTrending} mediaType={(it) => it.mediaType} expandHref={browseHref({ type: 'movie', sort: 'trending' })} />,
     <MediaRow key="popular-movies" title="Popular" qualifier="movies" items={moviePopular.data?.results ?? []} mediaType="movie" expandHref={browseHref({ type: 'movie' })} />,
     <MediaRow key="popular-tv" title="Popular" qualifier="TV shows" items={tvPopular.data?.results ?? []} mediaType="tv" expandHref={browseHref({ type: 'tv' })} />,
-    <MediaRow key="new-releases" title="New" qualifier="releases" items={comingSoon.data?.results ?? []} mediaType="movie" expandHref={browseHref({ type: 'movie', list: 'coming-soon' })} />,
+    <MediaRow key="coming-soon" title="Coming" qualifier="soon" items={comingSoon.data?.results ?? []} mediaType="movie" expandHref={browseHref({ type: 'movie', list: 'coming-soon' })} />,
     ...genreRows,
   ]
   if (subscribedShows.length) {

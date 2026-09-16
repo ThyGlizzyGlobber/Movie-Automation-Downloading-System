@@ -249,6 +249,22 @@ class PlexClient:
         item = best[1]
         return {"rating_key": str(item.get("ratingKey")), "title": item.get("title"), "year": item.get("year")}
 
+    def leaf_count(self, server_url: str, server_token: str, rating_key: str) -> int | None:
+        """How many episodes the server holds for a show (Plex's own
+        `leafCount` on the show item), or None when it can't say."""
+        response = self.session.get(
+            f"{server_url}/library/metadata/{rating_key}",
+            headers={"Accept": "application/json", "X-Plex-Token": server_token},
+            timeout=10,
+        )
+        if not response.ok:
+            raise PlexError(f"Plex metadata fetch failed: {response.status_code}")
+        items = response.json().get("MediaContainer", {}).get("Metadata", []) or []
+        if not items:
+            return None
+        count = items[0].get("leafCount")
+        return int(count) if count is not None else None
+
     def sections(self, server_url: str, server_token: str) -> list[dict]:
         """The server's libraries: [{key, type ('movie'|'show'), title,
         locations: [paths]}], for the after-import refresh."""

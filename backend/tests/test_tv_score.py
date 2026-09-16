@@ -200,3 +200,35 @@ def test_episode_gate_accepts_the_title_when_metadata_follows_it():
 
 def test_episode_gate_accepts_region_tags_after_the_title():
     assert passes_episode_relevance_gate("The.Office.US.S01E04.2160p.WEB-DL.mkv", OFFICE, 1, 4) is True
+
+
+# The title must be the release's own title: nothing but noise in front
+# of it, and a year right after it must be the show's own. Live 2026-09-17:
+# Batman: The Brave and the Bold fetched "The Batman (2004)", Ted fetched
+# "Better Off Ted (2009)".
+BRAVE = ShowIdentity(
+    tmdb_id=15804,
+    title="Batman: The Brave and the Bold",
+    original_title="Batman: The Brave and the Bold",
+    variants=["Batman: The Brave and the Bold", "Batman", "The Brave and the Bold"],
+    first_air_year=2008,
+)
+TED_2024 = ShowIdentity(tmdb_id=1, title="Ted", original_title="Ted", variants=["Ted"], first_air_year=2024)
+
+
+def test_episode_gate_rejects_a_title_with_other_title_words_in_front():
+    assert passes_episode_relevance_gate("The.Batman.2004.S01E01.2160p.BluRay.mkv", BRAVE, 1, 1) is False
+    assert passes_episode_relevance_gate("Better.Off.Ted.2009.S01E01.2160p.WEB-DL.mkv", TED_2024, 1, 1) is False
+
+
+def test_episode_gate_allows_tracker_noise_and_metadata_in_front():
+    assert passes_episode_relevance_gate("[P] Ted S01E01 2160p WEB-DL", TED_2024, 1, 1) is True
+    assert passes_episode_relevance_gate("EZTV - Ted S01E01 2160p WEB-DL", TED_2024, 1, 1) is True
+    assert passes_episode_relevance_gate("2160p Ted S01E01 WEB-DL", TED_2024, 1, 1) is True
+
+
+def test_episode_gate_checks_a_year_sitting_right_after_the_title():
+    assert passes_episode_relevance_gate("Ted.2024.S01E01.2160p.WEB-DL.mkv", TED_2024, 1, 1) is True
+    assert passes_episode_relevance_gate("Ted.2009.S01E01.2160p.WEB-DL.mkv", TED_2024, 1, 1) is False
+    # A year elsewhere in the name (a season's own year) is left alone.
+    assert passes_episode_relevance_gate("Batman.The.Brave.and.the.Bold.S03E01.2010.2160p.mkv", BRAVE, 3, 1) is True

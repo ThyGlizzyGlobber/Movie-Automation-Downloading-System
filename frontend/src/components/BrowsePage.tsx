@@ -21,7 +21,7 @@ const SORTS: { id: BrowseSort; label: string }[] = [
 ]
 const AVAILABILITY: { id: Availability; label: string }[] = [
   { id: 'all', label: 'All' },
-  { id: 'plex', label: 'In Plex' },
+  { id: 'plex', label: 'On Plex' },
   { id: 'requested', label: 'On the way' },
   { id: 'missing', label: 'Not yet' },
 ]
@@ -104,7 +104,7 @@ export default function BrowsePage() {
   const activeProviderName = CURATED_PROVIDERS.find((p) => p.id === provider)?.name
 
   const subtitleBits = [
-    list === 'coming-soon' ? (type === 'tv' ? 'Coming soon' : 'New releases') : SORTS.find((s) => s.id === sort)?.label,
+    list === 'coming-soon' ? 'Coming soon' : SORTS.find((s) => s.id === sort)?.label,
     activeGenreName,
     activeProviderName,
     year ? String(year) : null,
@@ -155,7 +155,7 @@ export default function BrowsePage() {
                 {s.label}
               </option>
             ))}
-            <option value="coming-soon">{type === 'tv' ? 'Coming soon' : 'New releases'}</option>
+            <option value="coming-soon">Coming soon</option>
           </select>
         </label>
         {filtersApply && (

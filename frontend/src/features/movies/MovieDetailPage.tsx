@@ -13,6 +13,7 @@ import DetailShell, { type DetailPill, type DetailRow, type DetailTile } from '.
 import { DetailCast, DetailTrailer, FactTiles, peopleLinks, qualityFromName, serviceTile, sourceFromName, usePlexHref, useTitleRequests } from '../detail/DetailBits'
 import { usePageTitle, useSetHasHero } from '../../lib/chrome'
 import { certificationOf, languageNameOf, yearOf } from '../../lib/detailHelpers'
+import { moviePill } from '../../lib/homeHero'
 import { formatBytes } from '../../lib/format'
 import { NON_TERMINAL, statusMeta } from '../../lib/status'
 import { errorText, useToast } from '../../lib/toast'
@@ -75,13 +76,9 @@ export default function MovieDetailPage() {
   const certification = certificationOf(movie)
   const genres = (movie.genres ?? []).slice(0, 3).map((g) => g.name).join(' · ')
 
-  const eyebrow = movie.is_coming_soon
-    ? { text: 'Coming soon', tone: 'amber' as const }
-    : active
+  const eyebrow = active
       ? { text: `${active.status === 'downloading' ? 'Downloading' : active.status === 'searching' ? 'Searching' : 'Queued'}${active.download_progress != null ? ` · ${Math.round(active.download_progress * 100)}%` : ''}`, tone: 'ice' as const }
-      : movie.on_plex
-        ? { text: `In Plex${winner ? ` · ${qualityFromName(winner.fileName)}` : ''}`.replace(/ · $/, ''), tone: 'mint' as const }
-        : { text: '', tone: 'dim' as const }
+      : { text: '', tone: 'dim' as const } // on Plex: the pill under the logo says so
 
   const pills: DetailPill[] = []
   if (movie.vote_average) {
@@ -105,7 +102,7 @@ export default function MovieDetailPage() {
   if (service) sideTiles.push(service)
   sideTiles.push(
     movie.on_plex
-      ? { label: 'Library', value: (<><Icon name="check-circle" />Movies</>), tone: 'mint' }
+      ? { label: 'Status', value: (<><Icon name="check-circle" />Available on Plex</>), tone: 'mint' }
       : { label: 'Status', value: movie.is_coming_soon ? 'Coming soon' : active ? 'On the way' : 'Not on Plex yet', tone: active ? 'ice' : 'dim' },
   )
   if (requests[0]?.requested_by_username) sideTiles.push({ label: 'Requested by', value: requests[0].requested_by_username })
@@ -142,12 +139,12 @@ export default function MovieDetailPage() {
       {plexHref ? (
         <a className="btn pri" href={plexHref} target="_blank" rel="noreferrer">
           <Icon name="play" />
-          Play
+          Play on Plex
         </a>
       ) : (
         <span className="btn pri dis">
           <Icon name="play" />
-          Play
+          Play on Plex
         </span>
       )}
       <button className="btn sec" disabled={!!busy} onClick={() => setModalOpen(true)}>
@@ -182,6 +179,7 @@ export default function MovieDetailPage() {
         logoPath={movie.logo_path}
         title={title}
         onPlex={!!movie.on_plex}
+        pill={moviePill(movie)}
         eyebrow={eyebrow.text}
         eyebrowTone={eyebrow.tone}
         pills={pills}

@@ -2,9 +2,7 @@ import type { ReactNode } from 'react'
 import AmbientGlow from '../../components/AmbientGlow'
 import Icon from '../../components/Icon'
 import { backdropUrl, logoUrl, posterUrl } from '../../lib/tmdbImage'
-import { relativeTime } from '../../lib/format'
-import StatusPill from '../../components/StatusPill'
-import type { RequestOut } from '../../types/requests'
+import type { BannerPill } from '../../lib/homeHero'
 import './DetailShell.css'
 
 export interface DetailTile {
@@ -41,6 +39,7 @@ export default function DetailShell({
   logoPath,
   title,
   onPlex,
+  pill,
   eyebrow,
   eyebrowTone = 'ice',
   pills,
@@ -48,8 +47,6 @@ export default function DetailShell({
   actions,
   tiles,
   details = [],
-  requests = [],
-  requestLabel,
   aside,
   children,
 }: {
@@ -58,6 +55,8 @@ export default function DetailShell({
   logoPath: string | null | undefined
   title: string
   onPlex: boolean
+  /* The pill under the logo: Watch now on Plex, Just dropped, Coming soon. */
+  pill?: BannerPill | null
   /* Status line above the title; omitted when empty. */
   eyebrow?: string
   eyebrowTone?: 'ice' | 'mint' | 'dim' | 'amber'
@@ -67,9 +66,6 @@ export default function DetailShell({
   tiles: DetailTile[]
   /* Key / value facts under the tiles (rated, language, network…). */
   details?: DetailRow[]
-  /* The household's requests for this title, newest first. */
-  requests?: RequestOut[]
-  requestLabel?: (r: RequestOut) => string
   /* Sits beside the synopsis and actions on wide desktops (the cast),
      and between them and the children everywhere else. */
   aside?: ReactNode
@@ -89,6 +85,7 @@ export default function DetailShell({
             <div className="detail-banner-fade" />
             <div className="detail-banner-text">
               <div className={`detail-title${logo ? ' has-logo' : ''}`}>{logo ? <img className="detail-logo" src={logoUrl(logoPath, 'original') ?? logo} alt={title} /> : title}</div>
+              {pill && <span className={`on-plex-badge detail-banner-plex ${pill.tone}`}>{pill.text}</span>}
               {eyebrow && (
                 <span className={`detail-eyebrow ${eyebrowTone}`}>
                   <Icon name="megaphone" />
@@ -96,7 +93,6 @@ export default function DetailShell({
                 </span>
               )}
             </div>
-            {onPlex && <span className="on-plex-badge">On Plex</span>}
           </div>
         )}
         <div className="detail-grid">
@@ -126,23 +122,6 @@ export default function DetailShell({
                   </div>
                 ))}
               </dl>
-            )}
-            {requests.length > 0 && (
-              <div className="detail-requests">
-                <small>In the household</small>
-                {requests.slice(0, 5).map((r) => (
-                  <a className="detail-request" key={r.id} href="#/requests" title={r.error_message || undefined}>
-                    <span className="detail-request-text">
-                      <b>{requestLabel ? requestLabel(r) : r.requested_by_username || 'Someone'}</b>
-                      <i>
-                        {requestLabel && r.requested_by_username ? `${r.requested_by_username} · ` : ''}
-                        {r.status === 'no qualifying results' && r.error_message ? r.error_message : relativeTime(r.updated_at)}
-                      </i>
-                    </span>
-                    <StatusPill status={r.status} />
-                  </a>
-                ))}
-              </div>
             )}
           </aside>
           <section className="detail-card">

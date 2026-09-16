@@ -10,12 +10,11 @@ import LoadingState from '../../components/LoadingState'
 import ErrorState from '../../components/ErrorState'
 import Icon from '../../components/Icon'
 import DetailShell, { type DetailPill, type DetailRow, type DetailTile } from '../detail/DetailShell'
-import { DetailCast, DetailTrailer, peopleLinks, usePlexHref, useTitleRequests } from '../detail/DetailBits'
-import { latestRequestLabel } from '../../lib/requestGrouping'
+import { DetailCast, DetailTrailer, peopleLinks, usePlexHref } from '../detail/DetailBits'
 import { usePageTitle, useSetHasHero } from '../../lib/chrome'
 import { errorText, useToast } from '../../lib/toast'
 import { languageNameOf, tvCertificationOf, yearOf } from '../../lib/detailHelpers'
-import { tvHeroBadge } from '../../lib/homeHero'
+import { showPill, startOfToday } from '../../lib/homeHero'
 import type { ShowOut } from '../../types/shows'
 import type { RedownloadMode } from '../../types/requests'
 import '../detail/DetailPage.css'
@@ -53,7 +52,6 @@ export default function ShowDetailPage() {
   const title = show?.name || show?.original_name || ''
   const year = yearOf(show?.first_air_date)
   const plexHref = usePlexHref('show', title, year, !!show?.on_plex)
-  const requests = useTitleRequests(tmdbId, ['episode', 'pack'])
 
   if (showQuery.isLoading) return <LoadingState />
   if (showQuery.isError || !show) {
@@ -126,16 +124,18 @@ export default function ShowDetailPage() {
   }
 
   const seasons = (show.seasons || []).filter((s) => s.season_number > 0)
+  // TMDB calls a limited series "Miniseries" and marks it "Ended" from
+  // the day it drops — but not every one is tagged (City of Blood is
+  // "Scripted"), so a show that ended after a single season counts too.
+  // The page then calls it a limited series and never a season, since the
+  // whole thing is one run.
+  const limited = show.type === 'Miniseries' || (show.status === 'Ended' && seasons.length === 1)
   const currentSeason = activeSeason ?? (seasons.length ? seasons[seasons.length - 1].season_number : null)
-  const currentSeasonLabel = seasons.find((x) => x.season_number === currentSeason)?.name || `Season ${currentSeason}`
+  const currentSeasonLabel = limited ? 'Limited series' : seasons.find((x) => x.season_number === currentSeason)?.name || `Season ${currentSeason}`
   const certification = tvCertificationOf(show)
   const genres = (show.genres ?? []).slice(0, 3).map((g) => g.name).join(' · ')
-  const badge = tvHeroBadge(show)
   const network = show.networks?.[0]?.name
 
-  const eyebrow = show.is_coming_soon
-    ? { text: 'Coming soon', tone: 'amber' as const }
-    : { text: [show.status === 'Returning Series' ? 'Returning series' : show.status, badge].filter(Boolean).join(' · ') || 'Series', tone: (show.on_plex ? 'mint' : 'ice') as 'mint' | 'ice' }
 
   const pills: DetailPill[] = []
   if (show.vote_average) {
@@ -151,21 +151,26 @@ export default function ShowDetailPage() {
   }
   if (year) pills.push({ text: year })
   if (certification) pills.push({ text: certification })
-  if (seasons.length) pills.push({ text: `${seasons.length} season${seasons.length === 1 ? '' : 's'}` })
+  if (limited) pills.push({ text: show.number_of_episodes ? `Limited series · ${show.number_of_episodes} episodes` : 'Limited series' })
+  else if (seasons.length) pills.push({ text: `${seasons.length} season${seasons.length === 1 ? '' : 's'}` })
   if (genres) pills.push({ text: genres, mute: true })
 
   const nextEp = show.next_episode_to_air
   const next = nextEp?.air_date
-  const nextLabel = next
-    ? [
-        new Date(`${next}T00:00:00`).toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' }),
-        nextEp?.season_number != null && nextEp?.episode_number != null ? `S${nextEp.season_number}E${nextEp.episode_number}` : null,
-      ]
-        .filter(Boolean)
-        .join(' · ')
+  const nextCode = nextEp?.season_number != null && nextEp?.episode_number != null ? `S${nextEp.season_number}E${nextEp.episode_number}` : null
+  // An episode dated today or earlier is out, not upcoming (a season
+  // dropping all at once leaves TMDB's "next" pointing at it for a day).
+  const nextIsOut = !!next && new Date(`${next}T00:00:00`) <= startOfToday()
+  // A finished run wins over whatever stale "next" TMDB still lists.
+  const nextLabel = limited
+    ? 'Limited series · all out'
     : show.status === 'Ended' || show.status === 'Canceled'
       ? 'No more episodes'
-      : 'Not scheduled'
+      : next
+        ? nextIsOut
+          ? ['Out now', nextCode].filter(Boolean).join(' · ')
+          : [new Date(`${next}T00:00:00`).toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' }), nextCode].filter(Boolean).join(' · ')
+        : 'Not scheduled'
   // An ended or cancelled show has nothing left to follow: no Follow
   // button, and the tile shows the years it ran instead.
   const ended = show.status === 'Ended' || show.status === 'Canceled'
@@ -174,7 +179,11 @@ export default function ShowDetailPage() {
   const lastYear = show.last_air_date?.slice(0, 4)
   const sideTiles: DetailTile[] = []
   if (ended) {
-    sideTiles.push({ label: show.status === 'Canceled' ? 'Cancelled' : 'Ended', value: firstYear ? `${firstYear}${lastYear && lastYear !== firstYear ? ` – ${lastYear}` : ''}` : '—', tone: 'dim' })
+    sideTiles.push({
+      label: limited ? 'Limited series' : show.status === 'Canceled' ? 'Cancelled' : 'Ended',
+      value: firstYear ? `${firstYear}${lastYear && lastYear !== firstYear ? ` – ${lastYear}` : ''}` : '—',
+      tone: limited ? 'ice' : 'dim',
+    })
   } else {
     sideTiles.push(
       following
@@ -182,7 +191,8 @@ export default function ShowDetailPage() {
         : { label: 'Following', value: 'No', tone: 'dim' },
     )
   }
-  sideTiles.push({ label: 'Seasons', value: String(seasons.length || '—') })
+  if (limited) sideTiles.push({ label: 'Episodes', value: String(show.number_of_episodes || '—') })
+  else sideTiles.push({ label: 'Seasons', value: String(seasons.length || '—') })
   sideTiles.push({ label: 'Next episode', value: nextLabel, tone: next ? 'ice' : 'dim', wide: true })
 
   const crew = show.credits?.crew ?? []
@@ -191,7 +201,7 @@ export default function ShowDetailPage() {
   if (certification) details.push({ label: 'Rated', value: certification })
   if (show.first_air_date) details.push({ label: 'First aired', value: new Date(`${show.first_air_date}T00:00:00`).toLocaleDateString([], { day: 'numeric', month: 'short', year: 'numeric' }) })
   if (network) details.push({ label: 'Network', value: network })
-  if (show.status) details.push({ label: 'Status', value: show.status })
+  if (show.status) details.push({ label: 'Status', value: limited ? 'Limited series' : show.status })
   const lang = languageNameOf(show.original_language)
   if (lang) details.push({ label: 'Language', value: lang })
   if (show.genres?.length) details.push({ label: 'Genres', value: show.genres.map((g) => g.name).join(', ') })
@@ -204,12 +214,12 @@ export default function ShowDetailPage() {
         (plexHref ? (
           <a className="btn pri" href={plexHref} target="_blank" rel="noreferrer">
             <Icon name="play" />
-            Play
+            Play on Plex
           </a>
         ) : (
           <span className="btn pri dis">
             <Icon name="play" />
-            Play
+            Play on Plex
           </span>
         ))}
       {/* One button: Follow, or Unfollow once followed. A show is
@@ -226,10 +236,13 @@ export default function ShowDetailPage() {
           Unfollow
         </button>
       )}
-      <button className={`btn ${ended && !show.on_plex ? 'pri' : 'sec'}`} disabled={bulkBusyKey === 'series'} onClick={() => handleBulkClick('series', null, 'Complete series', 'series')}>
-        <Icon name="download" />
-        {bulkBusyKey === 'series' ? 'Adding…' : 'Add all to Plex'}
-      </button>
+      {/* Nothing to add once every aired episode is already on Plex. */}
+      {!show.plex_complete && (
+        <button className={`btn ${ended && !show.on_plex ? 'pri' : 'sec'}`} disabled={bulkBusyKey === 'series'} onClick={() => handleBulkClick('series', null, 'Complete series', 'series')}>
+          <Icon name="download" />
+          {bulkBusyKey === 'series' ? 'Adding…' : show.on_plex ? 'Add the rest to Plex' : 'Add all to Plex'}
+        </button>
+      )}
     </>
   )
 
@@ -241,15 +254,12 @@ export default function ShowDetailPage() {
         logoPath={show.logo_path}
         title={title}
         onPlex={!!show.on_plex}
-        eyebrow={eyebrow.text}
-        eyebrowTone={eyebrow.tone}
+        pill={showPill(show)}
         pills={pills}
         overview={show.overview}
         actions={actions}
         tiles={sideTiles}
         details={details}
-        requests={requests}
-        requestLabel={latestRequestLabel}
         aside={<DetailCast cast={show.credits?.cast} limit={8} />}
       >
         <DetailTrailer type="tv" tmdbId={tmdbId} backdropPath={show.backdrop_path} />
@@ -262,15 +272,16 @@ export default function ShowDetailPage() {
             Episodes <span>{currentSeasonLabel}</span>
           </h2>
         </div>
+        {/* A limited series is one run: its one button says so instead of "Season 1". */}
         <div className="detail-season-bar" role="tablist" aria-label="Season">
           {seasons.map((s) => (
             <button key={s.id} role="tab" aria-selected={s.season_number === currentSeason} className={`season-btn${s.season_number === currentSeason ? ' active' : ''}`} onClick={() => setActiveSeason(s.season_number)}>
-              {s.name || `Season ${s.season_number}`}
+              {limited ? 'Limited series' : s.name || `Season ${s.season_number}`}
             </button>
           ))}
           <button className="btn sec sm" disabled={bulkBusyKey === `season-${currentSeason}`} onClick={() => handleBulkClick('season', currentSeason, currentSeasonLabel, `season-${currentSeason}`)}>
             <Icon name="download" />
-            {bulkBusyKey === `season-${currentSeason}` ? 'Adding…' : `Add ${/^season \d/i.test(currentSeasonLabel) ? currentSeasonLabel.toLowerCase() : currentSeasonLabel} to Plex`}
+            {bulkBusyKey === `season-${currentSeason}` ? 'Adding…' : limited ? 'Add limited series to Plex' : `Add ${/^season \d/i.test(currentSeasonLabel) ? currentSeasonLabel.toLowerCase() : currentSeasonLabel} to Plex`}
           </button>
         </div>
         <EpisodeList tmdbId={tmdbId} season={currentSeason} />
@@ -284,7 +295,7 @@ export default function ShowDetailPage() {
       <RequestModal
         open={requestModal != null}
         title={requestModal?.scope === 'series' ? title : `${title} · ${requestModal?.label ?? ''}`}
-        subtitle={requestModal?.scope === 'series' ? 'Complete series' : 'One season'}
+        subtitle={requestModal?.scope === 'series' ? (limited ? 'Limited series' : 'Complete series') : 'One season'}
         posterPath={show.poster_path}
         submitLabel="Add to Plex"
         onClose={() => {

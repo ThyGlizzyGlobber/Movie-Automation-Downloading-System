@@ -53,7 +53,8 @@ export interface WatchProviderEntry {
 
 export interface ReleaseDatesResult {
   iso_3166_1: string
-  release_dates: { certification: string }[]
+  // TMDB release types: 3 = theatrical, 4 = digital, 5 = physical.
+  release_dates: { certification: string; type?: number; release_date?: string }[]
 }
 
 export interface MovieDetail extends Omit<TmdbListItem, 'genre_ids'> {

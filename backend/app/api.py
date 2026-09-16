@@ -523,6 +523,40 @@ def _on_plex_for(title: str, year: int | None, media_type: str, store: RequestSt
     return bool(matcher(title, year)) if matcher else False
 
 
+def _aired_episode_count(show: dict) -> int:
+    """Episodes TMDB says have aired: every season before the one the
+    last-aired episode is in, in full, plus that episode's number.
+    Specials (season 0) don't count."""
+    last = show.get("last_episode_to_air") or {}
+    last_season = last.get("season_number")
+    last_episode = last.get("episode_number")
+    if not last_season or not last_episode:
+        return 0
+    before = sum(
+        int(s.get("episode_count") or 0)
+        for s in show.get("seasons") or []
+        if 1 <= int(s.get("season_number") or 0) < last_season
+    )
+    return before + int(last_episode)
+
+
+def _plex_episode_count(store: RequestStore, title: str, year: int | None) -> int | None:
+    """How many episodes of this show Plex has, by Plex's own count, or
+    None when Plex isn't linked or can't find the show."""
+    settings = store.get_settings()
+    server_url, server_token = settings.get("plex_server_url"), settings.get("plex_server_token")
+    if not server_url or not server_token:
+        return None
+    client = PlexClient(settings.get("plex_client_id") or new_client_identifier())
+    try:
+        item = client.locate(server_url, server_token, "show", title, year)
+        if item is None:
+            return None
+        return client.leaf_count(server_url, server_token, item["rating_key"])
+    except PlexError:
+        return None
+
+
 # ---------------------------------------------------------------------------
 # Routes
 # ---------------------------------------------------------------------------
@@ -817,9 +851,15 @@ def get_tv_detail(tmdb_id: int, store: RequestStore = Depends(get_store), tmdb: 
         raise HTTPException(status_code=404, detail=f"tmdb_id {tmdb_id} not found") from exc
     year_str = (show.get("first_air_date") or "")[:4]
     year = int(year_str) if year_str.isdigit() else None
+    on_plex = _on_plex_for(show.get("name") or "", year, "show", store)
+    # Every aired episode is already on Plex: the show page hides "Add
+    # all to Plex" rather than offering a download that would add nothing.
+    aired = _aired_episode_count(show)
+    have = _plex_episode_count(store, show.get("name") or "", year) if on_plex and aired else None
     return {
         **show,
-        "on_plex": _on_plex_for(show.get("name") or "", year, "show", store),
+        "on_plex": on_plex,
+        "plex_complete": bool(have is not None and have >= aired > 0),
         "is_coming_soon": is_tv_upcoming(show),
         "logo_path": best_logo_path(show.get("images")),
         # Frontend migration Part K3 — TV parity with the movie route

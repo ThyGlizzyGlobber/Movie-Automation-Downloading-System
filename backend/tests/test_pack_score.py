@@ -339,3 +339,15 @@ def test_series_gate_accepts_every_finished_season_while_the_last_one_airs():
     # Once the show has finished, only the full range counts again.
     done = ShowIdentity(tmdb_id=1, title="Reacher", original_title="Reacher", variants=["Reacher"], number_of_seasons=4, finished_seasons=4)
     assert passes_series_pack_gate("Reacher.S01-S03.2160p.WEB-DL", done) is False
+
+
+def test_pack_gates_reject_another_show_that_contains_the_title():
+    brave = ShowIdentity(
+        tmdb_id=15804, title="Batman: The Brave and the Bold", original_title="Batman: The Brave and the Bold",
+        variants=["Batman: The Brave and the Bold", "Batman", "The Brave and the Bold"], first_air_year=2008, number_of_seasons=3,
+    )
+    ted = ShowIdentity(tmdb_id=1, title="Ted", original_title="Ted", variants=["Ted"], first_air_year=2024)
+    assert passes_season_range_pack_gate("The Batman (2004) Season 1-5 S01-S05 + Extras (1080p BluRay x265)", brave, 1, 3, PipelineSettings.from_config()) is False
+    assert passes_series_pack_gate("The Batman (2004) Season 1-5 S01-S05 + Extras (1080p BluRay x265)", brave, PipelineSettings.from_config()) is False
+    assert passes_season_pack_gate("Better Off Ted (2009) Season 1-2 S01-S02 (1080p AMZN WEB-DL x265)", ted, 1, PipelineSettings.from_config()) is False
+    assert passes_season_pack_gate("Ted (2024) Season 1 S01 (2160p AMZN WEB-DL)", ted, 1, PipelineSettings.from_config()) is True

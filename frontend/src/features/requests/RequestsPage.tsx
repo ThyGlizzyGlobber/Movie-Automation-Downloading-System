@@ -31,7 +31,7 @@ type Filter = 'all' | 'active' | 'plex' | 'failed'
 const FILTERS: { id: Filter; label: string }[] = [
   { id: 'all', label: 'All' },
   { id: 'active', label: 'Active' },
-  { id: 'plex', label: 'In Plex' },
+  { id: 'plex', label: 'On Plex' },
   { id: 'failed', label: 'Failed' },
 ]
 const FAILED_STATES = new Set(['failed', 'no qualifying results', 'insufficient free space'])
@@ -198,7 +198,7 @@ function SeasonStrip({ season, onChanged }: { season: SeasonGroup; onChanged: ()
       <div className="rq-season-head">
         <b>{season.label}</b>
         <small>
-          {ready} of {rows.length} in Plex
+          {ready} of {rows.length} on Plex
         </small>
       </div>
       <div className="rq-eps">
@@ -219,13 +219,28 @@ function SeasonStrip({ season, onChanged }: { season: SeasonGroup; onChanged: ()
   )
 }
 
+// A show's own progress: the average over everything it has on the way
+// or done — a finished season counts as 100%, a downloading one as its
+// own percentage, one still waiting or searching as 0%. Failed and
+// cancelled rows don't count. Null when nothing is moving or done.
+function groupProgress(rows: RequestOut[]): number | null {
+  const counted = rows.filter((r) => NON_TERMINAL.has(r.status) || r.status === 'complete' || r.status === 'downloaded, not filed')
+  if (!counted.length) return null
+  const total = counted.reduce((sum, r) => {
+    if (r.status === 'complete' || r.status === 'downloaded, not filed') return sum + 1
+    if (r.status === 'downloading') return sum + (r.download_progress ?? 0)
+    return sum
+  }, 0)
+  return total / counted.length
+}
+
 function ShowRow({ group, expanded, onToggle, onChanged }: { group: ShowGroup; expanded: boolean; onToggle: () => void; onChanged: () => void }) {
   const ready = group.rows.filter((r) => r.status === 'complete').length
   const active = group.rows.filter((r) => NON_TERMINAL.has(r.status)).length
   const meta = [
     'Series',
     `${group.rows.length} item${group.rows.length === 1 ? '' : 's'}`,
-    `${ready} in Plex`,
+    `${ready} on Plex`,
     active ? `${active} on the way` : null,
     relativeTime(group.rows.reduce((best, r) => (r.updated_at > best ? r.updated_at : best), group.rows[0].updated_at)),
   ]
@@ -238,7 +253,7 @@ function ShowRow({ group, expanded, onToggle, onChanged }: { group: ShowGroup; e
       href={`#/tv/${group.tmdbId}`}
       meta={meta}
       status={dominantStatus(group.rows)}
-      progress={null}
+      progress={groupProgress(group.rows)}
       expanded={expanded}
       onToggle={onToggle}
     >

@@ -37,7 +37,7 @@ function RowAction({
     return (
       <span className="search-result-state in-plex">
         <Icon name="check-circle" />
-        In Plex
+        On Plex
       </span>
     )
   }

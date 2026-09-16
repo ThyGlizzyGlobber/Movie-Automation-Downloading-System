@@ -59,8 +59,8 @@ export default function RedownloadModal({
   return (
     <div className="redownload-overlay" onClick={close}>
       <div className="redownload-card" onClick={(e) => e.stopPropagation()}>
-        <h2 className="redownload-title">Already in Plex</h2>
-        <p className="redownload-body">{targetLabel} is already in Plex. What would you like to do?</p>
+        <h2 className="redownload-title">Already on Plex</h2>
+        <p className="redownload-body">{targetLabel} is already on Plex. What would you like to do?</p>
         <div className="redownload-actions">
           <button className="redownload-option" onClick={() => onChoose('upgrade')}>
             Find a better version

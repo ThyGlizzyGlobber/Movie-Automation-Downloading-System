@@ -30,6 +30,10 @@ export interface EpisodeToAir {
 export interface TvDetail extends Omit<TmdbListItem, 'genre_ids'> {
   logo_path?: string | null
   status: string // "Returning Series" | "Ended" | "Canceled" | ...
+  // "Scripted" | "Miniseries" | "Documentary" | … A limited series is
+  // "Miniseries" and TMDB marks it "Ended" from the day it drops.
+  type?: string
+  number_of_episodes?: number
   last_air_date?: string | null
   original_language?: string
   genres: Genre[]
@@ -49,4 +53,6 @@ export interface TvDetail extends Omit<TmdbListItem, 'genre_ids'> {
   // is episode/pack rows, never a single fixed media_type the way a
   // movie's always is.
   on_plex_tracked: boolean
+  // Every aired episode is already on Plex (by Plex's own episode count).
+  plex_complete?: boolean
 }

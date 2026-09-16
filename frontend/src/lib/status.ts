@@ -22,7 +22,7 @@ const STATUS_META: Record<string, StatusMeta> = {
   queued: { label: 'Queued', cls: 'status-queued', icon: 'clock' },
   searching: { label: 'Searching', cls: 'status-searching', icon: 'scan' },
   downloading: { label: 'Downloading', cls: 'status-downloading', icon: 'download' },
-  complete: { label: 'In Plex', cls: 'status-complete', icon: 'check-circle' },
+  complete: { label: 'On Plex', cls: 'status-complete', icon: 'check-circle' },
   'downloaded, not filed': { label: 'Importing', cls: 'status-complete', icon: 'plex' },
   'no qualifying results': { label: 'No match', cls: 'status-nomatch', icon: 'info' },
   'insufficient free space': { label: 'No space', cls: 'status-nospace', icon: 'alert' },

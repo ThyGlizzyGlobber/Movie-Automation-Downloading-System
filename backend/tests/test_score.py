@@ -651,9 +651,11 @@ def test_full_title_and_original_title_still_match_anywhere():
     from app.score import matches_any_variant
 
     variants = ["Cobalt Hour", "L'Heure Cobalt"]
-    assert matches_any_variant(tokenize("Group.Cobalt.Hour.2024.1080p"), variants)
+    assert matches_any_variant(tokenize("1080p.Cobalt.Hour.2024"), variants)
     assert matches_any_variant(tokenize("L.Heure.Cobalt.2024.FRENCH.1080p"), variants)
     assert not matches_any_variant(tokenize("Golden.Hour.2024.1080p"), variants)
+    # Another word in front of the title is more title, not this one.
+    assert not matches_any_variant(tokenize("After.Cobalt.Hour.2024.1080p"), variants)
 
 
 def test_a_title_without_a_subtitle_is_its_own_full_title_and_matches_anywhere():

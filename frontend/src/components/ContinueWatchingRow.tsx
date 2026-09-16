@@ -47,7 +47,7 @@ export default function ContinueWatchingRow() {
                 <i style={{ width: `${Math.round(item.progress * 100)}%` }} />
               </span>
             </a>
-            <a className="continue-play" href={plexHref} target="_blank" rel="noreferrer" aria-label={`Play ${title} in Plex`}>
+            <a className="continue-play" href={plexHref} target="_blank" rel="noreferrer" aria-label={`Play ${title} on Plex`}>
               <Icon name="play" />
             </a>
             <b>{title}</b>

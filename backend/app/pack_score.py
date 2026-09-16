@@ -111,7 +111,7 @@ def passes_season_pack_gate(
     settings = settings or PipelineSettings.from_config()
     tokens = tokenize(file_name)
     return (
-        matches_any_variant(tokens, identity.variants)
+        matches_any_variant(tokens, identity.variants, identity.first_air_year)
         and has_season_token(tokens, season)
         and not has_any_episode_token(tokens)
         and passes_resolution_floor(tokens, settings.min_resolution)
@@ -194,7 +194,7 @@ def passes_season_range_pack_gate(
     settings = settings or PipelineSettings.from_config()
     tokens = tokenize(file_name)
     return (
-        matches_any_variant(tokens, identity.variants)
+        matches_any_variant(tokens, identity.variants, identity.first_air_year)
         and has_season_range_marker(tokens, start, end)
         and not has_any_episode_token(tokens)
         and passes_resolution_floor(tokens, settings.min_resolution)
@@ -238,7 +238,7 @@ def passes_series_pack_gate(
     settings = settings or PipelineSettings.from_config()
     tokens = tokenize(file_name)
     return (
-        matches_any_variant(tokens, identity.variants)
+        matches_any_variant(tokens, identity.variants, identity.first_air_year)
         and is_series_shaped(tokens, identity.number_of_seasons, identity.finished_seasons)
         and passes_resolution_floor(tokens, settings.min_resolution)
         and passes_language_filter(

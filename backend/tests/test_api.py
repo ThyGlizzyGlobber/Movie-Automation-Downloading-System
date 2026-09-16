@@ -1241,7 +1241,45 @@ def test_get_tv_detail_returns_full_show(client_and_deps):
     # is deterministically False. on_plex_tracked is False — no completed,
     # organized episode/pack request exists for this tmdb_id in a fresh
     # store.
-    assert response.json() == dict(SHOW, on_plex=False, is_coming_soon=False, on_plex_tracked=False, logo_path=None)
+    assert response.json() == dict(SHOW, on_plex=False, plex_complete=False, is_coming_soon=False, on_plex_tracked=False, logo_path=None)
+
+
+def test_aired_episode_count_counts_whole_earlier_seasons_plus_the_last_aired_episode():
+    from app.api import _aired_episode_count
+
+    show = {
+        "seasons": [
+            {"season_number": 0, "episode_count": 3},
+            {"season_number": 1, "episode_count": 8},
+            {"season_number": 2, "episode_count": 10},
+            {"season_number": 3, "episode_count": 8},
+        ],
+        "last_episode_to_air": {"season_number": 3, "episode_number": 5},
+    }
+    assert _aired_episode_count(show) == 8 + 10 + 5
+    assert _aired_episode_count({"seasons": []}) == 0
+
+
+def test_get_tv_detail_plex_complete_when_plex_holds_every_aired_episode(client_and_deps, monkeypatch):
+    from app import api
+
+    client, _, tmdb, _, _, _ = client_and_deps
+    tmdb.get_tv = lambda tmdb_id: dict(
+        SHOW,
+        id=tmdb_id,
+        seasons=[{"season_number": 1, "episode_count": 8}],
+        last_episode_to_air={"season_number": 1, "episode_number": 8},
+    )
+    monkeypatch.setattr(api, "_on_plex_for", lambda title, year, media_type, store: True)
+
+    monkeypatch.setattr(api, "_plex_episode_count", lambda store, title, year: 8)
+    assert client.get("/api/tv/95350").json()["plex_complete"] is True
+
+    monkeypatch.setattr(api, "_plex_episode_count", lambda store, title, year: 6)
+    assert client.get("/api/tv/95350").json()["plex_complete"] is False
+
+    monkeypatch.setattr(api, "_plex_episode_count", lambda store, title, year: None)
+    assert client.get("/api/tv/95350").json()["plex_complete"] is False
 
 
 def test_get_tv_detail_on_plex_tracked_true_after_a_completed_organized_pack(client_and_deps):

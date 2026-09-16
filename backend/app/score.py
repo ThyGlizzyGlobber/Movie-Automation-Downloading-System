@@ -95,6 +95,32 @@ _TITLE_BOUNDARY_RE = re.compile(
 _TITLE_BOUNDARY_PAIRS = {("the", "complete"), ("the", "movie"), ("all", "seasons"), ("full", "series"), ("entire", "series"), ("the", "series")}
 
 
+# Junk a release name may start with before the title: tracker and
+# group tags, a site name. Anything else in front of the title is more
+# title — the name belongs to a different show ("The Batman", "Better
+# Off Ted").
+_LEADING_NOISE = {"www", "com", "net", "org", "torrent", "torrents", "p", "rarbg", "yts", "eztv", "ettv", "tgx"}
+
+
+def _title_stands_alone(tokens: list[str], start: int, end: int, year: int | None) -> bool:
+    """The title at tokens[start:end] is the release's own title: nothing
+    but noise or metadata before it, metadata after it, and any year
+    sitting right after it is this title's year (`year`, when known)."""
+    if start > 0:
+        before = tokens[start - 1]
+        if not (
+            _TITLE_BOUNDARY_RE.match(before)
+            or before in _LEADING_NOISE
+            or (start > 1 and (tokens[start - 2], before) in _TITLE_BOUNDARY_PAIRS)
+        ):
+            return False
+    if not _metadata_follows(tokens, end):
+        return False
+    if year and end < len(tokens) and _YEAR_TOKEN_RE.match(tokens[end]) and abs(int(tokens[end]) - year) > config.YEAR_TOLERANCE:
+        return False
+    return True
+
+
 def _metadata_follows(tokens: list[str], after: int) -> bool:
     if after >= len(tokens):
         return True
@@ -108,19 +134,20 @@ def _phrase_positions(tokens: list[str], phrase_tokens: list[str]) -> list[int]:
     return [i for i in range(len(tokens) - n + 1) if tokens[i : i + n] == phrase_tokens]
 
 
-def matches_any_variant(tokens: list[str], variants: list[str]) -> bool:
+def matches_any_variant(tokens: list[str], variants: list[str], year: int | None = None) -> bool:
     """Public (Stage 10: reused by tv_score.py's episode gate — a show's
     title-variant list is matched the exact same way a movie's is, so this
     takes the plain variant list rather than a MediaIdentity, decoupling it
     from any one identity type).
 
-    A variant matches when the release metadata follows it directly
-    ("Ted.S01E01", "Batman.S01E01", "Lioness.S01E01"), never when more
-    title words do ("Ted.Lasso.S01E01", "Batman.Beyond.S01E01"). Confirmed
-    live twice: every request for Batman: The Brave and the Bold fetched
-    Batman Beyond (2026-09-16), and a season of Ted fetched Ted Lasso
-    (2026-09-17) — "batman" and "ted" alone were enough to pass this gate
-    and the better-looking pack won."""
+    A variant matches when it is the release's own title: nothing but
+    tracker noise or metadata in front of it, release metadata straight
+    after it ("Ted.S01E01", "Batman.S01E01", "Lioness.S01E01"), and any
+    year right after it within a year of `year` when that's known. More
+    title words on either side mean another show: "Ted.Lasso", "Batman.
+    Beyond", "The.Batman.2004", "Better.Off.Ted.2009" — every one of
+    those was fetched live for Ted or Batman: The Brave and the Bold
+    (2026-09-16/17) before these checks existed."""
     if not variants:
         return False
     for variant in variants:
@@ -131,7 +158,7 @@ def matches_any_variant(tokens: list[str], variants: list[str]) -> bool:
         if not positions:
             continue
         for start in positions:
-            if _metadata_follows(tokens, start + len(phrase_tokens)):
+            if _title_stands_alone(tokens, start, start + len(phrase_tokens), year):
                 return True
     return False
 
@@ -235,7 +262,7 @@ def passes_relevance_gate(file_name: str, identity: MediaIdentity, settings: Pip
     settings = settings or PipelineSettings.from_config()
     tokens = tokenize(file_name)
     return (
-        matches_any_variant(tokens, identity.variants)
+        matches_any_variant(tokens, identity.variants, identity.release_year)
         and _year_within_tolerance(tokens, identity.release_year)
         and passes_resolution_floor(tokens, settings.min_resolution)
         and passes_language_filter(

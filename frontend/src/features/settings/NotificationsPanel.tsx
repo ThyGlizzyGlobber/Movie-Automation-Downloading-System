@@ -74,7 +74,7 @@ export default function NotificationsPanel() {
   return (
     <div className="settings-panel-card">
       <h2>Notifications</h2>
-      <p className="settings-sub">Hear when a request lands in Plex or needs a hand.</p>
+      <p className="settings-sub">Hear when something lands on Plex or needs a hand.</p>
       <SettingRow label="My requests" hint="Tell me when something I asked for is ready or failed.">
         <Toggle checked={p.notify_own} onChange={(v) => save({ notify_own: v })} label="Notify me about my requests" />
       </SettingRow>

@@ -16,7 +16,7 @@ function EpisodePill({ ep }: { ep: EpisodeStatus }) {
     return (
       <span className="status-pill status-complete">
         <Icon name="check-circle" className="status-icon" />
-        In Plex
+        On Plex
       </span>
     )
   }
@@ -82,7 +82,7 @@ export default function EpisodeList({ tmdbId, season }: { tmdbId: number; season
     <div className="episode-list">
       <div className="episode-progress">
         <span>
-          {in_plex} of {aired} in Plex
+          {in_plex} of {aired} on Plex
         </span>
         <i>
           <b style={{ width: `${pct}%` }} />

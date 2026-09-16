@@ -55,7 +55,7 @@ def passes_episode_relevance_gate(
     settings = settings or PipelineSettings.from_config()
     tokens = tokenize(file_name)
     return (
-        matches_any_variant(tokens, identity.variants)
+        matches_any_variant(tokens, identity.variants, identity.first_air_year)
         and has_episode_token(tokens, season, episode)
         and passes_resolution_floor(tokens, settings.min_resolution)
         and passes_language_filter(

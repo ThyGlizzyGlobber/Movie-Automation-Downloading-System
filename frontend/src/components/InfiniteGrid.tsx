@@ -26,7 +26,7 @@ export default function InfiniteGrid({
   fetchPage: (page: number) => Promise<TmdbListResponse>
   mediaType: 'movie' | 'tv' | ((item: TmdbListItem) => 'movie' | 'tv')
   emptyMessage: string
-  /* Client-side filter (the browse page's In Plex / Requested / Not yet
+  /* Client-side filter (the browse page's On Plex / On the way / Not yet
      switch). Pages keep loading while the sentinel stays in view, so a
      sparse filter fills in on its own. */
   filterItem?: (item: TmdbListItem) => boolean
