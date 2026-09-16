@@ -39,14 +39,14 @@ export function genreLine(genres?: Genre[] | null): string {
   return `${names.slice(0, -1).join(', ')}, and ${names[names.length - 1]}`
 }
 
-export function statusFollowupText(status: string): string {
+export function statusFollowupText(status: string, errorMessage?: string | null): string {
   switch (status) {
     case 'downloading':
       return "It's on its way — check My Requests for progress."
     case 'complete':
       return 'Done — it should show up in Plex shortly.'
     case 'no qualifying results':
-      return 'Nothing that meets our quality bar was found.'
+      return errorMessage || 'Nothing that meets our quality bar was found.'
     case 'insufficient free space':
       return "Found a match, but there's not enough space to add it."
     case 'failed':

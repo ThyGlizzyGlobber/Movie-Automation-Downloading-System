@@ -39,7 +39,7 @@ export function statusMeta(status: string): StatusMeta {
 
 // One plain line under the pill on the Requests page: what the state
 // means for this title right now.
-export function statusDetail(status: string, progress: number | null): string {
+export function statusDetail(status: string, progress: number | null, errorMessage?: string | null): string {
   switch (status) {
     case 'downloading':
       return progress != null ? `${Math.round(progress * 100)}% downloaded` : 'Downloading'
@@ -52,7 +52,10 @@ export function statusDetail(status: string, progress: number | null): string {
     case 'downloaded, not filed':
       return 'Downloaded, being filed'
     case 'no qualifying results':
-      return 'Nothing matched yet'
+      // The worker leaves a plain-English reason when the title was found
+      // but only under the quality floor ("Found 9 copies, but none at
+      // 2160p or better…") — that's the line that tells someone what to do.
+      return errorMessage || 'Nothing matched yet'
     case 'insufficient free space':
       return 'Not enough room on the drive'
     case 'failed':

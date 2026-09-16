@@ -195,7 +195,7 @@ export default function MovieDetailPage() {
         {active && (
           <div className="detail-status">
             <StatusPill status={active.status} />
-            <span>{statusFollowupText(active.status)}</span>
+            <span>{statusFollowupText(active.status, active.error_message)}</span>
           </div>
         )}
         <DetailCast cast={movie.credits?.cast} />

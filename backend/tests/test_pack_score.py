@@ -4,6 +4,7 @@ from app.pack_score import (
     has_complete_series_marker,
     has_season_range_marker,
     has_season_token,
+    is_series_shaped,
     parse_season_range,
     passes_season_pack_gate,
     passes_season_range_pack_gate,
@@ -253,3 +254,66 @@ def test_has_season_token_matches_zero_padded_and_phrase_forms():
 def test_has_complete_series_marker_true_and_false():
     assert has_complete_series_marker(["lanterns", "complete", "series", "2160p"]) is True
     assert has_complete_series_marker(["lanterns", "s01", "2160p"]) is False
+
+
+# ---------------------------------------------------------------------------
+# Real-world whole-series shapes (confirmed live 2026-09-16, Batman: The
+# Brave and the Bold): a season range spanning every season, "Complete
+# Seasons 1 to 3", or a bare "- Complete".
+# ---------------------------------------------------------------------------
+
+THREE_SEASONS = ShowIdentity(
+    tmdb_id=15804,
+    title="Batman: The Brave and the Bold",
+    original_title="Batman: The Brave and the Bold",
+    variants=["Batman: The Brave and the Bold", "Batman", "The Brave and the Bold"],
+    number_of_seasons=3,
+)
+ANY = PipelineSettings.from_config().__class__(**{**PipelineSettings.from_config().__dict__, "min_resolution": "480p"})
+HD = PipelineSettings.from_config().__class__(**{**PipelineSettings.from_config().__dict__, "min_resolution": "1080p"})
+
+
+def test_parse_season_range_reads_short_dashed_form_and_worded_runs():
+    assert parse_season_range(["show", "s01", "03", "720p"]) == (1, 3)
+    assert parse_season_range(["show", "seasons", "1", "to", "3", "tvrip"]) == (1, 3)
+    assert parse_season_range(["show", "season", "1", "2", "3"]) == (1, 3)
+
+
+def test_parse_season_range_never_mistakes_a_year_for_a_season():
+    assert parse_season_range(["show", "season", "2", "2009", "complete"]) is None
+    assert parse_season_range(["show", "s02", "2009"]) is None
+
+
+def test_series_gate_accepts_a_range_spanning_every_season():
+    assert passes_series_pack_gate("Batman The Brave and the Bold S01-S03 1080p Blu-ray", THREE_SEASONS, HD) is True
+    assert passes_series_pack_gate("Batman.The.Brave.and.the.Bold.S01-03.720p.WEB-DL", THREE_SEASONS, ANY) is True
+
+
+def test_series_gate_accepts_complete_seasons_one_to_last_as_an_sd_rip():
+    name = "Batman The Brave and the Bold 2008 Complete Seasons 1 to 3 TVRip x264 [i_c]"
+    assert passes_series_pack_gate(name, THREE_SEASONS, ANY) is True
+    # …but an SD rip is still an SD rip.
+    assert passes_series_pack_gate(name, THREE_SEASONS, HD) is False
+
+
+def test_series_gate_rejects_a_range_that_stops_short_of_the_last_season():
+    assert passes_series_pack_gate("Batman The Brave and the Bold Complete Seasons 1 to 2 720p", THREE_SEASONS, ANY) is False
+    assert passes_series_pack_gate("Batman The Brave and the Bold S02-S03 720p", THREE_SEASONS, ANY) is False
+
+
+def test_series_gate_with_unknown_season_count_still_needs_the_phrase():
+    unknown = ShowIdentity(tmdb_id=1, title="Lanterns", original_title="Lanterns", variants=["Lanterns"])
+    assert passes_series_pack_gate("Lanterns S01-S03 2160p WEB-DL", unknown) is False
+    assert passes_series_pack_gate("Lanterns Complete Series S01-S03 2160p WEB-DL", unknown) is True
+
+
+def test_series_gate_accepts_a_bare_complete_but_not_a_loose_season_number():
+    assert is_series_shaped(["batman", "the", "brave", "and", "the", "bold", "complete"], 3) is True
+    assert passes_series_pack_gate("Batman - The Brave And The Bold - Complete DVDRip", THREE_SEASONS, ANY) is True
+    assert passes_series_pack_gate("Batman the Brave and the Bold Seasn 2 complete DVDRip", THREE_SEASONS, ANY) is False
+    assert passes_series_pack_gate("Batman The Brave and the Bold S02 complete DVDRip", THREE_SEASONS, ANY) is False
+
+
+def test_series_gate_accepts_the_other_whole_series_phrases():
+    for name in ("Lanterns All Seasons 2160p", "Lanterns Full Series 2160p", "Lanterns Entire Series 2160p"):
+        assert passes_series_pack_gate(name, LANTERNS) is True, name

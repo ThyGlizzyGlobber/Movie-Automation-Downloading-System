@@ -1,3 +1,4 @@
+import dataclasses
 import re
 
 import pytest
@@ -828,6 +829,7 @@ def test_download_pack_season_falls_back_to_second_query_shape():
         "Lanterns S01 COMPLETE",
         "Lanterns Season 1",
         "Lanterns S01",
+        "Lanterns",
     ]
 
 
@@ -839,7 +841,7 @@ def test_download_pack_season_searches_unscoped_but_adds_under_tv_category():
     # All four season-pack query shapes are searched now (not stopping
     # once one has results), so all four show up here even though only
     # one actually returned anything.
-    assert qbt.searched_categories == ["all", "all", "all", "all"]
+    assert qbt.searched_categories == ["all"] * 5
 
 
 def test_download_pack_season_finds_a_pack_only_the_bare_season_query_surfaces():
@@ -1040,3 +1042,120 @@ def test_download_pack_falls_back_to_next_candidate_when_add_fails():
 
     assert result.status == "added"
     assert result.torrent_hash == "bbbb"
+
+
+# ---------------------------------------------------------------------------
+# Quality-floor near misses: the title was found, only the resolution was
+# too low. Surfaced as `below_floor` so the request can say why.
+# ---------------------------------------------------------------------------
+
+
+def test_download_counts_title_matches_under_the_floor():
+    qbt = FakeQBTClient(
+        results_by_variant={
+            "Dune: Part Two": [
+                _result(fileName="Dune.Part.Two.2024.720p.WEB-DL.mkv", fileUrl="magnet:?xt=urn:btih:BBB1"),
+                _result(fileName="Dune.Part.Two.2024.1080p.BluRay.mkv", fileUrl="magnet:?xt=urn:btih:BBB2"),
+                _result(fileName="Some.Other.Movie.2024.720p.WEB-DL.mkv", fileUrl="magnet:?xt=urn:btih:BBB3"),
+            ],
+            # The same release found via a second variant counts once.
+            "Dune": [_result(fileName="Dune.Part.Two.2024.720p.WEB-DL.mkv", fileUrl="magnet:?xt=urn:btih:BBB1")],
+        }
+    )
+
+    result = download(693134, FakeTMDBClient(), qbt)
+
+    assert result.status == "no qualifying results"
+    assert result.below_floor == 2
+    assert qbt.added == []
+
+
+def test_download_below_floor_is_zero_when_nothing_matched_the_title():
+    qbt = FakeQBTClient(results_by_variant={"Dune: Part Two": [_result(fileName="Some.Other.Movie.2024.720p.mkv")]})
+
+    result = download(693134, FakeTMDBClient(), qbt)
+
+    assert result.status == "no qualifying results"
+    assert result.below_floor == 0
+
+
+def test_download_below_floor_is_zero_when_the_floor_is_already_lowest():
+    qbt = FakeQBTClient(results_by_variant={"Dune: Part Two": [_result(fileName="Dune.Part.Two.2024.CAM.mkv")]})
+
+    result = download(693134, FakeTMDBClient(), qbt, dataclasses.replace(PipelineSettings.from_config(), min_resolution="480p"))
+
+    assert result.status == "no qualifying results"
+    assert result.below_floor == 0
+
+
+def test_download_episode_counts_title_matches_under_the_floor():
+    qbt = FakeQBTClient(
+        results_by_variant={
+            "Lanterns S01E04": [
+                _episode_result(fileName="Lanterns.S01E04.HDTV.XviD.avi"),
+                _episode_result(fileName="Lanterns.S01E04.720p.WEB-DL.mkv", fileUrl="magnet:?xt=urn:btih:CCC1"),
+                _episode_result(fileName="Lanterns.S01E05.720p.WEB-DL.mkv", fileUrl="magnet:?xt=urn:btih:CCC2"),
+            ]
+        }
+    )
+
+    result = download_episode(LANTERNS, 1, 4, qbt)
+
+    assert result.status == "no qualifying results"
+    # The HDTV/XviD one counts as SD and the 720p one as HD: both are the
+    # right episode under the floor. The S01E05 file is a different episode.
+    assert result.below_floor == 2
+
+
+def test_download_pack_counts_title_matches_under_the_floor():
+    qbt = FakeQBTClient(
+        results_by_variant={
+            "Lanterns Season 01": [_pack_result(fileName="Lanterns.S01.1080p.WEB-DL.mkv")],
+            "Lanterns S01 COMPLETE": [
+                _pack_result(fileName="Lanterns.S01.1080p.WEB-DL.mkv"),
+                _pack_result(fileName="Lanterns.S01.720p.HDTV.mkv", fileUrl="magnet:?xt=urn:btih:DDD1"),
+            ],
+        }
+    )
+
+    result = download_pack(LANTERNS, "season", qbt, season=1)
+
+    assert result.status == "no qualifying results"
+    assert result.below_floor == 2
+
+
+def test_download_adds_when_the_lower_profile_accepts_the_only_copy():
+    """The way through for an older title: the Anything profile's 480p floor."""
+    qbt = FakeQBTClient(results_by_variant={"Dune: Part Two": [_result(fileName="Dune.Part.Two.2024.720p.WEB-DL.mkv")]})
+
+    result = download(693134, FakeTMDBClient(), qbt, dataclasses.replace(PipelineSettings.from_config(), min_resolution="480p"))
+
+    assert result.status == "added"
+    assert result.below_floor == 0
+
+
+def test_download_pack_series_finds_a_range_pack_only_the_bare_title_search_surfaces():
+    """The live Batman case: no plugin returned anything useful for
+    "<show> complete series", but a bare title search did — a pack named
+    "Complete Seasons 1 to 3" that the gate recognises as the whole show."""
+    three = ShowIdentity(tmdb_id=15804, title="Batman: The Brave and the Bold", original_title="Batman: The Brave and the Bold",
+                         variants=["Batman: The Brave and the Bold"], number_of_seasons=3)
+    qbt = FakeQBTClient(
+        results_by_variant={
+            "Batman: The Brave and the Bold": [
+                _pack_result(fileName="Batman The Brave and the Bold 2008 Complete Seasons 1 to 3 TVRip x264 [i_c]", fileSize=16_700_000_000),
+                _pack_result(fileName="Batman The Brave and the Bold S01E01 HDTV XviD", fileUrl="magnet:?xt=urn:btih:BBBB"),
+            ]
+        }
+    )
+
+    result = download_pack(three, "series", qbt, dataclasses.replace(PipelineSettings.from_config(), min_resolution="480p"))
+
+    assert result.status == "added"
+    assert result.query_used == "Batman: The Brave and the Bold"
+    assert result.winner["fileName"].startswith("Batman The Brave and the Bold 2008 Complete Seasons 1 to 3")
+    assert qbt.searched_variants == [
+        "Batman: The Brave and the Bold complete series",
+        "Batman: The Brave and the Bold complete",
+        "Batman: The Brave and the Bold",
+    ]

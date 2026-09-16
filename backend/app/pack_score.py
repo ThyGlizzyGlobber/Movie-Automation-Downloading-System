@@ -43,7 +43,20 @@ _LONE_EPISODE_RE = re.compile(r"^e\d{1,3}$")
 
 # Real-world phrasing for a whole-series release. Deliberately a short,
 # explicit list rather than a heuristic ("many season tokens at once").
-_COMPLETE_SERIES_PHRASES = ("complete series", "the complete series", "complete collection")
+_COMPLETE_SERIES_PHRASES = (
+    "complete series",
+    "the complete series",
+    "complete collection",
+    "complete seasons",
+    "all seasons",
+    "full series",
+    "entire series",
+)
+
+# A season number as it appears loose in a name ("Season 1 2 3", "S01-03"
+# once the dash is a boundary): one or two digits, never a year.
+_SEASON_NUMBER_RE = re.compile(r"^\d{1,2}$")
+_RANGE_FILLER = ("to", "and", "thru", "through")
 
 # A bare season token, same shape has_season_token already checks for one
 # specific season — used here to find *two* adjacent ones, the "S01-S03"
@@ -72,6 +85,20 @@ def has_season_token(tokens: list[str], season: int) -> bool:
 
 def has_complete_series_marker(tokens: list[str]) -> bool:
     return any(contains_phrase(tokens, phrase) for phrase in _COMPLETE_SERIES_PHRASES)
+
+
+def _is_bare_complete(tokens: list[str]) -> bool:
+    """"<Show> - Complete": the word on its own, with no season number,
+    range or episode marker anywhere in the name to narrow it. A name
+    like "Seasn 2 complete" (typo and all) still carries a loose season
+    number, so it stays out."""
+    if "complete" not in tokens:
+        return False
+    if has_any_episode_token(tokens):
+        return False
+    if any(_SEASON_TOKEN_RE.match(t) or _SEASON_NUMBER_RE.match(t) for t in tokens):
+        return False
+    return "season" not in tokens and "seasons" not in tokens
 
 
 def passes_season_pack_gate(
@@ -109,16 +136,30 @@ def parse_season_range(tokens: list[str]) -> tuple[int, int] | None:
     softer than an explicit marker naming real season numbers."""
     for i in range(len(tokens) - 1):
         first = _SEASON_TOKEN_RE.match(tokens[i])
+        if not first:
+            continue
+        # "S01-S03", or the shorter "S01-03" (the dash is already a boundary).
         second = _SEASON_TOKEN_RE.match(tokens[i + 1])
-        if first and second:
-            start, end = int(first.group(1)), int(second.group(1))
+        end_text = second.group(1) if second else (tokens[i + 1] if _SEASON_NUMBER_RE.match(tokens[i + 1]) else None)
+        if end_text is not None:
+            start, end = int(first.group(1)), int(end_text)
             if start < end:
                 return start, end
-    for i in range(len(tokens) - 2):
-        if tokens[i] in ("season", "seasons") and tokens[i + 1].isdigit() and tokens[i + 2].isdigit():
-            start, end = int(tokens[i + 1]), int(tokens[i + 2])
-            if start < end:
-                return start, end
+    for i, token in enumerate(tokens):
+        if token not in ("season", "seasons"):
+            continue
+        # "Seasons 1-3", "Seasons 1 to 3", "Season 1 2 3": a run of loose
+        # season numbers (years are three digits too long to count).
+        numbers: list[int] = []
+        for later in tokens[i + 1 :]:
+            if _SEASON_NUMBER_RE.match(later):
+                numbers.append(int(later))
+            elif later in _RANGE_FILLER:
+                continue
+            else:
+                break
+        if len(numbers) >= 2 and numbers[0] < numbers[-1]:
+            return numbers[0], numbers[-1]
     return None
 
 
@@ -165,18 +206,34 @@ def passes_season_range_pack_gate(
     )
 
 
+def is_series_shaped(tokens: list[str], number_of_seasons: int | None) -> bool:
+    """A positive whole-series signal, in one of three real-world shapes:
+    an explicit phrase ("Complete Series", "All Seasons"…); a season range
+    that spans every season the show has ("S01-S03", "Complete Seasons 1
+    to 3" for a three-season show — which needs `number_of_seasons`); or
+    the bare word "Complete" with nothing narrowing it. An explicit range
+    always has the last word: "Complete Seasons 1 to 2" of a three-season
+    show is not the whole show, however it's phrased."""
+    found = parse_season_range(tokens)
+    if found is not None:
+        if number_of_seasons is None:
+            return has_complete_series_marker(tokens)
+        return found[0] <= 1 and found[1] >= number_of_seasons and not has_any_episode_token(tokens)
+    return has_complete_series_marker(tokens) or _is_bare_complete(tokens)
+
+
 def passes_series_pack_gate(
     file_name: str, identity: ShowIdentity, settings: PipelineSettings | None = None
 ) -> bool:
-    """Accepts only an explicit complete-series marker — a real, positive
-    signal, rather than inferring "series-shaped" from the mere absence of
-    an episode token (which a single stray file, or this function's own
-    season-pack sibling, would also satisfy)."""
+    """Accepts only a positive whole-series signal (`is_series_shaped`),
+    never inferring "series-shaped" from the mere absence of an episode
+    token (which a single stray file, or this function's own season-pack
+    sibling, would also satisfy)."""
     settings = settings or PipelineSettings.from_config()
     tokens = tokenize(file_name)
     return (
         matches_any_variant(tokens, identity.variants)
-        and has_complete_series_marker(tokens)
+        and is_series_shaped(tokens, identity.number_of_seasons)
         and passes_resolution_floor(tokens, settings.min_resolution)
         and passes_language_filter(
             tokens, settings.language_allowlist, settings.language_blocklist, settings.language_required

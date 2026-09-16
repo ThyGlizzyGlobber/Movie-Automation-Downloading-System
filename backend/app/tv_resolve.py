@@ -21,6 +21,10 @@ class ShowIdentity:
     title: str
     original_title: str
     variants: list[str] = field(default_factory=list)
+    # How many seasons TMDB knows of — lets the series-pack gate accept a
+    # release labelled as a season range ("S01-S03", "Complete Seasons 1
+    # to 3") when that range covers the whole show. None when unknown.
+    number_of_seasons: int | None = None
     # Deliberately unused by matching (Stage 9's episode-token signal is
     # tighter than any year check) — carried only for Stage 11's Plex
     # folder-naming convention, "<Show> (<year>) {tmdb-<id>}", which wants
@@ -60,11 +64,25 @@ def season_pack_queries(title_variant: str, season: int) -> list[str]:
         f"{title_variant} S{season:02d} COMPLETE",
         f"{title_variant} Season {season}",
         f"{title_variant} S{season:02d}",
+        # Bare title, for the same reason `series_pack_queries` has one.
+        title_variant,
     ]
 
 
 def series_pack_query(title_variant: str) -> str:
     return f"{title_variant} complete series"
+
+
+def series_pack_queries(title_variant: str) -> list[str]:
+    """Query shapes for a whole-series search. qBittorrent's plugins match
+    the literal query text, so "<show> complete series" only ever
+    surfaces releases with those exact adjacent words — confirmed live
+    (2026-09-16, Batman: The Brave and the Bold): that query returned two
+    dead torrents, while the real, well-seeded packs were named "Complete
+    Seasons 1 to 3", "S01-S03" and plain "- Complete". A bare title
+    search returns everything and lets pack_score's gate decide, which
+    is what a person does by hand."""
+    return [series_pack_query(title_variant), f"{title_variant} complete", title_variant]
 
 
 def season_range_pack_queries(title_variant: str, start: int, end: int) -> list[str]:
@@ -169,6 +187,7 @@ def resolve_show(tmdb_id: int, client: TMDBClient) -> ShowIdentity:
         title=title,
         original_title=original_title,
         variants=variants,
+        number_of_seasons=show.get("number_of_seasons") or None,
         first_air_year=first_air_year,
         poster_path=show.get("poster_path"),
     )

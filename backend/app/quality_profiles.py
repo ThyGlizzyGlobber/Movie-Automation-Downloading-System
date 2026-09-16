@@ -33,6 +33,13 @@ DEFAULT_PROFILES: list[dict] = [
         "min_resolution": "1080p",
         "typical_size_gb": 8,
     },
+    {
+        "id": "any",
+        "name": "Anything",
+        "description": "First copy that turns up, even standard definition",
+        "min_resolution": "480p",
+        "typical_size_gb": 2,
+    },
 ]
 DEFAULT_PROFILE_ID = "default"
 

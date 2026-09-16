@@ -117,12 +117,12 @@ export default function DetailShell({
               <div className="detail-requests">
                 <small>In the household</small>
                 {requests.slice(0, 5).map((r) => (
-                  <a className="detail-request" key={r.id} href="#/requests">
+                  <a className="detail-request" key={r.id} href="#/requests" title={r.error_message || undefined}>
                     <span className="detail-request-text">
                       <b>{requestLabel ? requestLabel(r) : r.requested_by_username || 'Someone'}</b>
                       <i>
                         {requestLabel && r.requested_by_username ? `${r.requested_by_username} · ` : ''}
-                        {relativeTime(r.updated_at)}
+                        {r.status === 'no qualifying results' && r.error_message ? r.error_message : relativeTime(r.updated_at)}
                       </i>
                     </span>
                     <StatusPill status={r.status} />

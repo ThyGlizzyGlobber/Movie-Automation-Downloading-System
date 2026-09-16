@@ -3,6 +3,7 @@ from app.pipeline_settings import PipelineSettings
 from app.resolve import MediaIdentity
 from app.normalize import tokenize
 from app.score import (
+    passes_resolution_floor,
     dedup_candidates,
     exclude_existing,
     is_trustworthy,
@@ -664,3 +665,26 @@ def test_a_title_without_a_subtitle_is_its_own_full_title_and_matches_anywhere()
     assert matches_any_variant(tokenize("Batman.Beyond.Complete.Series.1080p.BluRay"), variants)
     assert not matches_any_variant(tokenize("Batman.The.Brave.and.the.Bold.S01E01.2160p"), variants)
     assert not matches_any_variant(tokenize("Batman.S01E01.2160p"), variants)
+
+
+# ---------------------------------------------------------------------------
+# SD rips name their source instead of a resolution ("TVRip", "DVDRip",
+# "HDTV XviD") — those count as the 480p tier so an "Anything" floor really
+# accepts them, while any explicit higher token in the name still wins.
+# ---------------------------------------------------------------------------
+
+
+def test_sd_source_words_count_as_the_lowest_tier():
+    for name in ("Show.S01.TVRip.x264", "Show.2008.DVDRip.XviD", "Show.S01E01.HDTV.XviD-FQM", "Show.S01.PDTV"):
+        tokens = tokenize(name)
+        assert passes_resolution_floor(tokens, "480p") is True, name
+        assert passes_resolution_floor(tokens, "720p") is False, name
+
+
+def test_an_explicit_resolution_still_outranks_an_sd_source_word():
+    assert score_candidate(_result(fileName="Show.S01E01.720p.HDTV.x264.mkv")).resolution_score == 2
+    assert score_candidate(_result(fileName="Show.S01E01.HDTV.XviD.avi")).resolution_score == 1
+
+
+def test_no_source_or_resolution_word_still_fails_every_floor():
+    assert passes_resolution_floor(tokenize("Batman - The Brave And The Bold - Complete"), "480p") is False

@@ -155,6 +155,22 @@ def _score_summary(score) -> str:
     )
 
 
+def _below_floor_message(result, settings) -> str | None:
+    """Household-facing reason for a "no qualifying results" that was
+    really a quality-floor miss: the title was found, just not at the
+    floor this request asked for. Older shows and films often only exist
+    in HD or SD, so the way through is a lower profile, and the row
+    should say so rather than "nothing matched"."""
+    if result.status != "no qualifying results":
+        return None
+    below = getattr(result, "below_floor", 0)
+    if not below:
+        return None
+    copies = "1 copy" if below == 1 else f"{below} copies"
+    floor = getattr(settings, "min_resolution", None) or "the quality floor"
+    return f"Found {copies}, but none at {floor} or better. Request it again with a lower quality to get it."
+
+
 def _result_summary(result) -> dict:
     """Audit-trail snapshot persisted alongside the request: which variant
     matched, the winning candidate, its score breakdown, and the torrent
@@ -172,6 +188,9 @@ def _result_summary(result) -> dict:
     query_used = getattr(result, "query_used", None)
     if query_used is not None:
         summary["query_used"] = query_used
+    below_floor = getattr(result, "below_floor", 0)
+    if below_floor:
+        summary["below_floor"] = below_floor
     if result.winner is not None:
         summary["winner"] = {
             "fileName": result.winner.get("fileName"),
@@ -244,14 +263,12 @@ class Worker:
         await asyncio.to_thread(self.store.update_status, request_id, "searching")
         try:
             settings = await asyncio.to_thread(resolve_pipeline_settings, self.store)
-            if row.media_type in ("movie", "pack") and row.min_resolution:
-                # Per-request floor override — the movie detail page's
-                # "Download 4K"/"Download 1080p" shortcuts, and (frontend
-                # migration Part J4) a season/series bulk-download's own
-                # resolution picker. Applies only to this one request,
-                # never touches the global settings. Episode requests
-                # (media_type == "episode") don't get this — there's no
-                # per-episode resolution picker, only the bulk/pack one.
+            if row.min_resolution:
+                # Per-request floor override — the request sheet's quality
+                # profile on a movie or a season/series request, and, for
+                # an episode, the show's own floor (ShowRow.min_resolution)
+                # copied onto the row when it was created. Applies only to
+                # this one request, never touches the global settings.
                 settings = dataclasses.replace(settings, min_resolution=row.min_resolution)
             # Stage 15: torrents explicitly rejected as genuinely defective
             # on a prior attempt for this same movie/show — excluded from
@@ -307,7 +324,15 @@ class Worker:
         if result.status == "added":
             await asyncio.to_thread(self.store.update_status, request_id, "downloading", result=summary)
         elif result.status in _DIRECT_TERMINAL_STATUSES:
-            await asyncio.to_thread(self.store.update_status, request_id, result.status, result=summary)
+            await asyncio.to_thread(
+                self.store.update_status,
+                request_id,
+                result.status,
+                error_message=_below_floor_message(result, settings),
+                result=summary,
+            )
+            if row.media_type == "pack" and result.status == "no qualifying results" and not result.below_floor:
+                await self._fall_back_to_episodes(row, result.identity)
         elif result.status == "add failed":
             # Every fitting candidate across every variant failed to
             # actually add (see pipeline.py) — request status is "failed"
@@ -328,6 +353,66 @@ class Worker:
                 error_message=f"unexpected pipeline status: {result.status}",
                 result=summary,
             )
+
+    async def _fall_back_to_episodes(self, row, identity: ShowIdentity) -> None:
+        """A season/series request that found no pack *at all* (not even
+        one under the quality floor) is re-issued as one request per
+        aired episode in that scope. Plenty of older or smaller shows only
+        ever circulate as single episodes — "Request all" still has to
+        mean the whole show. Episodes already in the ledger (handled by an
+        earlier request, or found on disk) are left alone; the new rows
+        inherit the request's floor and notify choice, and the pack row
+        keeps its "no match" but says what happened next."""
+        show = await asyncio.to_thread(self.store.get_show, row.show_id)
+        if show is None:
+            return
+        if row.season_range_end is not None:
+            seasons = list(range(row.season_number, row.season_range_end + 1))
+        elif row.season_number is not None:
+            seasons = [row.season_number]
+        else:
+            try:
+                show_data = await asyncio.to_thread(self.tmdb.get_tv, row.tmdb_id)
+            except TMDBError:
+                logger.exception("pack fallback: couldn't fetch TMDB data for %s", _request_label(row))
+                return
+            seasons = list(range(1, (show_data.get("number_of_seasons") or 0) + 1))
+
+        tv_settings = await asyncio.to_thread(resolve_tv_settings, self.store)
+        created: list[int] = []
+        for season_number in seasons:
+            try:
+                episodes = await asyncio.to_thread(self.tmdb.get_tv_season, row.tmdb_id, season_number)
+            except TMDBError:
+                logger.exception("pack fallback: couldn't fetch season %d for %s", season_number, _request_label(row))
+                continue
+            for episode_number in aired_episode_numbers(episodes, buffer_hours=tv_settings.episode_air_buffer_hours):
+                if await asyncio.to_thread(self.store.has_show_episode, show.id, season_number, episode_number):
+                    continue
+                episode_row = await asyncio.to_thread(
+                    self.store.create_episode_request,
+                    show.tmdb_id,
+                    show.id,
+                    identity.title,
+                    season_number,
+                    episode_number,
+                    show.poster_path or identity.poster_path,
+                    row.min_resolution,
+                )
+                await asyncio.to_thread(self.store.add_show_episode, show.id, season_number, episode_number, episode_row.id)
+                if row.notify is not None:
+                    await asyncio.to_thread(self.store.set_request_notify, episode_row.id, row.notify)
+                created.append(episode_row.id)
+
+        scope = "series pack" if row.season_number is None else "season pack"
+        if created:
+            message = f"No {scope} found, so its {len(created)} episode{'s' if len(created) != 1 else ''} were requested one by one."
+        else:
+            message = f"No {scope} found, and every aired episode is already requested."
+        await asyncio.to_thread(self.store.update_status, row.id, "no qualifying results", error_message=message)
+        logger.info("pack fallback: %s -> %d per-episode request(s)", _request_label(row), len(created))
+        for episode_id in created:
+            self.enqueue(episode_id)
 
     async def _watch_downloads(self) -> None:
         while True:
@@ -788,6 +873,7 @@ class Worker:
                     season_number=season_number,
                     episode_number=episode_number,
                     poster_path=identity.poster_path,
+                    min_resolution=show.min_resolution,
                 )
                 self.store.update_status(
                     request_row.id,
@@ -866,6 +952,7 @@ class Worker:
                 title=identity.title,
                 season_number=season_number,
                 poster_path=identity.poster_path,
+                min_resolution=show.min_resolution,
             )
             self.enqueue(request_row.id)
             logger.info(
@@ -887,6 +974,7 @@ class Worker:
                 season_number=season_number,
                 episode_number=episode_number,
                 poster_path=identity.poster_path,
+                min_resolution=show.min_resolution,
             )
             self.store.add_show_episode(show.id, season_number, episode_number, request_row.id)
             self.enqueue(request_row.id)
@@ -1087,6 +1175,7 @@ class Worker:
                 title=identity.title,
                 season_number=None,
                 poster_path=identity.poster_path,
+                min_resolution=show.min_resolution,
             )
             self.enqueue(request_row.id)
             logger.info(
@@ -1115,6 +1204,7 @@ class Worker:
                     tmdb_id=show.tmdb_id, show_id=show.id, title=identity.title,
                     season_number=1, season_range_end=prefix_end,
                     poster_path=identity.poster_path,
+                    min_resolution=show.min_resolution,
                 )
                 self.enqueue(request_row.id)
                 logger.info(
@@ -1202,6 +1292,8 @@ class Worker:
 
         identity = await asyncio.to_thread(resolve_show, show.tmdb_id, self.tmdb)
         pipeline_settings = await asyncio.to_thread(resolve_pipeline_settings, self.store)
+        if show.min_resolution:
+            pipeline_settings = dataclasses.replace(pipeline_settings, min_resolution=show.min_resolution)
         label = f"{show.title} S{episode_row.season_number:02d}E{episode_row.episode_number:02d}"
 
         async with self._pipeline_lock:

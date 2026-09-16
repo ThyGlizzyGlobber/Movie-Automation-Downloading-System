@@ -1796,6 +1796,33 @@ def test_bulk_download_accepts_resolution_and_redownload_mode(client_and_deps):
     assert body["redownload_mode"] == "upgrade"
 
 
+def test_bulk_download_profile_becomes_the_show_floor_and_single_episodes_inherit_it(client_and_deps):
+    """An older show requested with the Anything profile: the show keeps
+    that floor, so a later single-episode request (which has no picker of
+    its own) looks for the same quality instead of the household default."""
+    client, store, _, _, _, _ = client_and_deps
+    show = store.create_show(tmdb_id=95350, title="Lanterns")
+
+    response = client.post(
+        f"/api/tv/{show.tmdb_id}/bulk-download", json={"scope": "series", "season_number": None, "profile_id": "any"}
+    )
+    assert response.status_code == 201, response.text
+    assert store.get_request(response.json()["id"]).min_resolution == "480p"
+    assert store.get_show(show.id).min_resolution == "480p"
+    assert client.get(f"/api/shows/{show.id}").json()["min_resolution"] == "480p"
+
+    episode = client.post(f"/api/tv/{show.tmdb_id}/episodes/1/3")
+    assert episode.status_code == 201, episode.text
+    assert store.get_request(episode.json()["id"]).min_resolution == "480p"
+
+    # Choosing the household default again clears the show's own floor.
+    again = client.post(
+        f"/api/tv/{show.tmdb_id}/bulk-download", json={"scope": "season", "season_number": 1, "profile_id": "default"}
+    )
+    assert again.status_code == 201, again.text
+    assert store.get_show(show.id).min_resolution is None
+
+
 def test_bulk_download_rejects_unknown_redownload_mode(client_and_deps):
     client, store, _, _, _, _ = client_and_deps
     show = store.create_show(tmdb_id=95350, title="Lanterns")
@@ -2561,7 +2588,7 @@ def test_quality_profiles_default_and_update(client_and_deps):
     client, store, _, _, _, _ = client_and_deps
     body = client.get("/api/quality-profiles").json()
     assert body["default_profile_id"] == "default"
-    assert [p["id"] for p in body["profiles"]] == ["default", "4k", "1080p"]
+    assert [p["id"] for p in body["profiles"]] == ["default", "4k", "1080p", "any"]
 
     bad = client.put(
         "/api/settings/quality-profiles",

@@ -112,10 +112,9 @@ export default function ShowDetailPage() {
       })
       queryClient.invalidateQueries({ queryKey: ['requests'] })
       queryClient.invalidateQueries({ queryKey: ['episodes', tmdbId] })
-      if (!subscription) {
-        const shows = await listShows()
-        setSubscription(shows.find((s) => s.tmdb_id === tmdbId) ?? null)
-      }
+      // Always re-read: the profile just chosen becomes the show's own floor.
+      const shows = await listShows()
+      setSubscription(shows.find((s) => s.tmdb_id === tmdbId) ?? null)
       toast({ tone: 'info', title: `Requested ${title}`, body: `${scope === 'series' ? 'Whole series' : `Season ${seasonNumber}`} · looking for a copy now` })
     } catch (err) {
       toast({ tone: 'error', title: "Couldn't request that", body: errorText(err) })
@@ -192,6 +191,7 @@ export default function ShowDetailPage() {
   if (show.first_air_date) details.push({ label: 'First aired', value: new Date(`${show.first_air_date}T00:00:00`).toLocaleDateString([], { day: 'numeric', month: 'short', year: 'numeric' }) })
   if (network) details.push({ label: 'Network', value: network })
   if (show.status) details.push({ label: 'Status', value: show.status })
+  if (subscription?.min_resolution) details.push({ label: 'Quality', value: `${subscription.min_resolution} or better` })
   const lang = languageNameOf(show.original_language)
   if (lang) details.push({ label: 'Language', value: lang })
   if (show.genres?.length) details.push({ label: 'Genres', value: show.genres.map((g) => g.name).join(', ') })

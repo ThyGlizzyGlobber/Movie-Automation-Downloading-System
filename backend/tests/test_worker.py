@@ -189,6 +189,57 @@ def test_run_one_marks_no_qualifying_results():
     assert store.get_request(row.id).status == "no qualifying results"
 
 
+def test_run_one_explains_a_no_match_that_was_only_under_the_floor():
+    store = RequestStore(":memory:")
+    row = store.create_request(tmdb_id=693134, title="Dune: Part Two", release_year=2024, query=None)
+    qbt = FakeQBTClient(
+        results_by_variant={
+            "Dune: Part Two": [
+                _result(fileName="Dune.Part.Two.2024.720p.WEB-DL.mkv"),
+                _result(fileName="Dune.Part.Two.2024.1080p.BluRay.mkv", fileUrl="magnet:?xt=urn:btih:BBB2"),
+            ]
+        }
+    )
+    worker = Worker(store, FakeTMDBClient(), qbt)
+
+    asyncio.run(worker._run_one(row.id))
+
+    stored = store.get_request(row.id)
+    assert stored.status == "no qualifying results"
+    assert stored.error_message == (
+        "Found 2 copies, but none at 2160p or better. Request it again with a lower quality to get it."
+    )
+    assert stored.result["below_floor"] == 2
+
+
+def test_run_one_no_match_message_names_the_request_own_floor():
+    store = RequestStore(":memory:")
+    row = store.create_request(
+        tmdb_id=693134, title="Dune: Part Two", release_year=2024, query=None, min_resolution="1080p"
+    )
+    qbt = FakeQBTClient(results_by_variant={"Dune: Part Two": [_result(fileName="Dune.Part.Two.2024.720p.WEB-DL.mkv")]})
+    worker = Worker(store, FakeTMDBClient(), qbt)
+
+    asyncio.run(worker._run_one(row.id))
+
+    stored = store.get_request(row.id)
+    assert stored.status == "no qualifying results"
+    assert stored.error_message.startswith("Found 1 copy, but none at 1080p or better.")
+
+
+def test_run_one_plain_no_match_carries_no_message():
+    store = RequestStore(":memory:")
+    row = store.create_request(tmdb_id=693134, title="Dune: Part Two", release_year=2024, query=None)
+    worker = Worker(store, FakeTMDBClient(), FakeQBTClient(results_by_variant={}))
+
+    asyncio.run(worker._run_one(row.id))
+
+    stored = store.get_request(row.id)
+    assert stored.status == "no qualifying results"
+    assert stored.error_message is None
+    assert "below_floor" not in stored.result
+
+
 def test_run_one_marks_insufficient_free_space():
     store = RequestStore(":memory:")
     row = store.create_request(tmdb_id=693134, title="Dune: Part Two", release_year=2024, query=None)
@@ -503,6 +554,43 @@ def test_run_one_downloads_an_episode_request():
     reloaded = store.get_request(row.id)
     assert reloaded.status == "downloading"
     assert reloaded.result["torrent_hash"] == "bbbb"
+
+
+def test_run_one_episode_honours_the_row_quality_floor():
+    """An episode row created for a show with its own floor (the Anything
+    profile on an older show) carries that floor, so a 720p-only release
+    is accepted where the household's 2160p default would refuse it."""
+    store = RequestStore(":memory:")
+    show = store.create_show(tmdb_id=95350, title="Lanterns")
+    row = store.create_episode_request(
+        tmdb_id=95350, show_id=show.id, title="Lanterns", season_number=1, episode_number=4, min_resolution="480p"
+    )
+    qbt = FakeQBTClient(results_by_variant={"Lanterns S01E04": [_episode_result(fileName="Lanterns.S01E04.720p.WEB-DL.mkv")]})
+    worker = Worker(store, FakeTMDBClient(), qbt)
+
+    asyncio.run(worker._run_one(row.id))
+
+    assert store.get_request(row.id).status == "downloading"
+    assert len(qbt.added) == 1
+
+
+def test_check_show_passes_the_show_floor_onto_its_episode_and_pack_requests():
+    store = RequestStore(":memory:")
+    show = store.create_show(tmdb_id=95350, title="Lanterns")
+    store.set_show_min_resolution(show.id, "480p")
+    show = store.get_show(show.id)
+    tmdb = FakeTMDBClient(
+        show={**SHOW, "number_of_seasons": 1},
+        season_episodes={
+            1: [{"episode_number": 1, "air_date": "2020-01-01"}, {"episode_number": 2, "air_date": "2020-01-08"}]
+        },
+    )
+    worker = Worker(store, tmdb, FakeQBTClient())
+
+    assert worker.check_show(show) == 1
+    [pack_row] = store.list_requests()
+    assert pack_row.media_type == "pack"
+    assert pack_row.min_resolution == "480p"
 
 
 def test_run_one_marks_episode_no_qualifying_results():
@@ -883,6 +971,78 @@ def test_run_one_marks_pack_no_qualifying_results():
     asyncio.run(worker._run_one(row.id))
 
     assert store.get_request(row.id).status == "no qualifying results"
+
+
+_TWO_AIRED_ONE_FUTURE = [
+    {"episode_number": 1, "air_date": "2020-01-01"},
+    {"episode_number": 2, "air_date": "2020-01-08"},
+    {"episode_number": 3, "air_date": "2999-01-01"},
+]
+
+
+def test_pack_with_no_pack_at_all_falls_back_to_one_request_per_aired_episode():
+    """Shows that only ever circulate as single episodes: "Request season
+    1" must still get season 1. The episode rows inherit the pack's floor
+    and notify choice; the pack row explains what happened."""
+    store = RequestStore(":memory:")
+    show = store.create_show(tmdb_id=95350, title="Lanterns")
+    row = store.create_pack_request(
+        tmdb_id=95350, show_id=show.id, title="Lanterns", season_number=1, min_resolution="480p"
+    )
+    store.set_request_notify(row.id, True)
+    tmdb = FakeTMDBClient(season_episodes={1: _TWO_AIRED_ONE_FUTURE})
+    worker = Worker(store, tmdb, FakeQBTClient())
+
+    asyncio.run(worker._run_one(row.id))
+
+    pack = store.get_request(row.id)
+    assert pack.status == "no qualifying results"
+    assert pack.error_message == "No season pack found, so its 2 episodes were requested one by one."
+    episodes = [r for r in store.list_requests() if r.media_type == "episode"]
+    assert sorted((r.season_number, r.episode_number) for r in episodes) == [(1, 1), (1, 2)]
+    assert {r.min_resolution for r in episodes} == {"480p"}
+    assert {r.notify for r in episodes} == {True}
+    assert {r.status for r in episodes} == {"queued"}
+    assert sorted(worker.queue.get_nowait() for _ in range(2)) == sorted(r.id for r in episodes)
+    assert store.has_show_episode(show.id, 1, 1) and store.has_show_episode(show.id, 1, 2)
+    assert not store.has_show_episode(show.id, 1, 3)
+
+
+def test_series_pack_fallback_covers_every_season_and_skips_handled_episodes():
+    store = RequestStore(":memory:")
+    show = store.create_show(tmdb_id=95350, title="Lanterns")
+    earlier = store.create_episode_request(tmdb_id=95350, show_id=show.id, title="Lanterns", season_number=1, episode_number=1)
+    store.add_show_episode(show.id, 1, 1, earlier.id)
+    row = store.create_pack_request(tmdb_id=95350, show_id=show.id, title="Lanterns", season_number=None)
+    tmdb = FakeTMDBClient(
+        show={**SHOW, "number_of_seasons": 2},
+        season_episodes={1: _TWO_AIRED_ONE_FUTURE, 2: [{"episode_number": 1, "air_date": "2021-01-01"}]},
+    )
+    worker = Worker(store, tmdb, FakeQBTClient())
+
+    asyncio.run(worker._run_one(row.id))
+
+    pack = store.get_request(row.id)
+    assert pack.error_message == "No series pack found, so its 2 episodes were requested one by one."
+    new_rows = [r for r in store.list_requests() if r.media_type == "episode" and r.id != earlier.id]
+    assert sorted((r.season_number, r.episode_number) for r in new_rows) == [(1, 2), (2, 1)]
+
+
+def test_pack_under_the_floor_does_not_fall_back_to_episodes():
+    """Packs exist, just not at this quality — the fix is a lower profile,
+    not a flood of per-episode searches that would hit the same floor."""
+    store = RequestStore(":memory:")
+    show = store.create_show(tmdb_id=95350, title="Lanterns")
+    row = store.create_pack_request(tmdb_id=95350, show_id=show.id, title="Lanterns", season_number=1)
+    qbt = FakeQBTClient(results_by_variant={"Lanterns Season 01": [_pack_result(fileName="Lanterns.S01.720p.WEB-DL.mkv")]})
+    worker = Worker(store, FakeTMDBClient(season_episodes={1: _TWO_AIRED_ONE_FUTURE}), qbt)
+
+    asyncio.run(worker._run_one(row.id))
+
+    pack = store.get_request(row.id)
+    assert pack.status == "no qualifying results"
+    assert pack.error_message.startswith("Found 1 copy, but none at 2160p or better.")
+    assert [r for r in store.list_requests() if r.media_type == "episode"] == []
 
 
 def test_check_downloading_organizes_pack_and_fans_out_episode_rows(tmp_path, monkeypatch):

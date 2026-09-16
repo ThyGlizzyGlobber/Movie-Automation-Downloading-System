@@ -8,6 +8,7 @@ from app.tv_resolve import (
     season_is_complete,
     season_pack_queries,
     season_range_pack_queries,
+    series_pack_queries,
     series_pack_query,
 )
 
@@ -118,12 +119,13 @@ def test_resolve_show_requests_credits_append():
 # ---------------------------------------------------------------------------
 
 
-def test_season_pack_queries_returns_four_shapes_zero_padded():
+def test_season_pack_queries_returns_the_literal_shapes_then_the_bare_title():
     assert season_pack_queries("Lanterns", 1) == [
         "Lanterns Season 01",
         "Lanterns S01 COMPLETE",
         "Lanterns Season 1",
         "Lanterns S01",
+        "Lanterns",
     ]
 
 
@@ -133,6 +135,7 @@ def test_season_pack_queries_double_digit_season():
         "Lanterns S12 COMPLETE",
         "Lanterns Season 12",
         "Lanterns S12",
+        "Lanterns",
     ]
 
 
@@ -147,6 +150,14 @@ def test_season_pack_queries_includes_a_bare_season_token_query():
 
 def test_series_pack_query_builds_complete_series_suffix():
     assert series_pack_query("Lanterns") == "Lanterns complete series"
+
+
+def test_series_pack_queries_widen_to_complete_then_the_bare_title():
+    # Confirmed live 2026-09-16 (Batman: The Brave and the Bold): the
+    # literal "complete series" query surfaced two dead torrents while the
+    # real packs were named "Complete Seasons 1 to 3" / "S01-S03" — only a
+    # bare title search found them. The gate does the filtering.
+    assert series_pack_queries("Lanterns") == ["Lanterns complete series", "Lanterns complete", "Lanterns"]
 
 
 def test_season_range_pack_queries_returns_four_shapes_zero_padded():
@@ -250,3 +261,13 @@ def test_season_is_complete_respects_buffer_on_its_last_episode():
     ]
     assert season_is_complete(episodes, now=datetime(2026, 9, 8, 3, 0), buffer_hours=12) is False
     assert season_is_complete(episodes, now=datetime(2026, 9, 8, 15, 0), buffer_hours=12) is True
+
+
+def test_resolve_show_carries_the_season_count_for_the_series_pack_gate():
+    client = TMDBClient(api_key="test-key")
+    client._get = lambda path, params=None: {"id": 15804, "name": "Batman: The Brave and the Bold", "number_of_seasons": 3}
+
+    assert resolve_show(15804, client).number_of_seasons == 3
+
+    client._get = lambda path, params=None: {"id": 1, "name": "Lanterns"}
+    assert resolve_show(1, client).number_of_seasons is None

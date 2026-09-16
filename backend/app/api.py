@@ -503,6 +503,8 @@ class ShowOut(BaseModel):
     last_checked_at: str | None
     # Frontend migration Part J1 — see RequestRow's own comment.
     poster_path: str | None = None
+    # The show's own quality floor (see db.ShowRow.min_resolution).
+    min_resolution: str | None = None
     # Stage 14: the Watching list's "latest episode status" — the most
     # recent episode/pack request this show has produced, or None if it
     # hasn't been checked yet (e.g. just subscribed, catch-up still queued).
@@ -1226,6 +1228,12 @@ def bulk_download_show(
     # (which immediately queues catch-up requests for its latest season)
     # and then asking for a bulk download of the same show left both
     # running at once, flooding the requests list with soon-redundant rows.
+    # The profile chosen here becomes the show's own floor, so the
+    # scheduler's per-episode fallback (and single-episode requests) look
+    # for the same quality this household just asked for.
+    store.set_show_min_resolution(show.id, body.min_resolution)
+    show = store.get_show(show.id)
+
     cancelled = store.cancel_queued_requests_for_show(show.id, body.season_number)
     if cancelled:
         logger.info(
@@ -1948,6 +1956,7 @@ def request_episode(
         season_number=season_number,
         episode_number=episode_number,
         poster_path=show.poster_path,
+        min_resolution=show.min_resolution,
     )
     store.add_show_episode(show.id, season_number, episode_number, row.id)
     if notify is not None:

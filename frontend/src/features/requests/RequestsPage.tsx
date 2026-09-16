@@ -161,7 +161,7 @@ function leafMeta(r: RequestOut): string {
   if (r.requested_by_username) bits.push(r.requested_by_username)
   if (r.redownload_mode) bits.push(r.redownload_mode === 'overwrite' ? 'Replacing' : 'Upgrading')
   bits.push(relativeTime(r.updated_at))
-  if (FAILED_STATES.has(r.status)) bits.push(statusDetail(r.status, r.download_progress))
+  if (FAILED_STATES.has(r.status)) bits.push(statusDetail(r.status, r.download_progress, r.error_message))
   return bits.join(' · ')
 }
 
@@ -206,7 +206,7 @@ function SeasonStrip({ season, onChanged }: { season: SeasonGroup; onChanged: ()
           const meta = statusMeta(r.status)
           const pct = r.status === 'downloading' && r.download_progress != null ? ` ${Math.round(r.download_progress * 100)}%` : ''
           return (
-            <span key={r.id} className={`rq-ep ${meta.cls}`} title={`${episodePillLabel(r)} · ${meta.label} · ${statusDetail(r.status, r.download_progress)}`}>
+            <span key={r.id} className={`rq-ep ${meta.cls}`} title={`${episodePillLabel(r)} · ${meta.label} · ${statusDetail(r.status, r.download_progress, r.error_message)}`}>
               <Icon name={meta.icon} />
               {episodePillLabel(r)}
               {pct}

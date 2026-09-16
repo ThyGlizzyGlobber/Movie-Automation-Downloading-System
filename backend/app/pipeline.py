@@ -3,7 +3,7 @@ dependency — the API (Stage 3) is a thin wrapper around `download()`, which
 is what makes this CLI-testable."""
 
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from app import config
 from app.pipeline_settings import PipelineSettings
@@ -25,7 +25,7 @@ from app.tv_resolve import (
     episode_query,
     season_pack_queries,
     season_range_pack_queries,
-    series_pack_query,
+    series_pack_queries,
 )
 from app.tv_score import passes_episode_relevance_gate
 
@@ -40,6 +40,11 @@ class DownloadResult:
     candidates_considered: int = 0
     torrent_hash: str | None = None
     error: str | None = None  # populated only for "add failed"
+    # Releases that matched the title (and episode/pack shape) but carried a
+    # resolution under the request's floor — the one gate a household can
+    # loosen. Only meaningful on "no qualifying results": it lets the
+    # request say "found 9 copies, none at 2160p" instead of a bare "no match".
+    below_floor: int = 0
 
 
 @dataclass
@@ -54,6 +59,7 @@ class EpisodeDownloadResult:
     candidates_considered: int = 0
     torrent_hash: str | None = None
     error: str | None = None
+    below_floor: int = 0  # see DownloadResult
 
 
 @dataclass
@@ -76,10 +82,46 @@ class PackDownloadResult:
     candidates_considered: int = 0
     torrent_hash: str | None = None
     error: str | None = None
+    below_floor: int = 0  # see DownloadResult
+
+
+def _lowest_floor(settings: PipelineSettings) -> PipelineSettings | None:
+    """The same settings with the resolution floor dropped to the lowest
+    tier we recognise, or None when the floor is already there (nothing
+    to loosen). Used only to *count* near misses — never to select."""
+    lowest = config.RESOLUTION_TIERS[-1][1][0]
+    if settings.min_resolution == lowest:
+        return None
+    return replace(settings, min_resolution=lowest)
+
+
+def _note_below_floor(
+    near_misses: set[str] | None, raw_results: list[dict], gate, settings: PipelineSettings
+) -> None:
+    """Records (by filename, so the same release seen via two query
+    strings counts once) every trustworthy result that passes `gate`
+    with the floor relaxed but not with the real one — i.e. the title
+    was right and only the resolution was too low."""
+    if near_misses is None:
+        return
+    relaxed = _lowest_floor(settings)
+    if relaxed is None:
+        return
+    for r in raw_results:
+        if not is_trustworthy(r):
+            continue
+        name = r.get("fileName", "")
+        if name and not gate(name, settings) and gate(name, relaxed):
+            near_misses.add(name)
 
 
 def _search_variant(
-    qbt: QBTClient, variant: str, identity: MediaIdentity, existing_hashes: set[str], settings: PipelineSettings
+    qbt: QBTClient,
+    variant: str,
+    identity: MediaIdentity,
+    existing_hashes: set[str],
+    settings: PipelineSettings,
+    near_misses: set[str] | None = None,
 ) -> list[dict]:
     # Search unscoped ("all"), not `settings.category` — confirmed live
     # (Stage 12's real Lanterns S01E03 validation) that at least one real,
@@ -95,6 +137,7 @@ def _search_variant(
     raw_results = qbt.search(variant, category="all")
     trustworthy = [r for r in raw_results if is_trustworthy(r)]
     relevant = [r for r in trustworthy if passes_relevance_gate(r.get("fileName", ""), identity, settings)]
+    _note_below_floor(near_misses, raw_results, lambda name, s: passes_relevance_gate(name, identity, s), settings)
     viable = [r for r in relevant if passes_viability_gate(r, settings)]
     deduped = dedup_candidates(viable)
     return exclude_existing(deduped, existing_hashes)
@@ -264,11 +307,13 @@ def download(
     existing_hashes = qbt.existing_torrent_hashes() | (excluded_hashes or set())
     free_space_bytes = usable_free_space(qbt, settings)
 
+    near_misses: set[str] = set()
     candidates = _merge_variant_candidates(
-        identity.variants, lambda variant: _search_variant(qbt, variant, identity, existing_hashes, settings)
+        identity.variants,
+        lambda variant: _search_variant(qbt, variant, identity, existing_hashes, settings, near_misses),
     )
     if not candidates:
-        return DownloadResult(status="no qualifying results", identity=identity)
+        return DownloadResult(status="no qualifying results", identity=identity, below_floor=len(near_misses))
 
     fitting, attempt = _rank_and_add(qbt, candidates, free_space_bytes, settings.category, existing_hashes)
     if not fitting or attempt is None:
@@ -305,6 +350,7 @@ def _search_episode_variant(
     episode: int,
     existing_hashes: set[str],
     settings: PipelineSettings,
+    near_misses: set[str] | None = None,
 ) -> list[dict]:
     query = episode_query(variant, season, episode)
     # See `_search_variant`'s comment above — searching "all" rather than
@@ -318,6 +364,12 @@ def _search_episode_variant(
         for r in trustworthy
         if passes_episode_relevance_gate(r.get("fileName", ""), identity, season, episode, settings)
     ]
+    _note_below_floor(
+        near_misses,
+        raw_results,
+        lambda name, s: passes_episode_relevance_gate(name, identity, season, episode, s),
+        settings,
+    )
     viable = [r for r in relevant if passes_viability_gate(r, settings)]
     deduped = dedup_candidates(viable)
     return exclude_existing(deduped, existing_hashes)
@@ -380,12 +432,21 @@ def download_episode(
     existing_hashes = qbt.existing_torrent_hashes() | (excluded_hashes or set())
     free_space_bytes = usable_free_space(qbt, settings)
 
+    near_misses: set[str] = set()
     candidates = _merge_variant_candidates(
         identity.variants,
-        lambda variant: _search_episode_variant(qbt, variant, identity, season, episode, existing_hashes, settings),
+        lambda variant: _search_episode_variant(
+            qbt, variant, identity, season, episode, existing_hashes, settings, near_misses
+        ),
     )
     if not candidates:
-        return EpisodeDownloadResult(status="no qualifying results", identity=identity, season=season, episode=episode)
+        return EpisodeDownloadResult(
+            status="no qualifying results",
+            identity=identity,
+            season=season,
+            episode=episode,
+            below_floor=len(near_misses),
+        )
 
     fitting, attempt = _rank_and_add(qbt, candidates, free_space_bytes, config.TV_CATEGORY, existing_hashes)
     if not fitting or attempt is None:
@@ -426,6 +487,7 @@ def _search_pack_queries(
     gate,
     existing_hashes: set[str],
     settings: PipelineSettings,
+    near_misses: set[str] | None = None,
 ) -> list[dict]:
     """Searches every query string for one variant — not stopping at the
     first with results — and returns the combined, deduped pool, each
@@ -442,7 +504,8 @@ def _search_pack_queries(
     for query in queries:
         raw_results = qbt.search(query, category="all")
         trustworthy = [r for r in raw_results if is_trustworthy(r)]
-        relevant = [r for r in trustworthy if gate(r.get("fileName", ""))]
+        relevant = [r for r in trustworthy if gate(r.get("fileName", ""), settings)]
+        _note_below_floor(near_misses, raw_results, gate, settings)
         viable = [r for r in relevant if passes_viability_gate(r, settings)]
         deduped = dedup_candidates(viable)
         candidates = exclude_existing(deduped, existing_hashes)
@@ -493,24 +556,25 @@ def download_pack(
     free_space_bytes = usable_free_space(qbt, settings)
 
     combined: list[dict] = []
+    near_misses: set[str] = set()
     for variant in identity.variants:
         if scope == "season":
             queries = season_pack_queries(variant, season)
 
-            def gate(file_name: str, _season=season) -> bool:
-                return passes_season_pack_gate(file_name, identity, _season, settings)
+            def gate(file_name: str, s: PipelineSettings, _season=season) -> bool:
+                return passes_season_pack_gate(file_name, identity, _season, s)
         elif scope == "season_range":
             queries = season_range_pack_queries(variant, season, season_range_end)
 
-            def gate(file_name: str, _start=season, _end=season_range_end) -> bool:
-                return passes_season_range_pack_gate(file_name, identity, _start, _end, settings)
+            def gate(file_name: str, s: PipelineSettings, _start=season, _end=season_range_end) -> bool:
+                return passes_season_range_pack_gate(file_name, identity, _start, _end, s)
         else:
-            queries = [series_pack_query(variant)]
+            queries = series_pack_queries(variant)
 
-            def gate(file_name: str) -> bool:
-                return passes_series_pack_gate(file_name, identity, settings)
+            def gate(file_name: str, s: PipelineSettings) -> bool:
+                return passes_series_pack_gate(file_name, identity, s)
 
-        for candidate in _search_pack_queries(qbt, queries, gate, existing_hashes, settings):
+        for candidate in _search_pack_queries(qbt, queries, gate, existing_hashes, settings, near_misses):
             tagged = dict(candidate)
             tagged.setdefault("_variant_used", variant)
             combined.append(tagged)
@@ -519,7 +583,7 @@ def download_pack(
     if not candidates:
         return PackDownloadResult(
             status="no qualifying results", identity=identity, scope=scope, season=season,
-            season_range_end=season_range_end,
+            season_range_end=season_range_end, below_floor=len(near_misses),
         )
 
     fitting, attempt = _rank_and_add(qbt, candidates, free_space_bytes, config.TV_CATEGORY, existing_hashes)

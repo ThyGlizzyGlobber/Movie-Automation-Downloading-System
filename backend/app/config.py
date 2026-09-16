@@ -128,7 +128,12 @@ RESOLUTION_TIERS = (
     (4, ("2160p", "4k", "uhd")),
     (3, ("1080p", "fullhd", "fhd")),
     (2, ("720p", "hd")),
-    (1, ("480p", "sd")),
+    # Standard-definition releases rarely carry a "480p" token at all —
+    # they say what they were ripped from instead (TVRip, DVDRip, HDTV
+    # XviD…). Those source words count as the SD tier so an "Anything"
+    # (480p) floor genuinely accepts them; any explicit higher token in
+    # the same name still wins, since tiers are matched highest first.
+    (1, ("480p", "sd", "dvdrip", "dvdr", "tvrip", "hdtv", "pdtv", "sdtv", "dsr", "xvid")),
 )
 MIN_RESOLUTION = "2160p"
 
