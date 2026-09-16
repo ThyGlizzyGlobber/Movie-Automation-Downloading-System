@@ -149,12 +149,6 @@ class ShowRow:
     # pack request this show later produces and by bulk-download for an
     # already-subscribed show.
     poster_path: str | None = None
-    # The show's own quality floor: the last profile chosen for it on a
-    # season/series request (None = the household default). Read by every
-    # episode/pack request this show later produces, so an older show
-    # requested as "Anything" keeps finding its HD/SD releases when the
-    # scheduler falls back to per-episode searches.
-    min_resolution: str | None = None
 
     @classmethod
     def _from_row(cls, row: sqlite3.Row) -> "ShowRow":
@@ -166,7 +160,6 @@ class ShowRow:
             created_at=row["created_at"],
             last_checked_at=row["last_checked_at"],
             poster_path=row["poster_path"],
-            min_resolution=row["min_resolution"],
         )
 
 
@@ -337,7 +330,6 @@ class RequestStore:
             )
             # Frontend migration Part J1 — see ShowRow's own comment.
             self._ensure_column("shows", "poster_path", "poster_path TEXT")
-            self._ensure_column("shows", "min_resolution", "min_resolution TEXT")
             # Stage 12: the per-episode dedup ledger — distinct from the
             # `requests` audit trail. UNIQUE(show_id, season_number,
             # episode_number) is what makes "already handled" a single
@@ -1009,13 +1001,6 @@ class RequestStore:
     def update_show_status(self, show_id: int, status: str) -> None:
         with self._lock:
             self._conn.execute("UPDATE shows SET status = ? WHERE id = ?", (status, show_id))
-            self._conn.commit()
-
-    def set_show_min_resolution(self, show_id: int, min_resolution: str | None) -> None:
-        """Remembers the quality floor last chosen for this show (None =
-        household default) — see ShowRow.min_resolution."""
-        with self._lock:
-            self._conn.execute("UPDATE shows SET min_resolution = ? WHERE id = ?", (min_resolution, show_id))
             self._conn.commit()
 
     def update_show_last_checked(self, show_id: int) -> None:

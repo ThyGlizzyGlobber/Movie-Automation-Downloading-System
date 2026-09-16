@@ -1,19 +1,16 @@
 import { useEffect, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { getQualityProfiles } from '../api/requests'
 import { getStorage } from '../api/system'
 import { getNotificationPrefs } from '../api/notifications'
 import Toggle from './Toggle'
 import { formatBytes } from '../lib/format'
 import { posterUrl } from '../lib/tmdbImage'
-import type { QualityProfile } from '../types/features'
 import Icon from './Icon'
 import './RequestModal.css'
 
-// The reference's request sheet: pick a named quality profile (Settings ›
-// Quality profiles), see roughly how big that tends to be and how much
-// room the library has, then request. One-tap paths elsewhere (the
-// search palette) skip this and use the default profile.
+// The request sheet: what's being asked for, what the household will get
+// (always the best copy that exists — no quality to pick), how much room
+// the library has, and one button.
 export default function RequestModal({
   open,
   title,
@@ -29,20 +26,15 @@ export default function RequestModal({
   posterPath?: string | null
   submitLabel?: string
   onClose: () => void
-  onSubmit: (profile: QualityProfile, notify: boolean) => void
+  onSubmit: (notify: boolean) => void
 }) {
-  const profiles = useQuery({ queryKey: ['quality-profiles'], queryFn: getQualityProfiles, enabled: open, staleTime: 60_000 })
   const storage = useQuery({ queryKey: ['storage'], queryFn: getStorage, enabled: open, staleTime: 60_000 })
-  const [chosen, setChosen] = useState<string | null>(null)
   const prefs = useQuery({ queryKey: ['notification-prefs'], queryFn: getNotificationPrefs, enabled: open, staleTime: 60_000 })
   const [notify, setNotify] = useState<boolean | null>(null)
   const notifyOn = notify ?? prefs.data?.notify_own ?? true
 
   useEffect(() => {
-    if (open) {
-      setChosen(null)
-      setNotify(null)
-    }
+    if (open) setNotify(null)
   }, [open])
   useEffect(() => {
     if (!open) return
@@ -54,11 +46,7 @@ export default function RequestModal({
   }, [open, onClose])
 
   if (!open) return null
-  const list = profiles.data?.profiles ?? []
-  const selectedId = chosen ?? profiles.data?.default_profile_id ?? list[0]?.id ?? null
-  const selected = list.find((p) => p.id === selectedId) ?? null
   const free = storage.data?.available ? storage.data.free_bytes : null
-  const tooBig = selected?.typical_size_gb != null && free != null && selected.typical_size_gb * 1e9 > free
 
   return (
     <div
@@ -80,29 +68,13 @@ export default function RequestModal({
             {subtitle && <p className="request-modal-sub">{subtitle}</p>}
           </div>
         </div>
-        <div className="request-modal-label">Quality</div>
-        {profiles.isLoading ? (
-          <div className="request-modal-loading">Loading…</div>
-        ) : (
-          <div className="request-modal-options" role="radiogroup" aria-label="Quality profile">
-            {list.map((p) => (
-              <button
-                key={p.id}
-                role="radio"
-                aria-checked={p.id === selectedId}
-                className={`request-modal-option${p.id === selectedId ? ' on' : ''}`}
-                onClick={() => setChosen(p.id)}
-              >
-                <span className="request-modal-radio" />
-                <span className="request-modal-option-text">
-                  <b>{p.name}</b>
-                  {p.description && <small>{p.description}</small>}
-                </span>
-                <span className="request-modal-size">{p.typical_size_gb != null ? `~${p.typical_size_gb} GB` : 'varies'}</span>
-              </button>
-            ))}
+        <div className="request-modal-best">
+          <Icon name="hd" />
+          <div>
+            <b>The best copy out there</b>
+            <small>4K when it exists, otherwise the sharpest release within the household's download limits.</small>
           </div>
-        )}
+        </div>
         <div className="request-modal-notify">
           <div>
             <b>Notify me when it lands</b>
@@ -111,19 +83,13 @@ export default function RequestModal({
           <Toggle checked={notifyOn} onChange={setNotify} label="Notify me when it lands" />
         </div>
         <div className="request-modal-foot">
-          <span className={`request-modal-note${tooBig ? ' warn' : ''}`}>
-            {free != null
-              ? tooBig
-                ? `Only ${formatBytes(free)} free. This usually needs more.`
-                : `${formatBytes(free)} free.`
-              : 'Free space unknown.'}
-          </span>
+          <span className="request-modal-note">{free != null ? `${formatBytes(free)} free.` : 'Free space unknown.'}</span>
           <button className="request-modal-cancel" onClick={onClose}>
             Cancel
           </button>
-          <button className="request-modal-submit" disabled={!selected} onClick={() => selected && onSubmit(selected, notifyOn)}>
+          <button className="request-modal-submit" onClick={() => onSubmit(notifyOn)}>
             <Icon name="plus" />
-            {selected && selected.id !== 'default' ? `${submitLabel} ${selected.name}` : submitLabel}
+            {submitLabel}
           </button>
         </div>
       </div>

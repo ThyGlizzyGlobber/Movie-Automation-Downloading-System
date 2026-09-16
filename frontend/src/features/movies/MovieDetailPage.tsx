@@ -52,19 +52,17 @@ export default function MovieDetailPage() {
     return <ErrorState message={movieQuery.error instanceof Error ? movieQuery.error.message : undefined} retryHref="#/movies" />
   }
 
-  async function submit(minResolution?: string | null, redownloadMode?: RedownloadMode, profileId?: string, notify?: boolean, key = 'request') {
-    setBusy(key)
+  async function submit(redownloadMode?: RedownloadMode, notify?: boolean) {
+    setBusy('request')
     try {
       await createRequest({
         tmdb_id: tmdbId,
         query: title || null,
-        min_resolution: minResolution ?? null,
         redownload_mode: redownloadMode ?? null,
-        profile_id: profileId ?? null,
         notify: notify ?? null,
       })
       queryClient.invalidateQueries({ queryKey: ['requests'] })
-      toast({ tone: 'info', title: `Requested ${title}`, body: minResolution ? `${minResolution === '2160p' ? '4K' : minResolution} · looking for a copy now` : 'Looking for a copy now' })
+      toast({ tone: 'info', title: `Requested ${title}`, body: 'Looking for the best copy now' })
     } catch (err) {
       toast({ tone: 'error', title: "Couldn't request that", body: errorText(err) })
     } finally {
@@ -162,13 +160,7 @@ export default function MovieDetailPage() {
     <>
       <button className="btn pri" disabled={!!busy || !!active} onClick={() => setRequestOpen(true)}>
         <Icon name="plus" />
-        {active ? 'Requested' : 'Request'}
-      </button>
-      <button className="btn sec sm" disabled={!!busy || !!active} onClick={() => submit('2160p', undefined, undefined, undefined, '4k')}>
-        {busy === '4k' ? 'Adding…' : '4K'}
-      </button>
-      <button className="btn sec sm" disabled={!!busy || !!active} onClick={() => submit('1080p', undefined, undefined, undefined, '1080')}>
-        {busy === '1080' ? 'Adding…' : '1080p'}
+        {active ? 'Requested' : busy ? 'Adding…' : 'Request'}
       </button>
     </>
   )
@@ -218,9 +210,9 @@ export default function MovieDetailPage() {
         subtitle={[year, 'Movie', 'Not on Plex'].filter(Boolean).join(' · ')}
         posterPath={movie.poster_path}
         onClose={() => setRequestOpen(false)}
-        onSubmit={(profile, notify) => {
+        onSubmit={(notify) => {
           setRequestOpen(false)
-          submit(profile.min_resolution ?? undefined, undefined, profile.id, notify)
+          submit(undefined, notify)
         }}
       />
       <RedownloadModal
@@ -230,7 +222,7 @@ export default function MovieDetailPage() {
         onClose={() => setModalOpen(false)}
         onChoose={(mode) => {
           setModalOpen(false)
-          submit(undefined, mode)
+          submit(mode)
         }}
       />
     </>

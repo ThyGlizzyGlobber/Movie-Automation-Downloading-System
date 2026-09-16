@@ -120,7 +120,8 @@ def test_passes_relevance_gate_no_year_token_in_filename_still_passes():
     assert passes_relevance_gate("Dune.Part.Two.UHD.BluRay.2160p.HEVC.REMUX-FraMeSToR", DUNE) is True
 
 
-def test_passes_relevance_gate_rejects_1080p_below_default_floor():
+def test_passes_relevance_gate_rejects_1080p_below_a_raised_household_floor(monkeypatch):
+    monkeypatch.setattr(config, "MIN_RESOLUTION", "2160p")
     assert passes_relevance_gate("Dune.Part.Two.2024.1080p.WEBRip.mkv", DUNE) is False
 
 

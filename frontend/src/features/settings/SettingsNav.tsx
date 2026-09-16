@@ -14,7 +14,6 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
   { key: 'connections', label: 'Services', icon: 'plug', group: 'Server' },
   { key: 'pipeline', label: 'Downloads', icon: 'sliders', group: 'Server' },
   { key: 'tv', label: 'TV shows', icon: 'clock', group: 'Server' },
-  { key: 'profiles', label: 'Quality profiles', icon: 'hd', group: 'Server' },
   { key: 'storage', label: 'Storage', icon: 'drive', group: 'Server' },
   { key: 'retention', label: 'History', icon: 'trash', group: 'Server' },
   { key: 'household', label: 'Household', icon: 'user', group: 'Access' },

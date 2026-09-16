@@ -264,7 +264,8 @@ def test_download_picks_smaller_candidate_when_best_ranked_does_not_fit_free_spa
 # ---------------------------------------------------------------------------
 
 
-def test_download_does_not_fall_back_to_1080p_by_default():
+def test_download_does_not_fall_back_to_1080p_when_the_household_floor_is_4k(monkeypatch):
+    monkeypatch.setattr(config, "MIN_RESOLUTION", "2160p")
     qbt = FakeQBTClient(
         results_by_variant={"Dune: Part Two": [_result(fileName="Dune.Part.Two.2024.1080p.WEBRip.mkv")]}
     )
@@ -1048,90 +1049,6 @@ def test_download_pack_falls_back_to_next_candidate_when_add_fails():
 # Quality-floor near misses: the title was found, only the resolution was
 # too low. Surfaced as `below_floor` so the request can say why.
 # ---------------------------------------------------------------------------
-
-
-def test_download_counts_title_matches_under_the_floor():
-    qbt = FakeQBTClient(
-        results_by_variant={
-            "Dune: Part Two": [
-                _result(fileName="Dune.Part.Two.2024.720p.WEB-DL.mkv", fileUrl="magnet:?xt=urn:btih:BBB1"),
-                _result(fileName="Dune.Part.Two.2024.1080p.BluRay.mkv", fileUrl="magnet:?xt=urn:btih:BBB2"),
-                _result(fileName="Some.Other.Movie.2024.720p.WEB-DL.mkv", fileUrl="magnet:?xt=urn:btih:BBB3"),
-            ],
-            # The same release found via a second variant counts once.
-            "Dune": [_result(fileName="Dune.Part.Two.2024.720p.WEB-DL.mkv", fileUrl="magnet:?xt=urn:btih:BBB1")],
-        }
-    )
-
-    result = download(693134, FakeTMDBClient(), qbt)
-
-    assert result.status == "no qualifying results"
-    assert result.below_floor == 2
-    assert qbt.added == []
-
-
-def test_download_below_floor_is_zero_when_nothing_matched_the_title():
-    qbt = FakeQBTClient(results_by_variant={"Dune: Part Two": [_result(fileName="Some.Other.Movie.2024.720p.mkv")]})
-
-    result = download(693134, FakeTMDBClient(), qbt)
-
-    assert result.status == "no qualifying results"
-    assert result.below_floor == 0
-
-
-def test_download_below_floor_is_zero_when_the_floor_is_already_lowest():
-    qbt = FakeQBTClient(results_by_variant={"Dune: Part Two": [_result(fileName="Dune.Part.Two.2024.CAM.mkv")]})
-
-    result = download(693134, FakeTMDBClient(), qbt, dataclasses.replace(PipelineSettings.from_config(), min_resolution="480p"))
-
-    assert result.status == "no qualifying results"
-    assert result.below_floor == 0
-
-
-def test_download_episode_counts_title_matches_under_the_floor():
-    qbt = FakeQBTClient(
-        results_by_variant={
-            "Lanterns S01E04": [
-                _episode_result(fileName="Lanterns.S01E04.HDTV.XviD.avi"),
-                _episode_result(fileName="Lanterns.S01E04.720p.WEB-DL.mkv", fileUrl="magnet:?xt=urn:btih:CCC1"),
-                _episode_result(fileName="Lanterns.S01E05.720p.WEB-DL.mkv", fileUrl="magnet:?xt=urn:btih:CCC2"),
-            ]
-        }
-    )
-
-    result = download_episode(LANTERNS, 1, 4, qbt)
-
-    assert result.status == "no qualifying results"
-    # The HDTV/XviD one counts as SD and the 720p one as HD: both are the
-    # right episode under the floor. The S01E05 file is a different episode.
-    assert result.below_floor == 2
-
-
-def test_download_pack_counts_title_matches_under_the_floor():
-    qbt = FakeQBTClient(
-        results_by_variant={
-            "Lanterns Season 01": [_pack_result(fileName="Lanterns.S01.1080p.WEB-DL.mkv")],
-            "Lanterns S01 COMPLETE": [
-                _pack_result(fileName="Lanterns.S01.1080p.WEB-DL.mkv"),
-                _pack_result(fileName="Lanterns.S01.720p.HDTV.mkv", fileUrl="magnet:?xt=urn:btih:DDD1"),
-            ],
-        }
-    )
-
-    result = download_pack(LANTERNS, "season", qbt, season=1)
-
-    assert result.status == "no qualifying results"
-    assert result.below_floor == 2
-
-
-def test_download_adds_when_the_lower_profile_accepts_the_only_copy():
-    """The way through for an older title: the Anything profile's 480p floor."""
-    qbt = FakeQBTClient(results_by_variant={"Dune: Part Two": [_result(fileName="Dune.Part.Two.2024.720p.WEB-DL.mkv")]})
-
-    result = download(693134, FakeTMDBClient(), qbt, dataclasses.replace(PipelineSettings.from_config(), min_resolution="480p"))
-
-    assert result.status == "added"
-    assert result.below_floor == 0
 
 
 def test_download_pack_series_finds_a_range_pack_only_the_bare_title_search_surfaces():

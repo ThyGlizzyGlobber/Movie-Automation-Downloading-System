@@ -155,22 +155,6 @@ def _score_summary(score) -> str:
     )
 
 
-def _below_floor_message(result, settings) -> str | None:
-    """Household-facing reason for a "no qualifying results" that was
-    really a quality-floor miss: the title was found, just not at the
-    floor this request asked for. Older shows and films often only exist
-    in HD or SD, so the way through is a lower profile, and the row
-    should say so rather than "nothing matched"."""
-    if result.status != "no qualifying results":
-        return None
-    below = getattr(result, "below_floor", 0)
-    if not below:
-        return None
-    copies = "1 copy" if below == 1 else f"{below} copies"
-    floor = getattr(settings, "min_resolution", None) or "the quality floor"
-    return f"Found {copies}, but none at {floor} or better. Request it again with a lower quality to get it."
-
-
 def _result_summary(result) -> dict:
     """Audit-trail snapshot persisted alongside the request: which variant
     matched, the winning candidate, its score breakdown, and the torrent
@@ -188,9 +172,6 @@ def _result_summary(result) -> dict:
     query_used = getattr(result, "query_used", None)
     if query_used is not None:
         summary["query_used"] = query_used
-    below_floor = getattr(result, "below_floor", 0)
-    if below_floor:
-        summary["below_floor"] = below_floor
     if result.winner is not None:
         summary["winner"] = {
             "fileName": result.winner.get("fileName"),
@@ -264,11 +245,10 @@ class Worker:
         try:
             settings = await asyncio.to_thread(resolve_pipeline_settings, self.store)
             if row.min_resolution:
-                # Per-request floor override — the request sheet's quality
-                # profile on a movie or a season/series request, and, for
-                # an episode, the show's own floor (ShowRow.min_resolution)
-                # copied onto the row when it was created. Applies only to
-                # this one request, never touches the global settings.
+                # A per-row floor override (requests.min_resolution). Nothing
+                # in the app sets it any more — a request always means "the
+                # best copy that exists" — but a row that carries one is
+                # still honoured.
                 settings = dataclasses.replace(settings, min_resolution=row.min_resolution)
             # Stage 15: torrents explicitly rejected as genuinely defective
             # on a prior attempt for this same movie/show — excluded from
@@ -324,14 +304,8 @@ class Worker:
         if result.status == "added":
             await asyncio.to_thread(self.store.update_status, request_id, "downloading", result=summary)
         elif result.status in _DIRECT_TERMINAL_STATUSES:
-            await asyncio.to_thread(
-                self.store.update_status,
-                request_id,
-                result.status,
-                error_message=_below_floor_message(result, settings),
-                result=summary,
-            )
-            if row.media_type == "pack" and result.status == "no qualifying results" and not result.below_floor:
+            await asyncio.to_thread(self.store.update_status, request_id, result.status, result=summary)
+            if row.media_type == "pack" and result.status == "no qualifying results":
                 await self._fall_back_to_episodes(row, result.identity)
         elif result.status == "add failed":
             # Every fitting candidate across every variant failed to
@@ -355,8 +329,7 @@ class Worker:
             )
 
     async def _fall_back_to_episodes(self, row, identity: ShowIdentity) -> None:
-        """A season/series request that found no pack *at all* (not even
-        one under the quality floor) is re-issued as one request per
+        """A season/series request that found no pack is re-issued as one request per
         aired episode in that scope. Plenty of older or smaller shows only
         ever circulate as single episodes — "Request all" still has to
         mean the whole show. Episodes already in the ledger (handled by an
@@ -873,7 +846,6 @@ class Worker:
                     season_number=season_number,
                     episode_number=episode_number,
                     poster_path=identity.poster_path,
-                    min_resolution=show.min_resolution,
                 )
                 self.store.update_status(
                     request_row.id,
@@ -952,7 +924,6 @@ class Worker:
                 title=identity.title,
                 season_number=season_number,
                 poster_path=identity.poster_path,
-                min_resolution=show.min_resolution,
             )
             self.enqueue(request_row.id)
             logger.info(
@@ -974,7 +945,6 @@ class Worker:
                 season_number=season_number,
                 episode_number=episode_number,
                 poster_path=identity.poster_path,
-                min_resolution=show.min_resolution,
             )
             self.store.add_show_episode(show.id, season_number, episode_number, request_row.id)
             self.enqueue(request_row.id)
@@ -1175,7 +1145,6 @@ class Worker:
                 title=identity.title,
                 season_number=None,
                 poster_path=identity.poster_path,
-                min_resolution=show.min_resolution,
             )
             self.enqueue(request_row.id)
             logger.info(
@@ -1204,7 +1173,6 @@ class Worker:
                     tmdb_id=show.tmdb_id, show_id=show.id, title=identity.title,
                     season_number=1, season_range_end=prefix_end,
                     poster_path=identity.poster_path,
-                    min_resolution=show.min_resolution,
                 )
                 self.enqueue(request_row.id)
                 logger.info(
@@ -1292,8 +1260,6 @@ class Worker:
 
         identity = await asyncio.to_thread(resolve_show, show.tmdb_id, self.tmdb)
         pipeline_settings = await asyncio.to_thread(resolve_pipeline_settings, self.store)
-        if show.min_resolution:
-            pipeline_settings = dataclasses.replace(pipeline_settings, min_resolution=show.min_resolution)
         label = f"{show.title} S{episode_row.season_number:02d}E{episode_row.episode_number:02d}"
 
         async with self._pipeline_lock:

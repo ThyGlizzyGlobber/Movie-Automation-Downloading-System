@@ -68,7 +68,8 @@ def test_passes_episode_relevance_gate_no_year_tolerance_check_needed():
 # ---------------------------------------------------------------------------
 
 
-def test_passes_episode_relevance_gate_rejects_below_default_floor():
+def test_passes_episode_relevance_gate_rejects_below_a_raised_household_floor(monkeypatch):
+    monkeypatch.setattr(config, "MIN_RESOLUTION", "2160p")
     assert passes_episode_relevance_gate("Lanterns.S01E04.1080p.WEB-DL.mkv", LANTERNS, 1, 4) is False
 
 

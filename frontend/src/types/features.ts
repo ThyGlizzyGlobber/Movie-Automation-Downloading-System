@@ -2,19 +2,6 @@
 // pass" block): quality profiles, per-episode status, storage details,
 // Plex Continue Watching.
 
-export interface QualityProfile {
-  id: string
-  name: string
-  description: string | null
-  min_resolution: string | null
-  typical_size_gb: number | null
-}
-
-export interface QualityProfiles {
-  profiles: QualityProfile[]
-  default_profile_id: string
-}
-
 export type EpisodeState = 'in_plex' | 'requested' | 'failed' | 'unaired' | 'missing'
 
 export interface EpisodeStatus {

@@ -51,7 +51,8 @@ def test_passes_season_pack_gate_rejects_a_real_single_episode_release():
     assert passes_season_pack_gate("Lanterns.S01E04.2160p.WEB-DL.mkv", LANTERNS, 1) is False
 
 
-def test_passes_season_pack_gate_rejects_below_default_floor():
+def test_passes_season_pack_gate_rejects_below_a_raised_household_floor(monkeypatch):
+    monkeypatch.setattr(config, "MIN_RESOLUTION", "2160p")
     assert passes_season_pack_gate("Lanterns.S01.1080p.WEB-DL.mkv", LANTERNS, 1) is False
 
 
@@ -127,7 +128,8 @@ def test_passes_series_pack_gate_rejects_wrong_show():
     assert passes_series_pack_gate("Some.Other.Show.Complete.Series.2160p.WEB-DL.mkv", LANTERNS) is False
 
 
-def test_passes_series_pack_gate_rejects_below_default_floor():
+def test_passes_series_pack_gate_rejects_below_a_raised_household_floor(monkeypatch):
+    monkeypatch.setattr(config, "MIN_RESOLUTION", "2160p")
     assert passes_series_pack_gate("Lanterns.Complete.Series.1080p.WEB-DL.mkv", LANTERNS) is False
 
 
@@ -184,7 +186,8 @@ def test_passes_season_range_pack_gate_rejects_wrong_show():
     assert passes_season_range_pack_gate("Some.Other.Show.S01-S03.2160p.WEB-DL.mkv", LANTERNS, 1, 3) is False
 
 
-def test_passes_season_range_pack_gate_rejects_below_default_floor():
+def test_passes_season_range_pack_gate_rejects_below_a_raised_household_floor(monkeypatch):
+    monkeypatch.setattr(config, "MIN_RESOLUTION", "2160p")
     assert passes_season_range_pack_gate("Lanterns.S01-S03.1080p.WEB-DL.mkv", LANTERNS, 1, 3) is False
 
 

@@ -46,14 +46,6 @@ from app.pipeline_settings import (
     settings_from_raw,
 )
 from app.plex import LoginSession, PlexClient, PlexError, PlexLinker, new_client_identifier, plex_library_lookup
-from app.quality_profiles import (
-    DEFAULT_PROFILE_ID,
-    SHIPPED_SEEN_KEY,
-    profile_min_resolution,
-    resolve_profiles,
-    shipped_ids_seen,
-    validate_profiles,
-)
 from app.qbt import QBTClient
 from app.resolve import resolve
 from app.tmdb import BROWSE_SORTS, TMDBClient, TMDBError, best_logo_path, best_trailer_key, is_movie_coming_soon, is_tv_upcoming
@@ -331,28 +323,15 @@ class SearchRequest(BaseModel):
 class CreateRequest(BaseModel):
     tmdb_id: int
     query: str | None = None
-    # Per-request floor override — the detail page's "Download 4K"/
-    # "Download 1080p" shortcuts. None = use the global pipeline setting.
-    min_resolution: str | None = None
     # frontend migration Part K1/K2: set only from the "Already on Plex"
     # confirmation modal. "overwrite" is rejected below (create_request)
     # unless this tmdb_id has a request this app itself organized on
     # record — never offered against a file only the fuzzy on_plex
     # title/year match found.
     redownload_mode: str | None = None
-    # A named quality profile (app.quality_profiles) — resolved to
-    # min_resolution server-side when min_resolution itself isn't sent.
-    profile_id: str | None = None
     # "Notify me when it lands" on the request sheet; None = the
     # requester's own default (Settings › Notifications).
     notify: bool | None = None
-
-    @field_validator("min_resolution")
-    @classmethod
-    def _known_resolution(cls, v: str | None) -> str | None:
-        if v is not None and not is_valid_min_resolution(v):
-            raise ValueError(f"min_resolution must be one of {VALID_MIN_RESOLUTIONS}")
-        return v
 
     @field_validator("redownload_mode")
     @classmethod
@@ -455,10 +434,6 @@ class BulkDownloadRequest(BaseModel):
 
     scope: str
     season_number: int | None = None
-    # Frontend migration Part J4 — per-request floor override, same
-    # convention as CreateRequest.min_resolution (movies), now also
-    # available for a season/series bulk download.
-    min_resolution: str | None = None
     # Frontend migration Part K3 — TV gets the same redownload treatment
     # as movies. Accepted and stored for a pack request, but the actual
     # overwrite-deletion mechanism (Part K2) is movie-only for now; an
@@ -466,9 +441,6 @@ class BulkDownloadRequest(BaseModel):
     # out for packs too — a named, not-yet-solved gap in the same style
     # as this project's others, not silently pretended to be complete.
     redownload_mode: str | None = None
-    # A named quality profile (app.quality_profiles) — resolved to
-    # min_resolution server-side when min_resolution itself isn't sent.
-    profile_id: str | None = None
     notify: bool | None = None
 
     @field_validator("scope")
@@ -476,13 +448,6 @@ class BulkDownloadRequest(BaseModel):
     def _known_scope(cls, v: str) -> str:
         if v not in ("season", "series"):
             raise ValueError("scope must be 'season' or 'series'")
-        return v
-
-    @field_validator("min_resolution")
-    @classmethod
-    def _known_resolution(cls, v: str | None) -> str | None:
-        if v is not None and not is_valid_min_resolution(v):
-            raise ValueError(f"min_resolution must be one of {VALID_MIN_RESOLUTIONS}")
         return v
 
     @field_validator("redownload_mode")
@@ -510,8 +475,6 @@ class ShowOut(BaseModel):
     last_checked_at: str | None
     # Frontend migration Part J1 — see RequestRow's own comment.
     poster_path: str | None = None
-    # The show's own quality floor (see db.ShowRow.min_resolution).
-    min_resolution: str | None = None
     # Stage 14: the Watching list's "latest episode status" — the most
     # recent episode/pack request this show has produced, or None if it
     # hasn't been checked yet (e.g. just subscribed, catch-up still queued).
@@ -950,11 +913,6 @@ def create_request(
     worker: Worker = Depends(get_worker),
     session: SessionRow = Depends(require_can_request),
 ) -> RequestOut:
-    if body.profile_id is not None and body.min_resolution is None:
-        try:
-            body.min_resolution = profile_min_resolution(store.get_settings(), body.profile_id)
-        except KeyError:
-            raise HTTPException(status_code=400, detail=f"unknown quality profile {body.profile_id!r}") from None
     try:
         identity = resolve(body.tmdb_id, tmdb)
     except TMDBError as exc:
@@ -974,7 +932,6 @@ def create_request(
         title=identity.title,
         release_year=identity.release_year,
         query=body.query,
-        min_resolution=body.min_resolution,
         requested_by_plex_id=session.plex_user_id,
         requested_by_username=session.username,
         redownload_mode=body.redownload_mode,
@@ -1212,11 +1169,6 @@ def bulk_download_show(
     worker: Worker = Depends(get_worker),
     session: SessionRow = Depends(require_can_request),
 ) -> RequestOut:
-    if body.profile_id is not None and body.min_resolution is None:
-        try:
-            body.min_resolution = profile_min_resolution(store.get_settings(), body.profile_id)
-        except KeyError:
-            raise HTTPException(status_code=400, detail=f"unknown quality profile {body.profile_id!r}") from None
     show = store.get_show_by_tmdb_id(tmdb_id)
     if show is None:
         try:
@@ -1235,12 +1187,6 @@ def bulk_download_show(
     # (which immediately queues catch-up requests for its latest season)
     # and then asking for a bulk download of the same show left both
     # running at once, flooding the requests list with soon-redundant rows.
-    # The profile chosen here becomes the show's own floor, so the
-    # scheduler's per-episode fallback (and single-episode requests) look
-    # for the same quality this household just asked for.
-    store.set_show_min_resolution(show.id, body.min_resolution)
-    show = store.get_show(show.id)
-
     cancelled = store.cancel_queued_requests_for_show(show.id, body.season_number)
     if cancelled:
         logger.info(
@@ -1255,7 +1201,6 @@ def bulk_download_show(
         season_number=body.season_number,
         requested_by_plex_id=session.plex_user_id,
         requested_by_username=session.username,
-        min_resolution=body.min_resolution,
         # No on_plex_tracked/400 gate here unlike the movie route — TV's
         # actual overwrite-deletion mechanism isn't built yet (see
         # BulkDownloadRequest's own docstring), so there's nothing yet
@@ -1811,50 +1756,6 @@ def get_storage() -> dict:
     }
 
 
-# -- Obsidian feature pass (2026-09-15): quality profiles, per-episode
-#    status, storage details, Plex "Continue watching". --
-
-
-class QualityProfileIn(BaseModel):
-    id: str
-    name: str
-    description: str | None = None
-    min_resolution: str | None = None
-    typical_size_gb: float | None = None
-
-
-class QualityProfilesIn(BaseModel):
-    profiles: list[QualityProfileIn]
-    default_profile_id: str = DEFAULT_PROFILE_ID
-
-
-@router.get("/api/quality-profiles")
-def get_quality_profiles(store: RequestStore = Depends(get_store)) -> dict:
-    """Any signed-in user: the request modal reads these."""
-    return resolve_profiles(store.get_settings())
-
-
-@admin_router.get("/api/settings/quality-profiles")
-def get_quality_profiles_admin(store: RequestStore = Depends(get_store)) -> dict:
-    return resolve_profiles(store.get_settings())
-
-
-@admin_router.put("/api/settings/quality-profiles")
-def set_quality_profiles(body: QualityProfilesIn, store: RequestStore = Depends(get_store)) -> dict:
-    profiles = [p.model_dump() for p in body.profiles]
-    try:
-        validate_profiles(profiles, body.default_profile_id)
-    except ValueError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
-    store.update_settings(
-        {
-            "quality_profiles": profiles,
-            "default_profile_id": body.default_profile_id,
-            SHIPPED_SEEN_KEY: shipped_ids_seen(),
-        }
-    )
-    return resolve_profiles(store.get_settings())
-
 
 NON_TERMINAL_STATUSES = {"queued", "searching", "downloading"}
 _EPISODE_TERMINAL_FAILURES = {"failed", "no qualifying results", "insufficient free space", "downloaded, not filed", "cancelled"}
@@ -1969,7 +1870,6 @@ def request_episode(
         season_number=season_number,
         episode_number=episode_number,
         poster_path=show.poster_path,
-        min_resolution=show.min_resolution,
     )
     store.add_show_episode(show.id, season_number, episode_number, row.id)
     if notify is not None:

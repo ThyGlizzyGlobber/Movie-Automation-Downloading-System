@@ -99,22 +99,21 @@ export default function ShowDetailPage() {
     }
   }
 
-  async function runBulkDownload(scope: 'season' | 'series', seasonNumber: number | null, key: string, redownloadMode?: RedownloadMode, minResolution?: string | null, profileId?: string | null, notify?: boolean) {
+  async function runBulkDownload(scope: 'season' | 'series', seasonNumber: number | null, key: string, redownloadMode?: RedownloadMode, notify?: boolean) {
     setBulkBusyKey(key)
     try {
       await bulkDownload(tmdbId, {
         scope,
         season_number: seasonNumber,
-        min_resolution: minResolution ?? null,
-        profile_id: profileId ?? null,
         redownload_mode: redownloadMode ?? null,
         notify: notify ?? null,
       })
       queryClient.invalidateQueries({ queryKey: ['requests'] })
       queryClient.invalidateQueries({ queryKey: ['episodes', tmdbId] })
-      // Always re-read: the profile just chosen becomes the show's own floor.
-      const shows = await listShows()
-      setSubscription(shows.find((s) => s.tmdb_id === tmdbId) ?? null)
+      if (!subscription) {
+        const shows = await listShows()
+        setSubscription(shows.find((s) => s.tmdb_id === tmdbId) ?? null)
+      }
       toast({ tone: 'info', title: `Requested ${title}`, body: `${scope === 'series' ? 'Whole series' : `Season ${seasonNumber}`} · looking for a copy now` })
     } catch (err) {
       toast({ tone: 'error', title: "Couldn't request that", body: errorText(err) })
@@ -191,7 +190,6 @@ export default function ShowDetailPage() {
   if (show.first_air_date) details.push({ label: 'First aired', value: new Date(`${show.first_air_date}T00:00:00`).toLocaleDateString([], { day: 'numeric', month: 'short', year: 'numeric' }) })
   if (network) details.push({ label: 'Network', value: network })
   if (show.status) details.push({ label: 'Status', value: show.status })
-  if (subscription?.min_resolution) details.push({ label: 'Quality', value: `${subscription.min_resolution} or better` })
   const lang = languageNameOf(show.original_language)
   if (lang) details.push({ label: 'Language', value: lang })
   if (show.genres?.length) details.push({ label: 'Genres', value: show.genres.map((g) => g.name).join(', ') })
@@ -297,12 +295,12 @@ export default function ShowDetailPage() {
           setRequestModal(null)
           setBulkBusyKey(null)
         }}
-        onSubmit={(profile, notify) => {
+        onSubmit={(notify) => {
           const pending = requestModal
           setRequestModal(null)
           if (!pending) return
           const key = pending.scope === 'series' ? 'series' : `season-${pending.seasonNumber}`
-          runBulkDownload(pending.scope, pending.seasonNumber, key, undefined, profile.min_resolution, profile.id, notify)
+          runBulkDownload(pending.scope, pending.seasonNumber, key, undefined, notify)
         }}
       />
       <RedownloadModal

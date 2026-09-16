@@ -11,7 +11,6 @@ import RemoteAccessPanel from './RemoteAccessPanel'
 import ActivityDashboardPanel from './ActivityDashboardPanel'
 import UpdatesPanel from './UpdatesPanel'
 import StoragePanel from './StoragePanel'
-import QualityProfilesPanel from './QualityProfilesPanel'
 import NotificationsPanel from './NotificationsPanel'
 import HouseholdPanel from './HouseholdPanel'
 import AboutPanel from './AboutPanel'
@@ -26,8 +25,6 @@ function renderPanel(key: string) {
       return <TvSchedulePanel />
     case 'retention':
       return <RetentionPanel />
-    case 'profiles':
-      return <QualityProfilesPanel />
     case 'storage':
       return <StoragePanel />
     case 'connections':

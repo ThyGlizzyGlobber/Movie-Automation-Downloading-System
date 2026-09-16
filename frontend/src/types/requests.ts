@@ -49,14 +49,10 @@ export interface RequestOut {
 export interface CreateRequestBody {
   tmdb_id: number
   query?: string | null
-  min_resolution?: string | null
   // Set only from the "Already on Plex" confirmation modal (Part K1).
   // "overwrite" is rejected server-side unless this tmdb_id has a request
   // this app itself organized on record.
   redownload_mode?: RedownloadMode | null
-  // A named quality profile (Settings › Quality profiles); the server
-  // resolves it to min_resolution when that isn't sent explicitly.
-  profile_id?: string | null
   // "Notify me when it lands" on the request sheet; null = the
   // requester's own default.
   notify?: boolean | null
@@ -66,8 +62,6 @@ export interface CreateRequestBody {
 export interface BulkDownloadBody {
   scope: 'season' | 'series'
   season_number?: number | null
-  min_resolution?: string | null
   redownload_mode?: RedownloadMode | null
-  profile_id?: string | null
   notify?: boolean | null
 }

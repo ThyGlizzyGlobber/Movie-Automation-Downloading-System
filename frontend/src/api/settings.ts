@@ -13,7 +13,7 @@ import type {
   TvScheduleSettingsBody,
 } from '../types/settings'
 import type { QbtConnectionInput } from './setup'
-import type { QualityProfiles, StorageDetails } from '../types/features'
+import type { StorageDetails } from '../types/features'
 
 export function getRetention() {
   return request<RetentionSettings>('/api/settings/retention')
@@ -73,14 +73,8 @@ export function getAuditLog(limit = 25, offset = 0) {
   return request<AuditLogOut>(`/api/admin/audit-log?limit=${limit}&offset=${offset}`)
 }
 
-// Quality profiles (Settings › Quality profiles) and the Storage panel.
-export function getQualityProfilesAdmin() {
-  return request<QualityProfiles>('/api/settings/quality-profiles')
-}
+// The Storage panel.
 
-export function setQualityProfiles(body: QualityProfiles) {
-  return putJson<QualityProfiles>('/api/settings/quality-profiles', body)
-}
 
 export function getStorageDetails() {
   return request<StorageDetails>('/api/storage/details')

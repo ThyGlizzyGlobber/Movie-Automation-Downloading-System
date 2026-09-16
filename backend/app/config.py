@@ -118,12 +118,12 @@ CATEGORY = "movies"
 
 # Pass one (relevance gate) + pass two (quality score) share the same
 # resolution tier table. MIN_RESOLUTION is a *floor*, not a fixed gate: any
-# tier at or above it can pass, and resolution is scored as the
-# highest-weighted tier in pass two — so within a floor of "1080p", a 2160p
-# candidate always outranks a 1080p one, but a 1080p candidate is still
-# accepted when nothing higher qualifies. Default floor "2160p" reproduces
-# Stage 2's original hard-4K-only behavior; lowering it (a Stage 7 setting)
-# is what enables the "fall back to 1080p if no 4K result" behavior.
+# tier at or above it can pass, and resolution is the highest-weighted
+# signal in pass two, so a 2160p candidate always outranks a 1080p one and
+# so on down. The floor sits at the lowest tier: a request means "the best
+# copy that exists", and the ranking decides what that is. The floor is
+# still a real gate — a release with no resolution or source word at all
+# can't be judged and is never picked. Tests raise it to exercise the gate.
 RESOLUTION_TIERS = (
     (4, ("2160p", "4k", "uhd")),
     (3, ("1080p", "fullhd", "fhd")),
@@ -135,7 +135,7 @@ RESOLUTION_TIERS = (
     # the same name still wins, since tiers are matched highest first.
     (1, ("480p", "sd", "dvdrip", "dvdr", "tvrip", "hdtv", "pdtv", "sdtv", "dsr", "xvid")),
 )
-MIN_RESOLUTION = "2160p"
+MIN_RESOLUTION = "480p"
 
 YEAR_TOLERANCE = 1
 LANGUAGE_ALLOWLIST: tuple[str, ...] = ()  # empty = no restriction, OR semantics (any one qualifies)

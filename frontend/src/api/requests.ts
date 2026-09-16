@@ -1,6 +1,5 @@
 import { postJson, request } from './client'
 import type { CreateRequestBody, RequestOut } from '../types/requests'
-import type { QualityProfiles } from '../types/features'
 
 export function listRequests(status?: string) {
   return request<RequestOut[]>(`/api/requests${status ? `?status=${status}` : ''}`)
@@ -23,9 +22,6 @@ export function rejectRequest(id: number) {
 }
 
 // Any signed-in user — the request modal's choices.
-export function getQualityProfiles() {
-  return request<QualityProfiles>('/api/quality-profiles')
-}
 
 export function clearRequests() {
   return request<{ removed: number }>('/api/requests/clear', { method: 'POST' })
