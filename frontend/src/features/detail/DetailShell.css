@@ -475,9 +475,18 @@
     line-height: 1.55;
     margin: 16px 0 18px;
   }
-  .detail-actions .btn.pri {
-    flex: 1 1 auto;
+  /* The primary button takes the full width; the rest share the next
+     row two across. */
+  .detail-actions .btn {
+    flex: 1 1 calc(50% - 5px);
     justify-content: center;
+  }
+  .detail-actions .btn.pri {
+    flex: 1 1 100%;
+  }
+  .detail-actions .btn.sm {
+    height: 46px;
+    font-size: 14px;
   }
   .detail-tiles.four {
     grid-template-columns: 1fr 1fr;
