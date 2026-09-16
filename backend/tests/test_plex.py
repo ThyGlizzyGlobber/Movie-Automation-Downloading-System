@@ -180,14 +180,14 @@ def test_get_account_identity_returns_id_and_username():
     session = FakeSession(get_responses=[FakeResponse(json_data={"id": 42, "username": "bejay"})])
     client = PlexClient("client-1", session=session)
 
-    assert client.get_account_identity("account-token") == {"id": 42, "username": "bejay"}
+    assert client.get_account_identity("account-token") == {"id": 42, "username": "bejay", "thumb": None}
 
 
 def test_get_account_identity_falls_back_to_title_when_no_username():
     session = FakeSession(get_responses=[FakeResponse(json_data={"id": 42, "title": "Bejay"})])
     client = PlexClient("client-1", session=session)
 
-    assert client.get_account_identity("account-token") == {"id": 42, "username": "Bejay"}
+    assert client.get_account_identity("account-token") == {"id": 42, "username": "Bejay", "thumb": None}
 
 
 def test_get_account_identity_returns_none_on_error_response():
@@ -527,7 +527,7 @@ def test_login_session_persists_result_once_signed_in_with_server_access(monkeyp
     asyncio.run(run())
 
     status = login.status()
-    assert status["result"] == {"plex_user_id": "99", "username": "friend", "is_admin": False}
+    assert status["result"] == {"plex_user_id": "99", "username": "friend", "is_admin": False, "thumb": None}
     assert status["error"] is None
 
 

@@ -983,7 +983,7 @@ def test_get_movie_detail_returns_full_movie(client_and_deps):
     # regardless of no release_dates data being present on the fixture.
     # on_plex_tracked is False — no completed, organized request exists
     # for this tmdb_id in a fresh store.
-    assert response.json() == dict(MOVIE, on_plex=False, is_coming_soon=False, on_plex_tracked=False)
+    assert response.json() == dict(MOVIE, on_plex=False, is_coming_soon=False, on_plex_tracked=False, logo_path=None)
 
 
 def test_get_movie_detail_on_plex_tracked_true_after_a_completed_organized_request(client_and_deps):
@@ -1257,7 +1257,7 @@ def test_get_tv_detail_returns_full_show(client_and_deps):
     # is deterministically False. on_plex_tracked is False — no completed,
     # organized episode/pack request exists for this tmdb_id in a fresh
     # store.
-    assert response.json() == dict(SHOW, on_plex=False, is_coming_soon=False, on_plex_tracked=False)
+    assert response.json() == dict(SHOW, on_plex=False, is_coming_soon=False, on_plex_tracked=False, logo_path=None)
 
 
 def test_get_tv_detail_on_plex_tracked_true_after_a_completed_organized_pack(client_and_deps):
@@ -2186,7 +2186,7 @@ def test_get_current_session_reflects_the_signed_in_user(non_admin_client):
     response = client.get("/api/auth/session")
 
     assert response.status_code == 200
-    assert response.json() == {"username": "regular-user", "is_admin": False, "has_seen_tutorial": False}
+    assert response.json() == {"username": "regular-user", "is_admin": False, "has_seen_tutorial": False, "avatar": False}
 
 
 def test_logout_clears_the_session_and_is_idempotent(client_and_deps):
@@ -2311,6 +2311,7 @@ def test_select_plex_server_during_bootstrap_also_signs_the_admin_in(tmp_path, m
             "username": "new-admin",
             "is_admin": True,
             "has_seen_tutorial": False,
+            "avatar": False,
         }
 
 

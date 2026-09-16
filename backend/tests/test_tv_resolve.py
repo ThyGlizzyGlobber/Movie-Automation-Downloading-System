@@ -106,7 +106,10 @@ def test_resolve_show_requests_credits_append():
     resolve_show(1, client)
 
     assert captured["path"] == "/tv/1"
-    assert captured["params"] == {"append_to_response": "credits,content_ratings,recommendations"}
+    assert captured["params"] == {
+        "append_to_response": "credits,content_ratings,recommendations,images",
+        "include_image_language": "en,null",
+    }
 
 
 # ---------------------------------------------------------------------------

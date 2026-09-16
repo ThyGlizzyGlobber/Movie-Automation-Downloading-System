@@ -606,3 +606,49 @@ def test_sort_key_prefers_known_seeders_over_a_marginally_larger_unknown_file():
 
     ranked = rank_candidates([unknown_larger, known_smaller])
     assert ranked[0][0]["fileUrl"] == "magnet:?xt=urn:btih:1"
+
+
+# -- Partial title variants only match when release metadata follows --
+
+
+def test_partial_variant_rejects_a_longer_title_that_shares_the_head():
+    from app.normalize import generate_variants, tokenize
+    from app.score import matches_any_variant
+
+    variants = generate_variants("Batman: The Brave and the Bold", "Batman: The Brave and the Bold", None)
+    assert "Batman" in variants
+    assert not matches_any_variant(tokenize("Batman.Beyond.S01E01.1080p.WEB-DL.x264"), variants)
+    assert not matches_any_variant(tokenize("Batman.The.Animated.Series.Complete.1080p"), variants)
+    assert matches_any_variant(tokenize("Batman.S01E01.1080p.WEB-DL"), variants)
+    assert matches_any_variant(tokenize("Batman.The.Brave.and.the.Bold.S01E03.720p"), variants)
+    assert matches_any_variant(tokenize("Batman.The.Brave.And.The.Bold.Complete.Series.1080p"), variants)
+
+
+def test_partial_subtitle_variant_still_matches_when_metadata_follows():
+    from app.normalize import generate_variants, tokenize
+    from app.score import matches_any_variant
+
+    variants = generate_variants("Special Ops: Lioness", "Special Ops: Lioness", None)
+    assert matches_any_variant(tokenize("Lioness.S01E01.2160p.WEB.H265"), variants)
+    assert matches_any_variant(tokenize("Special.Ops.Lioness.S02E04.1080p"), variants)
+    assert not matches_any_variant(tokenize("Lioness.Cubs.S01E01.1080p"), variants)
+
+
+def test_partial_variant_for_a_movie_needs_the_year_or_quality_right_after():
+    from app.normalize import generate_variants, tokenize
+    from app.score import matches_any_variant
+
+    variants = generate_variants("Dune: Part Two", "Dune: Part Two", 2024)
+    assert matches_any_variant(tokenize("Dune.Part.Two.2024.2160p.WEB-DL"), variants)
+    assert not matches_any_variant(tokenize("Dune.Prophecy.S01E01.1080p"), variants)
+    assert matches_any_variant(tokenize("Dune.2024.1080p"), variants)
+
+
+def test_full_title_and_original_title_still_match_anywhere():
+    from app.normalize import tokenize
+    from app.score import matches_any_variant
+
+    variants = ["Cobalt Hour", "L'Heure Cobalt"]
+    assert matches_any_variant(tokenize("Group.Cobalt.Hour.2024.1080p"), variants)
+    assert matches_any_variant(tokenize("L.Heure.Cobalt.2024.FRENCH.1080p"), variants)
+    assert not matches_any_variant(tokenize("Golden.Hour.2024.1080p"), variants)

@@ -163,3 +163,14 @@ def test_extract_episode_identity_none_for_season_only():
 
 def test_extract_episode_identity_none_when_absent():
     assert extract_episode_identity(tokenize("Lanterns.NFO")) is None
+
+
+def test_episode_gate_rejects_batman_beyond_for_brave_and_the_bold():
+    from app.tv_resolve import ShowIdentity
+    from app.tv_score import passes_episode_relevance_gate
+    from app.normalize import generate_variants
+
+    title = "Batman: The Brave and the Bold"
+    identity = ShowIdentity(tmdb_id=1, title=title, original_title=title, variants=generate_variants(title, title, None))
+    assert not passes_episode_relevance_gate("Batman.Beyond.S01E01.2160p.WEB-DL.x265.mkv", identity, 1, 1)
+    assert passes_episode_relevance_gate("Batman.The.Brave.and.the.Bold.S01E01.2160p.WEB-DL.x265.mkv", identity, 1, 1)

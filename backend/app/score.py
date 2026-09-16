@@ -68,12 +68,60 @@ def contains_phrase(tokens: list[str], phrase: str) -> bool:
     return any(tokens[i : i + n] == phrase_tokens for i in range(len(tokens) - n + 1))
 
 
+# What may follow a *partial* title in a release name for the match to
+# count: the release metadata a scene name puts straight after the
+# title. Anything else between the title and this metadata means the
+# name belongs to a different, longer title.
+_TITLE_BOUNDARY_RE = re.compile(
+    r"^(s\d{1,2}(e\d{1,3})?|e\d{1,3}|season|complete|series|(19|20)\d{2}|2160p|1080p|720p|480p|4k|uhd|hdr|web|webrip|web-dl|bluray|brrip|hdtv|dvdrip)$"
+)
+
+
+def _phrase_positions(tokens: list[str], phrase_tokens: list[str]) -> list[int]:
+    n = len(phrase_tokens)
+    return [i for i in range(len(tokens) - n + 1) if tokens[i : i + n] == phrase_tokens]
+
+
+def _is_partial_variant(variant_tokens: list[str], full_tokens: list[str]) -> bool:
+    """A variant cut from the full title (the head before a colon, or the
+    subtitle after it) is a strict whole-token prefix or suffix of it."""
+    n = len(variant_tokens)
+    if not full_tokens or n >= len(full_tokens):
+        return False
+    return full_tokens[:n] == variant_tokens or full_tokens[-n:] == variant_tokens
+
+
 def matches_any_variant(tokens: list[str], variants: list[str]) -> bool:
     """Public (Stage 10: reused by tv_score.py's episode gate — a show's
     title-variant list is matched the exact same way a movie's is, so this
     takes the plain variant list rather than a MediaIdentity, decoupling it
-    from any one identity type)."""
-    return any(contains_phrase(tokens, variant) for variant in variants)
+    from any one identity type).
+
+    The full title (and any other complete title, e.g. the original-
+    language one) matches anywhere in the name. A *partial* variant — the
+    head or subtitle cut out of "Batman: The Brave and the Bold" — only
+    matches when the release metadata follows it directly ("Batman.S01E01",
+    "Lioness.S01E01"), never when more title words do ("Batman.Beyond.
+    S01E01"). Confirmed live 2026-09-16: every request for Batman: The
+    Brave and the Bold was fetching Batman Beyond, because "batman" alone
+    was enough to pass this gate and the better-looking pack won."""
+    if not variants:
+        return False
+    full_tokens = tokenize(variants[0])
+    for variant in variants:
+        phrase_tokens = tokenize(variant)
+        if not phrase_tokens:
+            continue
+        positions = _phrase_positions(tokens, phrase_tokens)
+        if not positions:
+            continue
+        if not _is_partial_variant(phrase_tokens, full_tokens):
+            return True
+        for start in positions:
+            after = start + len(phrase_tokens)
+            if after >= len(tokens) or _TITLE_BOUNDARY_RE.match(tokens[after]):
+                return True
+    return False
 
 
 def _year_within_tolerance(tokens: list[str], release_year: int | None) -> bool:
