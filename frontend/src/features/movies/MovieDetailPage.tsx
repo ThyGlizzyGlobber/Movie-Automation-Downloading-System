@@ -84,7 +84,7 @@ export default function MovieDetailPage() {
       ? { text: `${active.status === 'downloading' ? 'Downloading' : active.status === 'searching' ? 'Searching' : 'Queued'}${active.download_progress != null ? ` · ${Math.round(active.download_progress * 100)}%` : ''}`, tone: 'ice' as const }
       : movie.on_plex
         ? { text: `In Plex${winner ? ` · ${qualityFromName(winner.fileName)}` : ''}`.replace(/ · $/, ''), tone: 'mint' as const }
-        : { text: 'Not on Plex yet', tone: 'dim' as const }
+        : { text: '', tone: 'dim' as const }
 
   const pills: DetailPill[] = []
   if (movie.vote_average) {
@@ -109,7 +109,7 @@ export default function MovieDetailPage() {
   sideTiles.push(
     movie.on_plex
       ? { label: 'Library', value: (<><Icon name="check-circle" />Movies</>), tone: 'mint' }
-      : { label: 'Status', value: movie.is_coming_soon ? 'Coming soon' : 'Not yet', tone: 'dim' },
+      : { label: 'Status', value: movie.is_coming_soon ? 'Coming soon' : active ? 'On the way' : 'Not on Plex yet', tone: active ? 'ice' : 'dim' },
   )
   if (requests[0]?.requested_by_username) sideTiles.push({ label: 'Requested by', value: requests[0].requested_by_username })
 

@@ -1,4 +1,7 @@
+import { useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
+import Icon from '../../components/Icon'
+import '../../components/MediaRow.css'
 import { useQuery } from '@tanstack/react-query'
 import { listRequests } from '../../api/requests'
 import { locateOnPlex } from '../../api/plex'
@@ -13,19 +16,36 @@ import type { RequestOut } from '../../types/requests'
 import { DetailH4, type DetailTile } from './DetailShell'
 
 export function DetailCast({ cast }: { cast?: CastMember[] }) {
-  const top = (cast || []).slice(0, 12)
+  const trackRef = useRef<HTMLDivElement>(null)
+  const [atStart, setAtStart] = useState(true)
+  const top = (cast || []).slice(0, 16)
   if (!top.length) return null
+  function scrollByPage(dir: number) {
+    const track = trackRef.current
+    if (!track) return
+    const atEnd = track.scrollLeft >= track.scrollWidth - track.clientWidth - 2
+    if (dir > 0 && atEnd) track.scrollTo({ left: 0, behavior: 'smooth' })
+    else track.scrollBy({ left: dir * track.clientWidth, behavior: 'smooth' })
+  }
   return (
     <>
       <DetailH4>Cast</DetailH4>
-      <div className="detail-cast">
-        {top.map((c) => (
-          <Link key={c.id} to={`/person/${c.id}`}>
-            <img src={profileUrl(c.profile_path)} alt="" loading="lazy" />
-            <b>{c.name}</b>
-            <i>{c.character || ''}</i>
-          </Link>
-        ))}
+      <div className={`hscroll-wrap detail-cast-wrap${atStart ? ' at-start' : ''}`}>
+        <div className="detail-cast" ref={trackRef} onScroll={() => setAtStart((trackRef.current?.scrollLeft ?? 0) <= 2)}>
+          {top.map((c) => (
+            <Link key={c.id} to={`/person/${c.id}`}>
+              <img src={profileUrl(c.profile_path)} alt="" loading="lazy" />
+              <b>{c.name}</b>
+              <i>{c.character || ''}</i>
+            </Link>
+          ))}
+        </div>
+        <button className="hscroll-arrow hscroll-arrow-left" aria-label="Scroll left" onClick={() => scrollByPage(-1)}>
+          <Icon name="back" />
+        </button>
+        <button className="hscroll-arrow hscroll-arrow-right" aria-label="Scroll right" onClick={() => scrollByPage(1)}>
+          <Icon name="next" />
+        </button>
       </div>
     </>
   )

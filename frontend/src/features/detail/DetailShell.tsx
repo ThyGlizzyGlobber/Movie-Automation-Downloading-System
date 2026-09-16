@@ -12,6 +12,8 @@ export interface DetailTile {
   label: string
   value: ReactNode
   tone?: 'mint' | 'ice' | 'dim'
+  /* Spans the full width of the tile grid. */
+  wide?: boolean
 }
 
 export interface DetailRow {
@@ -57,7 +59,8 @@ export default function DetailShell({
   logoPath: string | null | undefined
   title: string
   onPlex: boolean
-  eyebrow: string
+  /* Status line above the title; omitted when empty. */
+  eyebrow?: string
   eyebrowTone?: 'ice' | 'mint' | 'dim' | 'amber'
   pills: DetailPill[]
   overview: string | null | undefined
@@ -93,7 +96,7 @@ export default function DetailShell({
             {tiles.length > 0 && (
               <div className="detail-tiles">
                 {tiles.map((t) => (
-                  <div className={`detail-tile${t.tone ? ` ${t.tone}` : ''}`} key={t.label}>
+                  <div className={`detail-tile${t.tone ? ` ${t.tone}` : ''}${t.wide ? ' wide' : ''}`} key={t.label}>
                     <small>{t.label}</small>
                     <b>{t.value}</b>
                   </div>
@@ -129,10 +132,12 @@ export default function DetailShell({
             )}
           </aside>
           <section className="detail-card">
-            <span className={`detail-eyebrow ${eyebrowTone}`}>
-              <b />
-              {eyebrow}
-            </span>
+            {eyebrow && (
+              <span className={`detail-eyebrow ${eyebrowTone}`}>
+                <b />
+                {eyebrow}
+              </span>
+            )}
             <h1 className={`detail-title${logo ? ' has-logo' : ''}`}>{logo ? <img className="detail-logo" src={logo} alt={title} /> : title}</h1>
             <div className="detail-meta">
               {pills.map((p, i) => (

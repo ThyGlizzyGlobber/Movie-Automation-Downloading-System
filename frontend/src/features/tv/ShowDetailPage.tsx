@@ -164,16 +164,26 @@ export default function ShowDetailPage() {
   if (seasons.length) pills.push({ text: `${seasons.length} season${seasons.length === 1 ? '' : 's'}` })
   if (genres) pills.push({ text: genres, mute: true })
 
-  const next = show.next_episode_to_air?.air_date
-  const nextLabel = next ? new Date(`${next}T00:00:00`).toLocaleDateString(undefined, { weekday: 'short' }) : show.status === 'Ended' ? 'Ended' : '—'
+  const nextEp = show.next_episode_to_air
+  const next = nextEp?.air_date
+  const nextLabel = next
+    ? [
+        new Date(`${next}T00:00:00`).toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' }),
+        nextEp?.season_number != null && nextEp?.episode_number != null ? `S${nextEp.season_number}E${nextEp.episode_number}` : null,
+      ]
+        .filter(Boolean)
+        .join(' · ')
+    : show.status === 'Ended' || show.status === 'Canceled'
+      ? 'No more episodes'
+      : 'Not scheduled'
   const sideTiles: DetailTile[] = []
-  sideTiles.push({ label: 'Seasons', value: String(seasons.length || '—') })
   sideTiles.push(
     subscription
       ? { label: 'Following', value: (<><Icon name="check-circle" />{isPaused ? 'Paused' : 'Yes'}</>), tone: isPaused ? 'dim' : 'mint' }
       : { label: 'Following', value: 'No', tone: 'dim' },
   )
-  sideTiles.push({ label: 'Next', value: nextLabel, tone: next ? 'ice' : 'dim' })
+  sideTiles.push({ label: 'Seasons', value: String(seasons.length || '—') })
+  sideTiles.push({ label: 'Next episode', value: nextLabel, tone: next ? 'ice' : 'dim', wide: true })
 
   const crew = show.credits?.crew ?? []
   const creators = crew.filter((c) => c.job === 'Creator' || c.job === 'Executive Producer').slice(0, 3)
@@ -250,27 +260,27 @@ export default function ShowDetailPage() {
       </DetailShell>
 
       {seasons.length > 0 && currentSeason != null && (
-        <section className="detail-section">
-          <div className="detail-section-head">
-            <h2>
-              Episodes <span>{currentSeasonLabel}</span>
-            </h2>
-            <div className="detail-season-actions">
-              <div className="seg season-picker" role="tablist" aria-label="Season">
-                {seasons.map((s) => (
-                  <button key={s.id} role="tab" aria-selected={s.season_number === currentSeason} className={s.season_number === currentSeason ? 'active' : ''} onClick={() => setActiveSeason(s.season_number)}>
-                    {s.name || `Season ${s.season_number}`}
-                  </button>
-                ))}
-              </div>
-              <button className="btn sec sm" disabled={bulkBusyKey === `season-${currentSeason}`} onClick={() => handleBulkClick('season', currentSeason, currentSeasonLabel, `season-${currentSeason}`)}>
-                <Icon name="download" />
-                {bulkBusyKey === `season-${currentSeason}` ? 'Adding…' : `Request ${/^season \d/i.test(currentSeasonLabel) ? currentSeasonLabel.toLowerCase() : currentSeasonLabel}`}
-              </button>
+<section className="detail-section">
+        <div className="detail-section-head">
+          <h2>
+            Episodes <span>{currentSeasonLabel}</span>
+          </h2>
+          <div className="detail-season-actions">
+            <div className="seg season-picker" role="tablist" aria-label="Season">
+              {seasons.map((s) => (
+                <button key={s.id} role="tab" aria-selected={s.season_number === currentSeason} className={s.season_number === currentSeason ? 'active' : ''} onClick={() => setActiveSeason(s.season_number)}>
+                  {s.name || `Season ${s.season_number}`}
+                </button>
+              ))}
             </div>
+            <button className="btn sec sm" disabled={bulkBusyKey === `season-${currentSeason}`} onClick={() => handleBulkClick('season', currentSeason, currentSeasonLabel, `season-${currentSeason}`)}>
+              <Icon name="download" />
+              {bulkBusyKey === `season-${currentSeason}` ? 'Adding…' : `Request ${/^season \d/i.test(currentSeasonLabel) ? currentSeasonLabel.toLowerCase() : currentSeasonLabel}`}
+            </button>
           </div>
-          <EpisodeList tmdbId={tmdbId} season={currentSeason} />
-        </section>
+        </div>
+        <EpisodeList tmdbId={tmdbId} season={currentSeason} />
+      </section>
       )}
 
       <div className="detail-rows">

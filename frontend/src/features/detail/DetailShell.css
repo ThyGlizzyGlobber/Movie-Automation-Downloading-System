@@ -5,7 +5,9 @@
   width: calc(100% + 28px);
   margin: calc(-1 * (var(--topbar-h, 64px) + 14px)) -14px 0;
   padding: calc(var(--topbar-h, 64px) + 40px) var(--edge-inset) 56px;
-  overflow: hidden;
+  /* clip, not hidden: hidden would make this the sticky column's
+     scroll container and the poster stack would never move. */
+  overflow: clip;
 }
 .detail-bd {
   position: absolute;
@@ -56,9 +58,10 @@
 .detail-grid {
   display: grid;
   grid-template-columns: 330px minmax(0, 1fr);
-  gap: 64px;
+  gap: 40px 64px;
   align-items: start;
 }
+
 @media (min-width: 860px) {
   /* The poster stack rides along while the card scrolls. */
   .detail-side {
@@ -89,8 +92,9 @@
   gap: 10px;
   margin-top: 16px;
 }
-/* A lone tile takes the full row. */
-.detail-tiles > .detail-tile:only-child {
+/* A lone or wide tile takes the full row. */
+.detail-tiles > .detail-tile:only-child,
+.detail-tiles > .detail-tile.wide {
   grid-column: 1 / -1;
 }
 /* The side column's tiles are compact so the facts list fits below. */
@@ -242,7 +246,7 @@
   padding: 4px 8px 4px 6px;
   flex: 0 0 auto;
 }
-/* Full-width sections under the frame (episodes on a show page). */
+/* Sections under the card (episodes on a show page). */
 .detail-section {
   padding: 0 var(--row-inset);
   margin: 6px 0 26px;
@@ -315,13 +319,16 @@
 .detail-eyebrow.dim b {
   box-shadow: none;
 }
+.detail-eyebrow + .detail-title {
+  margin-top: 16px;
+}
 .detail-title {
   font-family: var(--font-display);
   font-weight: 300;
   font-size: clamp(44px, 5.8vw, 84px);
   letter-spacing: var(--tracking-display);
   line-height: 1;
-  margin: 16px 0 18px;
+  margin: 0 0 18px;
 }
 .detail-title.has-logo {
   line-height: 0;
@@ -392,13 +399,21 @@
 .detail-card .detail-tiles {
   margin-top: 0;
 }
-/* Cast inside the card: round faces, name, role. */
+/* Cast inside the card: round faces, name, role, with the row arrows
+   from MediaRow.css for mouse users. */
+.detail-cast-wrap .hscroll-arrow {
+  top: 0;
+  bottom: 30px;
+  width: 48px;
+}
 .detail-cast {
   display: flex;
   gap: 22px;
   overflow-x: auto;
+  overflow-y: hidden;
   padding-bottom: 6px;
   scrollbar-width: none;
+  scroll-snap-type: x proximity;
 }
 .detail-cast::-webkit-scrollbar {
   display: none;
@@ -522,6 +537,7 @@
     grid-template-columns: 1fr;
     gap: 22px;
   }
+
   /* Poster beside the tiles; the tile block stretches to the poster's
      height so the two read as one row. */
   .detail-side {
