@@ -10,8 +10,8 @@ import RedownloadModal from '../../components/RedownloadModal'
 import LoadingState from '../../components/LoadingState'
 import ErrorState from '../../components/ErrorState'
 import Icon from '../../components/Icon'
-import DetailShell, { type DetailPill, type DetailTile } from '../detail/DetailShell'
-import { DetailCast, DetailCreators, FactTiles, serviceTile, usePlexHref } from '../detail/DetailBits'
+import DetailShell, { type DetailPill, type DetailRow, type DetailTile } from '../detail/DetailShell'
+import { DetailCast, peopleLinks, usePlexHref } from '../detail/DetailBits'
 import { usePageTitle, useSetHasHero } from '../../lib/chrome'
 import { errorText, useToast } from '../../lib/toast'
 import { languageNameOf, tvCertificationOf, yearOf } from '../../lib/detailHelpers'
@@ -175,14 +175,18 @@ export default function ShowDetailPage() {
   )
   sideTiles.push({ label: 'Next', value: nextLabel, tone: next ? 'ice' : 'dim' })
 
-  const detailTiles: DetailTile[] = [
-    { label: 'Rated', value: certification || '—' },
-    { label: 'Language', value: languageNameOf(show.original_language) || '—' },
-    { label: 'Network', value: network || '—' },
-    { label: 'Status', value: show.status || '—' },
-  ]
-  const service = serviceTile(show, true)
-  if (service) detailTiles.splice(2, 1, service)
+  const crew = show.credits?.crew ?? []
+  const creators = crew.filter((c) => c.job === 'Creator' || c.job === 'Executive Producer').slice(0, 3)
+  const details: DetailRow[] = []
+  if (certification) details.push({ label: 'Rated', value: certification })
+  if (show.first_air_date) details.push({ label: 'First aired', value: new Date(`${show.first_air_date}T00:00:00`).toLocaleDateString([], { day: 'numeric', month: 'short', year: 'numeric' }) })
+  if (network) details.push({ label: 'Network', value: network })
+  if (show.status) details.push({ label: 'Status', value: show.status })
+  const lang = languageNameOf(show.original_language)
+  if (lang) details.push({ label: 'Language', value: lang })
+  if (show.genres?.length) details.push({ label: 'Genres', value: show.genres.map((g) => g.name).join(', ') })
+  if (creators.length) details.push({ label: 'Created by', value: peopleLinks(creators) })
+  if (show.production_companies?.[0]) details.push({ label: 'Studio', value: show.production_companies[0].name })
 
   const actions = (
     <>
@@ -237,6 +241,7 @@ export default function ShowDetailPage() {
         overview={show.overview}
         actions={actions}
         tiles={sideTiles}
+        details={details}
       >
         {seasons.length > 0 && currentSeason != null && (
           <>
@@ -259,9 +264,6 @@ export default function ShowDetailPage() {
           </>
         )}
         <DetailCast cast={show.credits?.cast} />
-        <h4 className="detail-h4">Details</h4>
-        <FactTiles tiles={detailTiles} />
-        <DetailCreators crew={show.credits?.crew} studio={show.production_companies?.[0]?.name} network={network} />
       </DetailShell>
 
       <div className="detail-rows">

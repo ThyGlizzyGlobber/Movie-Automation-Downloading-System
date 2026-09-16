@@ -11,8 +11,8 @@ import RequestModal from '../../components/RequestModal'
 import LoadingState from '../../components/LoadingState'
 import ErrorState from '../../components/ErrorState'
 import Icon from '../../components/Icon'
-import DetailShell, { type DetailPill, type DetailTile } from '../detail/DetailShell'
-import { DetailCast, DetailCreators, FactTiles, qualityFromName, serviceTile, sourceFromName, usePlexHref, useTitleRequests } from '../detail/DetailBits'
+import DetailShell, { type DetailPill, type DetailRow, type DetailTile } from '../detail/DetailShell'
+import { DetailCast, FactTiles, peopleLinks, qualityFromName, serviceTile, sourceFromName, usePlexHref, useTitleRequests } from '../detail/DetailBits'
 import { usePageTitle, useSetHasHero } from '../../lib/chrome'
 import { certificationOf, languageNameOf, yearOf, statusFollowupText } from '../../lib/detailHelpers'
 import { formatBytes } from '../../lib/format'
@@ -115,19 +115,27 @@ export default function MovieDetailPage() {
   )
   if (requests[0]?.requested_by_username) sideTiles.push({ label: 'Requested by', value: requests[0].requested_by_username })
 
-  const fileTiles: DetailTile[] = winner
+  const fileTiles: DetailTile[] | null = winner
     ? [
         { label: 'Quality', value: qualityFromName(winner.fileName) || '—', tone: 'mint' },
         { label: 'Size', value: winner.fileSize ? formatBytes(winner.fileSize) : '—' },
         { label: 'Source', value: sourceFromName(winner.fileName) || '—' },
         { label: 'Added', value: latestDone ? new Date(latestDone.updated_at).toLocaleDateString([], { day: 'numeric', month: 'short' }) : '—' },
       ]
-    : [
-        { label: 'Rated', value: certification || '—' },
-        { label: 'Language', value: languageNameOf(movie.original_language) || '—' },
-        { label: 'Released', value: movie.is_coming_soon ? 'Soon' : year || '—' },
-        { label: 'Studio', value: movie.production_companies?.[0]?.name || '—' },
-      ]
+    : null
+
+  const crew = movie.credits?.crew ?? []
+  const directors = crew.filter((c) => c.job === 'Director')
+  const writers = crew.filter((c) => c.job === 'Screenplay' || c.job === 'Writer').slice(0, 3)
+  const details: DetailRow[] = []
+  if (certification) details.push({ label: 'Rated', value: certification })
+  if (movie.release_date) details.push({ label: 'Released', value: new Date(`${movie.release_date}T00:00:00`).toLocaleDateString([], { day: 'numeric', month: 'short', year: 'numeric' }) })
+  const lang = languageNameOf(movie.original_language)
+  if (lang) details.push({ label: 'Language', value: lang })
+  if (movie.genres?.length) details.push({ label: 'Genres', value: movie.genres.map((g) => g.name).join(', ') })
+  if (directors.length) details.push({ label: 'Director', value: peopleLinks(directors) })
+  if (writers.length) details.push({ label: 'Writers', value: peopleLinks(writers) })
+  if (movie.production_companies?.[0]) details.push({ label: 'Studio', value: movie.production_companies[0].name })
 
   const actions = movie.is_coming_soon ? (
     <span className="btn pri dis">
@@ -183,6 +191,7 @@ export default function MovieDetailPage() {
         overview={movie.overview}
         actions={actions}
         tiles={sideTiles}
+        details={details}
       >
         {active && (
           <div className="detail-status">
@@ -191,9 +200,12 @@ export default function MovieDetailPage() {
           </div>
         )}
         <DetailCast cast={movie.credits?.cast} />
-        <h4 className="detail-h4">{winner ? 'File' : 'Details'}</h4>
-        <FactTiles tiles={fileTiles} />
-        <DetailCreators crew={movie.credits?.crew} studio={movie.production_companies?.[0]?.name} />
+        {fileTiles && (
+          <>
+            <h4 className="detail-h4">File</h4>
+            <FactTiles tiles={fileTiles} />
+          </>
+        )}
       </DetailShell>
 
       <div className="detail-rows">

@@ -79,8 +79,60 @@
 .detail-tiles {
   display: grid;
   grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-top: 16px;
+}
+/* The side column's tiles are compact so the facts list fits below. */
+.detail-side .detail-tile {
+  padding: 12px 14px;
+  border-radius: 14px;
+}
+.detail-side .detail-tile b {
+  font-size: 17px;
+  margin-top: 4px;
+}
+.detail-side .detail-tile small {
+  font-size: 10px;
+}
+.detail-side .detail-tile .score-ring {
+  width: 28px;
+  height: 28px;
+}
+.detail-side .detail-tile .score-ring span {
+  font-size: 9px;
+}
+/* Facts under the tiles: label / value rows. */
+.detail-facts {
+  margin: 16px 0 0;
+  padding: 4px 16px;
+  border-radius: 18px;
+  background: var(--glass);
+  border: 1px solid var(--glass-border);
+}
+.detail-fact {
+  display: grid;
+  grid-template-columns: 96px minmax(0, 1fr);
   gap: 12px;
-  margin-top: 18px;
+  padding: 10px 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.07);
+  font-size: 13px;
+}
+.detail-fact:first-child {
+  border-top: 0;
+}
+.detail-fact dt {
+  color: var(--text-dim);
+  font-weight: 700;
+  margin: 0;
+}
+.detail-fact dd {
+  margin: 0;
+  font-weight: 600;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.detail-fact dd a:hover {
+  color: var(--meridian-ice);
 }
 .detail-tiles.four {
   grid-template-columns: repeat(4, 1fr);
@@ -389,6 +441,9 @@
   }
   .detail-side .detail-tiles {
     margin-top: 0;
+  }
+  .detail-side .detail-facts {
+    grid-column: 1 / -1;
   }
   .detail-card {
     padding: 0;

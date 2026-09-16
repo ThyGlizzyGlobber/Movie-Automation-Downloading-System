@@ -11,6 +11,11 @@ export interface DetailTile {
   tone?: 'mint' | 'ice' | 'dim'
 }
 
+export interface DetailRow {
+  label: string
+  value: ReactNode
+}
+
 export interface DetailPill {
   text: ReactNode
   mute?: boolean
@@ -37,6 +42,7 @@ export default function DetailShell({
   overview,
   actions,
   tiles,
+  details = [],
   children,
 }: {
   backTo: string
@@ -52,6 +58,8 @@ export default function DetailShell({
   overview: string | null | undefined
   actions: ReactNode
   tiles: DetailTile[]
+  /* Key / value facts under the tiles (rated, language, network…). */
+  details?: DetailRow[]
   children?: ReactNode
 }) {
   const logo = logoUrl(logoPath)
@@ -83,6 +91,16 @@ export default function DetailShell({
                   </div>
                 ))}
               </div>
+            )}
+            {details.length > 0 && (
+              <dl className="detail-facts">
+                {details.map((d) => (
+                  <div className="detail-fact" key={d.label}>
+                    <dt>{d.label}</dt>
+                    <dd>{d.value}</dd>
+                  </div>
+                ))}
+              </dl>
             )}
           </aside>
           <section className="detail-card">

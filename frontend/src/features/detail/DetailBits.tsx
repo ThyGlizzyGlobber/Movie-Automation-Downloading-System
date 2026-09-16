@@ -5,7 +5,7 @@ import { locateOnPlex } from '../../api/plex'
 import { profileUrl } from '../../lib/tmdbImage'
 import { plexWebUrl } from '../../lib/format'
 import { originalServiceMatch } from '../../lib/providers'
-import type { CastMember, CrewMember } from '../../types/movies'
+import type { CastMember } from '../../types/movies'
 import type { RequestOut } from '../../types/requests'
 import { DetailH4, type DetailTile } from './DetailShell'
 
@@ -28,32 +28,15 @@ export function DetailCast({ cast }: { cast?: CastMember[] }) {
   )
 }
 
-export function DetailCreators({ crew, studio, network }: { crew?: CrewMember[]; studio?: string; network?: string }) {
-  const directors = (crew || []).filter((c) => c.job === 'Director')
-  const creators = (crew || []).filter((c) => c.job === 'Creator' || c.job === 'Executive Producer').slice(0, 4)
-  const rows: [string, { id: number; name: string }[] | string][] = []
-  if (directors.length) rows.push(['Directed by', directors])
-  else if (creators.length) rows.push(['Created by', creators])
-  if (network) rows.push(['Network', network])
-  if (studio) rows.push(['Studio', studio])
-  if (!rows.length) return null
+// "Name, Name" as person links, for the facts list.
+export function peopleLinks(people: { id: number; name: string }[]) {
   return (
     <>
-      <DetailH4>Credits</DetailH4>
-      {rows.map(([label, value]) => (
-        <div className="detail-krow" key={label}>
-          <span>{label}</span>
-          <span>
-            {typeof value === 'string'
-              ? value
-              : value.map((p, i) => (
-                  <span key={p.id}>
-                    {i > 0 && ', '}
-                    <Link to={`/person/${p.id}`}>{p.name}</Link>
-                  </span>
-                ))}
-          </span>
-        </div>
+      {people.map((p, i) => (
+        <span key={p.id}>
+          {i > 0 && ', '}
+          <Link to={`/person/${p.id}`}>{p.name}</Link>
+        </span>
       ))}
     </>
   )

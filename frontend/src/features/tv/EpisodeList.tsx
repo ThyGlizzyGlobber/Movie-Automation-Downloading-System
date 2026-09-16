@@ -88,25 +88,26 @@ export default function EpisodeList({ tmdbId, season }: { tmdbId: number; season
           <b style={{ width: `${pct}%` }} />
         </i>
       </div>
-      {episodes.map((ep) => (
-        <div className={`episode-row episode-${ep.state}`} key={ep.episode_number}>
-          <span className="episode-num">{String(ep.episode_number).padStart(2, '0')}</span>
-          <div className="episode-still">{ep.still_path ? <img src={stillUrl(ep.still_path)} alt="" loading="lazy" /> : null}</div>
-          <div className="episode-text">
-            <b>{ep.name || `Episode ${ep.episode_number}`}</b>
-            {ep.overview && <small>{ep.overview}</small>}
+      <div className="episode-grid">
+        {episodes.map((ep) => (
+          <div className={`episode-card episode-${ep.state}`} key={ep.episode_number} title={ep.overview || undefined}>
+            <div className="episode-still">
+              {ep.still_path ? <img src={stillUrl(ep.still_path)} alt="" loading="lazy" /> : <span className="episode-still-empty" />}
+              <span className="episode-num">{String(ep.episode_number).padStart(2, '0')}</span>
+              <span className="episode-chip">
+                <EpisodePill ep={ep} />
+              </span>
+            </div>
+            <div className="episode-text">
+              <b>{ep.name || `Episode ${ep.episode_number}`}</b>
+              <small>{ep.runtime ? `${ep.runtime} min` : ep.air_date ? ep.air_date.slice(0, 4) : ''}</small>
+            </div>
+            <div className="episode-action">
+              <EpisodeAction tmdbId={tmdbId} season={season} ep={ep} onDone={refresh} />
+            </div>
           </div>
-          <div className="episode-status">
-            <EpisodePill ep={ep} />
-          </div>
-          <span className="episode-runtime">
-            {ep.runtime ? `${ep.runtime} min` : ep.air_date ? ep.air_date.slice(0, 4) : ''}
-          </span>
-          <div className="episode-action">
-            <EpisodeAction tmdbId={tmdbId} season={season} ep={ep} onDone={refresh} />
-          </div>
-        </div>
-      ))}
+        ))}
+      </div>
     </div>
   )
 }
