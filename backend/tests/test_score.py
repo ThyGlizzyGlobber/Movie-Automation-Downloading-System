@@ -652,3 +652,15 @@ def test_full_title_and_original_title_still_match_anywhere():
     assert matches_any_variant(tokenize("Group.Cobalt.Hour.2024.1080p"), variants)
     assert matches_any_variant(tokenize("L.Heure.Cobalt.2024.FRENCH.1080p"), variants)
     assert not matches_any_variant(tokenize("Golden.Hour.2024.1080p"), variants)
+
+
+def test_a_title_without_a_subtitle_is_its_own_full_title_and_matches_anywhere():
+    from app.normalize import generate_variants, tokenize
+    from app.score import matches_any_variant
+
+    variants = generate_variants("Batman Beyond", "Batman Beyond", None)
+    assert variants == ["Batman Beyond"]
+    assert matches_any_variant(tokenize("Batman.Beyond.S01E01.2160p.WEB-DL"), variants)
+    assert matches_any_variant(tokenize("Batman.Beyond.Complete.Series.1080p.BluRay"), variants)
+    assert not matches_any_variant(tokenize("Batman.The.Brave.and.the.Bold.S01E01.2160p"), variants)
+    assert not matches_any_variant(tokenize("Batman.S01E01.2160p"), variants)
