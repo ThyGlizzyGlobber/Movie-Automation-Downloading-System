@@ -221,6 +221,34 @@ class PlexClient:
             raise PlexError(f"Plex recently-added fetch failed: {response.status_code}")
         return response.json().get("MediaContainer", {}).get("Metadata", []) or []
 
+    def locate(self, server_url: str, server_token: str, media_type: str, title: str, year: int | None) -> dict | None:
+        """The library item for a title (and year, when known): a filtered
+        `/library/all` search, then the same title/year matching the
+        on-Plex badge uses, so the detail page's Play button can open the
+        exact item in Plex Web. None when nothing matches."""
+        response = self.session.get(
+            f"{server_url}/library/all",
+            headers={"Accept": "application/json", "X-Plex-Token": server_token},
+            params={"type": _LIBRARY_TYPE[media_type], "title": title, "includeGuids": 1},
+            timeout=10,
+        )
+        if not response.ok:
+            raise PlexError(f"Plex search failed: {response.status_code}")
+        target = normalize_text(title)
+        best = None
+        for item in response.json().get("MediaContainer", {}).get("Metadata", []) or []:
+            if not titles_match(normalize_text(item.get("title", "")), target):
+                continue
+            if year and item.get("year") and abs(item["year"] - year) > YEAR_TOLERANCE:
+                continue
+            exact = normalize_text(item.get("title", "")) == target
+            if best is None or (exact and not best[0]):
+                best = (exact, item)
+        if best is None:
+            return None
+        item = best[1]
+        return {"rating_key": str(item.get("ratingKey")), "title": item.get("title"), "year": item.get("year")}
+
     def sections(self, server_url: str, server_token: str) -> list[dict]:
         """The server's libraries: [{key, type ('movie'|'show'), title,
         locations: [paths]}], for the after-import refresh."""

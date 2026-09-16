@@ -1,261 +1,214 @@
 import { useState } from 'react'
 import { useParams } from 'react-router-dom'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { getMovie } from '../../api/movies'
-import { createRequest, getRequest } from '../../api/requests'
+import { createRequest } from '../../api/requests'
 import StatusPill from '../../components/StatusPill'
 import ScoreRing from '../../components/ScoreRing'
-import ClampedText from '../../components/ClampedText'
-import CastRow from '../../components/CastRow'
 import MediaRow from '../../components/MediaRow'
 import RedownloadModal from '../../components/RedownloadModal'
 import RequestModal from '../../components/RequestModal'
 import LoadingState from '../../components/LoadingState'
 import ErrorState from '../../components/ErrorState'
-import { DetailOverviewPanel, CreatorsAndCastPanel, DetailsCardPanel, CastLine, DetailProviderIcon } from '../detail/DetailPanels'
-import { usePageTitle, useSetHasHero } from '../../lib/chrome'
-import { posterUrl, backdropUrl } from '../../lib/tmdbImage'
-import AmbientGlow from '../../components/AmbientGlow'
-import { certificationOf, genreLine, languageNameOf, yearOf, statusFollowupText } from '../../lib/detailHelpers'
-import { NON_TERMINAL } from '../../lib/status'
-import { useToast } from '../../lib/toast'
-import type { RedownloadMode, RequestOut } from '../../types/requests'
-import '../detail/DetailPage.css'
 import Icon from '../../components/Icon'
+import DetailShell, { type DetailPill, type DetailTile } from '../detail/DetailShell'
+import { DetailCast, DetailCreators, FactTiles, qualityFromName, serviceTile, sourceFromName, usePlexHref, useTitleRequests } from '../detail/DetailBits'
+import { usePageTitle, useSetHasHero } from '../../lib/chrome'
+import { certificationOf, languageNameOf, yearOf, statusFollowupText } from '../../lib/detailHelpers'
+import { formatBytes } from '../../lib/format'
+import { NON_TERMINAL } from '../../lib/status'
+import { errorText, useToast } from '../../lib/toast'
+import type { RedownloadMode } from '../../types/requests'
+import '../detail/DetailPage.css'
 
-type AddPhase = 'idle' | 'adding' | 'added' | 'error'
+function runtimeLabel(runtime: number | null): string {
+  if (!runtime) return ''
+  const h = Math.floor(runtime / 60)
+  const m = runtime % 60
+  return h ? `${h}h ${m}m` : `${m}m`
+}
 
 export default function MovieDetailPage() {
   const { id } = useParams()
   const tmdbId = Number(id)
   useSetHasHero(true)
+  const queryClient = useQueryClient()
+  const { toast } = useToast()
 
   const movieQuery = useQuery({ queryKey: ['movie', tmdbId], queryFn: () => getMovie(tmdbId) })
   const movie = movieQuery.data
   usePageTitle(movie ? movie.title || movie.original_title || null : null)
 
-  const [addPhase, setAddPhase] = useState<AddPhase>('idle')
-  const [addError, setAddError] = useState<string | null>(null)
-  const [addRequestId, setAddRequestId] = useState<number | null>(null)
+  const [busy, setBusy] = useState<string | null>(null)
   const [modalOpen, setModalOpen] = useState(false)
   const [requestOpen, setRequestOpen] = useState(false)
 
-  const [qualityPhase, setQualityPhase] = useState<AddPhase>('idle')
-  const [qualityError, setQualityError] = useState<string | null>(null)
-  const [qualityRequestId, setQualityRequestId] = useState<number | null>(null)
-  const [qualityButton, setQualityButton] = useState<'2160p' | '1080p' | null>(null)
-
-  const addRequestQuery = useQuery({
-    queryKey: ['request', addRequestId],
-    queryFn: () => getRequest(addRequestId as number),
-    enabled: addRequestId != null,
-    refetchInterval: (q) => (q.state.data && NON_TERMINAL.has(q.state.data.status) ? 4000 : false),
-  })
-  const qualityRequestQuery = useQuery({
-    queryKey: ['request', qualityRequestId],
-    queryFn: () => getRequest(qualityRequestId as number),
-    enabled: qualityRequestId != null,
-    refetchInterval: (q) => (q.state.data && NON_TERMINAL.has(q.state.data.status) ? 4000 : false),
-  })
-
-  const { toast } = useToast()
+  const requests = useTitleRequests(tmdbId, ['movie'])
+  const title = movie?.title || movie?.original_title || ''
+  const year = yearOf(movie?.release_date)
+  const plexHref = usePlexHref('movie', title, year, !!movie?.on_plex)
 
   if (movieQuery.isLoading) return <LoadingState />
   if (movieQuery.isError || !movie) {
-    return <ErrorState message={movieQuery.error instanceof Error ? movieQuery.error.message : undefined} />
+    return <ErrorState message={movieQuery.error instanceof Error ? movieQuery.error.message : undefined} retryHref="#/movies" />
   }
 
-  async function submitAdd(minResolution?: string, redownloadMode?: RedownloadMode, profileId?: string, notify?: boolean) {
-    setAddPhase('adding')
+  async function submit(minResolution?: string | null, redownloadMode?: RedownloadMode, profileId?: string, notify?: boolean, key = 'request') {
+    setBusy(key)
     try {
-      const req: RequestOut = await createRequest({
+      await createRequest({
         tmdb_id: tmdbId,
-        query: movie!.title || movie!.original_title || null,
+        query: title || null,
         min_resolution: minResolution ?? null,
         redownload_mode: redownloadMode ?? null,
         profile_id: profileId ?? null,
         notify: notify ?? null,
       })
-      setAddPhase('added')
-      setAddRequestId(req.id)
-      toast({ tone: 'info', title: `Requested ${movie!.title || movie!.original_title || 'this movie'}`, body: 'Looking for a copy now' })
+      queryClient.invalidateQueries({ queryKey: ['requests'] })
+      toast({ tone: 'info', title: `Requested ${title}`, body: minResolution ? `${minResolution === '2160p' ? '4K' : minResolution} · looking for a copy now` : 'Looking for a copy now' })
     } catch (err) {
-      setAddPhase('error')
-      setAddError(err instanceof Error ? err.message : 'Unknown error')
+      toast({ tone: 'error', title: "Couldn't request that", body: errorText(err) })
+    } finally {
+      setBusy(null)
     }
   }
 
-  async function submitQuality(minResolution: '2160p' | '1080p') {
-    setQualityButton(minResolution)
-    setQualityPhase('adding')
-    try {
-      const req: RequestOut = await createRequest({
-        tmdb_id: tmdbId,
-        query: movie!.title || movie!.original_title || null,
-        min_resolution: minResolution,
-      })
-      setQualityPhase('added')
-      setQualityRequestId(req.id)
-      toast({ tone: 'info', title: `Requested ${movie!.title || movie!.original_title || 'this movie'}`, body: `${minResolution === '2160p' ? '4K' : '1080p'} · looking for a copy now` })
-    } catch (err) {
-      setQualityPhase('error')
-      setQualityError(err instanceof Error ? err.message : 'Unknown error')
-    }
-  }
-
-  // Already in Plex: the redownload question comes first (existing
-  // modal). Otherwise the request sheet picks a quality profile.
-  function handleAddClick() {
-    if (movie!.on_plex) {
-      setModalOpen(true)
-      return
-    }
-    setRequestOpen(true)
-  }
-
-  const runtime = movie.runtime ? `${Math.floor(movie.runtime / 60)}h ${movie.runtime % 60}m` : ''
-  const backdrop = backdropUrl(movie.backdrop_path)
+  const active = requests.find((r) => NON_TERMINAL.has(r.status)) ?? null
+  const latestDone = requests.find((r) => r.status === 'complete') ?? null
+  const winner = (latestDone?.result as { winner?: { fileName?: string; fileSize?: number } } | null)?.winner
   const certification = certificationOf(movie)
-  const cast = movie.credits?.cast
-  const year = yearOf(movie.release_date)
-  const title = movie.title || movie.original_title || ''
-  const addRequest = addRequestQuery.data
-  const addStatus = addRequest?.status
-  const qualityRequest = qualityRequestQuery.data
-  const qualityStatus = qualityRequest?.status
+  const genres = (movie.genres ?? []).slice(0, 3).map((g) => g.name).join(' · ')
 
-  const detailsRows: [string, string][] = []
-  if (certification) detailsRows.push(['Certification', certification])
-  const lang = languageNameOf(movie.original_language)
-  if (lang) detailsRows.push(['Original Language', lang])
-  detailsRows.push(['Release Status', movie.is_coming_soon ? 'Coming Soon' : 'Released'])
+  const eyebrow = movie.is_coming_soon
+    ? { text: 'Coming soon', tone: 'amber' as const }
+    : active
+      ? { text: `${active.status === 'downloading' ? 'Downloading' : active.status === 'searching' ? 'Searching' : 'Queued'}${active.download_progress != null ? ` · ${Math.round(active.download_progress * 100)}%` : ''}`, tone: 'ice' as const }
+      : movie.on_plex
+        ? { text: `In Plex${winner ? ` · ${qualityFromName(winner.fileName)}` : ''}`.replace(/ · $/, ''), tone: 'mint' as const }
+        : { text: 'Not on Plex yet', tone: 'dim' as const }
+
+  const pills: DetailPill[] = []
+  if (movie.vote_average) {
+    pills.push({
+      star: true,
+      text: (
+        <>
+          {movie.vote_average.toFixed(1)}
+          {movie.vote_count ? <small>· {movie.vote_count.toLocaleString()}</small> : null}
+        </>
+      ),
+    })
+  }
+  if (year) pills.push({ text: year })
+  if (certification) pills.push({ text: certification })
+  if (movie.runtime) pills.push({ text: runtimeLabel(movie.runtime) })
+  if (genres) pills.push({ text: genres, mute: true })
+
+  const sideTiles: DetailTile[] = []
+  if (movie.vote_average) sideTiles.push({ label: 'Score', value: <ScoreRing voteAverage={movie.vote_average} /> })
+  const service = serviceTile(movie, false)
+  if (service) sideTiles.push(service)
+  sideTiles.push(
+    movie.on_plex
+      ? { label: 'Library', value: (<><Icon name="check-circle" />Movies</>), tone: 'mint' }
+      : { label: 'Status', value: movie.is_coming_soon ? 'Coming soon' : 'Not yet', tone: 'dim' },
+  )
+  if (requests[0]?.requested_by_username) sideTiles.push({ label: 'Requested by', value: requests[0].requested_by_username })
+
+  const fileTiles: DetailTile[] = winner
+    ? [
+        { label: 'Quality', value: qualityFromName(winner.fileName) || '—', tone: 'mint' },
+        { label: 'Size', value: winner.fileSize ? formatBytes(winner.fileSize) : '—' },
+        { label: 'Source', value: sourceFromName(winner.fileName) || '—' },
+        { label: 'Added', value: latestDone ? new Date(latestDone.updated_at).toLocaleDateString([], { day: 'numeric', month: 'short' }) : '—' },
+      ]
+    : [
+        { label: 'Rated', value: certification || '—' },
+        { label: 'Language', value: languageNameOf(movie.original_language) || '—' },
+        { label: 'Released', value: movie.is_coming_soon ? 'Soon' : year || '—' },
+        { label: 'Studio', value: movie.production_companies?.[0]?.name || '—' },
+      ]
+
+  const actions = movie.is_coming_soon ? (
+    <span className="btn pri dis">
+      <Icon name="clock" />
+      Coming soon
+    </span>
+  ) : movie.on_plex ? (
+    <>
+      {plexHref ? (
+        <a className="btn pri" href={plexHref} target="_blank" rel="noreferrer">
+          <Icon name="play" />
+          Play
+        </a>
+      ) : (
+        <span className="btn pri dis">
+          <Icon name="play" />
+          Play
+        </span>
+      )}
+      <button className="btn sec" disabled={!!busy} onClick={() => setModalOpen(true)}>
+        <Icon name="refresh" />
+        Re-download
+      </button>
+    </>
+  ) : (
+    <>
+      <button className="btn pri" disabled={!!busy || !!active} onClick={() => setRequestOpen(true)}>
+        <Icon name="plus" />
+        {active ? 'Requested' : 'Request'}
+      </button>
+      <button className="btn sec sm" disabled={!!busy || !!active} onClick={() => submit('2160p', undefined, undefined, undefined, '4k')}>
+        {busy === '4k' ? 'Adding…' : '4K'}
+      </button>
+      <button className="btn sec sm" disabled={!!busy || !!active} onClick={() => submit('1080p', undefined, undefined, undefined, '1080')}>
+        {busy === '1080' ? 'Adding…' : '1080p'}
+      </button>
+    </>
+  )
 
   return (
     <>
-      <div className="detail-hero">
-        <AmbientGlow posterPath={movie.poster_path} />
-        {backdrop && <img className="detail-hero-backdrop" src={backdrop} alt="" />}
-        <div className="detail-hero-fade" />
-        <div className="detail-hero-content">
-          <div className="detail-action-col">
-            <div className="detail-poster-wrap">
-              <img className="detail-poster" src={posterUrl(movie.poster_path)} alt="" />
-              {movie.on_plex && <div className="on-plex-badge">On Plex</div>}
-            </div>
-            <div className="detail-icon-row">
-              <DetailProviderIcon item={movie} isTv={false} />
-              <ScoreRing voteAverage={movie.vote_average} />
-              <button
-                className="detail-state-icon"
-                title={movie.is_coming_soon ? 'Not out digitally yet' : movie.on_plex ? 'Added to Plex' : 'Add to Plex'}
-                aria-label="Add to Plex"
-                disabled={movie.is_coming_soon || addPhase === 'added'}
-                onClick={handleAddClick}
-              >
-                <Icon name={addPhase === 'added' || movie.on_plex ? 'check' : 'plus'} />
-              </button>
-            </div>
-            {movie.is_coming_soon ? (
-              <button className="add-btn" disabled title="Not out digitally yet">
-                Coming Soon
-              </button>
-            ) : (
-              <button className="add-btn" disabled={addPhase === 'adding' || addPhase === 'added'} onClick={handleAddClick}>
-                {addPhase === 'adding' ? 'Adding…' : addPhase === 'added' ? 'Added' : movie.on_plex ? 'Added to Plex' : '+ Add to Plex'}
-              </button>
-            )}
+      <DetailShell
+        backTo="/movies"
+        backLabel="Movies"
+        backdropPath={movie.backdrop_path}
+        posterPath={movie.poster_path}
+        logoPath={movie.logo_path}
+        title={title}
+        onPlex={!!movie.on_plex}
+        eyebrow={eyebrow.text}
+        eyebrowTone={eyebrow.tone}
+        pills={pills}
+        overview={movie.overview}
+        actions={actions}
+        tiles={sideTiles}
+      >
+        {active && (
+          <div className="detail-status">
+            <StatusPill status={active.status} />
+            <span>{statusFollowupText(active.status)}</span>
           </div>
-          <div className="detail-info">
-            <h1>
-              {title}
-              {year && <span className="hero-year"> ({year})</span>}
-            </h1>
-            <div className="detail-meta">
-              {certification && <span className="cert-badge">{certification}</span>}
-              <span>{genreLine(movie.genres)}</span>
-              {runtime && <span>{runtime}</span>}
-              {year && <span>{year}</span>}
-            </div>
-            <div className="detail-overview-row">
-              <div className="detail-overview-col">
-                <ClampedText text={movie.overview ?? ''} textClassName="detail-overview" buttonClassName="detail-overview-more-btn" />
-              </div>
-              <CastLine cast={cast} />
-            </div>
-          </div>
-        </div>
-      </div>
+        )}
+        <DetailCast cast={movie.credits?.cast} />
+        <h4 className="detail-h4">{winner ? 'File' : 'Details'}</h4>
+        <FactTiles tiles={fileTiles} />
+        <DetailCreators crew={movie.credits?.crew} studio={movie.production_companies?.[0]?.name} />
+      </DetailShell>
 
-      {(addPhase === 'added' || addPhase === 'error') && (
-        <div className="add-confirm">
-          {addPhase === 'error' ? (
-            <span>Couldn't add that: {addError}</span>
-          ) : (
-            <>
-              <StatusPill status={addStatus ?? 'queued'} />
-              <span>{statusFollowupText(addStatus ?? 'queued')}</span>
-            </>
-          )}
-        </div>
-      )}
-
-      <MediaRow title="Related" items={movie.recommendations?.results ?? []} mediaType="movie" />
-
-      <div className="detail-panels-grid">
-        <div className="detail-panels-col">
-          <div className="detail-panel">
-            <DetailOverviewPanel title={title} genres={movie.genres} overview={movie.overview} />
-          </div>
-          <div className="detail-panel">
-            <CreatorsAndCastPanel crew={movie.credits?.crew} cast={cast} studio={movie.production_companies?.[0]?.name} />
-          </div>
-        </div>
-        <div className="detail-panels-col">
-          <div className="detail-panel">
-            <h2 className="section-heading">Download</h2>
-            <button className="bulk-btn" disabled={movie.is_coming_soon || qualityPhase === 'adding'} onClick={() => submitQuality('2160p')}>
-              {qualityPhase === 'adding' && qualityButton === '2160p' ? 'Adding…' : 'Download 4K'}
-            </button>
-            <button className="bulk-btn" disabled={movie.is_coming_soon || qualityPhase === 'adding'} onClick={() => submitQuality('1080p')}>
-              {qualityPhase === 'adding' && qualityButton === '1080p' ? 'Adding…' : 'Download 1080p'}
-            </button>
-            {(qualityPhase === 'added' || qualityPhase === 'error') && (
-              <div className="add-confirm">
-                {qualityPhase === 'error' ? (
-                  <span>Couldn't add that: {qualityError}</span>
-                ) : (
-                  <>
-                    <StatusPill status={qualityStatus ?? 'queued'} />
-                    <span>{statusFollowupText(qualityStatus ?? 'queued')}</span>
-                  </>
-                )}
-              </div>
-            )}
-          </div>
-          <div className="detail-panel">
-            <DetailsCardPanel rows={detailsRows} />
-          </div>
-        </div>
-      </div>
-
-      <CastRow cast={cast} />
-
-      <div className="detail-footer">
-        <span className="brand-wordmark">
-          <img className="brand-mark" src="/brand-icon.svg" alt="" />
-          Meridian
-        </span>
+      <div className="detail-rows">
+        <MediaRow title="More" qualifier="like this" items={movie.recommendations?.results ?? []} mediaType="movie" />
       </div>
 
       <RequestModal
         open={requestOpen}
         title={title}
-        subtitle={[year, 'Movie', 'Not in Plex'].filter(Boolean).join(' · ')}
+        subtitle={[year, 'Movie', 'Not on Plex'].filter(Boolean).join(' · ')}
         posterPath={movie.poster_path}
         onClose={() => setRequestOpen(false)}
         onSubmit={(profile, notify) => {
           setRequestOpen(false)
-          submitAdd(profile.min_resolution ?? undefined, undefined, profile.id, notify)
+          submit(profile.min_resolution ?? undefined, undefined, profile.id, notify)
         }}
       />
       <RedownloadModal
@@ -265,7 +218,7 @@ export default function MovieDetailPage() {
         onClose={() => setModalOpen(false)}
         onChoose={(mode) => {
           setModalOpen(false)
-          submitAdd(undefined, mode)
+          submit(undefined, mode)
         }}
       />
     </>
