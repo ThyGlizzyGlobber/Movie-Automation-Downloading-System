@@ -107,8 +107,7 @@
   .detail-side .detail-tiles {
     margin-top: 0;
   }
-  /* The banner carries the eyebrow and title; the card starts at the pills. */
-  .detail-card > .detail-eyebrow,
+  /* The banner carries the title; the card starts at the pills. */
   .detail-card > .detail-title {
     display: none;
   }
@@ -429,28 +428,6 @@
   box-shadow: var(--glass-highlight);
   min-width: 0;
 }
-/* The status line, styled like the home hero's tag: plain green text
-   with an icon, no pill. Amber (coming soon) and dim keep their colour. */
-.detail-eyebrow {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  color: var(--status-complete);
-  font-size: 15px;
-  font-weight: 700;
-}
-.detail-eyebrow .icon {
-  font-size: 18px;
-}
-.detail-eyebrow.amber {
-  color: var(--status-nomatch);
-}
-.detail-eyebrow.dim {
-  color: var(--text-dim);
-}
-.detail-eyebrow + .detail-title {
-  margin-top: 16px;
-}
 .detail-title {
   font-family: var(--font-display);
   font-weight: 300;
@@ -701,9 +678,6 @@
     max-width: 70%;
     max-height: 120px;
   }
-  .detail-banner .detail-eyebrow {
-    font-size: 13px;
-  }
   .detail-grid {
     /* minmax(0, …): a wide block (the cast strip's track) must never
        stretch the column past the viewport. */
@@ -719,8 +693,7 @@
   .detail-grid > * {
     min-width: 0;
   }
-  /* The banner carries the eyebrow, title and poster art. */
-  .detail-card > .detail-eyebrow,
+  /* The banner carries the title and poster art. */
   .detail-card > .detail-title,
   .detail-poster-wrap {
     display: none;
@@ -791,11 +764,6 @@
      the tiles beside it, under the status line. */
   .detail-banner {
     display: none;
-  }
-  .detail-card > .detail-eyebrow {
-    display: inline-flex;
-    order: 1;
-    font-size: 13px;
   }
   .detail-poster-row {
     display: grid;

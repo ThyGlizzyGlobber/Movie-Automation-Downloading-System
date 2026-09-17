@@ -76,10 +76,6 @@ export default function MovieDetailPage() {
   const certification = certificationOf(movie)
   const genres = (movie.genres ?? []).slice(0, 3)
 
-  const eyebrow = active
-      ? { text: `${active.status === 'downloading' ? 'Downloading' : active.status === 'searching' ? 'Searching' : 'Queued'}${active.download_progress != null ? ` · ${Math.round(active.download_progress * 100)}%` : ''}`, tone: 'ice' as const }
-      : { text: '', tone: 'dim' as const } // on Plex: the pill under the logo says so
-
   const pills: DetailPill[] = []
   if (movie.vote_average) {
     pills.push({
@@ -180,8 +176,6 @@ export default function MovieDetailPage() {
         title={title}
         onPlex={!!movie.on_plex}
         pill={moviePill(movie)}
-        eyebrow={eyebrow.text}
-        eyebrowTone={eyebrow.tone}
         pills={pills}
         overview={movie.overview}
         actions={actions}

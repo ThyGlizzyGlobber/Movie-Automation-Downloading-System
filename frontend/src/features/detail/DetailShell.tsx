@@ -26,10 +26,10 @@ export interface DetailPill {
 
 // The content page frame from the reference: a blurred backdrop with
 // the poster glow, the poster and fact tiles on the left, and a glass
-// card on the right holding the eyebrow, the title logo (or text), meta
+// card on the right holding the title logo (or text), meta
 // pills, the synopsis, the actions and whatever the page adds beneath
 // (cast, trailer). On wide desktops the poster gives way to a landscape
-// banner spanning the frame with the eyebrow and logo inside it, and
+// banner spanning the frame with the logo and status pill inside it, and
 // both columns sit underneath; narrower screens keep the poster and
 // two-column layout, and on phones the card is dropped and the page
 // itself is the surface.
@@ -40,8 +40,6 @@ export default function DetailShell({
   title,
   onPlex,
   pill,
-  eyebrow,
-  eyebrowTone = 'ice',
   pills,
   overview,
   actions,
@@ -57,9 +55,6 @@ export default function DetailShell({
   onPlex: boolean
   /* The pill under the logo: Watch now on Plex, Just dropped, Coming soon. */
   pill?: BannerPill | null
-  /* Status line above the title; omitted when empty. */
-  eyebrow?: string
-  eyebrowTone?: 'ice' | 'mint' | 'dim' | 'amber'
   pills: DetailPill[]
   overview: string | null | undefined
   actions: ReactNode
@@ -86,12 +81,6 @@ export default function DetailShell({
             <div className="detail-banner-text">
               <div className={`detail-title${logo ? ' has-logo' : ''}`}>{logo ? <img className="detail-logo" src={logoUrl(logoPath, 'original') ?? logo} alt={title} /> : title}</div>
               {pill && <span className={`on-plex-badge detail-banner-plex ${pill.tone}`}>{pill.text}</span>}
-              {eyebrow && (
-                <span className={`detail-eyebrow ${eyebrowTone}`}>
-                  <Icon name="megaphone" />
-                  {eyebrow}
-                </span>
-              )}
             </div>
           </div>
         )}
@@ -125,12 +114,6 @@ export default function DetailShell({
             )}
           </aside>
           <section className="detail-card">
-            {eyebrow && (
-              <span className={`detail-eyebrow ${eyebrowTone}`}>
-                <Icon name="megaphone" />
-                {eyebrow}
-              </span>
-            )}
             <h1 className={`detail-title${logo ? ' has-logo' : ''}`}>{logo ? <img className="detail-logo" src={logo} alt={title} /> : title}</h1>
             <div className="detail-card-main">
               <div className="detail-meta">
