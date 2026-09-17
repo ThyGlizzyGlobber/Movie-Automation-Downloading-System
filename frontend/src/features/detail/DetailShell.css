@@ -493,6 +493,11 @@
   color: var(--text-dim);
   padding: 0 4px;
 }
+/* Genres are links into browse with that genre selected. */
+.detail-pill a:hover,
+.detail-fact dd a:hover {
+  color: var(--meridian-ice);
+}
 .detail-syn {
   font-size: var(--text-body);
   line-height: var(--leading-body);

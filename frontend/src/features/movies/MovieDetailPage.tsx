@@ -10,7 +10,7 @@ import LoadingState from '../../components/LoadingState'
 import ErrorState from '../../components/ErrorState'
 import Icon from '../../components/Icon'
 import DetailShell, { type DetailPill, type DetailRow, type DetailTile } from '../detail/DetailShell'
-import { DetailCast, DetailTrailer, FactTiles, peopleLinks, qualityFromName, serviceTile, sourceFromName, usePlexHref, useTitleRequests } from '../detail/DetailBits'
+import { DetailCast, DetailTrailer, FactTiles, genreLinks, peopleLinks, qualityFromName, serviceTile, sourceFromName, usePlexHref, useTitleRequests } from '../detail/DetailBits'
 import { usePageTitle, useSetHasHero } from '../../lib/chrome'
 import { certificationOf, languageNameOf, yearOf } from '../../lib/detailHelpers'
 import { moviePill } from '../../lib/homeHero'
@@ -74,7 +74,7 @@ export default function MovieDetailPage() {
   const latestDone = requests.find((r) => r.status === 'complete') ?? null
   const winner = (latestDone?.result as { winner?: { fileName?: string; fileSize?: number } } | null)?.winner
   const certification = certificationOf(movie)
-  const genres = (movie.genres ?? []).slice(0, 3).map((g) => g.name).join(' · ')
+  const genres = (movie.genres ?? []).slice(0, 3)
 
   const eyebrow = active
       ? { text: `${active.status === 'downloading' ? 'Downloading' : active.status === 'searching' ? 'Searching' : 'Queued'}${active.download_progress != null ? ` · ${Math.round(active.download_progress * 100)}%` : ''}`, tone: 'ice' as const }
@@ -95,7 +95,7 @@ export default function MovieDetailPage() {
   if (year) pills.push({ text: year })
   if (certification) pills.push({ text: certification })
   if (movie.runtime) pills.push({ text: runtimeLabel(movie.runtime) })
-  if (genres) pills.push({ text: genres, mute: true })
+  if (genres.length) pills.push({ text: genreLinks(genres, 'movie'), mute: true })
 
   const sideTiles: DetailTile[] = []
   const service = serviceTile(movie, false)
@@ -124,7 +124,7 @@ export default function MovieDetailPage() {
   if (movie.release_date) details.push({ label: 'Released', value: new Date(`${movie.release_date}T00:00:00`).toLocaleDateString([], { day: 'numeric', month: 'short', year: 'numeric' }) })
   const lang = languageNameOf(movie.original_language)
   if (lang) details.push({ label: 'Language', value: lang })
-  if (movie.genres?.length) details.push({ label: 'Genres', value: movie.genres.map((g) => g.name).join(', ') })
+  if (movie.genres?.length) details.push({ label: 'Genres', value: genreLinks(movie.genres, 'movie', ', ') })
   if (directors.length) details.push({ label: 'Director', value: peopleLinks(directors) })
   if (writers.length) details.push({ label: 'Writers', value: peopleLinks(writers) })
   if (movie.production_companies?.[0]) details.push({ label: 'Studio', value: movie.production_companies[0].name })

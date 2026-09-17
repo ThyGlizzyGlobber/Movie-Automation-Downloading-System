@@ -10,7 +10,7 @@ import LoadingState from '../../components/LoadingState'
 import ErrorState from '../../components/ErrorState'
 import Icon from '../../components/Icon'
 import DetailShell, { type DetailPill, type DetailRow, type DetailTile } from '../detail/DetailShell'
-import { DetailCast, DetailTrailer, peopleLinks, usePlexHref } from '../detail/DetailBits'
+import { DetailCast, DetailTrailer, genreLinks, peopleLinks, usePlexHref } from '../detail/DetailBits'
 import { usePageTitle, useSetHasHero } from '../../lib/chrome'
 import { errorText, useToast } from '../../lib/toast'
 import { languageNameOf, tvCertificationOf, yearOf } from '../../lib/detailHelpers'
@@ -133,7 +133,7 @@ export default function ShowDetailPage() {
   const currentSeason = activeSeason ?? (seasons.length ? seasons[seasons.length - 1].season_number : null)
   const currentSeasonLabel = limited ? 'Limited series' : seasons.find((x) => x.season_number === currentSeason)?.name || `Season ${currentSeason}`
   const certification = tvCertificationOf(show)
-  const genres = (show.genres ?? []).slice(0, 3).map((g) => g.name).join(' · ')
+  const genres = (show.genres ?? []).slice(0, 3)
   const network = show.networks?.[0]?.name
 
 
@@ -153,7 +153,7 @@ export default function ShowDetailPage() {
   if (certification) pills.push({ text: certification })
   if (limited) pills.push({ text: show.number_of_episodes ? `Limited series · ${show.number_of_episodes} episodes` : 'Limited series' })
   else if (seasons.length) pills.push({ text: `${seasons.length} season${seasons.length === 1 ? '' : 's'}` })
-  if (genres) pills.push({ text: genres, mute: true })
+  if (genres.length) pills.push({ text: genreLinks(genres, 'tv'), mute: true })
 
   const nextEp = show.next_episode_to_air
   const next = nextEp?.air_date
@@ -204,7 +204,7 @@ export default function ShowDetailPage() {
   if (show.status) details.push({ label: 'Status', value: limited ? 'Limited series' : show.status })
   const lang = languageNameOf(show.original_language)
   if (lang) details.push({ label: 'Language', value: lang })
-  if (show.genres?.length) details.push({ label: 'Genres', value: show.genres.map((g) => g.name).join(', ') })
+  if (show.genres?.length) details.push({ label: 'Genres', value: genreLinks(show.genres, 'tv', ', ') })
   if (creators.length) details.push({ label: 'Created by', value: peopleLinks(creators) })
   if (show.production_companies?.[0]) details.push({ label: 'Studio', value: show.production_companies[0].name })
 

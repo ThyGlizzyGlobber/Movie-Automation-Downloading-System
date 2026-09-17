@@ -14,6 +14,7 @@ import { originalServiceMatch } from '../../lib/providers'
 import type { CastMember } from '../../types/movies'
 import type { RequestOut } from '../../types/requests'
 import { DetailH4, type DetailTile } from './DetailShell'
+import { browseHref } from '../../api/browse'
 
 export function DetailCast({ cast, limit = 16 }: { cast?: CastMember[]; limit?: number }) {
   const trackRef = useRef<HTMLDivElement>(null)
@@ -47,6 +48,21 @@ export function DetailCast({ cast, limit = 16 }: { cast?: CastMember[]; limit?: 
           <Icon name="next" />
         </button>
       </div>
+    </>
+  )
+}
+
+// Genre names as links into the browse page with that genre already
+// selected, for the pills ("Action · Comedy") and the facts list.
+export function genreLinks(genres: { id: number; name: string }[], type: 'movie' | 'tv', separator = ' · ') {
+  return (
+    <>
+      {genres.map((g, i) => (
+        <span key={g.id}>
+          {i > 0 && separator}
+          <a href={`#${browseHref({ type, genre: g.id })}`}>{g.name}</a>
+        </span>
+      ))}
     </>
   )
 }
