@@ -1303,15 +1303,15 @@ def test_get_tv_detail_plex_complete_when_plex_holds_every_aired_episode(client_
         seasons=[{"season_number": 1, "episode_count": 8}],
         last_episode_to_air={"season_number": 1, "episode_number": 8},
     )
-    monkeypatch.setattr(api, "_on_plex_for", lambda title, year, media_type, store: True)
+    monkeypatch.setattr(api, "_on_plex_for", lambda title, year, media_type, store, tmdb_id=None: True)
 
-    monkeypatch.setattr(api, "_plex_episode_count", lambda store, title, year: 8)
+    monkeypatch.setattr(api, "_plex_episode_count", lambda store, title, year, tmdb_id=None: 8)
     assert client.get("/api/tv/95350").json()["plex_complete"] is True
 
-    monkeypatch.setattr(api, "_plex_episode_count", lambda store, title, year: 6)
+    monkeypatch.setattr(api, "_plex_episode_count", lambda store, title, year, tmdb_id=None: 6)
     assert client.get("/api/tv/95350").json()["plex_complete"] is False
 
-    monkeypatch.setattr(api, "_plex_episode_count", lambda store, title, year: None)
+    monkeypatch.setattr(api, "_plex_episode_count", lambda store, title, year, tmdb_id=None: None)
     assert client.get("/api/tv/95350").json()["plex_complete"] is False
 
 
@@ -2835,7 +2835,7 @@ def test_reject_current_copy_for_a_file_this_app_never_added(client_and_deps, mo
 
     filed = tmp_path / "The.End.of.Oak.Street.2025.2160p.WEB-DL.mkv"
     filed.write_bytes(b"broken")
-    monkeypatch.setattr(api, "local_file_for_title", lambda store, media_type, title, year: filed)
+    monkeypatch.setattr(api, "local_file_for_title", lambda store, media_type, title, year, tmdb_id=None: filed)
     client, store, _, _, _, _ = client_and_deps
 
     response = client.post("/api/movies/693134/reject-current")
@@ -2845,7 +2845,7 @@ def test_reject_current_copy_for_a_file_this_app_never_added(client_and_deps, mo
     assert not filed.exists()
     assert store.get_rejected_releases(693134) == [{"name": "The.End.of.Oak.Street.2025.2160p.WEB-DL", "size_bytes": 6}]
 
-    monkeypatch.setattr(api, "local_file_for_title", lambda store, media_type, title, year: None)
+    monkeypatch.setattr(api, "local_file_for_title", lambda store, media_type, title, year, tmdb_id=None: None)
     assert client.post("/api/movies/693134/reject-current").status_code == 409
 
 
@@ -2853,12 +2853,12 @@ def test_overwrite_is_allowed_when_plex_can_point_at_the_file(client_and_deps, m
     from app import api
 
     client, _, _, _, _, _ = client_and_deps
-    monkeypatch.setattr(api, "local_file_for_title", lambda store, media_type, title, year: None)
+    monkeypatch.setattr(api, "local_file_for_title", lambda store, media_type, title, year, tmdb_id=None: None)
     assert client.post("/api/requests", json={"tmdb_id": 693134, "redownload_mode": "overwrite"}).status_code == 400
 
     filed = tmp_path / "Dune.mkv"
     filed.write_bytes(b"x")
-    monkeypatch.setattr(api, "local_file_for_title", lambda store, media_type, title, year: filed)
+    monkeypatch.setattr(api, "local_file_for_title", lambda store, media_type, title, year, tmdb_id=None: filed)
     assert client.post("/api/requests", json={"tmdb_id": 693134, "redownload_mode": "overwrite"}).status_code == 201
     detail = client.get("/api/movies/693134").json()
     assert detail["plex_file_available"] is (detail["on_plex"] is True)

@@ -442,7 +442,7 @@ def test_check_downloading_marks_complete_when_gone_but_plex_has_it(monkeypatch)
     row = store.create_request(tmdb_id=693134, title="Dune: Part Two", release_year=2024, query=None)
     store.update_status(row.id, "downloading", result={"torrent_hash": "aaaa"})
     qbt = FakeQBTClient(torrent_states={})
-    monkeypatch.setattr("app.worker.plex.has_in_library", lambda store, title, year: True)
+    monkeypatch.setattr("app.worker.plex.has_in_library", lambda store, title, year, tmdb_id=None: True)
     worker = Worker(store, FakeTMDBClient(), qbt)
 
     asyncio.run(worker._check_downloading())
@@ -456,7 +456,7 @@ def test_check_downloading_marks_cancelled_with_plex_checked_message_when_not_fo
     row = store.create_request(tmdb_id=693134, title="Dune: Part Two", release_year=2024, query=None)
     store.update_status(row.id, "downloading", result={"torrent_hash": "aaaa"})
     qbt = FakeQBTClient(torrent_states={})
-    monkeypatch.setattr("app.worker.plex.has_in_library", lambda store, title, year: False)
+    monkeypatch.setattr("app.worker.plex.has_in_library", lambda store, title, year, tmdb_id=None: False)
     worker = Worker(store, FakeTMDBClient(), qbt)
 
     asyncio.run(worker._check_downloading())
@@ -1167,7 +1167,7 @@ def test_plex_is_the_verifier_for_the_follow_check(monkeypatch):
     whatever the ledger says."""
     from app import plex as plex_module
 
-    monkeypatch.setattr(plex_module, "plex_show_episodes", lambda store, title, year: {(1, 1)})
+    monkeypatch.setattr(plex_module, "plex_show_episodes", lambda store, title, year, tmdb_id=None: {(1, 1)})
     store = RequestStore(":memory:")
     show = store.create_show(tmdb_id=95350, title="Lanterns")
     tmdb = FakeTMDBClient(show={**SHOW, "number_of_seasons": 1}, season_episodes={1: _TWO_AIRED_ONE_FUTURE})
@@ -1182,7 +1182,7 @@ def test_plex_is_the_verifier_for_the_follow_check(monkeypatch):
 def test_plex_is_the_verifier_for_the_season_fallback(monkeypatch):
     from app import plex as plex_module
 
-    monkeypatch.setattr(plex_module, "plex_show_episodes", lambda store, title, year: {(1, 1), (1, 2)})
+    monkeypatch.setattr(plex_module, "plex_show_episodes", lambda store, title, year, tmdb_id=None: {(1, 1), (1, 2)})
     store = RequestStore(":memory:")
     show = store.create_show(tmdb_id=95350, title="Lanterns")
     row = store.create_pack_request(tmdb_id=95350, show_id=show.id, title="Lanterns", season_number=None)

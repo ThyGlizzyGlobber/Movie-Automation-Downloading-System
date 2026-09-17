@@ -51,6 +51,7 @@ from app.plex import (
     PlexError,
     PlexLinker,
     local_file_for_title,
+    locate_title,
     new_client_identifier,
     plex_library_lookup,
 )
@@ -518,14 +519,14 @@ def _annotate_on_plex(
     for item in results:
         year_str = (item.get(date_key) or "")[:4]
         year = int(year_str) if year_str.isdigit() else None
-        on_plex = bool(matcher(item.get(title_key) or "", year)) if matcher else False
+        on_plex = bool(matcher(item.get(title_key) or "", year, item.get("id"))) if matcher else False
         annotated.append({**item, "on_plex": on_plex})
     return annotated
 
 
-def _on_plex_for(title: str, year: int | None, media_type: str, store: RequestStore) -> bool:
+def _on_plex_for(title: str, year: int | None, media_type: str, store: RequestStore, tmdb_id: int | None = None) -> bool:
     matcher = plex_library_lookup(store, media_type)
-    return bool(matcher(title, year)) if matcher else False
+    return bool(matcher(title, year, tmdb_id)) if matcher else False
 
 
 def _aired_episode_count(show: dict) -> int:
@@ -545,7 +546,7 @@ def _aired_episode_count(show: dict) -> int:
     return before + int(last_episode)
 
 
-def _plex_episode_count(store: RequestStore, title: str, year: int | None) -> int | None:
+def _plex_episode_count(store: RequestStore, title: str, year: int | None, tmdb_id: int | None = None) -> int | None:
     """How many episodes of this show Plex has, by Plex's own count, or
     None when Plex isn't linked or can't find the show."""
     settings = store.get_settings()
@@ -554,7 +555,7 @@ def _plex_episode_count(store: RequestStore, title: str, year: int | None) -> in
         return None
     client = PlexClient(settings.get("plex_client_id") or new_client_identifier())
     try:
-        item = client.locate(server_url, server_token, "show", title, year)
+        item = locate_title(store, client, "show", title, year, tmdb_id)
         if item is None:
             return None
         return client.leaf_count(server_url, server_token, item["rating_key"])
@@ -710,14 +711,14 @@ def get_movie_detail(
     # Soon titles use this to grey out their own Add to Plex button.
     release_dates = movie.get("release_dates", {}).get("results", [])
     is_coming_soon = is_movie_coming_soon(movie, release_dates, region="US")
-    on_plex = _on_plex_for(movie.get("title") or "", year, "movie", store)
+    on_plex = _on_plex_for(movie.get("title") or "", year, "movie", store, tmdb_id)
     tracked = bool(store.get_library_items(tmdb_id, "movie")) or store.get_latest_organized_request(tmdb_id, ("movie",)) is not None
     return {
         **movie,
         "on_plex": on_plex,
         # A file this app didn't add, but Plex can point at from here: enough
         # to offer "Replace it" and "This copy is broken" for it.
-        "plex_file_available": bool(on_plex and not tracked and local_file_for_title(store, "movie", movie.get("title") or "", year) is not None),
+        "plex_file_available": bool(on_plex and not tracked and local_file_for_title(store, "movie", movie.get("title") or "", year, tmdb_id) is not None),
         "is_coming_soon": is_coming_soon,
         "logo_path": best_logo_path(movie.get("images")),
         # Frontend migration Part K2 — true only when this app has a
@@ -861,11 +862,11 @@ def get_tv_detail(tmdb_id: int, store: RequestStore = Depends(get_store), tmdb: 
         raise HTTPException(status_code=404, detail=f"tmdb_id {tmdb_id} not found") from exc
     year_str = (show.get("first_air_date") or "")[:4]
     year = int(year_str) if year_str.isdigit() else None
-    on_plex = _on_plex_for(show.get("name") or "", year, "show", store)
+    on_plex = _on_plex_for(show.get("name") or "", year, "show", store, tmdb_id)
     # Every aired episode is already on Plex: the show page hides "Add
     # all to Plex" rather than offering a download that would add nothing.
     aired = _aired_episode_count(show)
-    have = _plex_episode_count(store, show.get("name") or "", year) if on_plex and aired else None
+    have = _plex_episode_count(store, show.get("name") or "", year, tmdb_id) if on_plex and aired else None
     return {
         **show,
         "on_plex": on_plex,
@@ -972,7 +973,7 @@ def create_request(
         body.redownload_mode == "overwrite"
         and not store.get_library_items(body.tmdb_id, "movie")
         and store.get_latest_organized_request(body.tmdb_id, ("movie",)) is None
-        and local_file_for_title(store, "movie", identity.title, identity.release_year) is None
+        and local_file_for_title(store, "movie", identity.title, identity.release_year, body.tmdb_id) is None
     ):
         # Defense in depth — never trust the frontend's button state
         # alone. "Overwrite" is only ever offered against a file this
@@ -1133,7 +1134,7 @@ def reject_current_movie_copy(
             store.remove_library_item(item["path"])
             removed.append(path.name)
     else:
-        path = local_file_for_title(store, "movie", identity.title, identity.release_year)
+        path = local_file_for_title(store, "movie", identity.title, identity.release_year, tmdb_id)
         if path is None:
             raise HTTPException(status_code=409, detail="Plex can't point at a file for this title from here")
         try:
@@ -2201,7 +2202,9 @@ def get_plex_on_deck(store: RequestStore = Depends(get_store)) -> dict:
 
 
 @router.get("/api/plex/locate")
-def plex_locate(type: str, title: str, year: int | None = None, store: RequestStore = Depends(get_store)) -> dict:
+def plex_locate(
+    type: str, title: str, year: int | None = None, tmdb_id: int | None = None, store: RequestStore = Depends(get_store)
+) -> dict:
     """Where a title lives on the linked server, for the detail page's
     Play button: {available, rating_key, machine_id}. Degrades to
     available: false rather than erroring."""
@@ -2213,7 +2216,7 @@ def plex_locate(type: str, title: str, year: int | None = None, store: RequestSt
         return {"available": False}
     client = PlexClient(settings.get("plex_client_id") or new_client_identifier())
     try:
-        found = client.locate(url, token, type, title, year)
+        found = locate_title(store, client, type, title, year, tmdb_id)
     except Exception as exc:  # noqa: BLE001
         logger.info("plex locate unavailable: %s", exc)
         return {"available": False}

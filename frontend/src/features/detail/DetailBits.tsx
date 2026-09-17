@@ -104,10 +104,10 @@ export function useTitleRequests(tmdbId: number, kinds: RequestOut['media_type']
 }
 
 // Plex Web link for a title that is in the library, or null.
-export function usePlexHref(type: 'movie' | 'show', title: string, year: string | number | null | undefined, enabled: boolean) {
+export function usePlexHref(type: 'movie' | 'show', tmdbId: number, title: string, year: string | number | null | undefined, enabled: boolean) {
   const query = useQuery({
-    queryKey: ['plex-locate', type, title, year ?? ''],
-    queryFn: () => locateOnPlex(type, title, year),
+    queryKey: ['plex-locate', type, tmdbId, title, year ?? ''],
+    queryFn: () => locateOnPlex(type, title, year, tmdbId),
     enabled: enabled && !!title,
     staleTime: 300_000,
   })

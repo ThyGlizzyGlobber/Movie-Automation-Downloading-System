@@ -38,6 +38,55 @@ class PlexError(RuntimeError):
     pass
 
 
+def _tmdb_id_of(item: dict) -> int | None:
+    """The TMDB id Plex's agent tagged an item with (`tmdb://617126` in
+    its Guid list), or None for an item matched by an older agent."""
+    for guid in item.get("Guid") or []:
+        value = str(guid.get("id") or "")
+        if value.startswith("tmdb://") and value[7:].isdigit():
+            return int(value[7:])
+    return None
+
+
+def _matches(item: dict, target: str, year: int | None, tmdb_id: int | None) -> bool:
+    """Whether a Plex item is the title asked about. When both sides
+    carry a TMDB id, the ids decide on their own: titles collide ("Runner"
+    against "The Runner") and drift ("The Fantastic 4: First Steps" on
+    TMDB is "The Fantastic Four: First Steps" in Plex). Otherwise it's the
+    title (see titles_match) within YEAR_TOLERANCE."""
+    item_id = item.get("tmdb_id", _tmdb_id_of(item))
+    if tmdb_id is not None and item_id is not None:
+        return item_id == tmdb_id
+    if not titles_match(normalize_text(item.get("title", "")), target):
+        return False
+    return not (year and item.get("year") and abs(item["year"] - year) > YEAR_TOLERANCE)
+
+
+class LibraryIndex:
+    """One library section's items ({title, year, tmdb_id, rating_key}),
+    looked up by TMDB id first and by title after."""
+
+    def __init__(self, items: list[dict]):
+        self.items = items
+        self._by_id = {i["tmdb_id"]: i for i in items if i.get("tmdb_id") is not None}
+        self._by_title: dict[str, list[dict]] = {}
+        for item in items:
+            self._by_title.setdefault(normalize_text(item.get("title", "")), []).append(item)
+
+    def find(self, title: str, year: int | None, tmdb_id: int | None = None) -> dict | None:
+        if tmdb_id is not None and tmdb_id in self._by_id:
+            return self._by_id[tmdb_id]
+        target = normalize_text(title)
+        # Exact title first (the common case), then the fuzzy fallback.
+        for item in self._by_title.get(target, []):
+            if _matches(item, target, year, tmdb_id):
+                return item
+        for item in self.items:
+            if _matches(item, target, year, tmdb_id):
+                return item
+        return None
+
+
 def new_client_identifier() -> str:
     """A stable per-installation id Plex uses to recognize this app across
     requests — generated once and persisted in settings, not a secret."""
@@ -170,27 +219,21 @@ class PlexClient:
                 return {"owned": resource["owned"]}
         return None
 
-    def has_movie(self, server_url: str, server_token: str, title: str, year: int | None) -> bool:
+    def has_movie(self, server_url: str, server_token: str, title: str, year: int | None, tmdb_id: int | None = None) -> bool:
         """True if a movie matching `title` (and `year`, within a year of
         tolerance) already exists in this Plex server's library — searched
         with /library/all rather than enumerating sections first."""
         response = self.session.get(
             f"{server_url}/library/all",
             headers={"Accept": "application/json", "X-Plex-Token": server_token},
-            params={"type": 1, "title": title},
+            params={"type": 1, "title": title, "includeGuids": 1},
             timeout=10,
         )
         if not response.ok:
             raise PlexError(f"Plex library search failed: {response.status_code}")
         items = response.json().get("MediaContainer", {}).get("Metadata", []) or []
         target = normalize_text(title)
-        for item in items:
-            if not titles_match(normalize_text(item.get("title", "")), target):
-                continue
-            if year and item.get("year") and abs(item["year"] - year) > YEAR_TOLERANCE:
-                continue
-            return True
-        return False
+        return any(_matches(item, target, year, tmdb_id) for item in items)
 
     def on_deck(self, server_url: str, server_token: str) -> list[dict]:
         """Plex's own "Continue Watching" list for the linked server —
@@ -222,7 +265,9 @@ class PlexClient:
             raise PlexError(f"Plex recently-added fetch failed: {response.status_code}")
         return response.json().get("MediaContainer", {}).get("Metadata", []) or []
 
-    def locate(self, server_url: str, server_token: str, media_type: str, title: str, year: int | None) -> dict | None:
+    def locate(
+        self, server_url: str, server_token: str, media_type: str, title: str, year: int | None, tmdb_id: int | None = None
+    ) -> dict | None:
         """The library item for a title (and year, when known): a filtered
         `/library/all` search, then the same title/year matching the
         on-Plex badge uses, so the detail page's Play button can open the
@@ -238,11 +283,9 @@ class PlexClient:
         target = normalize_text(title)
         best = None
         for item in response.json().get("MediaContainer", {}).get("Metadata", []) or []:
-            if not titles_match(normalize_text(item.get("title", "")), target):
+            if not _matches(item, target, year, tmdb_id):
                 continue
-            if year and item.get("year") and abs(item["year"] - year) > YEAR_TOLERANCE:
-                continue
-            exact = normalize_text(item.get("title", "")) == target
+            exact = normalize_text(item.get("title", "")) == target or (tmdb_id is not None and _tmdb_id_of(item) == tmdb_id)
             if best is None or (exact and not best[0]):
                 best = (exact, item)
         if best is None:
@@ -364,9 +407,9 @@ class PlexClient:
             raise PlexError(f"Plex image fetch failed: {response.status_code}")
         return response.content, response.headers.get("Content-Type", "image/jpeg")
 
-    def library_index(self, server_url: str, server_token: str, media_type: str) -> dict[str, list[int | None]]:
+    def library_index(self, server_url: str, server_token: str, media_type: str) -> LibraryIndex:
         """Every title in one whole library section (`media_type`
-        "movie"/"show"), as `normalize_text(title) -> [years...]` — one bulk
+        "movie"/"show"), with its year, TMDB id and rating key — one bulk
         `/library/all` call (no title filter) rather than the N per-item
         calls `has_movie` makes, so a discover/search grid of 20-40 items
         can check "is this on Plex" against one fetch instead of 20-40 live
@@ -375,19 +418,24 @@ class PlexClient:
         response = self.session.get(
             f"{server_url}/library/all",
             headers={"Accept": "application/json", "X-Plex-Token": server_token},
-            params={"type": _LIBRARY_TYPE[media_type]},
+            params={"type": _LIBRARY_TYPE[media_type], "includeGuids": 1},
             timeout=15,
         )
         if not response.ok:
             raise PlexError(f"Plex library fetch failed: {response.status_code}")
         items = response.json().get("MediaContainer", {}).get("Metadata", []) or []
-        index: dict[str, list[int | None]] = {}
-        for item in items:
-            key = normalize_text(item.get("title", ""))
-            if not key:
-                continue
-            index.setdefault(key, []).append(item.get("year"))
-        return index
+        return LibraryIndex(
+            [
+                {
+                    "title": item.get("title", ""),
+                    "year": item.get("year"),
+                    "tmdb_id": _tmdb_id_of(item),
+                    "rating_key": str(item.get("ratingKey")) if item.get("ratingKey") is not None else None,
+                }
+                for item in items
+                if normalize_text(item.get("title", ""))
+            ]
+        )
 
 
 # One cache per (server_url, server_token, media_type) — a fresh PlexClient
@@ -398,20 +446,14 @@ _LIBRARY_INDEX_TTL_SECONDS = 120
 _library_index_cache = TTLCache(_LIBRARY_INDEX_TTL_SECONDS)
 
 
-def plex_library_lookup(store, media_type: str) -> Callable[[str, int | None], bool] | None:
-    """Returns a matcher `(title, year) -> bool` backed by one cached,
-    whole-library snapshot, or `None` if Plex isn't linked. Meant to be
-    called once per API request (not once per item) so a whole page of
-    discover/search results can be annotated with a single Plex round trip
-    every ~2 minutes rather than one per item. Reads settings fresh each
-    call (Plex can be linked/unlinked while the backend is running), same
-    as `has_in_library`."""
+def _cached_library_index(store, media_type: str) -> LibraryIndex | None:
+    """The cached whole-library snapshot, or None if Plex isn't linked.
+    A Plex hiccup yields an empty index: browsing must not break."""
     settings = store.get_settings()
     server_url = settings.get("plex_server_url")
     server_token = settings.get("plex_server_token")
     if not server_url or not server_token:
         return None
-
     cache_key = (server_url, server_token, media_type)
     index, hit = _library_index_cache.get(cache_key)
     if not hit:
@@ -419,32 +461,30 @@ def plex_library_lookup(store, media_type: str) -> Callable[[str, int | None], b
         try:
             index = client.library_index(server_url, server_token, media_type)
         except PlexError:
-            # Fail safe, not best guess: a Plex hiccup must not break
-            # browsing — every item just reports "not on Plex" this request.
-            index = {}
+            index = LibraryIndex([])
         _library_index_cache.set(cache_key, index)
+    return index
 
-    def matcher(title: str, year: int | None) -> bool:
-        target = normalize_text(title)
-        years = index.get(target)  # exact hit — O(1), the common case
-        if years is None:
-            # Fuzzy fallback (see titles_match): a franchise-prefixed Plex
-            # title ("Star Wars: The Mandalorian and Grogu") wouldn't be an
-            # exact key match against TMDB's plain title. O(library size),
-            # only reached once no exact key exists, and only ever run
-            # once per ~2 minutes per (server, media_type) thanks to the
-            # cache above.
-            years = [y for key, ys in index.items() if titles_match(target, key) for y in ys] or None
-        if years is None:
-            return False
-        if year is None:
-            return True
-        return any(y is None or abs(y - year) <= YEAR_TOLERANCE for y in years)
+
+def plex_library_lookup(store, media_type: str) -> Callable[..., bool] | None:
+    """Returns a matcher `(title, year, tmdb_id=None) -> bool` backed by one cached,
+    whole-library snapshot, or `None` if Plex isn't linked. Meant to be
+    called once per API request (not once per item) so a whole page of
+    discover/search results can be annotated with a single Plex round trip
+    every ~2 minutes rather than one per item. Reads settings fresh each
+    call (Plex can be linked/unlinked while the backend is running), same
+    as `has_in_library`."""
+    index = _cached_library_index(store, media_type)
+    if index is None:
+        return None
+
+    def matcher(title: str, year: int | None, tmdb_id: int | None = None) -> bool:
+        return index.find(title, year, tmdb_id) is not None
 
     return matcher
 
 
-def has_in_library(store, title: str, year: int | None) -> bool | None:
+def has_in_library(store, title: str, year: int | None, tmdb_id: int | None = None) -> bool | None:
     """None if Plex isn't linked (caller falls back to its own default);
     True/False once we can actually check. Reads settings fresh each call
     rather than caching a client, since the household can link/unlink
@@ -455,6 +495,10 @@ def has_in_library(store, title: str, year: int | None) -> bool | None:
     if not server_url or not server_token:
         return None
     client = PlexClient(settings.get("plex_client_id") or new_client_identifier())
+    if tmdb_id is not None:
+        # A fresh whole-library read: the title-filtered search can't find
+        # a movie Plex spells differently, and a cached one may predate it.
+        return client.library_index(server_url, server_token, "movie").find(title, year, tmdb_id) is not None
     return client.has_movie(server_url, server_token, title, year)
 
 
@@ -660,7 +704,7 @@ _show_episodes_cache: dict[tuple[str, str, int | None], tuple[float, set[tuple[i
 _SHOW_EPISODES_TTL_SECONDS = 60.0
 
 
-def plex_show_episodes(store, title: str, year: int | None) -> set[tuple[int, int]] | None:
+def plex_show_episodes(store, title: str, year: int | None, tmdb_id: int | None = None) -> set[tuple[int, int]] | None:
     """The (season, episode) pairs Plex holds for `title`, or None when
     Plex isn't linked or doesn't have the show at all. Cached a minute
     per show so a check that walks every season asks once."""
@@ -668,14 +712,14 @@ def plex_show_episodes(store, title: str, year: int | None) -> set[tuple[int, in
     server_url, server_token = settings.get("plex_server_url"), settings.get("plex_server_token")
     if not server_url or not server_token:
         return None
-    key = (server_url, title, year)
+    key = (server_url, title, year, tmdb_id)
     hit = _show_episodes_cache.get(key)
     now = time.monotonic()
     if hit and now - hit[0] < _SHOW_EPISODES_TTL_SECONDS:
         return hit[1]
     client = PlexClient(settings.get("plex_client_id") or new_client_identifier())
     try:
-        item = client.locate(server_url, server_token, "show", title, year)
+        item = locate_title(store, client, "show", title, year, tmdb_id)
         episodes = client.show_episodes(server_url, server_token, item["rating_key"]) if item else None
     except PlexError:
         episodes = None
@@ -683,7 +727,21 @@ def plex_show_episodes(store, title: str, year: int | None) -> set[tuple[int, in
     return episodes
 
 
-def plex_title_files(store, media_type: str, title: str, year: int | None) -> list[str] | None:
+def locate_title(store, client: "PlexClient", media_type: str, title: str, year: int | None, tmdb_id: int | None = None) -> dict | None:
+    """`PlexClient.locate`, falling back to the cached library index by
+    TMDB id: Plex's title-filtered search misses a title it spells
+    differently from TMDB."""
+    settings = store.get_settings()
+    found = client.locate(settings["plex_server_url"], settings["plex_server_token"], media_type, title, year, tmdb_id)
+    if found is None and tmdb_id is not None:
+        index = _cached_library_index(store, media_type)
+        item = index.find(title, year, tmdb_id) if index else None
+        if item and item.get("tmdb_id") == tmdb_id and item.get("rating_key"):
+            found = {"rating_key": item["rating_key"], "title": item["title"], "year": item["year"]}
+    return found
+
+
+def plex_title_files(store, media_type: str, title: str, year: int | None, tmdb_id: int | None = None) -> list[str] | None:
     """The file paths Plex holds for a title, or None when Plex isn't
     linked or doesn't have it."""
     settings = store.get_settings()
@@ -692,13 +750,13 @@ def plex_title_files(store, media_type: str, title: str, year: int | None) -> li
         return None
     client = PlexClient(settings.get("plex_client_id") or new_client_identifier())
     try:
-        item = client.locate(server_url, server_token, media_type, title, year)
+        item = locate_title(store, client, media_type, title, year, tmdb_id)
         return client.file_paths(server_url, server_token, item["rating_key"]) if item else None
     except PlexError:
         return None
 
 
-def local_file_for_title(store, media_type: str, title: str, year: int | None) -> Path | None:
+def local_file_for_title(store, media_type: str, title: str, year: int | None, tmdb_id: int | None = None) -> Path | None:
     """Where a title's file (per Plex) is from this app's point of view.
     Plex's own path is used when it exists here; otherwise the file is
     looked up by name under the library root, since Plex and this app
@@ -707,7 +765,7 @@ def local_file_for_title(store, media_type: str, title: str, year: int | None) -
     on a guess."""
     from app import config  # late: config reads library roots at call time
 
-    paths = plex_title_files(store, media_type, title, year)
+    paths = plex_title_files(store, media_type, title, year, tmdb_id)
     if not paths:
         return None
     root = config.MOVIE_LIBRARY_ROOT if media_type == "movie" else config.TV_LIBRARY_ROOT

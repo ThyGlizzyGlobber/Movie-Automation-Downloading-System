@@ -3,7 +3,7 @@ import asyncio
 import pytest
 
 from app.db import RequestStore
-from app.plex import LoginSession, PlexClient, PlexError, PlexLinker, has_in_library, plex_library_lookup
+from app.plex import LibraryIndex, LoginSession, PlexClient, PlexError, PlexLinker, has_in_library, plex_library_lookup
 
 
 class FakeResponse:
@@ -221,6 +221,28 @@ def test_has_movie_false_when_no_results():
     assert client.has_movie("http://server", "tok", "Some Movie", None) is False
 
 
+def test_has_movie_goes_by_tmdb_id_when_plex_has_one():
+    metadata = {"MediaContainer": {"Metadata": [{"title": "The Runner", "year": 2026, "Guid": [{"id": "tmdb://1386315"}]}]}}
+    session = FakeSession(get_responses=[FakeResponse(json_data=metadata)] * 2)
+    client = PlexClient("client-1", session=session)
+
+    assert client.has_movie("http://server", "tok", "Runner", 2026, tmdb_id=42) is False
+    assert client.has_movie("http://server", "tok", "The Runner", 2026, tmdb_id=1386315) is True
+
+
+def test_has_in_library_with_an_id_reads_the_whole_library(monkeypatch):
+    store = RequestStore(":memory:")
+    store.update_settings({"plex_client_id": "client-1", "plex_server_url": "http://server", "plex_server_token": "tok"})
+    monkeypatch.setattr(
+        PlexClient,
+        "library_index",
+        lambda self, url, token, media_type: _index({"title": "The Fantastic Four: First Steps", "year": 2025, "tmdb_id": 617126}),
+    )
+
+    assert has_in_library(store, "The Fantastic 4: First Steps", 2025, 617126) is True
+    assert has_in_library(store, "The Fantastic 4: First Steps", 2025, 1) is False
+
+
 def test_has_movie_matches_a_plex_title_carrying_a_franchise_prefix():
     """The real bug this covers: Plex's own scraped title was "Star Wars:
     The Mandalorian and Grogu" while TMDB's plain title is "The
@@ -239,13 +261,13 @@ def test_has_movie_matches_a_plex_title_carrying_a_franchise_prefix():
 # ---------------------------------------------------------------------------
 
 
-def test_library_index_groups_years_by_normalized_title():
+def test_library_index_reads_title_year_tmdb_id_and_rating_key():
     metadata = {
         "MediaContainer": {
             "Metadata": [
-                {"title": "Dune: Part Two", "year": 2024},
-                {"title": "dune part two", "year": 2025},  # same normalized key, different posting
+                {"title": "Dune: Part Two", "year": 2024, "ratingKey": 7, "Guid": [{"id": "imdb://tt1"}, {"id": "tmdb://693134"}]},
                 {"title": "Lanterns", "year": 2026},
+                {"title": "", "year": 2020},  # no title: skipped
             ]
         }
     }
@@ -254,8 +276,32 @@ def test_library_index_groups_years_by_normalized_title():
 
     index = client.library_index("http://server", "tok", "movie")
 
-    assert index == {"dune part two": [2024, 2025], "lanterns": [2026]}
-    assert session.get_calls[0][1] == {"type": 1}
+    assert index.items == [
+        {"title": "Dune: Part Two", "year": 2024, "tmdb_id": 693134, "rating_key": "7"},
+        {"title": "Lanterns", "year": 2026, "tmdb_id": None, "rating_key": None},
+    ]
+    assert session.get_calls[0][1] == {"type": 1, "includeGuids": 1}
+
+
+def _index(*items):
+    return LibraryIndex([{"tmdb_id": None, "rating_key": None, **i} for i in items])
+
+
+def test_library_index_matches_by_tmdb_id_before_title():
+    """Live 2026-09-18: "Runner" showed as on Plex because "The Runner"
+    was, and TMDB's "The Fantastic 4: First Steps" never matched Plex's
+    "The Fantastic Four: First Steps"."""
+    index = _index(
+        {"title": "The Runner", "year": 2026, "tmdb_id": 1386315},
+        {"title": "The Fantastic Four: First Steps", "year": 2025, "tmdb_id": 617126},
+        {"title": "Old Agent Movie", "year": 2001},
+    )
+
+    assert index.find("Runner", 2026, 999) is None  # different id, title collision ignored
+    assert index.find("The Runner", 2026, 1386315) is not None
+    assert index.find("The Fantastic 4: First Steps", 2025, 617126)["title"] == "The Fantastic Four: First Steps"
+    assert index.find("Old Agent Movie", 2001, 5) is not None  # untagged item: title decides
+    assert index.find("Runner", 2026) is not None  # no id to go on: title rules as before
 
 
 def test_library_index_show_type_uses_type_2():
@@ -264,7 +310,7 @@ def test_library_index_show_type_uses_type_2():
 
     client.library_index("http://server", "tok", "show")
 
-    assert session.get_calls[0][1] == {"type": 2}
+    assert session.get_calls[0][1] == {"type": 2, "includeGuids": 1}
 
 
 def test_library_index_raises_on_error_response():
@@ -286,7 +332,7 @@ def test_plex_library_lookup_matches_title_and_year(monkeypatch):
         {"plex_client_id": "client-1", "plex_server_url": "http://server-a", "plex_server_token": "tok"}
     )
     monkeypatch.setattr(
-        PlexClient, "library_index", lambda self, url, token, media_type: {"dune part two": [2024]}
+        PlexClient, "library_index", lambda self, url, token, media_type: _index({"title": "Dune: Part Two", "year": 2024})
     )
 
     matcher = plex_library_lookup(store, "movie")
@@ -301,7 +347,7 @@ def test_plex_library_lookup_year_tolerance_and_no_year_given(monkeypatch):
     store.update_settings(
         {"plex_client_id": "client-1", "plex_server_url": "http://server-b", "plex_server_token": "tok"}
     )
-    monkeypatch.setattr(PlexClient, "library_index", lambda self, url, token, media_type: {"lanterns": [2026]})
+    monkeypatch.setattr(PlexClient, "library_index", lambda self, url, token, media_type: _index({"title": "Lanterns", "year": 2026}))
 
     matcher = plex_library_lookup(store, "show")
 
@@ -321,7 +367,7 @@ def test_plex_library_lookup_matches_a_franchise_prefixed_title(monkeypatch):
     monkeypatch.setattr(
         PlexClient,
         "library_index",
-        lambda self, url, token, media_type: {"star wars the mandalorian and grogu": [2026]},
+        lambda self, url, token, media_type: _index({"title": "Star Wars: The Mandalorian and Grogu", "year": 2026}),
     )
 
     matcher = plex_library_lookup(store, "movie")
@@ -354,7 +400,7 @@ def test_plex_library_lookup_caches_within_ttl(monkeypatch):
     )
     calls = []
     monkeypatch.setattr(
-        PlexClient, "library_index", lambda self, url, token, media_type: calls.append(1) or {}
+        PlexClient, "library_index", lambda self, url, token, media_type: calls.append(1) or _index()
     )
 
     plex_library_lookup(store, "movie")
@@ -380,7 +426,7 @@ def test_has_in_library_delegates_to_plex_client_when_linked(monkeypatch):
     )
     calls = []
     monkeypatch.setattr(
-        PlexClient, "has_movie", lambda self, server_url, server_token, title, year: calls.append((title, year)) or True
+        PlexClient, "has_movie", lambda self, server_url, server_token, title, year, tmdb_id=None: calls.append((title, year)) or True
     )
 
     assert has_in_library(store, "Some Movie", 2024) is True

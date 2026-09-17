@@ -51,7 +51,7 @@ export default function ShowDetailPage() {
 
   const title = show?.name || show?.original_name || ''
   const year = yearOf(show?.first_air_date)
-  const plexHref = usePlexHref('show', title, year, !!show?.on_plex)
+  const plexHref = usePlexHref('show', tmdbId, title, year, !!show?.on_plex)
 
   if (showQuery.isLoading) return <LoadingState />
   if (showQuery.isError || !show) {

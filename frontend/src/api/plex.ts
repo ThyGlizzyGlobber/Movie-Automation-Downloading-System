@@ -52,8 +52,9 @@ export function getRecentlyAdded() {
 export type PlexLocate = { available: false } | { available: true; rating_key: string; machine_id: string | null; title: string | null; year: number | null }
 
 // Where a title lives on the linked server (detail page Play button).
-export function locateOnPlex(type: 'movie' | 'show', title: string, year?: string | number | null) {
+export function locateOnPlex(type: 'movie' | 'show', title: string, year?: string | number | null, tmdbId?: number) {
   const q = new URLSearchParams({ type, title })
   if (year) q.set('year', String(year))
+  if (tmdbId) q.set('tmdb_id', String(tmdbId))
   return request<PlexLocate>(`/api/plex/locate?${q.toString()}`)
 }

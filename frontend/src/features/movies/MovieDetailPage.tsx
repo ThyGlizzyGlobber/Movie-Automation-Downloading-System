@@ -45,7 +45,7 @@ export default function MovieDetailPage() {
   const requests = useTitleRequests(tmdbId, ['movie'])
   const title = movie?.title || movie?.original_title || ''
   const year = yearOf(movie?.release_date)
-  const plexHref = usePlexHref('movie', title, year, !!movie?.on_plex)
+  const plexHref = usePlexHref('movie', tmdbId, title, year, !!movie?.on_plex)
 
   if (movieQuery.isLoading) return <LoadingState />
   if (movieQuery.isError || !movie) {
