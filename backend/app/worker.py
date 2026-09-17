@@ -101,7 +101,7 @@ import logging
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from app import config, notifications, plex
+from app import config, plex
 from app.db import NON_TERMINAL_STATUSES, RequestStore, ShowEpisodeRow, ShowRow
 from app.media_organizer import (
     MediaOrganizerError,
@@ -400,8 +400,6 @@ class Worker:
                 None,
                 show.poster_path or identity.poster_path,
             )
-            if row.notify is not None:
-                await asyncio.to_thread(self.store.set_request_notify, season_row.id, row.notify)
             created.append(season_row.id)
 
         scope = "series pack" if row.season_number is None else "season-range pack"
@@ -421,7 +419,7 @@ class Worker:
         per aired episode. Plenty of older or smaller shows only ever
         circulate as single episodes. Episodes already in the ledger
         (handled by an earlier request, or found on disk) are left alone;
-        the new rows inherit the request's floor and notify choice, and
+        the new rows inherit the request's resolution floor, and
         the pack row keeps its "no match" but says what happened next."""
         show = await asyncio.to_thread(self.store.get_show, row.show_id)
         if show is None:
@@ -454,8 +452,6 @@ class Worker:
                     row.min_resolution,
                 )
                 await asyncio.to_thread(self.store.add_show_episode, show.id, season_number, episode_number, episode_row.id)
-                if row.notify is not None:
-                    await asyncio.to_thread(self.store.set_request_notify, episode_row.id, row.notify)
                 created.append(episode_row.id)
 
         if created:
@@ -475,12 +471,6 @@ class Worker:
                 await self._check_downloading()
             except Exception:
                 logger.exception("download watch cycle failed")
-            try:
-                # Anything that settled since the last poll (complete or a
-                # terminal failure) gets its inbox / push notifications.
-                await asyncio.to_thread(notifications.sweep, self.store)
-            except Exception:
-                logger.exception("notification sweep failed")
 
     async def _refresh_plex(self, media_type: str, target_path) -> None:
         folder = str(target_path.parent) if target_path is not None else None

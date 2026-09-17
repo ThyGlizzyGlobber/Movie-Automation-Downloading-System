@@ -19,7 +19,6 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
   { key: 'retention', label: 'History', icon: 'trash', group: 'Server' },
   { key: 'household', label: 'Household', icon: 'user', group: 'Access' },
   { key: 'remote-access', label: 'Remote access', icon: 'lock', group: 'Access' },
-  { key: 'notifications', label: 'Notifications', icon: 'bell', group: 'Access' },
   { key: 'activity', label: 'Activity', icon: 'chart', group: 'System' },
   { key: 'updates', label: 'Updates', icon: 'refresh', group: 'System' },
   { key: 'about', label: 'About', icon: 'info', group: 'System' },

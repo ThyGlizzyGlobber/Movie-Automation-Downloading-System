@@ -5,7 +5,6 @@ import { useSession } from '../features/auth/useSession'
 import { logout } from '../api/auth'
 import type { SessionInfo } from '../types/auth'
 import { badgeLabel, initialsOf, useActiveRequestCount } from '../lib/useActiveRequestCount'
-import NotificationsMenu from './NotificationsMenu'
 import Avatar from './Avatar'
 import './Topbar.css'
 import Icon from './Icon'
@@ -68,7 +67,6 @@ export default function Topbar({ onOpenSearch }: { onOpenSearch: () => void }) {
         <button id="searchToggleBtn" aria-label="Search" title={`Search (${isMac ? '⌘K' : 'Ctrl+K'})`} onClick={onOpenSearch}>
           <Icon name="search" />
         </button>
-        <NotificationsMenu />
         <AccountMenu session={session.data} initials={initials} settingsActive={settingsActive} />
       </div>
     </div>

@@ -34,7 +34,7 @@ from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
 
-from app import config, notifications, trailers
+from app import config, trailers
 from app.db import RequestRow, RequestStore, SessionRow, ShowRow
 from app.deploy import DeployError, run_git_pull
 from app.logging_config import configure_logging
@@ -337,9 +337,6 @@ class CreateRequest(BaseModel):
     # record — never offered against a file only the fuzzy on_plex
     # title/year match found.
     redownload_mode: str | None = None
-    # "Notify me when it lands" on the request sheet; None = the
-    # requester's own default (Settings › Notifications).
-    notify: bool | None = None
 
     @field_validator("redownload_mode")
     @classmethod
@@ -423,7 +420,6 @@ class RequestOut(BaseModel):
     # same way redownload_mode's neighbors above already are.
     poster_path: str | None = None
     download_progress: float | None = None
-    notify: bool | None = None
 
     @classmethod
     def from_row(cls, row: RequestRow) -> "RequestOut":
@@ -449,7 +445,6 @@ class BulkDownloadRequest(BaseModel):
     # out for packs too — a named, not-yet-solved gap in the same style
     # as this project's others, not silently pretended to be complete.
     redownload_mode: str | None = None
-    notify: bool | None = None
 
     @field_validator("scope")
     @classmethod
@@ -997,9 +992,6 @@ def create_request(
         redownload_mode=body.redownload_mode,
         poster_path=identity.poster_path,
     )
-    if body.notify is not None:
-        store.set_request_notify(row.id, body.notify)
-        row = store.get_request(row.id)
     worker.enqueue(row.id)
     return RequestOut.from_row(row)
 
@@ -1361,9 +1353,6 @@ def bulk_download_show(
         redownload_mode=body.redownload_mode,
         poster_path=show.poster_path,
     )
-    if body.notify is not None:
-        store.set_request_notify(row.id, body.notify)
-        row = store.get_request(row.id)
     worker.enqueue(row.id)
     return RequestOut.from_row(row)
 
@@ -2001,7 +1990,6 @@ def request_episode(
     tmdb: TMDBClient = Depends(get_tmdb),
     worker: Worker = Depends(get_worker),
     session: SessionRow = Depends(require_can_request),
-    notify: bool | None = None,
 ) -> RequestOut:
     """Ask for one specific episode (the show page's per-row Request
     button). Same ledger the subscription scheduler uses, so the two never
@@ -2024,9 +2012,6 @@ def request_episode(
         poster_path=show.poster_path,
     )
     store.add_show_episode(show.id, season_number, episode_number, row.id)
-    if notify is not None:
-        store.set_request_notify(row.id, notify)
-        row = store.get_request(row.id)
     logger.info(
         "episode request %d: %s S%02dE%02d by %s", row.id, show.title, season_number, episode_number, session.username
     )
@@ -2306,96 +2291,8 @@ def get_plex_image(path: str, width: int = 640, height: int = 360, store: Reques
 
 
 # ---------------------------------------------------------------------------
-# Notifications, push, household, library settings, about
+# Household, library settings, about
 # ---------------------------------------------------------------------------
-
-
-class NotificationPrefs(BaseModel):
-    notify_own: bool
-    notify_household: bool
-
-
-class PushSubscriptionIn(BaseModel):
-    endpoint: str = Field(min_length=8)
-    keys: dict
-
-
-class PushUnsubscribeIn(BaseModel):
-    endpoint: str
-
-
-class ReadNotificationsIn(BaseModel):
-    ids: list[int] | None = None
-
-
-@router.get("/api/notifications")
-def list_notifications(session: SessionRow = Depends(require_session), store: RequestStore = Depends(get_store)) -> dict:
-    return {
-        "items": store.list_notifications(session.plex_user_id),
-        "unread": store.unread_notification_count(session.plex_user_id),
-    }
-
-
-@router.post("/api/notifications/read")
-def read_notifications(
-    body: ReadNotificationsIn, session: SessionRow = Depends(require_session), store: RequestStore = Depends(get_store)
-) -> dict:
-    return {"marked": store.mark_notifications_read(session.plex_user_id, body.ids)}
-
-
-@router.get("/api/notifications/preferences")
-def get_notification_prefs(session: SessionRow = Depends(require_session), store: RequestStore = Depends(get_store)) -> dict:
-    user = store.get_user(session.plex_user_id)
-    return {
-        "notify_own": user.notify_own if user else True,
-        "notify_household": user.notify_household if user else False,
-        "push_available": notifications.push_available(),
-        "devices": len(store.list_push_subscriptions(session.plex_user_id)),
-    }
-
-
-@router.put("/api/notifications/preferences")
-def set_notification_prefs(
-    body: NotificationPrefs, session: SessionRow = Depends(require_session), store: RequestStore = Depends(get_store)
-) -> dict:
-    store.set_user_flags(session.plex_user_id, notify_own=body.notify_own, notify_household=body.notify_household)
-    return get_notification_prefs(session, store)
-
-
-@router.post("/api/notifications/test")
-def send_test_notification(session: SessionRow = Depends(require_session), store: RequestStore = Depends(get_store)) -> dict:
-    title, body = "Notifications are on", "This is what a finished request looks like."
-    store.add_notification(session.plex_user_id, None, "test", title, body)
-    pushed = notifications.send_push_to_user(store, session.plex_user_id, {"title": title, "body": body, "url": "/#/requests"})
-    return {"pushed": pushed}
-
-
-@router.get("/api/push/public-key")
-def push_public_key(store: RequestStore = Depends(get_store)) -> dict:
-    keys = notifications.ensure_vapid_keys(store)
-    return {"available": keys is not None, "public_key": keys["public"] if keys else None}
-
-
-@router.post("/api/push/subscribe")
-def push_subscribe(
-    body: PushSubscriptionIn,
-    request: Request,
-    session: SessionRow = Depends(require_session),
-    store: RequestStore = Depends(get_store),
-) -> dict:
-    p256dh, auth = body.keys.get("p256dh"), body.keys.get("auth")
-    if not p256dh or not auth:
-        raise HTTPException(status_code=422, detail="subscription keys missing")
-    store.add_push_subscription(session.plex_user_id, body.endpoint, p256dh, auth, request.headers.get("user-agent"))
-    return {"devices": len(store.list_push_subscriptions(session.plex_user_id))}
-
-
-@router.post("/api/push/unsubscribe")
-def push_unsubscribe(
-    body: PushUnsubscribeIn, session: SessionRow = Depends(require_session), store: RequestStore = Depends(get_store)
-) -> dict:
-    store.delete_push_subscription(body.endpoint)
-    return {"devices": len(store.list_push_subscriptions(session.plex_user_id))}
 
 
 class HouseholdUserOut(BaseModel):
@@ -2597,7 +2494,6 @@ def about(request: Request, store: RequestStore = Depends(get_store)) -> dict:
         "db_bytes": db_bytes,
         "movie_library_root": str(config.MOVIE_LIBRARY_ROOT),
         "tv_library_root": str(config.TV_LIBRARY_ROOT),
-        "push_available": notifications.push_available(),
     }
 
 

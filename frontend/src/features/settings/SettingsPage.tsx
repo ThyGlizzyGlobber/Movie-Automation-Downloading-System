@@ -12,7 +12,6 @@ import RemoteAccessPanel from './RemoteAccessPanel'
 import ActivityDashboardPanel from './ActivityDashboardPanel'
 import UpdatesPanel from './UpdatesPanel'
 import StoragePanel from './StoragePanel'
-import NotificationsPanel from './NotificationsPanel'
 import HouseholdPanel from './HouseholdPanel'
 import AboutPanel from './AboutPanel'
 import './SettingsPage.css'
@@ -42,8 +41,6 @@ function renderPanel(key: string, jump: (key: string) => void) {
       return <UpdatesPanel />
     case 'household':
       return <HouseholdPanel />
-    case 'notifications':
-      return <NotificationsPanel />
     case 'about':
       return <AboutPanel />
     default:

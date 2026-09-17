@@ -85,14 +85,13 @@ export default function ShowDetailPage() {
     }
   }
 
-  async function runBulkDownload(scope: 'season' | 'series', seasonNumber: number | null, key: string, redownloadMode?: RedownloadMode, notify?: boolean) {
+  async function runBulkDownload(scope: 'season' | 'series', seasonNumber: number | null, key: string, redownloadMode?: RedownloadMode) {
     setBulkBusyKey(key)
     try {
       await bulkDownload(tmdbId, {
         scope,
         season_number: seasonNumber,
         redownload_mode: redownloadMode ?? null,
-        notify: notify ?? null,
       })
       queryClient.invalidateQueries({ queryKey: ['requests'] })
       queryClient.invalidateQueries({ queryKey: ['episodes', tmdbId] })
@@ -302,12 +301,12 @@ export default function ShowDetailPage() {
           setRequestModal(null)
           setBulkBusyKey(null)
         }}
-        onSubmit={(notify) => {
+        onSubmit={() => {
           const pending = requestModal
           setRequestModal(null)
           if (!pending) return
           const key = pending.scope === 'series' ? 'series' : `season-${pending.seasonNumber}`
-          runBulkDownload(pending.scope, pending.seasonNumber, key, undefined, notify)
+          runBulkDownload(pending.scope, pending.seasonNumber, key)
         }}
       />
       <RedownloadModal

@@ -914,14 +914,13 @@ _TWO_AIRED_ONE_FUTURE = [
 
 def test_pack_with_no_pack_at_all_falls_back_to_one_request_per_aired_episode():
     """Shows that only ever circulate as single episodes: "Request season
-    1" must still get season 1. The episode rows inherit the pack's floor
-    and notify choice; the pack row explains what happened."""
+    1" must still get season 1. The episode rows inherit the pack's floor;
+    the pack row explains what happened."""
     store = RequestStore(":memory:")
     show = store.create_show(tmdb_id=95350, title="Lanterns")
     row = store.create_pack_request(
         tmdb_id=95350, show_id=show.id, title="Lanterns", season_number=1, min_resolution="480p"
     )
-    store.set_request_notify(row.id, True)
     tmdb = FakeTMDBClient(season_episodes={1: _TWO_AIRED_ONE_FUTURE})
     worker = Worker(store, tmdb, FakeQBTClient())
 
@@ -933,7 +932,6 @@ def test_pack_with_no_pack_at_all_falls_back_to_one_request_per_aired_episode():
     episodes = [r for r in store.list_requests() if r.media_type == "episode"]
     assert sorted((r.season_number, r.episode_number) for r in episodes) == [(1, 1), (1, 2)]
     assert {r.min_resolution for r in episodes} == {"480p"}
-    assert {r.notify for r in episodes} == {True}
     assert {r.status for r in episodes} == {"queued"}
     assert sorted(worker.queue.get_nowait() for _ in range(2)) == sorted(r.id for r in episodes)
     assert store.has_show_episode(show.id, 1, 1) and store.has_show_episode(show.id, 1, 2)
@@ -1049,7 +1047,6 @@ def test_series_pack_fallback_asks_for_each_season_not_each_episode():
     row = store.create_pack_request(
         tmdb_id=95350, show_id=show.id, title="Lanterns", season_number=None, requested_by_username="bejay"
     )
-    store.set_request_notify(row.id, True)
     tmdb = FakeTMDBClient(
         show={**SHOW, "number_of_seasons": 3},
         season_episodes={
@@ -1066,7 +1063,7 @@ def test_series_pack_fallback_asks_for_each_season_not_each_episode():
     assert pack.status == "no qualifying results"
     assert pack.error_message == "No series pack found, so its 1 season was requested one at a time."
     seasons = [r for r in store.list_requests() if r.media_type == "pack" and r.id != row.id]
-    assert [(r.season_number, r.status, r.requested_by_username, r.notify) for r in seasons] == [(2, "queued", "bejay", True)]
+    assert [(r.season_number, r.status, r.requested_by_username) for r in seasons] == [(2, "queued", "bejay")]
     assert [r for r in store.list_requests() if r.media_type == "episode" and r.id != earlier.id] == []
     assert worker.queue.get_nowait() == seasons[0].id
 

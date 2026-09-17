@@ -151,26 +151,3 @@
     max-width: none;
   }
 }
-
-/* "Notify me when it lands" row above the footer. */
-.request-modal-notify {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 20px;
-  align-items: center;
-  padding: 16px 4px 18px;
-  border-top: 1px solid rgba(255, 255, 255, 0.07);
-  margin-top: 4px;
-}
-.request-modal-notify b {
-  display: block;
-  font-size: 14px;
-  font-weight: 700;
-}
-.request-modal-notify small {
-  display: block;
-  color: var(--text-dim);
-  font-size: 12px;
-  font-weight: 600;
-  margin-top: 3px;
-}

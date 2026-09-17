@@ -10,8 +10,7 @@ const TABS: { tab: string; label: string; href: string; icon: IconName }[] = [
   { tab: 'requests', label: 'Requests', href: '/requests', icon: 'download' },
 ]
 
-// Phone navigation: the four sections plus search (the top bar keeps
-// the bell on its left at this width).
+// Phone navigation: the four sections plus search.
 export default function Tabbar({ onOpenSearch }: { onOpenSearch: () => void }) {
   const active = useActiveRequestCount()
   return (

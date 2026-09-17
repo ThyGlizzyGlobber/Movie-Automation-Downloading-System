@@ -86,8 +86,7 @@ body.search-open #topbar::before {
   gap: 8px;
 }
 #searchToggleBtn,
-#accountToggle,
-#topbar .bell-toggle {
+#accountToggle {
   flex: 0 0 auto;
   background: var(--glass);
   border: none;
@@ -105,12 +104,10 @@ body.search-open #topbar::before {
   transition: background 0.15s ease, color 0.15s ease;
 }
 #searchToggleBtn:active,
-#accountToggle:active,
-.bell-toggle:active {
+#accountToggle:active {
   background: var(--glass-strong);
 }
 #searchToggleBtn:hover,
-.bell-toggle:hover,
 body.search-open #searchToggleBtn {
   background: var(--btn-primary-bg);
   color: var(--on-light);
@@ -201,27 +198,10 @@ body.search-open #searchToggleBtn {
     background: rgba(255, 255, 255, 0.04);
   }
   #accountToggle,
-  .bell-toggle,
   #searchToggleBtn {
     width: 40px;
     height: 40px;
   }
-}
-
-/* Bell: a glowing ice dot when something landed in Plex today. */
-.bell-toggle {
-  position: relative;
-}
-.bell-dot {
-  position: absolute;
-  top: 8px;
-  right: 9px;
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: var(--meridian-ice);
-  box-shadow: 0 0 8px var(--meridian-ice);
-  border: 1.5px solid #0c0c12;
 }
 
 /* Plex account picture in the account button. */
@@ -303,7 +283,7 @@ body.search-open #searchToggleBtn {
   color: var(--status-failed);
 }
 
-/* Phones: bell on the left, wordmark centred, avatar on the right;
+/* Phones: wordmark centred, avatar on the right;
    search lives in the tab bar. */
 @media (max-width: 859px) {
   #topbar {
@@ -314,14 +294,9 @@ body.search-open #searchToggleBtn {
   #searchToggleBtn {
     display: none;
   }
-  /* The right cluster dissolves so the bell can sit at the far left
-     and the avatar at the far right. */
+  /* The right cluster dissolves so the avatar sits at the far right. */
   .top-nav-right {
     display: contents;
-  }
-  #topbar .notif {
-    order: -1;
-    margin-right: auto;
   }
   #accountToggle {
     margin-left: auto;
@@ -333,12 +308,5 @@ body.search-open #searchToggleBtn {
     bottom: 0;
     transform: translateX(-50%);
     margin: 0;
-  }
-  .notif-top .notif-panel {
-    position: fixed;
-    top: calc(var(--topbar-h, 64px) + 4px);
-    right: 14px;
-    left: 14px;
-    width: auto;
   }
 }

@@ -70,25 +70,6 @@ export interface RecentlyAddedItem {
 }
 export type RecentlyAdded = { available: false; items: [] } | { available: true; items: RecentlyAddedItem[] }
 
-export interface NotificationItem {
-  id: number
-  request_id: number | null
-  kind: 'landed' | 'failed' | 'test' | string
-  title: string
-  body: string | null
-  created_at: string
-  read_at: string | null
-}
-export interface NotificationsOut {
-  items: NotificationItem[]
-  unread: number
-}
-export interface NotificationPrefs {
-  notify_own: boolean
-  notify_household: boolean
-  push_available: boolean
-  devices: number
-}
 export interface HouseholdUser {
   plex_user_id: string
   username: string | null
@@ -118,5 +99,4 @@ export interface AboutInfo {
   db_bytes: number | null
   movie_library_root: string
   tv_library_root: string
-  push_available: boolean
 }

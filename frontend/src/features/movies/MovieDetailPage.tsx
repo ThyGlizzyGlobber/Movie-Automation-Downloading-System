@@ -52,14 +52,13 @@ export default function MovieDetailPage() {
     return <ErrorState message={movieQuery.error instanceof Error ? movieQuery.error.message : undefined} retryHref="#/movies" />
   }
 
-  async function submit(redownloadMode?: RedownloadMode, notify?: boolean) {
+  async function submit(redownloadMode?: RedownloadMode) {
     setBusy('request')
     try {
       await createRequest({
         tmdb_id: tmdbId,
         query: title || null,
         redownload_mode: redownloadMode ?? null,
-        notify: notify ?? null,
       })
       queryClient.invalidateQueries({ queryKey: ['requests'] })
       toast({ tone: 'info', title: `Adding ${title} to Plex`, body: 'Looking for the best copy now' })
@@ -202,9 +201,9 @@ export default function MovieDetailPage() {
         subtitle={[year, 'Movie', 'Not on Plex'].filter(Boolean).join(' · ')}
         posterPath={movie.poster_path}
         onClose={() => setRequestOpen(false)}
-        onSubmit={(notify) => {
+        onSubmit={() => {
           setRequestOpen(false)
-          submit(undefined, notify)
+          submit()
         }}
       />
       <RedownloadModal

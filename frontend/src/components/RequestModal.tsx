@@ -1,8 +1,6 @@
-import { useEffect, useState } from 'react'
+import { useEffect } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { getStorage } from '../api/system'
-import { getNotificationPrefs } from '../api/notifications'
-import Toggle from './Toggle'
 import { formatBytes } from '../lib/format'
 import { posterUrl } from '../lib/tmdbImage'
 import Icon from './Icon'
@@ -26,16 +24,9 @@ export default function RequestModal({
   posterPath?: string | null
   submitLabel?: string
   onClose: () => void
-  onSubmit: (notify: boolean) => void
+  onSubmit: () => void
 }) {
   const storage = useQuery({ queryKey: ['storage'], queryFn: getStorage, enabled: open, staleTime: 60_000 })
-  const prefs = useQuery({ queryKey: ['notification-prefs'], queryFn: getNotificationPrefs, enabled: open, staleTime: 60_000 })
-  const [notify, setNotify] = useState<boolean | null>(null)
-  const notifyOn = notify ?? prefs.data?.notify_own ?? true
-
-  useEffect(() => {
-    if (open) setNotify(null)
-  }, [open])
   useEffect(() => {
     if (!open) return
     function onKey(e: KeyboardEvent) {
@@ -75,19 +66,12 @@ export default function RequestModal({
             <small>4K when it exists, otherwise the sharpest release within the household's download limits.</small>
           </div>
         </div>
-        <div className="request-modal-notify">
-          <div>
-            <b>Notify me when it lands</b>
-            <small>A note in the bell, and a push to any device that signed up.</small>
-          </div>
-          <Toggle checked={notifyOn} onChange={setNotify} label="Notify me when it lands" />
-        </div>
         <div className="request-modal-foot">
           <span className="request-modal-note">{free != null ? `${formatBytes(free)} free.` : 'Free space unknown.'}</span>
           <button className="request-modal-cancel" onClick={onClose}>
             Cancel
           </button>
-          <button className="request-modal-submit" onClick={() => onSubmit(notifyOn)}>
+          <button className="request-modal-submit" onClick={onSubmit}>
             <Icon name="plus" />
             {submitLabel}
           </button>

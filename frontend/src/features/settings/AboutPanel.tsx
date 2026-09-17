@@ -37,7 +37,7 @@ export default function AboutPanel() {
       <SettingRow label="History" hint={`${a.users} ${a.users === 1 ? 'person' : 'people'} · database ${a.db_bytes != null ? formatBytes(a.db_bytes) : '—'}`}>
         <span className="about-value">{a.requests.toLocaleString()} requests</span>
       </SettingRow>
-      <SettingRow label="Runtime" hint={`Python ${a.python} · push ${a.push_available ? 'ready' : 'not available'}`}>
+      <SettingRow label="Runtime" hint={`Python ${a.python}`}>
         <span className="about-value">FastAPI · React</span>
       </SettingRow>
     </div>

@@ -106,7 +106,6 @@ svg.ico{width:1em;height:1em;fill:none;stroke:currentColor;flex:none;display:inl
   <symbol id="i-next" viewBox="0 0 24 24"><path d="M9 5l7 7-7 7"/></symbol>
   <symbol id="i-arrow" viewBox="0 0 24 24"><path d="M4 12h16M13 5l7 7-7 7"/></symbol>
   <symbol id="i-user" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4.5 21a7.5 7.5 0 0 1 15 0"/></symbol>
-  <symbol id="i-bell" viewBox="0 0 24 24"><path d="M6 16v-5a6 6 0 0 1 12 0v5l1.5 2h-15zM10 20.5a2 2 0 0 0 4 0"/></symbol>
   <symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M12 11v5M12 8v.3"/></symbol>
   <symbol id="i-retry" viewBox="0 0 24 24"><path d="M20 12a8 8 0 1 1-2.4-5.7M20 4v5h-5"/></symbol>
   <symbol id="i-trash" viewBox="0 0 24 24"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></symbol>
@@ -145,7 +144,6 @@ svg.ico{width:1em;height:1em;fill:none;stroke:currentColor;flex:none;display:inl
 .ob-search .ico{font-size:18px;color:#fff}
 .ob-search kbd{margin-left:auto;font:600 11px 'Manrope';padding:2px 7px;border-radius:6px;background:rgba(255,255,255,.08);color:var(--mute)}
 .ob-circ{width:40px;height:40px;border-radius:50%;background:rgba(255,255,255,.06);border:0;display:grid;place-items:center;color:#fff;font-size:18px;position:relative}
-.ob-circ .dot{position:absolute;top:8px;right:9px;width:7px;height:7px;border-radius:50%;background:var(--ice);box-shadow:0 0 8px var(--ice);border:1.5px solid #0c0c12}
 .ob-avatar{width:40px;height:40px;border-radius:50%;background:linear-gradient(135deg,#ffb88c,#ea6a8b);color:#050508;display:grid;place-items:center;font-weight:800;font-size:13px}
 
 /* hero */
@@ -666,7 +664,6 @@ svg.ico{width:1em;height:1em;fill:none;stroke:currentColor;flex:none;display:inl
             <div class="ob-actions">
               <button class="ob-btn pri"><svg class="ico"><use href="#i-play-f"/></svg>Play S1 E7</button>
               <button class="ob-btn sec"><svg class="ico"><use href="#i-plus"/></svg>Request missing</button>
-              <button class="ob-btn sec circ"><svg class="ico"><use href="#i-bell"/></svg></button>
             </div>
             <div class="ob-ssel">
               <div class="ob-seg"><span class="on">Season 1</span><span>Season 2</span><span>Specials</span></div>
@@ -747,7 +744,6 @@ svg.ico{width:1em;height:1em;fill:none;stroke:currentColor;flex:none;display:inl
             <div class="ob-opt"><span class="r"></span><div><b>1080p</b><small>Balanced size and quality · the household default</small></div><span class="sz">~8 GB</span></div>
             <div class="ob-opt"><span class="r"></span><div><b>Anything</b><small>First release that appears, upgrade later</small></div><span class="sz">varies</span></div>
           </div>
-          <div class="ob-krow" style="border-top:1px solid rgba(255,255,255,.07);padding:16px 0 22px"><div><b>Notify me when it lands</b><small>Push to this device when the file is in Plex</small></div><span class="ob-tog on"></span></div>
           <div class="ob-mfoot"><span class="note">1.2 TB free on Movies. This request is well within the 200 GB per-title cap.</span><button class="ob-btn sec">Cancel</button><button class="ob-btn pri"><svg class="ico"><use href="#i-plus"/></svg>Request 4K</button></div>
         </div>
       </div>
@@ -788,7 +784,6 @@ svg.ico{width:1em;height:1em;fill:none;stroke:currentColor;flex:none;display:inl
             <div class="grp">Access</div>
             <a><svg class="ico"><use href="#i-user"/></svg>Household</a>
             <a><svg class="ico"><use href="#i-scan"/></svg>Remote access</a>
-            <a><svg class="ico"><use href="#i-bell"/></svg>Notifications</a>
             <div class="grp">System</div>
             <a><svg class="ico"><use href="#i-retry"/></svg>Updates</a>
             <a><svg class="ico"><use href="#i-info"/></svg>About</a>
@@ -1039,7 +1034,7 @@ const EPS=[
   ['What the Water Keeps','Season finale. The bell stops.',63,'miss'],
 ];
 const ST={dl:{l:'Downloading',ic:'download'},q:{l:'Queued',ic:'clock'},s:{l:'Searching',ic:'scan'},f:{l:'Failed',ic:'alert'},c:{l:'In Plex',ic:'check-c'},im:{l:'Importing',ic:'plex'},nm:{l:'No match',ic:'info'},ns:{l:'No space',ic:'alert'},miss:{l:'Not requested',ic:'plus'}};
-const ICONS=[['play','play'],['plus','add'],['search','search'],['gear','settings'],['download','download'],['clock','queued'],['scan','searching'],['alert','failed'],['check-c','complete'],['plex','plex'],['home','home'],['film','movies'],['tv','tv'],['star','rating'],['hd','quality'],['close','close'],['back','back'],['next','next'],['arrow','link'],['user','account'],['bell','alerts'],['info','info'],['retry','retry'],['trash','remove']];
+const ICONS=[['play','play'],['plus','add'],['search','search'],['gear','settings'],['download','download'],['clock','queued'],['scan','searching'],['alert','failed'],['check-c','complete'],['plex','plex'],['home','home'],['film','movies'],['tv','tv'],['star','rating'],['hd','quality'],['close','close'],['back','back'],['next','next'],['arrow','link'],['user','account'],['info','info'],['retry','retry'],['trash','remove']];
 
 const ico=id=>`<svg class="ico"><use href="#i-${id}"/></svg>`;
 const pad=n=>String(n).padStart(2,'0');
@@ -1061,7 +1056,7 @@ const statusPill=(st,extra='')=>`<span class="ob-status ${st}">${ico(ST[st].ic)}
 
 document.querySelectorAll('[data-nav]').forEach(el=>{const a=el.dataset.active;el.outerHTML=`<div class="ob-nav-wrap"><nav class="ob-nav"><div class="ob-logo"><span class="ob-mark"><svg class="ico" style="stroke-width:2.2"><use href="#i-plex"/></svg></span>Meridian</div>
   <div class="ob-links">${[['home','Home'],['movies','Movies'],['tv','TV Shows'],['requests','Requests']].map(([k,l])=>`<a class="${k===a?'on':''}">${l}</a>`).join('')}</div>
-  <div class="ob-nav-r"><div class="ob-search">${ico('search')}Search<kbd>⌘K</kbd></div><button class="ob-circ">${ico('bell')}<span class="dot"></span></button><button class="ob-circ" ${a===''?'style="background:rgba(255,255,255,.14)"':''}>${ico('gear')}</button><div class="ob-avatar">BJ</div></div></nav></div>`;});
+  <div class="ob-nav-r"><div class="ob-search">${ico('search')}Search<kbd>⌘K</kbd></div><button class="ob-circ" ${a===''?'style="background:rgba(255,255,255,.14)"':''}>${ico('gear')}</button><div class="ob-avatar">BJ</div></div></nav></div>`;});
 
 const R={
   'ob-top':el=>items(el).map((x,i)=>{const [d,n]=TREND[i];const chip=d==='same'?'':`<span class="ob-trend ${d}">${d==='new'?'New':(d==='up'?'▲':'▼')+' '+n}</span>`;
