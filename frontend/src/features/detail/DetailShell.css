@@ -255,7 +255,13 @@
 .detail-tiles > .detail-tile.wide {
   grid-column: 1 / -1;
 }
-/* The side column's tiles are compact so the facts list fits below. */
+/* The side column's tiles are compact so the facts list fits below. The
+   first column grows to fit its content (a long service name) and the
+   second takes what's left; a long value ("Available on Plex") wraps
+   rather than being cut off. */
+.detail-side .detail-tiles {
+  grid-template-columns: minmax(max-content, 1fr) minmax(0, 1fr);
+}
 .detail-side .detail-tile {
   padding: 12px 14px;
   border-radius: 14px;
@@ -263,6 +269,10 @@
 .detail-side .detail-tile b {
   font-size: 17px;
   margin-top: 4px;
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
+  line-height: 1.15;
 }
 .detail-side .detail-tile small {
   font-size: 10px;
