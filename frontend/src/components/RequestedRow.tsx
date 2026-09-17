@@ -23,9 +23,13 @@ export default function RequestedRow() {
   const query = useQuery({ queryKey: ['requests'], queryFn: () => listRequests(), refetchInterval: 5000 })
   const rows = query.data ?? []
   const byTitle = new Map<string, RequestOut>()
+  // The newest row may have no poster; any row for the title will do.
+  const posters = new Map<string, string>()
+  const titleKey = (r: RequestOut) => `${r.media_type === 'movie' ? 'movie' : 'tv'}:${r.tmdb_id}`
   for (const r of rows) {
+    const key = titleKey(r)
+    if (r.poster_path && !posters.has(key)) posters.set(key, r.poster_path)
     if (r.status === 'cancelled') continue
-    const key = `${r.media_type === 'movie' ? 'movie' : 'tv'}:${r.tmdb_id}`
     const prev = byTitle.get(key)
     if (!prev || r.id > prev.id) byTitle.set(key, r)
   }
@@ -45,7 +49,7 @@ export default function RequestedRow() {
         const label = r.status === 'downloading' && r.download_progress != null ? `${Math.round(r.download_progress * 100)}%` : meta.label
         return (
           <PosterCard
-            item={{ id: r.tmdb_id, title: r.title, release_date: r.release_year ? `${r.release_year}-01-01` : null, poster_path: r.poster_path }}
+            item={{ id: r.tmdb_id, title: r.title, release_date: r.release_year ? `${r.release_year}-01-01` : null, poster_path: r.poster_path ?? posters.get(titleKey(r)) ?? null }}
             mediaType={isTv ? 'tv' : 'movie'}
             mixed
             chip={

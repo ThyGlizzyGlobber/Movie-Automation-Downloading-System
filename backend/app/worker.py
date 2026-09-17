@@ -112,7 +112,7 @@ from app.media_organizer import (
     organize_pack,
     select_video_file,
 )
-from app.pipeline import download, download_episode, download_pack, find_best_episode_candidate
+from app.pipeline import download, download_episode, download_pack, find_best_episode_candidate, same_release
 from app.pipeline_settings import resolve_pipeline_settings
 from app.qbt import QBTClient
 from app.resolve import resolve
@@ -125,6 +125,10 @@ logger = logging.getLogger("app.worker")
 # Pipeline statuses that map directly onto a terminal request status of the
 # same name; anything else falls through to "failed" (see _run_one).
 _DIRECT_TERMINAL_STATUSES = {"no qualifying results", "insufficient free space"}
+
+# How long a "downloading" row with no torrent on record gets to turn up
+# in qBittorrent before it's marked failed rather than left spinning.
+_UNTRACKED_GRACE = timedelta(hours=1)
 
 
 def _request_label(row) -> str:
@@ -481,9 +485,9 @@ class Worker:
 
     async def _check_downloading(self) -> None:
         for row in await asyncio.to_thread(self.store.list_requests, "downloading"):
-            torrent_hash = (row.result or {}).get("torrent_hash")
+            torrent_hash = (row.result or {}).get("torrent_hash") or await self._adopt_untracked_torrent(row)
             if not torrent_hash:
-                continue  # couldn't be captured at add time — known gap, nothing to poll
+                continue
             info = await asyncio.to_thread(self.qbt.torrent_info, torrent_hash)
             if info is None:
                 if row.media_type in ("episode", "pack"):
@@ -536,6 +540,30 @@ class Worker:
                 progress = info.get("progress")
                 if progress is not None:
                     await asyncio.to_thread(self.store.update_download_progress, row.id, progress)
+
+    async def _adopt_untracked_torrent(self, row) -> str | None:
+        """A "downloading" row whose add never pinned down a hash (two adds
+        landing at once from a slow tracker; live 2026-09-17, a Ted season
+        pack sat at "downloading" for a day). Adopts the torrent carrying
+        the winning release's name that no other request tracks, so the
+        watcher can file it; failing that, once the grace period is up,
+        marks the row failed so it can be retried."""
+        name = ((row.result or {}).get("winner") or {}).get("fileName")
+        if name:
+            torrents = await asyncio.to_thread(self.qbt.list_torrents)
+            claimed = {(r.result or {}).get("torrent_hash") for r in await asyncio.to_thread(self.store.list_requests)}
+            for torrent in torrents:
+                torrent_hash = (torrent.get("hash") or "").lower()
+                if torrent_hash and torrent_hash not in claimed and same_release(torrent.get("name"), name):
+                    result = {**(row.result or {}), "torrent_hash": torrent_hash}
+                    await asyncio.to_thread(self.store.update_status, row.id, "downloading", None, result)
+                    logger.info("request %d (%s) adopted untracked torrent %s", row.id, _request_label(row), torrent_hash)
+                    return torrent_hash
+        if datetime.now(timezone.utc) - datetime.fromisoformat(row.updated_at) >= _UNTRACKED_GRACE:
+            message = "Lost track of this download in qBittorrent"
+            logger.warning("request %d (%s) downloading -> failed (%s)", row.id, _request_label(row), message)
+            await asyncio.to_thread(self.store.update_status, row.id, "failed", error_message=message)
+        return None
 
     async def _organize_and_complete_episode(self, row) -> None:
         """Stage 11's organizer, finally wired to a real caller (Stage 12):
@@ -1415,6 +1443,7 @@ class Worker:
             identity.title,
             episode_row.season_number,
             episode_row.episode_number,
+            show.poster_path or identity.poster_path,
         )
         await asyncio.to_thread(self.store.update_status, new_row.id, "downloading", None, _result_summary(result))
         await asyncio.to_thread(self.store.record_episode_recheck, episode_row.id, new_row.id)
@@ -1455,6 +1484,7 @@ class Worker:
             identity.title,
             episode_row.season_number,
             episode_row.episode_number,
+            show.poster_path or identity.poster_path,
         )
         await asyncio.to_thread(self.store.update_status, new_row.id, "downloading", None, summary)
         await asyncio.to_thread(self.store.record_episode_recheck, episode_row.id, new_row.id)

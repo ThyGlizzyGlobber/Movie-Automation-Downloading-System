@@ -129,6 +129,8 @@ export function groupRequestsForDisplay(rows: RequestOut[]): DisplayItem[] {
     }
     show.rows.push(r)
     show.repId = Math.max(show.repId, r.id)
+    // Any row's poster will do when the first one has none.
+    show.posterPath ??= r.poster_path
 
     const key = r.season_number == null ? 'series' : String(r.season_number)
     let season = show.seasons.find((s) => s.key === key)

@@ -452,6 +452,15 @@ class RequestStore:
             # databases created before that.
             self._conn.execute("DROP TABLE IF EXISTS notifications")
             self._conn.execute("DROP TABLE IF EXISTS push_subscriptions")
+            # TV rows created without a poster (episode rechecks did) take
+            # the show's, or any other row's for the same title.
+            self._conn.execute(
+                "UPDATE requests SET poster_path = COALESCE("
+                "(SELECT s.poster_path FROM shows s WHERE s.id = requests.show_id), "
+                "(SELECT r.poster_path FROM requests r WHERE r.tmdb_id = requests.tmdb_id "
+                "AND r.media_type != 'movie' AND r.poster_path IS NOT NULL LIMIT 1)) "
+                "WHERE poster_path IS NULL AND media_type != 'movie'"
+            )
             # Frontend migration Part G4 — a plain append-only log an admin
             # can actually check once this instance is internet-facing.
             # Scoped to genuinely security-relevant events, not every
@@ -521,6 +530,10 @@ class RequestStore:
             row_id = cur.lastrowid
         return self.get_request(row_id)
 
+    def _show_poster(self, show_id: int) -> str | None:
+        row = self._conn.execute("SELECT poster_path FROM shows WHERE id = ?", (show_id,)).fetchone()
+        return row["poster_path"] if row else None
+
     def create_episode_request(
         self,
         tmdb_id: int,
@@ -536,6 +549,7 @@ class RequestStore:
         plan's "reuse, don't duplicate" call. `query` is always None: an
         episode request is never a free-text search, it's already fully
         identified by `show_id`/`season_number`/`episode_number`."""
+        poster_path = poster_path or self._show_poster(show_id)
         now = _now()
         with self._lock:
             cur = self._conn.execute(
@@ -574,6 +588,7 @@ class RequestStore:
         row is never about one specific episode, only once it's organized
         does each actual episode found inside it get its own normal
         episode row (see worker.py's `_organize_and_complete_pack`)."""
+        poster_path = poster_path or self._show_poster(show_id)
         now = _now()
         with self._lock:
             cur = self._conn.execute(

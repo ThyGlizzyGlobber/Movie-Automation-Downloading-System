@@ -540,14 +540,24 @@ def test_cancel_rejects_searching_status(client_and_deps):
     assert qbt.deleted == []
 
 
-def test_cancel_rejects_when_hash_was_never_captured(client_and_deps):
+def test_cancel_stops_tracking_when_hash_was_never_captured(client_and_deps):
     client, store, _, _, qbt, _ = client_and_deps
     created = client.post("/api/requests", json={"tmdb_id": 693134}).json()
     store.update_status(created["id"], "downloading", result={"torrent_hash": None})
 
     response = client.post(f"/api/requests/{created['id']}/cancel")
 
-    assert response.status_code == 409
+    assert response.status_code == 200
+    assert response.json()["status"] == "cancelled"
+    assert qbt.deleted == []
+
+
+def test_cancel_rejects_a_complete_row_with_no_hash(client_and_deps):
+    client, store, _, _, qbt, _ = client_and_deps
+    created = client.post("/api/requests", json={"tmdb_id": 693134}).json()
+    store.update_status(created["id"], "complete", result={"torrent_hash": None})
+
+    assert client.post(f"/api/requests/{created['id']}/cancel").status_code == 409
     assert qbt.deleted == []
 
 

@@ -143,6 +143,7 @@ export function serviceTile(item: Parameters<typeof originalServiceMatch>[0], is
   if (!match) return null
   return {
     label: 'Service',
+    fit: true,
     value: (
       <>
         <img className="detail-tile-icon" src={`/icons/${match.icon}`} alt="" />

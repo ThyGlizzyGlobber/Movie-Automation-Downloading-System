@@ -96,6 +96,9 @@ class FakeQBTClient:
     def existing_torrent_hashes(self):
         return set(self._existing_hashes)
 
+    def list_torrents(self):
+        return [{"hash": h, **state} for h, state in self._torrent_states.items()]
+
     def free_space_bytes(self):
         return self._free_space_bytes
 
@@ -303,6 +306,74 @@ def test_check_downloading_marks_complete_when_progress_reaches_one(tmp_path, mo
 
     assert store.get_request(row.id).status == "complete"
     assert any("downloading -> complete" in r.message for r in caplog.records)
+
+
+def test_check_downloading_adopts_an_untracked_torrent_by_release_name():
+    """A row whose add never pinned down a hash (live: a Ted season pack
+    stuck at downloading) picks up the torrent carrying its release name,
+    skipping one another request already tracks."""
+    store = RequestStore(":memory:")
+    other = store.create_request(tmdb_id=1, title="Other", release_year=2024, query=None)
+    store.update_status(other.id, "downloading", result={"torrent_hash": "bbbb"})
+    row = store.create_request(tmdb_id=693134, title="Dune: Part Two", release_year=2024, query=None)
+    winner = {"fileName": "Dune.Part.Two.2024.2160p.REMUX.mkv"}
+    store.update_status(row.id, "downloading", result={"torrent_hash": None, "winner": winner})
+    qbt = FakeQBTClient(
+        torrent_states={
+            "bbbb": {"progress": 0.2, "name": "Dune.Part.Two.2024.2160p.REMUX"},
+            "cccc": {"progress": 0.4, "name": "Dune.Part.Two.2024.2160p.REMUX"},
+            "dddd": {"progress": 0.9, "name": "Something.Else.1080p"},
+        }
+    )
+    worker = Worker(store, FakeTMDBClient(), qbt)
+
+    asyncio.run(worker._check_downloading())
+
+    adopted = store.get_request(row.id)
+    assert adopted.status == "downloading"
+    assert adopted.result["torrent_hash"] == "cccc"
+    assert adopted.result["winner"] == winner
+    assert adopted.download_progress == 0.4
+
+
+def test_check_downloading_fails_an_untracked_row_once_the_grace_period_is_up():
+    store = RequestStore(":memory:")
+    row = store.create_request(tmdb_id=693134, title="Dune: Part Two", release_year=2024, query=None)
+    store.update_status(row.id, "downloading", result={"torrent_hash": None, "winner": {"fileName": "Dune.2160p"}})
+    worker = Worker(store, FakeTMDBClient(), FakeQBTClient())
+
+    asyncio.run(worker._check_downloading())
+    assert store.get_request(row.id).status == "downloading"  # still within the grace period
+
+    stale = (datetime.now(timezone.utc) - timedelta(hours=2)).isoformat()
+    store._conn.execute("UPDATE requests SET updated_at = ? WHERE id = ?", (stale, row.id))
+    asyncio.run(worker._check_downloading())
+    failed = store.get_request(row.id)
+    assert failed.status == "failed"
+    assert failed.error_message == "Lost track of this download in qBittorrent"
+
+
+def test_episode_rows_without_a_poster_take_the_shows():
+    store = RequestStore(":memory:")
+    show = store.create_show(tmdb_id=95350, title="Lanterns", poster_path="/lanterns.jpg")
+    episode = store.create_episode_request(tmdb_id=95350, show_id=show.id, title="Lanterns", season_number=1, episode_number=1)
+    pack = store.create_pack_request(tmdb_id=95350, show_id=show.id, title="Lanterns", season_number=1)
+    assert episode.poster_path == "/lanterns.jpg"
+    assert pack.poster_path == "/lanterns.jpg"
+
+
+def test_startup_backfills_missing_tv_posters(tmp_path):
+    path = tmp_path / "p.db"
+    store = RequestStore(path)
+    show = store.create_show(tmdb_id=95350, title="Lanterns")
+    good = store.create_episode_request(tmdb_id=95350, show_id=show.id, title="Lanterns", season_number=1, episode_number=1, poster_path="/l.jpg")
+    bare = store.create_episode_request(tmdb_id=95350, show_id=show.id, title="Lanterns", season_number=1, episode_number=2)
+    assert bare.poster_path is None
+    store._conn.close()
+
+    reopened = RequestStore(path)
+    assert reopened.get_request(bare.id).poster_path == "/l.jpg"
+    assert reopened.get_request(good.id).poster_path == "/l.jpg"
 
 
 def test_check_downloading_leaves_in_progress_torrent_alone():

@@ -212,7 +212,7 @@ def _capture_new_hashes(qbt: QBTClient, hashes_before: set[str]) -> set[str]:
     raise QBTError("qBittorrent never actually added this torrent (still absent after checking several times)")
 
 
-def _same_release(torrent_name: str | None, file_name: str | None) -> bool:
+def same_release(torrent_name: str | None, file_name: str | None) -> bool:
     """Whether a torrent qBittorrent lists is the release a search row
     named — token sets, one within the other, so a tracker's "[Site]"
     prefix or a missing extension doesn't matter."""
@@ -240,7 +240,7 @@ def _is_rejected_release(candidate: dict, rejected: dict) -> bool:
         return True
     name = rejected.get("name") or ""
     if set(tokenize(name)) & _RELEASE_METADATA_TOKENS:
-        return _same_release(candidate.get("fileName"), name)
+        return same_release(candidate.get("fileName"), name)
     return False
 
 
@@ -260,9 +260,9 @@ def _claim_ours(qbt: QBTClient, new_hashes: set[str], winner: dict, stragglers: 
         except QBTError:
             info = None
         name = (info or {}).get("name")
-        if _same_release(name, winner.get("fileName")):
+        if same_release(name, winner.get("fileName")):
             ours = torrent_hash
-        elif any(_same_release(name, s.get("fileName")) for s in stragglers):
+        elif any(same_release(name, s.get("fileName")) for s in stragglers):
             try:
                 qbt.delete_torrent(torrent_hash, delete_files=True)
             except QBTError:

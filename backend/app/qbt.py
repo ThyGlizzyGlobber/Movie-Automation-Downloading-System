@@ -60,6 +60,10 @@ class QBTClient:
         fresh search result set."""
         return {t.hash.lower() for t in self._client.torrents_info()}
 
+    def list_torrents(self) -> list[dict]:
+        """Every torrent qBittorrent holds (hash, name, progress, ...)."""
+        return [dict(t) for t in self._client.torrents_info()]
+
     def free_space_bytes(self) -> int:
         return self._client.sync_maindata().get("server_state", {}).get("free_space_on_disk", 0)
 

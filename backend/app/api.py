@@ -1032,7 +1032,7 @@ def clear_requests(store: RequestStore = Depends(get_store)) -> dict:
 _TORRENT_CANCELLABLE_STATUSES = {"downloading", "complete"}
 
 
-def _cancel_active_torrent(row: RequestRow, store: RequestStore, qbt: QBTClient) -> str:
+def _cancel_active_torrent(row: RequestRow, store: RequestStore, qbt: QBTClient) -> str | None:
     """Shared by `cancel` and `reject` for a "downloading"/"complete" row:
     validates status/torrent-on-record/still-in-qBittorrent, deletes the
     torrent and its files, marks the request "cancelled", and returns the
@@ -1042,7 +1042,12 @@ def _cancel_active_torrent(row: RequestRow, store: RequestStore, qbt: QBTClient)
         raise HTTPException(status_code=409, detail=f"cannot cancel a request in status {row.status!r}")
     torrent_hash = (row.result or {}).get("torrent_hash")
     if not torrent_hash:
-        raise HTTPException(status_code=409, detail="no torrent on record for this request")
+        if row.status != "downloading":
+            raise HTTPException(status_code=409, detail="no torrent on record for this request")
+        # The add never pinned down which torrent was ours, so there is
+        # nothing to delete; just stop tracking it.
+        store.update_status(row.id, "cancelled")
+        return None
     if qbt.torrent_info(torrent_hash) is None:
         raise HTTPException(
             status_code=409,

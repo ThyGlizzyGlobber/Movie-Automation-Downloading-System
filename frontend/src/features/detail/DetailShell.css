@@ -249,9 +249,10 @@
   gap: 10px;
   margin-top: 16px;
 }
-/* A lone or wide tile takes the full row. */
+/* A lone or wide tile takes the full row (and, on phones, Requested by). */
 .detail-tiles > .detail-tile:only-child,
-.detail-tiles > .detail-tile.wide {
+.detail-tiles > .detail-tile.wide,
+.detail-side .detail-tiles > .detail-tile.fit:not(:first-child) {
   grid-column: 1 / -1;
 }
 /* The side column's tiles are compact so the facts list fits below. The
@@ -275,6 +276,31 @@
 }
 .detail-side .detail-tile small {
   font-size: 10px;
+}
+/* Wider screens: the side tiles flow in rows. A fit tile (Service,
+   Requested by) is only as wide as its content and the tile beside it
+   takes the rest, so "Available on Plex" keeps to one line. */
+@media (min-width: 640px) {
+  .detail-side .detail-tiles {
+    display: flex;
+    flex-wrap: wrap;
+  }
+  .detail-side .detail-tile {
+    flex: 1 1 0;
+  }
+  /* Capped so a long service name can't crowd out the tile beside it. */
+  .detail-side .detail-tile.fit {
+    flex: 0 0 auto;
+    max-width: 60%;
+  }
+  /* A third tile (Requested by, after Service and Status) starts its
+     own row and fills it. */
+  .detail-side .detail-tile.wide,
+  .detail-side .detail-tile:nth-child(3),
+  .detail-side .detail-tile:only-child {
+    flex-basis: 100%;
+    max-width: none;
+  }
 }
 /* Facts under the tiles: label / value rows. */
 .detail-facts {

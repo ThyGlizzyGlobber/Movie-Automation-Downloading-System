@@ -11,6 +11,9 @@ export interface DetailTile {
   tone?: 'mint' | 'ice' | 'dim'
   /* Spans the full width of the tile grid. */
   wide?: boolean
+  /* In the side column, only as wide as its content; the tile beside it
+     takes the rest. */
+  fit?: boolean
 }
 
 export interface DetailRow {
@@ -94,7 +97,7 @@ export default function DetailShell({
               {tiles.length > 0 && (
                 <div className="detail-tiles">
                   {tiles.map((t) => (
-                    <div className={`detail-tile${t.tone ? ` ${t.tone}` : ''}${t.wide ? ' wide' : ''}`} key={t.label}>
+                    <div className={`detail-tile${t.tone ? ` ${t.tone}` : ''}${t.wide ? ' wide' : ''}${t.fit ? ' fit' : ''}`} key={t.label}>
                       <small>{t.label}</small>
                       <b>{t.value}</b>
                     </div>
