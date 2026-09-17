@@ -3,17 +3,24 @@ import { useInfiniteQuery } from '@tanstack/react-query'
 import PosterCard from './PosterCard'
 import ErrorState from './ErrorState'
 import EmptyState from './EmptyState'
+import { PosterCardSkeleton } from './Skeleton'
 import type { TmdbListItem, TmdbListResponse } from '../types/movies'
 import './InfiniteGrid.css'
 
 // Auto-loads more pages as the user scrolls near the bottom, via an
 // IntersectionObserver on an invisible sentinel — no "Load more" button.
+// The first page, and each page after it while it loads, shows as
+// skeleton cards in the grid itself.
 // A short/wide viewport where the sentinel starts already on-screen
 // self-corrects naturally: the observer fires immediately, which fetches
 // the next page, which re-renders with the sentinel now further down,
 // repeating until it's genuinely out of range — same end result as the
 // old app's explicit "front-load enough pages to fill 4 rows" pass,
 // without needing separate code for it.
+// A TMDB page is 20 titles; the placeholders fill a couple of rows.
+const FIRST_PAGE_SKELETONS = 20
+const NEXT_PAGE_SKELETONS = 14
+
 export default function InfiniteGrid({
   queryKey,
   fetchPage,
@@ -81,14 +88,11 @@ export default function InfiniteGrid({
     if (onTotal && typeof total === 'number') onTotal(total)
   }, [onTotal, total])
 
-  // The reference's shimmer skeletons while the first page loads.
   if (query.isLoading) {
     return (
       <div className="grid category-grid" aria-busy="true">
-        {Array.from({ length: 14 }, (_, i) => (
-          <div className="skel-card" key={i}>
-            <div className="skel skel-poster" />
-          </div>
+        {Array.from({ length: FIRST_PAGE_SKELETONS }, (_, i) => (
+          <PosterCardSkeleton key={i} />
         ))}
       </div>
     )
@@ -125,13 +129,13 @@ export default function InfiniteGrid({
 
   return (
     <>
-      <div className="grid category-grid">
+      <div className="grid category-grid" aria-busy={query.isFetchingNextPage || undefined}>
         {items.map((item) => (
           <PosterCard key={item.id} item={item} mediaType={typeof mediaType === 'function' ? mediaType(item) : mediaType} mixed={typeof mediaType === 'function'} />
         ))}
+        {query.isFetchingNextPage && Array.from({ length: NEXT_PAGE_SKELETONS }, (_, i) => <PosterCardSkeleton key={`skel-${i}`} />)}
       </div>
       <div className="grid-sentinel" ref={sentinelRef}>
-        {query.isFetchingNextPage && <div className="spinner" />}
         {autoPaused && query.hasNextPage && !query.isFetchingNextPage && (
           <button className="retry" onClick={() => setManualPages((n) => n + 1)}>
             Keep looking

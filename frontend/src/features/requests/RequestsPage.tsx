@@ -6,7 +6,8 @@ import { useSession } from '../auth/useSession'
 import StatusPill from '../../components/StatusPill'
 import StatusRing from '../../components/StatusRing'
 import Icon from '../../components/Icon'
-import LoadingState from '../../components/LoadingState'
+import Img from '../../components/Img'
+import { Skel, SkelText, SkelWords } from '../../components/Skeleton'
 import ErrorState from '../../components/ErrorState'
 import EmptyState from '../../components/EmptyState'
 import { usePageTitle, useSetHasHero } from '../../lib/chrome'
@@ -84,7 +85,7 @@ function Row({
         onClick={() => (onToggle ? onToggle() : setOpen((o) => !o))}
       >
         <div className="rq-art">
-          <img src={posterUrl(poster ?? null)} alt="" />
+          <Img src={posterUrl(poster ?? null)} alt="" />
         </div>
         <div className="rq-t">
           <a className="rq-title" href={href} onClick={(e) => e.stopPropagation()}>
@@ -111,6 +112,51 @@ function Row({
         </div>
       </div>
       {expanded && children}
+    </div>
+  )
+}
+
+// A request row while the list loads: poster, title, meta line, the
+// status pill and ring, and the action button.
+const SKELETON_ROWS = 6
+
+function StatusPillSkeleton() {
+  return (
+    <Skel className="status-pill">
+      <Icon name="check-circle" className="status-icon" />
+      On Plex
+    </Skel>
+  )
+}
+
+function RowSkeleton() {
+  return (
+    <div className="rq-card" aria-hidden="true">
+      <div className="rq-row">
+        <div className="rq-art">
+          <Skel className="rq-art-skel" />
+        </div>
+        <div className="rq-t">
+          <span className="rq-title">
+            <SkelText width="46%" />
+          </span>
+          <small>
+            <SkelText width="62%" />
+          </small>
+          <span className="rq-pill-m">
+            <StatusPillSkeleton />
+          </span>
+        </div>
+        <div className="rq-state">
+          <StatusPillSkeleton />
+        </div>
+        <div className="rq-prog">
+          <Skel className="rq-ring-skel" />
+        </div>
+        <div className="rq-acts">
+          <Skel className="rq-circ" />
+        </div>
+      </div>
     </div>
   )
 }
@@ -321,7 +367,7 @@ export default function RequestsPage() {
     }
   }
 
-  if (requestsQuery.isLoading) return <LoadingState />
+  const loading = requestsQuery.isLoading
   if (requestsQuery.isError) {
     return <ErrorState message={requestsQuery.error instanceof Error ? requestsQuery.error.message : undefined} retryHref="#/requests" />
   }
@@ -333,7 +379,9 @@ export default function RequestsPage() {
   const allItems: DisplayItem[] = groupRequestsForDisplay(rows)
   const items = allItems.filter((it) => matchesFilter(it.type === 'standalone' ? it.row.status : dominantStatus(it.rows), filter))
   const people = new Set(rows.map((r) => r.requested_by_username).filter(Boolean)).size
-  const summary = rows.length
+  const summary = loading
+    ? null
+    : rows.length
     ? `${rows.length} request${rows.length === 1 ? '' : 's'}${people > 1 ? ` from ${people} people` : ''} · updated ${relativeTime(new Date(requestsQuery.dataUpdatedAt).toISOString())}`
     : 'Nothing on the way yet'
 
@@ -343,7 +391,7 @@ export default function RequestsPage() {
         <div>
           <h1 className="rq-h1">Requests</h1>
           <p className="rq-lead">
-            {summary}
+            {summary ?? <SkelWords text="13 requests · updated just now" />}
             {rows.length > 0 && (downloading > 0 || queued > 0) && (
               <span className="rq-lead-m">
                 {' · '}
@@ -358,7 +406,7 @@ export default function RequestsPage() {
               <Icon name="download" />
             </span>
             <div>
-              <b>{downloading}</b>
+              <b>{loading ? <Skel>0</Skel> : downloading}</b>
               <small>Downloading</small>
             </div>
           </div>
@@ -367,7 +415,7 @@ export default function RequestsPage() {
               <Icon name="clock" />
             </span>
             <div>
-              <b>{queued}</b>
+              <b>{loading ? <Skel>0</Skel> : queued}</b>
               <small>Queued</small>
             </div>
           </div>
@@ -376,7 +424,7 @@ export default function RequestsPage() {
               <Icon name="plex" />
             </span>
             <div>
-              <b>{addedToday}</b>
+              <b>{loading ? <Skel>0</Skel> : addedToday}</b>
               <small>Added today</small>
             </div>
           </div>
@@ -391,7 +439,15 @@ export default function RequestsPage() {
             </button>
           ))}
         </div>
-        {rows.length > 0 && (
+        {loading ? (
+          <div className="rq-clear" aria-hidden="true">
+            <Skel className="rq-clear-btn">
+              <Icon name="trash" />
+              Clear finished
+            </Skel>
+            {isAdmin && <Skel className="rq-circ" />}
+          </div>
+        ) : rows.length > 0 && (
           <div className="rq-clear">
             {retentionOpen && <div className="retention-menu-backdrop" onClick={() => setRetentionOpen(false)} />}
             <button className="rq-clear-btn" disabled={clearing} onClick={handleClear}>
@@ -418,8 +474,10 @@ export default function RequestsPage() {
         )}
       </div>
 
-      <div className="rq-list">
-        {items.length === 0 ? (
+      <div className="rq-list" aria-busy={loading || undefined}>
+        {loading ? (
+          Array.from({ length: SKELETON_ROWS }, (_, i) => <RowSkeleton key={i} />)
+        ) : items.length === 0 ? (
           <EmptyState
             icon="download"
             title={rows.length ? 'Nothing here' : 'Nothing queued'}

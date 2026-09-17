@@ -2,7 +2,8 @@ import { useParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { getPerson } from '../../api/movies'
 import PosterCard from '../../components/PosterCard'
-import LoadingState from '../../components/LoadingState'
+import Img from '../../components/Img'
+import { PosterCardSkeleton, Skel, SkelText } from '../../components/Skeleton'
 import ErrorState from '../../components/ErrorState'
 import EmptyState from '../../components/EmptyState'
 import { usePageTitle, useSetHasHero } from '../../lib/chrome'
@@ -21,7 +22,28 @@ export default function PersonPage() {
   const person = personQuery.data
   usePageTitle(person ? person.name || null : null)
 
-  if (personQuery.isLoading) return <LoadingState />
+  if (personQuery.isLoading) {
+    return (
+      <div aria-busy="true">
+        <div className="person-head" aria-hidden="true">
+          <Skel className="person-photo" />
+          <div>
+            <h1 className="page-title">
+              <SkelText width="6.5em" />
+            </h1>
+            <div className="person-head-meta">
+              <SkelText width="9em" />
+            </div>
+          </div>
+        </div>
+        <div className="grid person-grid">
+          {Array.from({ length: 21 }, (_, i) => (
+            <PosterCardSkeleton key={i} />
+          ))}
+        </div>
+      </div>
+    )
+  }
   if (personQuery.isError || !person) {
     return <ErrorState message={personQuery.error instanceof Error ? personQuery.error.message : undefined} retryHref="#/home" />
   }
@@ -33,7 +55,7 @@ export default function PersonPage() {
   return (
     <>
       <div className="person-head">
-        <img src={profileUrl(person.profile_path)} alt="" />
+        <Img className="person-photo" src={profileUrl(person.profile_path)} alt="" />
         <div>
           <h1 className="page-title">{person.name || 'Unknown'}</h1>
           <div className="person-head-meta">{meta}</div>

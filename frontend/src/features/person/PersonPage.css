@@ -6,7 +6,8 @@
   gap: 22px;
   margin: 4px 0 28px var(--row-inset);
 }
-.person-head img {
+.person-head .person-photo {
+  display: block;
   width: 96px;
   height: 96px;
   border-radius: 50%;
@@ -29,7 +30,7 @@
     gap: 14px;
     margin-bottom: 20px;
   }
-  .person-head img {
+  .person-head .person-photo {
     width: 64px;
     height: 64px;
   }

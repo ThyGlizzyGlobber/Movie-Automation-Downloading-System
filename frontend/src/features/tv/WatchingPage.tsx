@@ -2,7 +2,8 @@ import { useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { listShows, deleteShow } from '../../api/tv'
 import ProgressBar from '../../components/ProgressBar'
-import LoadingState from '../../components/LoadingState'
+import Img from '../../components/Img'
+import { Skel, SkelText, SkelWords } from '../../components/Skeleton'
 import ErrorState from '../../components/ErrorState'
 import EmptyState from '../../components/EmptyState'
 import { usePageTitle, useSetHasHero } from '../../lib/chrome'
@@ -56,7 +57,7 @@ function WatchingRow({ show, onChanged }: { show: ShowOut; onChanged: () => void
 
   return (
     <div className="req-row">
-      <img className="req-poster" src={posterUrl(show.poster_path)} alt="" />
+      <Img className="req-poster" src={posterUrl(show.poster_path)} alt="" />
       <div className="req-main">
         <a className="req-title" href={`#/tv/${show.tmdb_id}`}>
           {show.title}
@@ -76,6 +77,33 @@ function WatchingRow({ show, onChanged }: { show: ShowOut; onChanged: () => void
   )
 }
 
+const SKELETON_ROWS = 5
+
+function WatchingRowSkeleton() {
+  return (
+    <div className="req-row" aria-hidden="true">
+      <Skel className="req-poster" />
+      <div className="req-main">
+        <span className="req-title">
+          <SkelText width="40%" />
+        </span>
+        <div className="req-sub">
+          <SkelText width="9em" />
+        </div>
+        <div className="watch-pills">
+          <Skel className="status-pill">
+            <span className="status-dot" />
+            S01E01 — On Plex
+          </Skel>
+        </div>
+      </div>
+      <div className="req-actions">
+        <Skel className="watch-link">Unfollow</Skel>
+      </div>
+    </div>
+  )
+}
+
 export default function WatchingPage() {
   usePageTitle('Following')
   useSetHasHero(false)
@@ -86,13 +114,13 @@ export default function WatchingPage() {
     queryClient.invalidateQueries({ queryKey: ['shows'] })
   }
 
-  if (showsQuery.isLoading) return <LoadingState />
+  const loading = showsQuery.isLoading
   if (showsQuery.isError) {
     return <ErrorState message={showsQuery.error instanceof Error ? showsQuery.error.message : undefined} retryHref="#/tv" />
   }
 
   const shows = showsQuery.data ?? []
-  if (!shows.length) {
+  if (!loading && !shows.length) {
     return <EmptyState message="No shows yet. Open a show and tap Add show." />
   }
 
@@ -102,14 +130,14 @@ export default function WatchingPage() {
         <div>
           <h1 className="browse-title">Following</h1>
           <p className="browse-sub">
-            {shows.length} show{shows.length === 1 ? '' : 's'} · new episodes are picked up on their own
+            {loading ? <SkelWords text="4 shows · new episodes are picked up on their own" /> : `${shows.length} show${shows.length === 1 ? '' : 's'} · new episodes are picked up on their own`}
           </p>
         </div>
       </div>
-      <div id="watchingList">
-        {shows.map((s) => (
-          <WatchingRow key={s.id} show={s} onChanged={onChanged} />
-        ))}
+      <div id="watchingList" aria-busy={loading || undefined}>
+        {loading
+          ? Array.from({ length: SKELETON_ROWS }, (_, i) => <WatchingRowSkeleton key={i} />)
+          : shows.map((s) => <WatchingRow key={s.id} show={s} onChanged={onChanged} />)}
       </div>
     </div>
   )
