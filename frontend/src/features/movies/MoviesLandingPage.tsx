@@ -61,7 +61,7 @@ export default function MoviesLandingPage() {
       <HeroCarousel items={heroItems} />
       <MediaRow title="Trending" qualifier="movies" items={trending.data?.results ?? []} mediaType="movie" expandHref={browseHref({ type: 'movie', sort: 'trending' })} />
       <MediaRow title="Popular" items={popular.data?.results ?? []} mediaType="movie" expandHref={browseHref({ type: 'movie' })} />
-      <MediaRow title="New" qualifier="releases" items={comingSoon.data?.results ?? []} mediaType="movie" expandHref={browseHref({ type: 'movie', list: 'coming-soon' })} />
+      <MediaRow title="Coming" qualifier="soon" items={comingSoon.data?.results ?? []} mediaType="movie" expandHref={browseHref({ type: 'movie', list: 'coming-soon' })} />
       {MOVIE_GENRES.map((g, i) => (
         <MediaRow
           key={g.id}
