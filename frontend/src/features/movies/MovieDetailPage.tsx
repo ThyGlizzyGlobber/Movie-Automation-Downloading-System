@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useParams } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { getMovie } from '../../api/movies'
-import { createRequest } from '../../api/requests'
+import { createRequest, rejectRequest } from '../../api/requests'
 import MediaRow from '../../components/MediaRow'
 import RedownloadModal from '../../components/RedownloadModal'
 import RequestModal from '../../components/RequestModal'
@@ -217,9 +217,24 @@ export default function MovieDetailPage() {
         open={modalOpen}
         targetLabel={title}
         trackedAvailable={movie.on_plex_tracked}
+        canReject
         onClose={() => setModalOpen(false)}
-        onChoose={(mode) => {
+        onChoose={async (mode) => {
           setModalOpen(false)
+          if (mode === 'reject') {
+            // Bin the copy on record (blacklisting its release), then ask afresh.
+            const current = requests.find((r) => r.status === 'complete' || r.status === 'downloading')
+            if (!current) return
+            try {
+              await rejectRequest(current.id)
+            } catch (err) {
+              toast({ tone: 'error', title: "Couldn't bin that copy", body: errorText(err) })
+              return
+            }
+            queryClient.invalidateQueries({ queryKey: ['requests'] })
+            submit()
+            return
+          }
           submit(mode)
         }}
       />

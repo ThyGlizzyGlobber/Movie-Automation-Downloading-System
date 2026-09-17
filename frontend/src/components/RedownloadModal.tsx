@@ -2,50 +2,60 @@ import { useState } from 'react'
 import type { RedownloadMode } from '../types/requests'
 import './RedownloadModal.css'
 
+export type RedownloadChoice = RedownloadMode | 'reject'
+
 // Part K1 — shown instead of immediately firing a request whenever the
-// target is already on Plex. "Overwrite" gets its own second confirm
-// step since it deletes a file; it's only offered at all when the caller
-// has a confirmed on_plex_tracked record for this title (never against a
-// file only the fuzzy on_plex title/year match found).
+// target is already on Plex. "Overwrite" and "broken copy" each get a
+// second confirm step since they delete a file; both are only offered
+// when the caller has a confirmed on_plex_tracked record for this title
+// (never against a file only the fuzzy on_plex title/year match found).
+// "Broken copy" also blacklists that exact release so the next search
+// can't pick it again.
 export default function RedownloadModal({
   open,
   targetLabel,
   trackedAvailable,
+  canReject = false,
   onChoose,
   onClose,
 }: {
   open: boolean
   targetLabel: string
   trackedAvailable: boolean
-  onChoose: (mode: RedownloadMode) => void
+  /* Offer "This copy is broken" (movies: one file, one release to rule out). */
+  canReject?: boolean
+  onChoose: (mode: RedownloadChoice) => void
   onClose: () => void
 }) {
-  const [confirmingOverwrite, setConfirmingOverwrite] = useState(false)
+  const [confirming, setConfirming] = useState<'overwrite' | 'reject' | null>(null)
 
   if (!open) return null
 
   function close() {
-    setConfirmingOverwrite(false)
+    setConfirming(null)
     onClose()
   }
 
-  if (confirmingOverwrite) {
+  if (confirming) {
+    const reject = confirming === 'reject'
     return (
       <div className="redownload-overlay" onClick={close}>
         <div className="redownload-card" onClick={(e) => e.stopPropagation()}>
-          <h2 className="redownload-title">Replace the current copy?</h2>
+          <h2 className="redownload-title">{reject ? 'Bin this copy and get another?' : 'Replace the current copy?'}</h2>
           <p className="redownload-body">
-            The current copy of {targetLabel} is deleted once the new download finishes. This can't be undone.
+            {reject
+              ? `The current copy of ${targetLabel} is deleted now and never picked again; a different copy is fetched. This can't be undone.`
+              : `The current copy of ${targetLabel} is deleted once the new download finishes. This can't be undone.`}
           </p>
           <div className="redownload-actions">
             <button
               className="redownload-option danger"
               onClick={() => {
-                setConfirmingOverwrite(false)
-                onChoose('overwrite')
+                setConfirming(null)
+                onChoose(reject ? 'reject' : 'overwrite')
               }}
             >
-              Yes, replace it
+              {reject ? 'Yes, get a different copy' : 'Yes, replace it'}
             </button>
             <button className="redownload-cancel" onClick={close}>
               Cancel
@@ -70,13 +80,26 @@ export default function RedownloadModal({
             className="redownload-option"
             disabled={!trackedAvailable}
             title={trackedAvailable ? undefined : "Meridian didn't add this file, so it won't delete it."}
-            onClick={() => setConfirmingOverwrite(true)}
+            onClick={() => setConfirming('overwrite')}
           >
             Replace it
             <span className="redownload-option-sub">
               {trackedAvailable ? 'Delete the current copy when the new one is ready.' : "Not available. Meridian didn't add this file."}
             </span>
           </button>
+          {canReject && (
+          <button
+            className="redownload-option"
+            disabled={!trackedAvailable}
+            title={trackedAvailable ? undefined : "Meridian didn't add this file, so it can't rule it out."}
+            onClick={() => setConfirming('reject')}
+          >
+            This copy is broken
+            <span className="redownload-option-sub">
+              {trackedAvailable ? 'Bad audio, wrong cut, won\'t play: bin it and never pick this release again.' : "Not available. Meridian didn't add this file."}
+            </span>
+          </button>
+          )}
         </div>
         <button className="redownload-cancel" onClick={close}>
           Cancel

@@ -601,19 +601,25 @@ def test_reject_rejects_queued_status(client_and_deps):
     assert store.get_rejected_torrent_hashes(693134) == set()
 
 
-def test_reject_fails_honestly_when_qbittorrent_already_removed_the_torrent(client_and_deps):
+def test_reject_still_blacklists_and_removes_the_file_when_the_torrent_is_gone(client_and_deps, tmp_path):
+    """A broken copy is usually noticed after the torrent finished and was
+    auto-removed (Mutiny, live 2026-09-17). Rejecting then must still
+    blacklist the hash and delete what this app filed, or the next search
+    picks the same copy again."""
     client, store, _, _, qbt, _ = client_and_deps
+    filed = tmp_path / "Mutiny (2026).mkv"
+    filed.write_bytes(b"broken")
     created = client.post("/api/requests", json={"tmdb_id": 693134}).json()
-    store.update_status(created["id"], "complete", result={"torrent_hash": "cccc"})
+    store.update_status(created["id"], "complete", result={"torrent_hash": "cccc", "organized_paths": [str(filed)]})
     # "cccc" absent from qbt._torrent_states -> torrent_info returns None
 
     response = client.post(f"/api/requests/{created['id']}/reject")
 
-    assert response.status_code == 409
-    assert "auto-removed" in response.json()["detail"]
+    assert response.status_code == 200
     assert qbt.deleted == []
-    assert store.get_request(created["id"]).status == "complete"
-    assert store.get_rejected_torrent_hashes(693134) == set()
+    assert not filed.exists()
+    assert store.get_request(created["id"]).status == "cancelled"
+    assert store.get_rejected_torrent_hashes(693134) == {"cccc"}
 
 
 def test_reject_rejects_when_hash_was_never_captured(client_and_deps):

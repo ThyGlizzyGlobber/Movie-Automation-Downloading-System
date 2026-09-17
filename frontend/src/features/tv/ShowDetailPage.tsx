@@ -317,6 +317,7 @@ export default function ShowDetailPage() {
         onClose={() => setModalOpen(false)}
         onChoose={(mode) => {
           setModalOpen(false)
+          if (mode === 'reject') return // not offered for shows
           if (pendingBulk) runBulkDownload(pendingBulk.scope, pendingBulk.seasonNumber, pendingBulk.scope === 'series' ? 'series' : `season-${pendingBulk.seasonNumber}`, mode)
         }}
       />

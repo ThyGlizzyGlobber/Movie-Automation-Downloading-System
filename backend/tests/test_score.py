@@ -555,18 +555,29 @@ def test_seeder_tiers():
     assert score_candidate(_result(nbSeeders=-1)).seeder_score == 1  # unknown: viable, not punished, but not rewarded either
 
 
-def test_rank_candidates_seed_health_does_not_override_resolution_source_or_codec():
-    # Seeder health outranks container (see below), but resolution, source,
-    # and codec still can't be flipped by it — those are real quality
-    # differences, container mostly isn't (see the next test).
+def test_rank_candidates_seed_health_outranks_source_and_codec_but_never_resolution():
+    # Within one resolution, a copy hundreds of people are seeding beats a
+    # barely-alive REMUX (Mutiny, 2026-09-17); a lower resolution never
+    # wins on seeders alone.
     poorly_seeded_remux = _result(
         fileName="Dune.2024.2160p.REMUX.mkv", fileSize=40_000_000_000, nbSeeders=10, fileUrl="magnet:?xt=urn:btih:1"
     )
     well_seeded_webrip = _result(
         fileName="Dune.2024.2160p.WEBRip.mkv", fileSize=40_000_000_000, nbSeeders=5000, fileUrl="magnet:?xt=urn:btih:2"
     )
+    well_seeded_1080p = _result(
+        fileName="Dune.2024.1080p.REMUX.mkv", fileSize=30_000_000_000, nbSeeders=5000, fileUrl="magnet:?xt=urn:btih:3"
+    )
 
-    ranked = rank_candidates([poorly_seeded_remux, well_seeded_webrip])
+    ranked = rank_candidates([poorly_seeded_remux, well_seeded_webrip, well_seeded_1080p])
+    assert [r[0]["fileUrl"][-1] for r in ranked] == ["2", "1", "3"]
+
+
+def test_rank_candidates_same_seeder_tier_still_prefers_the_better_source():
+    remux = _result(fileName="Dune.2024.2160p.REMUX.mkv", fileSize=40_000_000_000, nbSeeders=150, fileUrl="magnet:?xt=urn:btih:1")
+    webdl = _result(fileName="Dune.2024.2160p.WEB-DL.mkv", fileSize=20_000_000_000, nbSeeders=400, fileUrl="magnet:?xt=urn:btih:2")
+
+    ranked = rank_candidates([remux, webdl])
     assert ranked[0][0]["fileUrl"] == "magnet:?xt=urn:btih:1"
 
 

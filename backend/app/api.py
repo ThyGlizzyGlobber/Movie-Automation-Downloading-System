@@ -1098,14 +1098,31 @@ def reject_request(
     candidate instead of re-selecting the same defective release.
 
     Only valid for a "downloading"/"complete" row — a "queued" request has
-    no torrent on record yet to reject."""
+    no torrent on record yet to reject. A completed download whose torrent
+    qBittorrent has since removed (the usual case once seeding is done)
+    is still rejected: the hash on record is blacklisted and the files
+    this app filed for it are deleted, so the next search really does
+    fetch a different copy."""
     row = store.get_request(request_id)
     if row is None:
         raise HTTPException(status_code=404, detail="request not found")
     if row.status == "queued":
         raise HTTPException(status_code=409, detail="a queued request has no torrent yet to reject")
+    if row.status not in _TORRENT_CANCELLABLE_STATUSES:
+        raise HTTPException(status_code=409, detail=f"cannot reject a request in status {row.status!r}")
+    torrent_hash = (row.result or {}).get("torrent_hash")
+    if not torrent_hash:
+        raise HTTPException(status_code=409, detail="no torrent on record for this request")
 
-    torrent_hash = _cancel_active_torrent(row, store, qbt)
+    if qbt.torrent_info(torrent_hash) is not None:
+        qbt.delete_torrent(torrent_hash, delete_files=True)
+    else:
+        for path in (row.result or {}).get("organized_paths") or []:
+            try:
+                Path(path).unlink(missing_ok=True)
+            except OSError:
+                logger.warning("reject: couldn't delete %s for request %d", path, request_id)
+    store.update_status(row.id, "cancelled")
     store.add_rejected_torrent(row.tmdb_id, torrent_hash)
     logger.info(
         "request %d (%s) downloading/complete -> cancelled (rejected, torrent hash blacklisted)",

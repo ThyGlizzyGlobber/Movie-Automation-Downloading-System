@@ -344,10 +344,15 @@ def exclude_existing(results: list[dict], existing_hashes: set[str]) -> list[dic
 # format is a much weaker, noisier quality signal than a large swarm-size
 # gap, so it's now the one seeder health is allowed to override; codec and
 # above still can't be — see config.py's SEEDER_TIERS comment.
+# Resolution first, then swarm health, then source and codec: within one
+# resolution a copy hundreds of people are seeding beats a barely-alive
+# REMUX (live 2026-09-17: the same near-dead 2160p REMUX of Mutiny kept
+# winning over well-seeded copies), but seeders never buy a lower
+# resolution.
 _RESOLUTION_WEIGHT = 10000
-_SOURCE_WEIGHT = 1000
-_CODEC_WEIGHT = 100
-_SEEDER_WEIGHT = 10
+_SEEDER_WEIGHT = 1000
+_SOURCE_WEIGHT = 100
+_CODEC_WEIGHT = 10
 _CONTAINER_WEIGHT = 1
 
 
