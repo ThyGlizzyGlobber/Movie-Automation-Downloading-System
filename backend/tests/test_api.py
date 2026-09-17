@@ -573,6 +573,23 @@ def test_reject_deletes_torrent_and_blacklists_hash_for_the_movie(client_and_dep
     assert store.get_rejected_torrent_hashes(693134) == {"aaaa"}
 
 
+def test_reject_by_request_also_blacklists_the_release_name_and_size(client_and_deps):
+    """A hash only rules out magnet listings; the winner's name and size
+    rule it out as a direct .torrent link too (Mutiny, live 2026-09-17)."""
+    client, store, _, _, qbt, _ = client_and_deps
+    created = client.post("/api/requests", json={"tmdb_id": 693134}).json()
+    store.update_status(
+        created["id"],
+        "downloading",
+        result={"torrent_hash": "aaaa", "winner": {"fileName": "Mutiny.2026.2160p.REMUX.mkv", "fileSize": 51_000_000_000, "fileUrl": "https://tracker/x.torrent"}},
+    )
+    qbt._torrent_states["aaaa"] = {"progress": 0.4}
+
+    assert client.post(f"/api/requests/{created['id']}/reject").status_code == 200
+    assert store.get_rejected_torrent_hashes(693134) == {"aaaa"}
+    assert store.get_rejected_releases(693134) == [{"name": "Mutiny.2026.2160p.REMUX.mkv", "size_bytes": 51_000_000_000}]
+
+
 def test_reject_works_from_complete_status_too(client_and_deps):
     client, store, _, _, qbt, _ = client_and_deps
     created = client.post("/api/requests", json={"tmdb_id": 693134}).json()

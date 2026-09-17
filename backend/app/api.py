@@ -1192,8 +1192,16 @@ def reject_request(
                 Path(path).unlink(missing_ok=True)
             except OSError:
                 logger.warning("reject: couldn't delete %s for request %d", path, request_id)
+            store.remove_library_item(path)
     store.update_status(row.id, "cancelled")
     store.add_rejected_torrent(row.tmdb_id, torrent_hash)
+    # The hash only rules out magnet listings; most winners are direct
+    # .torrent links, which carry no hash to compare (Mutiny came straight
+    # back, live 2026-09-17). The release's name and size rule it out
+    # however it's listed.
+    winner = (row.result or {}).get("winner") or {}
+    if winner.get("fileName"):
+        store.add_rejected_release(row.tmdb_id, winner["fileName"], winner.get("fileSize") or None)
     logger.info(
         "request %d (%s) downloading/complete -> cancelled (rejected, torrent hash blacklisted)",
         request_id,

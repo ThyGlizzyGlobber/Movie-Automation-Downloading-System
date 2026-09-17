@@ -74,6 +74,11 @@ class FakeQBTClient:
         if file_url in late:
             self._pending = [late[file_url]]
             return
+        # A direct .torrent link qBittorrent fetches straight away.
+        quick = getattr(self, "url_hashes", {})
+        if file_url in quick:
+            self._existing_hashes.add(quick[file_url])
+            return
         # Mimics qBittorrent indexing the new torrent: a magnet's hash
         # becomes visible in existing_torrent_hashes() right after adding.
         # A non-magnet fileUrl doesn't carry a hash to surface this way.
@@ -1191,3 +1196,26 @@ def test_download_skips_a_rejected_copy_by_release_name_when_the_name_still_says
     # A bare "Title (Year)" with no size rules nothing out — it would rule out everything.
     result = download(693134, FakeTMDBClient(), FakeQBTClient(results_by_variant=qbt.results_by_variant), excluded_releases=[{"name": "Dune Part Two (2024)", "size_bytes": None}])
     assert result.winner["fileName"] == "Dune.Part.Two.2024.2160p.REMUX.mkv"
+
+
+def test_download_excludes_a_rejected_release_listed_as_a_direct_torrent_link(_fast_hash_capture):
+    """A rejected hash can't be matched against a direct .torrent link (no
+    hash in the URL), so the same torrent gets added again before the
+    pipeline notices; the rejected release's name and size stop it from
+    being added at all."""
+    results = {
+        "Dune: Part Two": [
+            _result(fileName="Dune.Part.Two.2024.2160p.REMUX.mkv", fileUrl="https://tracker/remux.torrent", fileSize=51_000_000_000, nbSeeders=40),
+            _result(fileName="Dune.Part.Two.2024.2160p.WEB-DL.mkv", fileUrl="magnet:?xt=urn:btih:BBBB", fileSize=20_000_000_000, nbSeeders=50),
+        ]
+    }
+    qbt = FakeQBTClient(results_by_variant=results)
+    qbt.url_hashes = {"https://tracker/remux.torrent": "aaaa"}
+    download(693134, FakeTMDBClient(), qbt, excluded_hashes={"aaaa"})
+    assert qbt.added[0][0] == "https://tracker/remux.torrent"  # the hash alone didn't stop it
+
+    qbt2 = FakeQBTClient(results_by_variant=results)
+    qbt2.url_hashes = {"https://tracker/remux.torrent": "aaaa"}
+    with_name = download(693134, FakeTMDBClient(), qbt2, excluded_hashes={"aaaa"}, excluded_releases=[{"name": "Dune.Part.Two.2024.2160p.REMUX.mkv", "size_bytes": 51_000_000_000}])
+    assert with_name.winner["fileName"] == "Dune.Part.Two.2024.2160p.WEB-DL.mkv"
+    assert [url for url, _ in qbt2.added] == ["magnet:?xt=urn:btih:BBBB"]
