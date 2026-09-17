@@ -5,6 +5,8 @@ import { stillUrl } from '../../lib/tmdbImage'
 import { statusMeta } from '../../lib/status'
 import { errorText, useToast } from '../../lib/toast'
 import Icon from '../../components/Icon'
+import Img from '../../components/Img'
+import { Skel, SkelText } from '../../components/Skeleton'
 import type { EpisodeStatus } from '../../types/features'
 
 // One season's episodes with what the household has of each (the
@@ -73,7 +75,7 @@ export default function EpisodeList({ tmdbId, season }: { tmdbId: number; season
     queryClient.invalidateQueries({ queryKey: ['tv-episodes', tmdbId, season] })
     queryClient.invalidateQueries({ queryKey: ['requests'] })
   }
-  if (query.isLoading) return <div className="episode-list-note">Loading episodes…</div>
+  if (query.isLoading) return <EpisodeListSkeleton />
   if (query.isError || !query.data) return <div className="episode-list-note">Couldn't load this season's episodes.</div>
   const { episodes, in_plex, aired } = query.data
   if (!episodes.length) return <div className="episode-list-note">No episodes listed for this season yet.</div>
@@ -92,7 +94,7 @@ export default function EpisodeList({ tmdbId, season }: { tmdbId: number; season
         {episodes.map((ep) => (
           <div className={`episode-card episode-${ep.state}`} key={ep.episode_number} title={ep.overview || undefined}>
             <div className="episode-still">
-              {ep.still_path ? <img src={stillUrl(ep.still_path)} alt="" loading="lazy" /> : <span className="episode-still-empty" />}
+              {ep.still_path ? <Img src={stillUrl(ep.still_path)} alt="" loading="lazy" /> : <span className="episode-still-empty" />}
               <span className="episode-num">{String(ep.episode_number).padStart(2, '0')}</span>
               <span className="episode-chip">
                 <EpisodePill ep={ep} />
@@ -109,5 +111,59 @@ export default function EpisodeList({ tmdbId, season }: { tmdbId: number; season
         ))}
       </div>
     </div>
+  )
+}
+
+export function EpisodeListSkeleton({ count = 8 }: { count?: number }) {
+  return (
+    <div className="episode-list" aria-hidden="true">
+      <div className="episode-progress">
+        <SkelText inline width={96} />
+        <i />
+      </div>
+      <div className="episode-grid">
+        {Array.from({ length: count }, (_, i) => (
+          <div className="episode-card" key={i}>
+            <Skel className="episode-still" />
+            <div className="episode-text">
+              <b>
+                <SkelText width="72%" />
+              </b>
+              <small>
+                <SkelText width="34%" />
+              </small>
+            </div>
+            <div className="episode-action">
+              <Skel className="episode-request-btn">
+                <Icon name="plus" />
+                Add to Plex
+              </Skel>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+/* The show page's Episodes section while the show itself loads. */
+export function EpisodesSectionSkeleton() {
+  return (
+    <section className="detail-section" aria-busy="true">
+      <div className="detail-section-head">
+        <h2>
+          Episodes <SkelText inline width={96} />
+        </h2>
+      </div>
+      <div className="detail-season-bar" aria-hidden="true">
+        <Skel className="season-btn">Season 1</Skel>
+        <Skel className="season-btn">Season 2</Skel>
+        <Skel className="btn sec sm">
+          <Icon name="download" />
+          Add season 2 to Plex
+        </Skel>
+      </div>
+      <EpisodeListSkeleton />
+    </section>
   )
 }

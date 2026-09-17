@@ -84,6 +84,18 @@
   max-width: min(720px, 44%);
   max-height: 240px;
 }
+/* Loading: a logo-shaped block and a pill-shaped block in the banner. */
+.detail-title-skel {
+  align-self: stretch;
+}
+.detail-logo.detail-logo-skel {
+  width: 100%;
+  aspect-ratio: 4 / 1;
+  height: auto;
+}
+.detail-badge-skel {
+  width: 132px;
+}
 /* The On Plex pill sits in the text stack under the logo, not pinned
    to a corner. */
 .detail-banner-plex {
@@ -166,12 +178,12 @@
     overflow: visible;
     padding-bottom: 0;
   }
-  .detail-card-aside .detail-cast a {
+  .detail-card-aside .detail-cast > * {
     flex: 0 0 calc((100% - 36px) / 4);
     width: auto;
     min-width: 0;
   }
-  .detail-card-aside .detail-cast img {
+  .detail-card-aside .detail-cast .detail-cast-face {
     width: min(84px, 100%);
     height: auto;
     aspect-ratio: 1;
@@ -266,7 +278,10 @@
   padding: 12px 14px;
   border-radius: 14px;
 }
+/* At least as tall as a service icon, so a row of tiles is the same
+   height with or without one (and its loading skeleton matches). */
 .detail-side .detail-tile b {
+  min-height: 24px;
   font-size: 17px;
   margin-top: 4px;
   white-space: normal;
@@ -557,12 +572,12 @@
 .detail-cast::-webkit-scrollbar {
   display: none;
 }
-.detail-cast a {
+.detail-cast > * {
   width: 92px;
   flex: 0 0 auto;
   text-align: center;
 }
-.detail-cast img {
+.detail-cast .detail-cast-face {
   width: 72px;
   height: 72px;
   border-radius: 50%;

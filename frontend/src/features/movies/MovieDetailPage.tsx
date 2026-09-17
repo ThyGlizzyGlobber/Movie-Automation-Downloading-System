@@ -6,11 +6,11 @@ import { createRequest, rejectRequest } from '../../api/requests'
 import MediaRow from '../../components/MediaRow'
 import RedownloadModal from '../../components/RedownloadModal'
 import RequestModal from '../../components/RequestModal'
-import LoadingState from '../../components/LoadingState'
+import { MediaRowSkeleton } from '../../components/Skeleton'
 import ErrorState from '../../components/ErrorState'
 import Icon from '../../components/Icon'
-import DetailShell, { type DetailPill, type DetailRow, type DetailTile } from '../detail/DetailShell'
-import { DetailCast, DetailTrailer, FactTiles, genreLinks, peopleLinks, qualityFromName, serviceTile, sourceFromName, usePlexHref, useTitleRequests } from '../detail/DetailBits'
+import DetailShell, { DetailShellSkeleton, type DetailPill, type DetailRow, type DetailTile } from '../detail/DetailShell'
+import { DetailCast, DetailCastSkeleton, DetailTrailer, DetailTrailerSkeleton, FactTiles, genreLinks, peopleLinks, qualityFromName, serviceTile, sourceFromName, usePlexHref, useTitleRequests } from '../detail/DetailBits'
 import { usePageTitle, useSetHasHero } from '../../lib/chrome'
 import { certificationOf, languageNameOf, yearOf } from '../../lib/detailHelpers'
 import { moviePill } from '../../lib/homeHero'
@@ -25,6 +25,25 @@ function runtimeLabel(runtime: number | null): string {
   const h = Math.floor(runtime / 60)
   const m = runtime % 60
   return h ? `${h}h ${m}m` : `${m}m`
+}
+
+// A movie page's usual shape: Status and Requested by, seven facts,
+// score / year / rating / runtime pills then genres, and the one Add to
+// Plex button a title not yet on Plex has.
+function MovieDetailSkeleton() {
+  return (
+    <>
+      <DetailShellSkeleton
+        shape={{ tiles: [{}, { fit: true }], facts: 7, pills: ['7.4 · 1,234', '2024', 'PG-13', '2h 10m'], buttons: ['Add to Plex'] }}
+        aside={<DetailCastSkeleton />}
+      >
+        <DetailTrailerSkeleton />
+      </DetailShellSkeleton>
+      <div className="detail-rows">
+        <MediaRowSkeleton title="More" qualifier="like this" />
+      </div>
+    </>
+  )
 }
 
 export default function MovieDetailPage() {
@@ -47,7 +66,7 @@ export default function MovieDetailPage() {
   const year = yearOf(movie?.release_date)
   const plexHref = usePlexHref('movie', tmdbId, title, year, !!movie?.on_plex)
 
-  if (movieQuery.isLoading) return <LoadingState />
+  if (movieQuery.isLoading) return <MovieDetailSkeleton />
   if (movieQuery.isError || !movie) {
     return <ErrorState message={movieQuery.error instanceof Error ? movieQuery.error.message : undefined} retryHref="#/movies" />
   }

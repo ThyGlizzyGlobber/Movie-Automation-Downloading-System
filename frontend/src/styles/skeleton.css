@@ -1,0 +1,79 @@
+/* Loading skeletons (components/Skeleton.tsx). A skeleton is the page's
+   own markup with these classes on the parts still to come, so its size
+   comes from the same layout rules as the loaded page. The shimmer wins
+   over an element's own background (a button, a pill, a poster) while
+   its size and shape stay the element's own. */
+.skel {
+  border-radius: var(--radius-md);
+  color: transparent !important;
+}
+.skel,
+.img.img-wait {
+  background-color: transparent !important;
+  background-image: linear-gradient(100deg, rgba(255, 255, 255, 0.04) 30%, rgba(255, 255, 255, 0.09) 50%, rgba(255, 255, 255, 0.04) 70%) !important;
+  background-size: 200% 100% !important;
+  animation: shimmer 1.6s linear infinite;
+}
+/* Icons inside a skeleton only hold their space. */
+.skel .icon {
+  visibility: hidden;
+}
+.btn.skel {
+  box-shadow: none !important;
+  border-color: transparent !important;
+}
+@keyframes shimmer {
+  to {
+    background-position: -200% 0;
+  }
+}
+
+/* One line of text: exactly one line box tall in whatever text style it
+   sits in, with the bar drawn in the middle of it. */
+.skel-text {
+  display: block;
+  height: 1lh;
+  padding: 0.24lh 0;
+  background-clip: content-box !important;
+  border-radius: 999px;
+  max-width: 100%;
+}
+.skel-text.inline {
+  display: inline-block;
+  vertical-align: top;
+}
+.skel-text.center {
+  margin-inline: auto;
+}
+/* Invisible sample text drawn as one shimmer bar per line: it wraps like
+   real text of that length at any width, the last line short. */
+.skel-words {
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
+  border-radius: 999px;
+  user-select: none;
+}
+.skel-poster {
+  display: block;
+  aspect-ratio: 2 / 3;
+}
+
+/* Images wait on the shimmer, then fade in (components/Img.tsx). */
+.img.img-in {
+  animation: img-in 0.35s ease;
+}
+@keyframes img-in {
+  from {
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .skel,
+  .img.img-wait {
+    animation: none;
+  }
+  .img.img-in {
+    animation: none;
+  }
+}

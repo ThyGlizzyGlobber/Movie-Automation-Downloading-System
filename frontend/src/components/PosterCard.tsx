@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react'
 import { posterUrl } from '../lib/tmdbImage'
+import Img from './Img'
 import { genresFor } from '../lib/genres'
 import './PosterCard.css'
 
@@ -58,7 +59,7 @@ export default function PosterCard({
   return (
     <a className="poster-card" href={to}>
       <div className="poster-art">
-        <img src={posterSrc ?? posterUrl(item.poster_path)} alt={caption ? '' : title} loading="lazy" />
+        <Img src={posterSrc ?? posterUrl(item.poster_path)} alt={caption ? '' : title} loading="lazy" />
         {chip ?? (item.on_plex && <div className="on-plex-badge">On Plex</div>)}
       </div>
       {caption && (

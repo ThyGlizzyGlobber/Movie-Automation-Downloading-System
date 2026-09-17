@@ -3,14 +3,14 @@ import { useParams } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { getTvShow, listShows, createShow, deleteShow, bulkDownload } from '../../api/tv'
 import RequestModal from '../../components/RequestModal'
-import EpisodeList from './EpisodeList'
+import EpisodeList, { EpisodesSectionSkeleton } from './EpisodeList'
 import MediaRow from '../../components/MediaRow'
 import RedownloadModal from '../../components/RedownloadModal'
-import LoadingState from '../../components/LoadingState'
+import { MediaRowSkeleton } from '../../components/Skeleton'
 import ErrorState from '../../components/ErrorState'
 import Icon from '../../components/Icon'
-import DetailShell, { type DetailPill, type DetailRow, type DetailTile } from '../detail/DetailShell'
-import { DetailCast, DetailTrailer, genreLinks, peopleLinks, usePlexHref } from '../detail/DetailBits'
+import DetailShell, { DetailShellSkeleton, type DetailPill, type DetailRow, type DetailTile } from '../detail/DetailShell'
+import { DetailCast, DetailCastSkeleton, DetailTrailer, DetailTrailerSkeleton, genreLinks, peopleLinks, usePlexHref } from '../detail/DetailBits'
 import { usePageTitle, useSetHasHero } from '../../lib/chrome'
 import { errorText, useToast } from '../../lib/toast'
 import { languageNameOf, tvCertificationOf, yearOf } from '../../lib/detailHelpers'
@@ -23,6 +23,26 @@ interface PendingBulk {
   scope: 'season' | 'series'
   seasonNumber: number | null
   label: string
+}
+
+// A show page's usual shape: Following, Seasons and a full-width Next
+// episode tile, eight facts, four pills then genres, two buttons, then
+// the Episodes section.
+function ShowDetailSkeleton() {
+  return (
+    <>
+      <DetailShellSkeleton
+        shape={{ tiles: [{}, {}, { wide: true }], facts: 8, pills: ['7.9 · 1,234', '2024', 'TV-MA', '2 seasons'], buttons: ['Follow', 'Add all to Plex'] }}
+        aside={<DetailCastSkeleton />}
+      >
+        <DetailTrailerSkeleton />
+      </DetailShellSkeleton>
+      <EpisodesSectionSkeleton />
+      <div className="detail-rows">
+        <MediaRowSkeleton title="More" qualifier="like this" />
+      </div>
+    </>
+  )
 }
 
 export default function ShowDetailPage() {
@@ -53,7 +73,7 @@ export default function ShowDetailPage() {
   const year = yearOf(show?.first_air_date)
   const plexHref = usePlexHref('show', tmdbId, title, year, !!show?.on_plex)
 
-  if (showQuery.isLoading) return <LoadingState />
+  if (showQuery.isLoading) return <ShowDetailSkeleton />
   if (showQuery.isError || !show) {
     return <ErrorState message={showQuery.error instanceof Error ? showQuery.error.message : undefined} retryHref="#/tv" />
   }

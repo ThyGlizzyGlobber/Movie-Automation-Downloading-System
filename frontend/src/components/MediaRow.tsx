@@ -4,6 +4,17 @@ import PosterCard, { type PosterCardItem } from './PosterCard'
 import './MediaRow.css'
 import Icon from './Icon'
 
+/* "Trending" + the muted "movies": the heading text, shared with the
+   row's loading skeleton. */
+export function MediaRowHeading({ title, qualifier }: { title: string; qualifier?: string }) {
+  return (
+    <>
+      {title}
+      {qualifier && <span className="row-qualifier"> {qualifier}</span>}
+    </>
+  )
+}
+
 export default function MediaRow<T extends PosterCardItem>({
   title,
   qualifier,
@@ -56,12 +67,7 @@ export default function MediaRow<T extends PosterCardItem>({
   // A row that expands to a full browse page gets a clickable title and
   // a "See all" at the right edge (the reference's row head).
   const mixed = typeof mediaType === 'function'
-  const text = (
-    <>
-      {title}
-      {qualifier && <span className="row-qualifier"> {qualifier}</span>}
-    </>
-  )
+  const text = <MediaRowHeading title={title} qualifier={qualifier} />
   const heading = expandHref ? (
     <Link className="row-title" to={expandHref}>
       {text}

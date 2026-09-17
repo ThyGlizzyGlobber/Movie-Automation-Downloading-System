@@ -1,6 +1,8 @@
 import { useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import Icon from '../../components/Icon'
+import Img from '../../components/Img'
+import { Skel, SkelText } from '../../components/Skeleton'
 import '../../components/MediaRow.css'
 import { useQuery } from '@tanstack/react-query'
 import { listRequests } from '../../api/requests'
@@ -35,7 +37,7 @@ export function DetailCast({ cast, limit = 16 }: { cast?: CastMember[]; limit?: 
         <div className="detail-cast" ref={trackRef} onScroll={() => setAtStart((trackRef.current?.scrollLeft ?? 0) <= 2)}>
           {top.map((c) => (
             <Link key={c.id} to={`/person/${c.id}`}>
-              <img src={profileUrl(c.profile_path)} alt="" loading="lazy" />
+              <Img className="detail-cast-face" src={profileUrl(c.profile_path)} alt="" loading="lazy" />
               <b>{c.name}</b>
               <i>{c.character || ''}</i>
             </Link>
@@ -47,6 +49,29 @@ export function DetailCast({ cast, limit = 16 }: { cast?: CastMember[]; limit?: 
         <button className="hscroll-arrow hscroll-arrow-right" aria-label="Scroll right" onClick={() => scrollByPage(1)}>
           <Icon name="next" />
         </button>
+      </div>
+    </>
+  )
+}
+
+export function DetailCastSkeleton({ count = 8 }: { count?: number }) {
+  return (
+    <>
+      <DetailH4>Cast</DetailH4>
+      <div className="hscroll-wrap detail-cast-wrap" aria-hidden="true">
+        <div className="detail-cast">
+          {Array.from({ length: count }, (_, i) => (
+            <span className="detail-cast-person" key={i}>
+              <Skel className="detail-cast-face" />
+              <b>
+                <SkelText width="76%" center />
+              </b>
+              <i>
+                <SkelText width="52%" center />
+              </i>
+            </span>
+          ))}
+        </div>
       </div>
     </>
   )
@@ -162,6 +187,7 @@ export function DetailTrailer({ type, tmdbId, backdropPath }: { type: 'movie' | 
     staleTime: 600_000,
     retry: false,
   })
+  if (query.isLoading) return <DetailTrailerSkeleton />
   const url = query.data?.url
   if (!url) return null
   const poster = backdropUrl(backdropPath) ?? undefined
@@ -169,6 +195,15 @@ export function DetailTrailer({ type, tmdbId, backdropPath }: { type: 'movie' | 
     <>
       <DetailH4>Trailer</DetailH4>
       <video className="detail-trailer" src={url} poster={poster} controls playsInline preload="metadata" />
+    </>
+  )
+}
+
+export function DetailTrailerSkeleton() {
+  return (
+    <>
+      <DetailH4>Trailer</DetailH4>
+      <Skel className="detail-trailer" />
     </>
   )
 }
