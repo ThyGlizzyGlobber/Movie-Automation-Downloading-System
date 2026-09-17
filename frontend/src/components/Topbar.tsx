@@ -6,15 +6,10 @@ import { logout } from '../api/auth'
 import type { SessionInfo } from '../types/auth'
 import { badgeLabel, initialsOf, useActiveRequestCount } from '../lib/useActiveRequestCount'
 import Avatar from './Avatar'
+import { useTopbarHeight } from '../lib/chrome'
+import { SECTIONS } from '../lib/sections'
 import './Topbar.css'
 import Icon from './Icon'
-
-const SECTION_LINKS = [
-  { tab: 'home', label: 'Home', href: '/home' },
-  { tab: 'movies', label: 'Movies', href: '/movies' },
-  { tab: 'tv', label: 'TV Shows', href: '/tv' },
-  { tab: 'requests', label: 'Requests', href: '/requests' },
-]
 
 const isMac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform)
 
@@ -29,19 +24,7 @@ export default function Topbar({ onOpenSearch }: { onOpenSearch: () => void }) {
   const topbarRef = useRef<HTMLDivElement>(null)
   const active = useActiveRequestCount()
 
-  // #topbar is fixed, so it reserves no space in normal flow — main's own
-  // top padding stands in for that space instead (see global.css), kept
-  // in sync with the topbar's real rendered height via --topbar-h.
-  useEffect(() => {
-    const el = topbarRef.current
-    if (!el) return
-    const update = () => document.documentElement.style.setProperty('--topbar-h', `${el.offsetHeight}px`)
-    update()
-    const observer = new ResizeObserver(update)
-    observer.observe(el)
-    if (document.fonts?.ready) document.fonts.ready.then(update)
-    return () => observer.disconnect()
-  }, [])
+  useTopbarHeight(topbarRef)
 
   const settingsActive = location.pathname.startsWith('/settings')
   const initials = initialsOf(session.data?.username)
@@ -52,7 +35,7 @@ export default function Topbar({ onOpenSearch }: { onOpenSearch: () => void }) {
         <span className="brand-wordmark">Meridian</span>
       </NavLink>
       <nav className="top-nav-links">
-        {SECTION_LINKS.map((s) => (
+        {SECTIONS.map((s) => (
           <NavLink
             key={s.tab}
             to={s.href}

@@ -7,6 +7,8 @@ import { getRecentlyAdded } from '../../api/plex'
 import Avatar from '../../components/Avatar'
 import Icon from '../../components/Icon'
 import PosterCard from '../../components/PosterCard'
+import Img from '../../components/Img'
+import { PosterCardSkeleton, Skel, SkelText, SkelWords } from '../../components/Skeleton'
 import StatusPill from '../../components/StatusPill'
 import { formatBytes, plexWebUrl, relativeTime } from '../../lib/format'
 import { posterUrl } from '../../lib/tmdbImage'
@@ -20,14 +22,14 @@ import './DashboardPanel.css'
 // library drive, who is downloading what right now, what Plex added
 // lately, and the two Downloads settings people reach for.
 
-function Stat({ icon, tone, value, label }: { icon: Parameters<typeof Icon>[0]['name']; tone: string; value: string | number; label: string }) {
+function Stat({ icon, tone, value, label, loading = false }: { icon: Parameters<typeof Icon>[0]['name']; tone: string; value: string | number; label: string; loading?: boolean }) {
   return (
     <div className="dash-stat">
       <span className={`dash-stat-icon ${tone}`}>
         <Icon name={icon} />
       </span>
       <div>
-        <b>{value}</b>
+        <b>{loading ? <Skel>0</Skel> : value}</b>
         <small>{label}</small>
       </div>
     </div>
@@ -47,7 +49,7 @@ function ActiveRow({ r, hasAvatar }: { r: RequestOut; hasAvatar: boolean }) {
           <Icon name="gear" />
         )}
       </span>
-      <img className="dash-active-poster" src={posterUrl(r.poster_path)} alt="" />
+      <Img className="dash-active-poster" src={posterUrl(r.poster_path)} alt="" />
       <span className="dash-active-text">
         <b>{r.title}</b>
         <small>
@@ -63,6 +65,53 @@ function ActiveRow({ r, hasAvatar }: { r: RequestOut; hasAvatar: boolean }) {
       </span>
       <StatusPill status={r.status} />
     </a>
+  )
+}
+
+// Loading placeholders for the dashboard's cards, in each card's own
+// markup.
+function ActiveRowSkeleton() {
+  return (
+    <div className="dash-active" aria-hidden="true">
+      <Skel className="dash-active-who" />
+      <Skel className="dash-active-poster" />
+      <span className="dash-active-text">
+        <b>
+          <SkelText width="48%" />
+        </b>
+        <small>
+          <SkelText width="64%" />
+        </small>
+        <i className="dash-active-bar" />
+      </span>
+      <Skel className="status-pill">
+        <Icon name="download" className="status-icon" />
+        Downloading
+      </Skel>
+    </div>
+  )
+}
+
+function StorageSkeleton() {
+  return (
+    <div aria-hidden="true">
+      <div className="dash-storage-line">
+        <b>
+          <Skel>1.2 TB</Skel>
+        </b>
+        <span>
+          <SkelWords text="of 3.6 TB used · 33%" />
+        </span>
+      </div>
+      <Skel className="dash-storage-bar" />
+      <ul className="dash-storage-legend">
+        {['Movies', 'TV shows', 'Other', 'Free'].map((label) => (
+          <li key={label}>
+            <SkelText width="80%" />
+          </li>
+        ))}
+      </ul>
+    </div>
   )
 }
 
@@ -111,6 +160,26 @@ function QuickSettings() {
     }
   }
 
+  if (pipeline.isLoading) {
+    return (
+      <div className="dash-card" aria-hidden="true">
+        <div className="dash-card-head">
+          <h3>Quick settings</h3>
+        </div>
+        <div className="dash-quick">
+          <label>
+            <span>Lowest quality to accept</span>
+            <Skel className="dash-quick-skel">2160p / 4K</Skel>
+          </label>
+          <label>
+            <span>Largest download</span>
+            <Skel className="dash-quick-skel">100 GB</Skel>
+          </label>
+        </div>
+        <p className="dash-card-foot">The same two settings as under Downloads, close to hand.</p>
+      </div>
+    )
+  }
   if (floor == null || maxSize == null) return null
   return (
     <div className="dash-card">
@@ -165,10 +234,10 @@ export default function DashboardPanel({ onOpen }: { onOpen: (key: string) => vo
   return (
     <div className="dash">
       <div className="dash-stats">
-        <Stat icon="download" tone="ice" value={downloading.length} label="Downloading now" />
-        <Stat icon="clock" tone="dim" value={waiting} label="Waiting" />
-        <Stat icon="check-circle" tone="mint" value={d?.completed_week ?? '—'} label="Added this week" />
-        <Stat icon="drive" tone="amber" value={d?.available ? formatBytes(d.free_bytes) : '—'} label="Free on the drive" />
+        <Stat icon="download" tone="ice" value={downloading.length} label="Downloading now" loading={requests.isLoading} />
+        <Stat icon="clock" tone="dim" value={waiting} label="Waiting" loading={requests.isLoading} />
+        <Stat icon="check-circle" tone="mint" value={d?.completed_week ?? '—'} label="Added this week" loading={storage.isLoading} />
+        <Stat icon="drive" tone="amber" value={d?.available ? formatBytes(d.free_bytes) : '—'} label="Free on the drive" loading={storage.isLoading} />
       </div>
 
       <div className="dash-grid">
@@ -180,7 +249,9 @@ export default function DashboardPanel({ onOpen }: { onOpen: (key: string) => vo
               <Icon name="next" />
             </button>
           </div>
-          {d?.available ? (
+          {storage.isLoading ? (
+            <StorageSkeleton />
+          ) : d?.available ? (
             <>
               <div className="dash-storage-line">
                 <b>{formatBytes(d.used_bytes)}</b>
@@ -221,7 +292,13 @@ export default function DashboardPanel({ onOpen }: { onOpen: (key: string) => vo
               <Icon name="next" />
             </a>
           </div>
-          {active.length === 0 ? (
+          {requests.isLoading ? (
+            <div className="dash-active-list">
+              {Array.from({ length: 3 }, (_, i) => (
+                <ActiveRowSkeleton key={i} />
+              ))}
+            </div>
+          ) : active.length === 0 ? (
             <p className="dash-empty">Nothing on the way right now.</p>
           ) : (
             <div className="dash-active-list">
@@ -237,7 +314,18 @@ export default function DashboardPanel({ onOpen }: { onOpen: (key: string) => vo
           <div className="dash-card-head">
             <h3>Recently added to Plex</h3>
           </div>
-          {added.length === 0 ? (
+          {recent.isLoading ? (
+            <div className="dash-recent" aria-hidden="true">
+              {Array.from({ length: 6 }, (_, i) => (
+                <div className="dash-recent-item" key={i}>
+                  <PosterCardSkeleton meta={false} />
+                  <small>
+                    <SkelText width="50%" />
+                  </small>
+                </div>
+              ))}
+            </div>
+          ) : added.length === 0 ? (
             <p className="dash-empty">{recent.data?.available === false ? 'Plex is not linked yet.' : 'Nothing added lately.'}</p>
           ) : (
             <div className="dash-recent">

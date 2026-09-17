@@ -4,6 +4,37 @@ import { getLibrarySettings, setLibrarySettings } from '../../api/settings'
 import { errorText, useToast } from '../../lib/toast'
 import SettingRow from '../../components/SettingRow'
 import Toggle from '../../components/Toggle'
+import { Skel, SkelText } from '../../components/Skeleton'
+
+// The rows' real labels with placeholder values while the settings load.
+function LibraryRowsSkeleton({ part }: { part: 'library' | 'storage' }) {
+  const control = <Skel className="setting-control-skel" />
+  if (part === 'storage') {
+    return (
+      <SettingRow label="Free-space floor" hint="Downloads that would leave less than this free are skipped. 0 turns it off.">
+        {control}
+      </SettingRow>
+    )
+  }
+  return (
+    <>
+      {['Movies library', 'TV library'].map((label) => (
+        <div className="setting-row" key={label}>
+          <div className="setting-row-text">
+            <b>{label}</b>
+            <small>
+              <SkelText width="60%" />
+            </small>
+          </div>
+          <div className="setting-row-control">{control}</div>
+        </div>
+      ))}
+      <SettingRow label="Refresh Plex after import" hint="Ask Plex to scan the folder as soon as a file lands.">
+        {control}
+      </SettingRow>
+    </>
+  )
+}
 
 // Shared by the Plex card (library folders, refresh after import) and
 // the Storage card (free-space floor): both edit the same settings
@@ -26,6 +57,7 @@ export default function LibraryRows({ part }: { part: 'library' | 'storage' }) {
     setFloor(String(query.data.free_space_floor_gb))
   }, [query.data])
 
+  if (query.isLoading) return <LibraryRowsSkeleton part={part} />
   if (!query.data) return null
   const fromEnv = query.data.source === 'env'
   const dirty =

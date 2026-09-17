@@ -228,6 +228,11 @@
   border-radius: 10px;
   color: var(--text);
 }
+.dash-quick-skel {
+  padding: 9px 12px;
+  font-size: 14px;
+  border-radius: 10px;
+}
 .dash-quick input {
   width: 84px;
   text-align: right;

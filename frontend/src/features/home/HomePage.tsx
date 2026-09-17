@@ -10,7 +10,7 @@ import { getTvDiscoverByGenre, getTvDiscoverPopular, getTvDiscoverTrending, list
 import HeroCarousel from '../../components/HeroCarousel'
 import MediaRow from '../../components/MediaRow'
 import TopTenRow from '../../components/TopTenRow'
-import ContinueWatchingRow from '../../components/ContinueWatchingRow'
+import ContinueWatchingRow, { ContinueWatchingSkeleton } from '../../components/ContinueWatchingRow'
 import RecentlyAddedRow from '../../components/RecentlyAddedRow'
 import RequestedRow from '../../components/RequestedRow'
 import ProviderChips from '../../components/ProviderChips'
@@ -36,6 +36,21 @@ const HOME_GENRES = [
 // The merged Home feed — mixes movies and TV into one curated, row-based
 // landing page, alongside (not instead of) the separate movie-only/
 // TV-only Movies/TV pages. No subnav — straight into the hero + rows.
+// Home's first screens before anything is known, for the app's start-up
+// skeleton: the same sections the page draws while they load.
+export function HomeSkeleton() {
+  return (
+    <>
+      <HeroCarousel items={[]} loading />
+      <TopTenRow movies={[]} shows={[]} loading />
+      <ContinueWatchingSkeleton />
+      <MediaRow title="New" qualifier="in your library" items={[]} mediaType="movie" loading />
+      <MediaRow title="On the way" qualifier="for the household" items={[]} mediaType="movie" loading expandHref="/requests" seeAllLabel="All requests" />
+      <MediaRow title="Trending" qualifier="now" items={[]} mediaType="movie" loading expandHref={browseHref({ type: 'movie', sort: 'trending' })} />
+    </>
+  )
+}
+
 // Followed shows carry no year or genre, so their cards have no meta line.
 const followedSkeleton = () => <PosterCardSkeleton meta={false} />
 

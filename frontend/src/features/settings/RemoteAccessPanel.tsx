@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { getAuditLog, getRemoteAccess, revokeAllSessions, setRemoteAccess } from '../../api/settings'
-import LoadingState from '../../components/LoadingState'
+import { SettingsCardSkeleton } from './SettingsSkeleton'
 import ErrorState from '../../components/ErrorState'
 import EmptyState from '../../components/EmptyState'
 import { ApiError } from '../../api/client'
@@ -10,6 +10,10 @@ import Toggle from '../../components/Toggle'
 import './RemoteAccessPanel.css'
 
 type SaveState = 'idle' | 'saving' | 'saved' | 'error'
+
+const REMOTE_SUB =
+  'Turn this on once Meridian is reachable over HTTPS from outside your home, for example through a reverse proxy or a Cloudflare Tunnel. It keeps sign-ins secure.'
+const HISTORY_SUB = 'Recent sign-ins and changes to access.'
 
 function RemoteAccessSettingsSection() {
   const queryClient = useQueryClient()
@@ -25,7 +29,7 @@ function RemoteAccessSettingsSection() {
     setDomain(query.data.public_domain ?? '')
   }, [query.data])
 
-  if (query.isLoading) return <LoadingState />
+  if (query.isLoading) return <SettingsCardSkeleton title="Remote access" sub={REMOTE_SUB} rows={2} style={{ marginBottom: 16 }} />
   if (query.isError) {
     return <ErrorState message={query.error instanceof Error ? query.error.message : undefined} />
   }
@@ -51,10 +55,7 @@ function RemoteAccessSettingsSection() {
   return (
     <div className="settings-panel-card" style={{ marginBottom: 16 }}>
       <h2>Remote access</h2>
-      <p className="settings-sub">
-        Turn this on once Meridian is reachable over HTTPS from outside your home, for example through a reverse proxy
-        or a Cloudflare Tunnel. It keeps sign-ins secure.
-      </p>
+      <p className="settings-sub">{REMOTE_SUB}</p>
       <SettingRow label="Meridian is reachable from outside the house" hint="Keeps sign-ins secure once HTTPS is in front of it.">
         <Toggle checked={enabled} onChange={setEnabled} label="Meridian is reachable from outside the house" />
       </SettingRow>
@@ -148,7 +149,7 @@ function eventLabel(eventType: string): string {
 function AuditLogSection() {
   const query = useQuery({ queryKey: ['audit-log'], queryFn: () => getAuditLog(20, 0) })
 
-  if (query.isLoading) return <LoadingState />
+  if (query.isLoading) return <SettingsCardSkeleton title="Sign-in history" sub={HISTORY_SUB} rows={5} />
   if (query.isError) {
     return <ErrorState message={query.error instanceof Error ? query.error.message : undefined} />
   }
@@ -157,7 +158,7 @@ function AuditLogSection() {
   return (
     <div className="settings-panel-card">
       <h2>Sign-in history</h2>
-      <p className="settings-sub">Recent sign-ins and changes to access.</p>
+      <p className="settings-sub">{HISTORY_SUB}</p>
       {data.events.length === 0 ? (
         <EmptyState message="Nothing logged yet." />
       ) : (

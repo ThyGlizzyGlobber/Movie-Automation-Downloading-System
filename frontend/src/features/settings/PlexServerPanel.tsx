@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { getPlexStatus, listPlexServers, selectPlexServer, startPlexLink, unlinkPlex } from '../../api/plex'
 import type { PlexServerSummary } from '../../types/auth'
-import LoadingState from '../../components/LoadingState'
+import { SettingsCardSkeleton } from './SettingsSkeleton'
 import ErrorState from '../../components/ErrorState'
 import { ApiError } from '../../api/client'
 import Icon from '../../components/Icon'
@@ -16,6 +16,8 @@ type Phase = 'status' | 'signing-in' | 'picking-server' | 'linking'
 // — same PIN sign-in flow, but starting from "already linked, show
 // status" rather than a blank first-run, and adding the switch-server
 // capability an admin with more than one Plex server needs (Part C1).
+const PLEX_SUB = 'The server Meridian adds to and reads from.'
+
 export default function PlexServerPanel() {
   const queryClient = useQueryClient()
   const statusQuery = useQuery({ queryKey: ['plexStatus'], queryFn: () => getPlexStatus() })
@@ -113,7 +115,7 @@ export default function PlexServerPanel() {
     }
   }
 
-  if (statusQuery.isLoading) return <LoadingState />
+  if (statusQuery.isLoading) return <SettingsCardSkeleton title="Plex" sub={PLEX_SUB} rows={3} />
   if (statusQuery.isError) {
     return <ErrorState message={statusQuery.error instanceof Error ? statusQuery.error.message : undefined} />
   }
@@ -130,7 +132,7 @@ export default function PlexServerPanel() {
           </span>
         )}
       </h2>
-      <p className="settings-sub">The server Meridian adds to and reads from.</p>
+      <p className="settings-sub">{PLEX_SUB}</p>
 
       {phase === 'status' && (
         <>

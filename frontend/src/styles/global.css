@@ -64,7 +64,7 @@ main {
 }
 
 /* Shared by any status dot still in motion (searching/downloading) and
-   the loading spinner below. */
+   the spinning icons and status rings. */
 @keyframes pulse {
   0%,
   100% {

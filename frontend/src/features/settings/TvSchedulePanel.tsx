@@ -1,13 +1,15 @@
 import { useEffect, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { getTvSettings, setTvSettings } from '../../api/settings'
-import LoadingState from '../../components/LoadingState'
+import { SettingsCardSkeleton } from './SettingsSkeleton'
 import ErrorState from '../../components/ErrorState'
 import { ApiError } from '../../api/client'
 import SettingRow from '../../components/SettingRow'
 import Toggle from '../../components/Toggle'
 
 type SaveState = 'idle' | 'saving' | 'saved' | 'error'
+
+const TV_SUB = 'How Meridian watches for new episodes of the shows you follow.'
 
 export default function TvSchedulePanel() {
   const query = useQuery({ queryKey: ['settings', 'tv'], queryFn: getTvSettings })
@@ -29,7 +31,7 @@ export default function TvSchedulePanel() {
     setRecheckLimit(String(query.data.episode_recheck_max_attempts))
   }, [query.data])
 
-  if (query.isLoading) return <LoadingState />
+  if (query.isLoading) return <SettingsCardSkeleton title="TV shows" sub={TV_SUB} rows={5} />
   if (query.isError) {
     return <ErrorState message={query.error instanceof Error ? query.error.message : undefined} />
   }
@@ -56,7 +58,7 @@ export default function TvSchedulePanel() {
   return (
     <div className="settings-panel-card">
       <h2>TV shows</h2>
-      <p className="settings-sub">How Meridian watches for new episodes of the shows you follow.</p>
+      <p className="settings-sub">{TV_SUB}</p>
       <SettingRow label="Check for new episodes every" hint="How often Meridian looks at the shows you follow." htmlFor="tvCheckInterval">
         <input
           id="tvCheckInterval"

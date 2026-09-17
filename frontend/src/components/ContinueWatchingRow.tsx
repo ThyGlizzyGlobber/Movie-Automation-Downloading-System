@@ -23,33 +23,35 @@ function subtitle(item: OnDeckItem): string {
   return parts.join(' · ')
 }
 
+export function ContinueWatchingSkeleton() {
+  return (
+    <MediaRow
+      className="continue-row"
+      title="Continue"
+      qualifier="watching"
+      items={[]}
+      mediaType="movie"
+      loading
+      skeletonCount={6}
+      renderSkeleton={() => (
+        <div className="continue-card">
+          <Skel className="continue-art" />
+          <b>
+            <SkelText width="70%" />
+          </b>
+          <small>
+            <SkelText width="46%" />
+          </small>
+        </div>
+      )}
+    />
+  )
+}
+
 export default function ContinueWatchingRow() {
   const query = useQuery({ queryKey: ['plex-on-deck'], queryFn: getOnDeck, staleTime: 60_000, refetchInterval: 120_000 })
   const data = query.data
-  if (query.isLoading) {
-    return (
-      <MediaRow
-        className="continue-row"
-        title="Continue"
-        qualifier="watching"
-        items={[]}
-        mediaType="movie"
-        loading
-        skeletonCount={6}
-        renderSkeleton={() => (
-          <div className="continue-card">
-            <Skel className="continue-art" />
-            <b>
-              <SkelText width="70%" />
-            </b>
-            <small>
-              <SkelText width="46%" />
-            </small>
-          </div>
-        )}
-      />
-    )
-  }
+  if (query.isLoading) return <ContinueWatchingSkeleton />
   if (!data || !data.available || !data.items.length) return null
   const machineId = data.machine_id
   const items = data.items.map((it) => ({ ...it, id: Number(it.rating_key) }))

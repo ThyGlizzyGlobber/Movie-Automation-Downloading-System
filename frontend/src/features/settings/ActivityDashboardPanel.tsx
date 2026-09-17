@@ -2,18 +2,27 @@ import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { getActivity } from '../../api/settings'
 import StatusPill from '../../components/StatusPill'
-import LoadingState from '../../components/LoadingState'
+import { SettingsCardSkeleton } from './SettingsSkeleton'
 import ErrorState from '../../components/ErrorState'
 import EmptyState from '../../components/EmptyState'
 import './ActivityDashboardPanel.css'
 
 const PAGE_SIZE = 25
 
+const PEOPLE_SUB = 'Who has asked for what.'
+
 export default function ActivityDashboardPanel() {
   const [limit, setLimit] = useState(PAGE_SIZE)
   const query = useQuery({ queryKey: ['activity', limit], queryFn: () => getActivity(limit, 0) })
 
-  if (query.isLoading) return <LoadingState />
+  if (query.isLoading) {
+    return (
+      <>
+        <SettingsCardSkeleton title="Requests by person" sub={PEOPLE_SUB} rows={3} style={{ marginBottom: 16 }} />
+        <SettingsCardSkeleton title="Recent requests" sub={null} rows={5} />
+      </>
+    )
+  }
   if (query.isError) {
     return <ErrorState message={query.error instanceof Error ? query.error.message : undefined} />
   }
@@ -23,7 +32,7 @@ export default function ActivityDashboardPanel() {
     <>
       <div className="settings-panel-card" style={{ marginBottom: 16 }}>
         <h2>Requests by person</h2>
-        <p className="settings-sub">Who has asked for what.</p>
+        <p className="settings-sub">{PEOPLE_SUB}</p>
         {data.user_stats.length === 0 ? (
           <EmptyState message="No requests yet." />
         ) : (

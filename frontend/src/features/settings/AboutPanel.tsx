@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query'
 import { getAbout } from '../../api/admin'
 import { formatBytes } from '../../lib/format'
-import LoadingState from '../../components/LoadingState'
+import { SettingsCardSkeleton } from './SettingsSkeleton'
 import SettingRow from '../../components/SettingRow'
 
 function uptime(seconds: number | null): string {
@@ -14,14 +14,16 @@ function uptime(seconds: number | null): string {
   return `${m}m`
 }
 
+const ABOUT_SUB = 'What this Meridian is running.'
+
 export default function AboutPanel() {
   const query = useQuery({ queryKey: ['about'], queryFn: getAbout, refetchInterval: 60_000 })
-  if (query.isLoading || !query.data) return <LoadingState />
+  if (query.isLoading || !query.data) return <SettingsCardSkeleton title="About" sub={ABOUT_SUB} rows={6} />
   const a = query.data
   return (
     <div className="settings-panel-card">
       <h2>About</h2>
-      <p className="settings-sub">What this Meridian is running.</p>
+      <p className="settings-sub">{ABOUT_SUB}</p>
       <SettingRow label="Version" hint={a.version ? 'Latest commit on the server' : 'Unknown build'}>
         <span className="about-value mono">{a.version ?? '—'}</span>
       </SettingRow>

@@ -4,7 +4,6 @@ import SetupTokenStep from './SetupTokenStep'
 import TmdbStep from './TmdbStep'
 import QbittorrentStep from './QbittorrentStep'
 import PlexLinkStep from './PlexLinkStep'
-import LoadingState from '../../components/LoadingState'
 import ErrorState from '../../components/ErrorState'
 import './SetupWizard.css'
 import AmbientGlow from '../../components/AmbientGlow'
@@ -34,7 +33,15 @@ export default function SetupWizard() {
     setStepIndex((i) => Math.min(i + 1, steps.length - 1))
   }
 
-  if (setupStatus.isLoading) return <LoadingState />
+  // App.tsx loads the setup status before opening the wizard, so this is
+  // only ever the backdrop for an instant.
+  if (setupStatus.isLoading) {
+    return (
+      <div className="setup-page" aria-busy="true">
+        <AmbientGlow posterPath={null} />
+      </div>
+    )
+  }
   if (setupStatus.isError) {
     return <ErrorState message={setupStatus.error instanceof Error ? setupStatus.error.message : undefined} />
   }

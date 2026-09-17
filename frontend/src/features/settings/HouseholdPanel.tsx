@@ -5,18 +5,20 @@ import Avatar from '../../components/Avatar'
 import { relativeTime } from '../../lib/format'
 import { errorText, useToast } from '../../lib/toast'
 import Toggle from '../../components/Toggle'
-import LoadingState from '../../components/LoadingState'
+import { SettingsCardSkeleton } from './SettingsSkeleton'
 import Icon from '../../components/Icon'
 
 // Settings › Household: everyone who has signed in, whether they can
 // request, and a way to remove someone who no longer should be here.
+const HOUSEHOLD_SUB = 'Everyone who has signed in with Plex, and who can ask for things.'
+
 export default function HouseholdPanel() {
   const queryClient = useQueryClient()
   const query = useQuery({ queryKey: ['household'], queryFn: listHousehold })
   const { toast } = useToast()
   const [busy, setBusy] = useState<string | null>(null)
 
-  if (query.isLoading || !query.data) return <LoadingState />
+  if (query.isLoading || !query.data) return <SettingsCardSkeleton title="Household" sub={HOUSEHOLD_SUB} rows={3} />
   const users = query.data
 
   async function setCanRequest(id: string, on: boolean) {
@@ -48,7 +50,7 @@ export default function HouseholdPanel() {
   return (
     <div className="settings-panel-card">
       <h2>Household</h2>
-      <p className="settings-sub">Everyone who has signed in with Plex, and who can ask for things.</p>
+      <p className="settings-sub">{HOUSEHOLD_SUB}</p>
       <div className="household-list">
         {users.map((u) => {
           const name = u.username || u.plex_user_id

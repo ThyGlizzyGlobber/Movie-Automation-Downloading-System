@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { getPipelineSettings, setPipelineSettings } from '../../api/settings'
 import LanguageMultiSelect from '../../components/LanguageMultiSelect'
-import LoadingState from '../../components/LoadingState'
+import { SettingsCardSkeleton } from './SettingsSkeleton'
 import ErrorState from '../../components/ErrorState'
 import { ApiError } from '../../api/client'
 import SettingRow from '../../components/SettingRow'
@@ -16,6 +16,8 @@ export const RESOLUTION_OPTIONS = [
 ]
 
 type SaveState = 'idle' | 'saving' | 'saved' | 'error'
+
+const DOWNLOADS_SUB = 'What counts as a good enough copy.'
 
 export default function PipelinePanel() {
   const query = useQuery({ queryKey: ['settings', 'pipeline'], queryFn: getPipelineSettings })
@@ -45,7 +47,7 @@ export default function PipelinePanel() {
     setCategory(query.data.category)
   }, [query.data])
 
-  if (query.isLoading) return <LoadingState />
+  if (query.isLoading) return <SettingsCardSkeleton title="Downloads" sub={DOWNLOADS_SUB} rows={5} />
   if (query.isError) {
     return <ErrorState message={query.error instanceof Error ? query.error.message : undefined} />
   }
@@ -81,7 +83,7 @@ export default function PipelinePanel() {
   return (
     <div className="settings-panel-card">
       <h2>Downloads</h2>
-      <p className="settings-sub">What counts as a good enough copy.</p>
+      <p className="settings-sub">{DOWNLOADS_SUB}</p>
       <SettingRow label="Lowest quality to accept" hint="Better copies are always preferred. This is just the floor." htmlFor="pfMinResolution">
         <select id="pfMinResolution" value={minResolution} onChange={(e) => setMinResolution(e.target.value)}>
           {RESOLUTION_OPTIONS.map((r) => (

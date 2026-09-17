@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useState, type ReactNode } from 'react'
+import { createContext, useContext, useEffect, useState, type ReactNode, type RefObject } from 'react'
 
 // Ports setChrome({hasHero})'s job from the old app: whether the current
 // page wants the topbar's see-through hero treatment instead of its
@@ -45,4 +45,20 @@ export function usePageTitle(title: string | null) {
       document.title = 'Meridian'
     }
   }, [title])
+}
+
+// #topbar is fixed, so it reserves no space in normal flow — main's own
+// top padding stands in for that space instead (see global.css), kept
+// in sync with the topbar's real rendered height via --topbar-h.
+export function useTopbarHeight(ref: RefObject<HTMLElement | null>) {
+  useEffect(() => {
+    const el = ref.current
+    if (!el) return
+    const update = () => document.documentElement.style.setProperty('--topbar-h', `${el.offsetHeight}px`)
+    update()
+    const observer = new ResizeObserver(update)
+    observer.observe(el)
+    if (document.fonts?.ready) document.fonts.ready.then(update)
+    return () => observer.disconnect()
+  }, [ref])
 }

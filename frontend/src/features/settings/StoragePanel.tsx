@@ -1,16 +1,25 @@
 import { useQuery } from '@tanstack/react-query'
 import { getStorageDetails } from '../../api/settings'
 import ProgressRing from '../../components/ProgressRing'
-import LoadingState from '../../components/LoadingState'
+import { SettingsCardSkeleton } from './SettingsSkeleton'
 import { formatBytes } from '../../lib/format'
 import LibraryRows from './LibraryRows'
 
 // The reference's Settings › Storage: the library disk as a ring, how
 // much of it each library holds, and request throughput. Library sizes
 // are walked on the server and cached for ten minutes.
+const ACTIVITY_SUB = "What's moving right now, and what landed recently."
+
 export default function StoragePanel() {
   const query = useQuery({ queryKey: ['storage-details'], queryFn: getStorageDetails, refetchInterval: 30_000 })
-  if (query.isLoading) return <LoadingState />
+  if (query.isLoading) {
+    return (
+      <>
+        <SettingsCardSkeleton title="Storage" subSample="1.2 TB of 3.6 TB used." rows={3} />
+        <SettingsCardSkeleton title="Activity" sub={ACTIVITY_SUB} rows={2} />
+      </>
+    )
+  }
   const d = query.data
   if (!d) return <div className="settings-panel-card">Couldn't read storage.</div>
   const total = d.available ? d.total_bytes : null
@@ -47,7 +56,7 @@ export default function StoragePanel() {
       </div>
       <div className="settings-panel-card">
         <h2>Activity</h2>
-        <p className="settings-sub">What's moving right now, and what landed recently.</p>
+        <p className="settings-sub">{ACTIVITY_SUB}</p>
         <div className="storage-tiles">
           <div className="storage-tile">
             <small>Downloading</small>

@@ -3,7 +3,7 @@ import { useSetupStatus } from './features/setup/useSetupStatus'
 import { isUnauthenticated, useSession } from './features/auth/useSession'
 import SetupWizard from './features/setup/SetupWizard'
 import LoginPage from './features/auth/LoginPage'
-import LoadingState from './components/LoadingState'
+import BootSkeleton from './components/BootSkeleton'
 import ErrorState from './components/ErrorState'
 import { router } from './router/routes'
 
@@ -12,18 +12,18 @@ function App() {
   const setupComplete = setupStatus.data?.setup_complete === true
   const session = useSession(setupComplete)
 
-  if (setupStatus.isLoading) return <LoadingState />
+  if (setupStatus.isLoading) return <BootSkeleton />
   if (setupStatus.isError) {
     return <ErrorState message={setupStatus.error instanceof Error ? setupStatus.error.message : undefined} />
   }
   if (!setupComplete) return <SetupWizard />
 
-  if (session.isLoading) return <LoadingState />
+  if (session.isLoading) return <BootSkeleton />
   if (session.isError) {
     if (isUnauthenticated(session.error)) return <LoginPage />
     return <ErrorState message={session.error instanceof Error ? session.error.message : undefined} />
   }
-  if (!session.data) return <LoadingState />
+  if (!session.data) return <BootSkeleton />
 
   return <RouterProvider router={router} />
 }

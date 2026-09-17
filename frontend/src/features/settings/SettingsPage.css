@@ -634,6 +634,12 @@
   font-size: 12px;
   margin-top: 3px;
 }
+.setting-control-skel {
+  display: block;
+  width: 140px;
+  height: 42px;
+  border-radius: 12px;
+}
 .setting-row-control {
   display: flex;
   align-items: center;
@@ -685,7 +691,8 @@
     grid-template-columns: 1fr;
     gap: 10px;
   }
-  .setting-row-control input {
+  .setting-row-control input,
+  .setting-control-skel {
     width: 100%;
   }
 }

@@ -2,9 +2,11 @@ import { useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { getRetention, setRetention } from '../../api/settings'
 import { RETENTION_OPTIONS } from '../../lib/retention'
-import LoadingState from '../../components/LoadingState'
+import { SettingsCardSkeleton } from './SettingsSkeleton'
 import ErrorState from '../../components/ErrorState'
 import { ApiError } from '../../api/client'
+
+const RETENTION_SUB = 'Finished, cancelled and failed requests leave the list after this long. Downloads in progress are never removed.'
 
 export default function RetentionPanel() {
   const queryClient = useQueryClient()
@@ -12,7 +14,7 @@ export default function RetentionPanel() {
   const [saving, setSaving] = useState<number | null | undefined>(undefined)
   const [error, setError] = useState<string | null>(null)
 
-  if (query.isLoading) return <LoadingState />
+  if (query.isLoading) return <SettingsCardSkeleton title="History" sub={RETENTION_SUB} rows={4} />
   if (query.isError) {
     return <ErrorState message={query.error instanceof Error ? query.error.message : undefined} />
   }
@@ -33,7 +35,7 @@ export default function RetentionPanel() {
   return (
     <div className="settings-panel-card">
       <h2>History</h2>
-      <p className="settings-sub">Finished, cancelled and failed requests leave the list after this long. Downloads in progress are never removed.</p>
+      <p className="settings-sub">{RETENTION_SUB}</p>
       <div className="settings-server-list">
         {RETENTION_OPTIONS.map((o) => {
           const isSelected = (query.data?.days ?? null) === o.days
