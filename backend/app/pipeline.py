@@ -6,6 +6,7 @@ import time
 from dataclasses import dataclass
 
 from app import config
+from app.normalize import tokenize
 from app.pipeline_settings import PipelineSettings
 from app.qbt import QBTClient, QBTError
 from app.resolve import MediaIdentity, resolve
@@ -190,19 +191,58 @@ def _capture_new_hash(qbt: QBTClient, hashes_before: set[str]) -> str | None:
     QBTError rather than reporting "added" with an untracked, nonexistent
     torrent. The ambiguous case (more than one new hash) is different:
     something was clearly added, so that still returns None as before."""
-    saw_any_new_hash = False
+    new_hashes = _capture_new_hashes(qbt, hashes_before)
+    return next(iter(new_hashes)) if len(new_hashes) == 1 else None
+
+
+def _capture_new_hashes(qbt: QBTClient, hashes_before: set[str]) -> set[str]:
+    """Every hash that appeared since `hashes_before`, once at least one
+    has; raises QBTError when none ever does (see `_capture_new_hash`)."""
     for _ in range(config.HASH_CAPTURE_ATTEMPTS):
-        hashes_after = qbt.existing_torrent_hashes()
-        new_hashes = hashes_after - hashes_before
-        if len(new_hashes) == 1:
-            return next(iter(new_hashes))
-        if len(new_hashes) > 1:
-            saw_any_new_hash = True
-            break
+        new_hashes = qbt.existing_torrent_hashes() - hashes_before
+        if new_hashes:
+            return new_hashes
         time.sleep(config.HASH_CAPTURE_INTERVAL_SECONDS)
-    if not saw_any_new_hash:
-        raise QBTError("qBittorrent never actually added this torrent (still absent after checking several times)")
-    return None
+    raise QBTError("qBittorrent never actually added this torrent (still absent after checking several times)")
+
+
+def _same_release(torrent_name: str | None, file_name: str | None) -> bool:
+    """Whether a torrent qBittorrent lists is the release a search row
+    named — token sets, one within the other, so a tracker's "[Site]"
+    prefix or a missing extension doesn't matter."""
+    if not torrent_name or not file_name:
+        return False
+    extensions = {"mkv", "mp4", "avi", "torrent"}
+    a, b = set(tokenize(torrent_name)) - extensions, set(tokenize(file_name)) - extensions
+    return bool(a and b) and (a <= b or b <= a)
+
+
+def _claim_ours(qbt: QBTClient, new_hashes: set[str], winner: dict, stragglers: list[dict]) -> str | None:
+    """Which of the hashes that appeared after an add is the one just
+    added. A single new hash with nothing else in flight is ours. When an
+    earlier candidate's add had timed out (`stragglers`) it may land late
+    alongside ours — it's told apart by name and removed, so a request
+    never ends up with two downloads. Ambiguous (a concurrent manual add,
+    say) still resolves to None: added, but untracked."""
+    if len(new_hashes) == 1 and not stragglers:
+        return next(iter(new_hashes))
+    ours: str | None = None
+    for torrent_hash in sorted(new_hashes):
+        try:
+            info = qbt.torrent_info(torrent_hash)
+        except QBTError:
+            info = None
+        name = (info or {}).get("name")
+        if _same_release(name, winner.get("fileName")):
+            ours = torrent_hash
+        elif any(_same_release(name, s.get("fileName")) for s in stragglers):
+            try:
+                qbt.delete_torrent(torrent_hash, delete_files=True)
+            except QBTError:
+                pass
+    if ours is None and len(new_hashes) == 1:
+        return next(iter(new_hashes))
+    return ours
 
 
 @dataclass
@@ -238,14 +278,17 @@ def _rank_and_add(
     fitting = _candidates_that_fit(ranked, free_space_bytes)
 
     last_attempt: _AddAttempt | None = None
+    stragglers: list[dict] = []  # candidates whose add never showed up in time — may still land late
     for winner, winner_score in fitting:
         qbt.ensure_category(category)
         try:
             qbt.add_torrent(winner["fileUrl"], category=category)
-            torrent_hash = _capture_new_hash(qbt, existing_hashes)
+            new_hashes = _capture_new_hashes(qbt, existing_hashes)
         except QBTError as exc:
             last_attempt = _AddAttempt(winner=winner, score=winner_score, error=str(exc))
+            stragglers.append(winner)
             continue
+        torrent_hash = _claim_ours(qbt, new_hashes, winner, stragglers)
         return fitting, _AddAttempt(winner=winner, score=winner_score, succeeded=True, torrent_hash=torrent_hash)
 
     return fitting, last_attempt

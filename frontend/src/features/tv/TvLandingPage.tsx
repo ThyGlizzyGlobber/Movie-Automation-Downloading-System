@@ -64,7 +64,10 @@ export default function TvLandingPage() {
 
   // Most-recently-subscribed first — not blocking/critical, so a failed
   // fetch here just means an empty (hidden) row rather than an error page.
+  // Series still going only: a finished show drops off once its last
+  // check records it as ended or cancelled.
   const subscribedShows = (shows.data ?? [])
+    .filter((s) => s.status === 'watching' && s.tmdb_status !== 'Ended' && s.tmdb_status !== 'Canceled')
     .slice()
     .sort((a, b) => b.created_at.localeCompare(a.created_at))
     .map((s) => ({ id: s.tmdb_id, name: s.title, poster_path: s.poster_path }))

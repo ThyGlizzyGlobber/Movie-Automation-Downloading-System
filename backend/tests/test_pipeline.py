@@ -65,12 +65,29 @@ class FakeQBTClient:
 
     def add_torrent(self, file_url, category):
         self.added.append((file_url, category))
+        # A previously added direct-URL torrent that qBittorrent was still
+        # fetching lands now, late (see `late`), alongside this add.
+        for pending_hash in getattr(self, "_pending", []):
+            self._existing_hashes.add(pending_hash)
+        self._pending = []
+        late = getattr(self, "late", {})
+        if file_url in late:
+            self._pending = [late[file_url]]
+            return
         # Mimics qBittorrent indexing the new torrent: a magnet's hash
         # becomes visible in existing_torrent_hashes() right after adding.
         # A non-magnet fileUrl doesn't carry a hash to surface this way.
         match = _BTIH_RE.search(file_url)
         if match:
             self._existing_hashes.add(match.group(1).lower())
+
+    def torrent_info(self, torrent_hash):
+        name = getattr(self, "names", {}).get(torrent_hash)
+        return {"hash": torrent_hash, "name": name} if name else None
+
+    def delete_torrent(self, torrent_hash, delete_files=True):
+        self.deleted = getattr(self, "deleted", []) + [torrent_hash]
+        self._existing_hashes.discard(torrent_hash)
 
 
 def _result(**overrides):
@@ -1113,3 +1130,28 @@ def test_download_pack_series_keeps_the_series_pack_when_it_is_as_good_as_the_se
 
     assert result.status == "added"
     assert result.winner["fileName"] == "Ted.2024.S01-S02.2160p.WEB-DL.x265"
+
+
+def test_download_removes_an_earlier_candidate_that_lands_late(monkeypatch):
+    """Ted (2026-09-17): the first pick's .torrent was slow to fetch, the
+    pipeline gave up on it and added the next candidate, then the first
+    landed too — two season packs downloading. The late one is told apart
+    by name and removed; the request tracks the one it settled on."""
+    monkeypatch.setattr(config, "HASH_CAPTURE_ATTEMPTS", 1)
+    qbt = FakeQBTClient(
+        results_by_variant={
+            "Dune: Part Two": [
+                _result(fileName="Dune.Part.Two.2024.2160p.WEB-DL.mkv", fileUrl="https://slow.example/dune.torrent", nbSeeders=50),
+                _result(fileName="Dune.Part.Two.2024.2160p.WEBRip.mkv", fileUrl="magnet:?xt=urn:btih:BBBB", nbSeeders=40),
+            ]
+        }
+    )
+    qbt.late = {"https://slow.example/dune.torrent": "aaaa"}
+    qbt.names = {"aaaa": "[Site] Dune.Part.Two.2024.2160p.WEB-DL", "bbbb": "Dune.Part.Two.2024.2160p.WEBRip"}
+
+    result = download(693134, FakeTMDBClient(), qbt)
+
+    assert result.status == "added"
+    assert result.winner["fileName"] == "Dune.Part.Two.2024.2160p.WEBRip.mkv"
+    assert result.torrent_hash == "bbbb"
+    assert qbt.deleted == ["aaaa"]

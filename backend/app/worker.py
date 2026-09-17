@@ -1261,6 +1261,7 @@ class Worker:
         tv_settings = resolve_tv_settings(self.store)
 
         show_ended = show_data.get("status") in ("Ended", "Canceled")
+        self.store.set_show_tmdb_status(show.id, show_data.get("status"))
         nothing_handled = not self.store.list_show_episodes(show.id)
         # A complete-series pack is for a show the household has none of;
         # a followed show that has just ended gets its last episodes one
@@ -1325,6 +1326,13 @@ class Worker:
             created += self._check_show_season(
                 show, identity, season_number, episodes, complete, pack_due, tv_settings.episode_air_buffer_hours
             )
+
+        # A show that has ended or been cancelled, with nothing left to
+        # fetch, is done being followed: "Shows you follow" is for series
+        # still going. (A download already on the way finishes on its own.)
+        if show_ended and created == 0 and show.status == "watching":
+            self.store.update_show_status(show.id, "paused")
+            logger.info("show check: show %d (%s) has %s with nothing left to fetch — no longer following", show.id, show.title, show_data.get("status", "ended").lower())
 
         self.store.update_show_last_checked(show.id)
         return created

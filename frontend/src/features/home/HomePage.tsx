@@ -68,7 +68,10 @@ export default function HomePage() {
   // fetch that isn't worth adding twice over piecemeal.
   const subscribedShows = useMemo(
     () =>
+      // Series still going only: a finished show drops off once its last
+      // check records it as ended or cancelled.
       (shows.data ?? [])
+        .filter((s) => s.status === 'watching' && s.tmdb_status !== 'Ended' && s.tmdb_status !== 'Canceled')
         .slice()
         .sort((a, b) => b.created_at.localeCompare(a.created_at))
         .map((s) => ({ id: s.tmdb_id, name: s.title, poster_path: s.poster_path, mediaType: 'tv' as const })),

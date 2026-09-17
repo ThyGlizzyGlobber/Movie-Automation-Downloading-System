@@ -101,8 +101,13 @@ DOWNLOAD_POLL_INTERVAL_SECONDS = int(os.environ.get("DOWNLOAD_POLL_INTERVAL_SECO
 # After add_torrent(), how many times (and how far apart) pipeline.py
 # retries diffing existing_torrent_hashes() to find the new torrent's hash.
 # A direct-.torrent-URL result isn't indexed by qBittorrent instantly —
-# confirmed live during Stage 3 validation (torlock winner, Big Buck Bunny).
-HASH_CAPTURE_ATTEMPTS = 5
+# confirmed live during Stage 3 validation (torlock winner, Big Buck Bunny),
+# and a slow tracker can take well over five seconds to hand the file
+# over (live 2026-09-17: a Ted season pack landed after the pipeline had
+# given up on it and added the next candidate, so both downloaded). A
+# generous window costs a slow request some seconds; a short one costs
+# a duplicate download.
+HASH_CAPTURE_ATTEMPTS = 40
 HASH_CAPTURE_INTERVAL_SECONDS = 1.0
 
 # How often the worker checks whether an automatic request-history

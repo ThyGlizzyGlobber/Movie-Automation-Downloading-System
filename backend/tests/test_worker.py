@@ -940,6 +940,41 @@ def test_pack_with_no_pack_at_all_falls_back_to_one_request_per_aired_episode():
     assert not store.has_show_episode(show.id, 1, 3)
 
 
+def test_check_show_stops_following_a_finished_show_once_nothing_is_left():
+    """Shows you follow is for series still going: an ended show whose
+    episodes are all handled drops off the list on its next check."""
+    store = RequestStore(":memory:")
+    show = store.create_show(tmdb_id=95350, title="Lanterns")
+    row = store.create_episode_request(tmdb_id=95350, show_id=show.id, title="Lanterns", season_number=1, episode_number=1)
+    store.update_status(row.id, "complete")
+    store.add_show_episode(show.id, 1, 1, row.id)
+    tmdb = FakeTMDBClient(
+        show={**SHOW, "number_of_seasons": 1, "status": "Ended"},
+        season_episodes={1: [{"episode_number": 1, "air_date": "2020-01-01"}]},
+    )
+    worker = Worker(store, tmdb, FakeQBTClient())
+
+    assert worker.check_show(show) == 0
+    after = store.get_show(show.id)
+    assert after.status == "paused"
+    assert after.tmdb_status == "Ended"
+
+
+def test_check_show_keeps_following_a_returning_show_with_nothing_new():
+    store = RequestStore(":memory:")
+    show = store.create_show(tmdb_id=95350, title="Lanterns")
+    row = store.create_episode_request(tmdb_id=95350, show_id=show.id, title="Lanterns", season_number=1, episode_number=1)
+    store.update_status(row.id, "complete")
+    store.add_show_episode(show.id, 1, 1, row.id)
+    tmdb = FakeTMDBClient(show={**SHOW, "number_of_seasons": 1, "status": "Returning Series"}, season_episodes={1: [{"episode_number": 1, "air_date": "2020-01-01"}]})
+    worker = Worker(store, tmdb, FakeQBTClient())
+
+    assert worker.check_show(show) == 0
+    after = store.get_show(show.id)
+    assert after.status == "watching"
+    assert after.tmdb_status == "Returning Series"
+
+
 def test_check_show_fetches_a_followed_season_finale_as_one_episode_not_a_pack():
     """Reacher (2026-09-17): episodes 1–7 arrived week by week, the
     finale aired and the check queued the whole season pack. A season the

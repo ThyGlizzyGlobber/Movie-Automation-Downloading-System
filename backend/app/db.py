@@ -149,6 +149,10 @@ class ShowRow:
     # pack request this show later produces and by bulk-download for an
     # already-subscribed show.
     poster_path: str | None = None
+    # TMDB's own status as of the last follow check ("Returning Series",
+    # "Ended", "Canceled"…), so the app can tell a finished show from one
+    # still going without asking TMDB per row.
+    tmdb_status: str | None = None
 
     @classmethod
     def _from_row(cls, row: sqlite3.Row) -> "ShowRow":
@@ -160,6 +164,7 @@ class ShowRow:
             created_at=row["created_at"],
             last_checked_at=row["last_checked_at"],
             poster_path=row["poster_path"],
+            tmdb_status=row["tmdb_status"] if "tmdb_status" in row.keys() else None,
         )
 
 
@@ -330,6 +335,7 @@ class RequestStore:
             )
             # Frontend migration Part J1 — see ShowRow's own comment.
             self._ensure_column("shows", "poster_path", "poster_path TEXT")
+            self._ensure_column("shows", "tmdb_status", "tmdb_status TEXT")
             # Stage 12: the per-episode dedup ledger — distinct from the
             # `requests` audit trail. UNIQUE(show_id, season_number,
             # episode_number) is what makes "already handled" a single
@@ -1001,6 +1007,11 @@ class RequestStore:
     def update_show_status(self, show_id: int, status: str) -> None:
         with self._lock:
             self._conn.execute("UPDATE shows SET status = ? WHERE id = ?", (status, show_id))
+            self._conn.commit()
+
+    def set_show_tmdb_status(self, show_id: int, tmdb_status: str | None) -> None:
+        with self._lock:
+            self._conn.execute("UPDATE shows SET tmdb_status = ? WHERE id = ?", (tmdb_status, show_id))
             self._conn.commit()
 
     def update_show_last_checked(self, show_id: int) -> None:

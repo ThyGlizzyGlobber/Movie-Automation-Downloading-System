@@ -475,6 +475,8 @@ class ShowOut(BaseModel):
     last_checked_at: str | None
     # Frontend migration Part J1 — see RequestRow's own comment.
     poster_path: str | None = None
+    # TMDB's status at the last follow check (see db.ShowRow.tmdb_status).
+    tmdb_status: str | None = None
     # Stage 14: the Watching list's "latest episode status" — the most
     # recent episode/pack request this show has produced, or None if it
     # hasn't been checked yet (e.g. just subscribed, catch-up still queued).
