@@ -9,6 +9,7 @@ import PosterCard from './PosterCard'
 export default function RecentlyAddedRow() {
   const query = useQuery({ queryKey: ['plex-recently-added'], queryFn: getRecentlyAdded, staleTime: 120_000 })
   const data = query.data
+  if (query.isLoading) return <MediaRow title="New" qualifier="in your library" items={[]} mediaType="movie" loading />
   if (!data || !data.available || !data.items.length) return null
   const items = data.items.map((it) => ({ ...it, id: Number(it.rating_key) }))
   return (

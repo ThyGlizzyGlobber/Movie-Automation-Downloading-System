@@ -34,9 +34,10 @@ export default function RequestedRow() {
     if (!prev || r.id > prev.id) byTitle.set(key, r)
   }
   const items = [...byTitle.values()].sort((a, b) => b.id - a.id).slice(0, 20)
-  if (!items.length) return null
+  if (!query.isLoading && !items.length) return null
   return (
     <MediaRow
+      loading={query.isLoading}
       title="On the way"
       qualifier="for the household"
       items={items}

@@ -2,7 +2,7 @@
 reaches the browser; the frontend hotlinks TMDB's public image CDN
 directly instead of proxying images."""
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import requests
 
@@ -401,11 +401,15 @@ class TMDBClient:
 
     @ttl_cache(POPULAR_DISCOVER_TTL_SECONDS)
     def _discover_tv_upcoming(self, region: str = "US", page: int = 1) -> dict:
-        today = datetime.now(timezone.utc).date().isoformat()
+        # From tomorrow: a show premiering today already counts as aired
+        # (is_tv_upcoming), and sorted soonest first, today's premieres
+        # alone can fill page 1, leaving the Coming soon row empty (live
+        # 2026-09-18: 0 of 20 kept).
+        tomorrow = (datetime.now(timezone.utc) + timedelta(days=1)).date().isoformat()
         return self._get(
             "/discover/tv",
             {
-                "first_air_date.gte": today,
+                "first_air_date.gte": tomorrow,
                 "watch_region": region,
                 "page": page,
                 "sort_by": "first_air_date.asc",

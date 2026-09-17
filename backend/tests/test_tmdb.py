@@ -363,7 +363,8 @@ def test_get_tv_coming_soon_keeps_only_unaired_shows(monkeypatch):
     result = client.get_tv_coming_soon(region="US", page=1)
 
     assert captured["path"] == "/discover/tv"
-    assert captured["params"]["first_air_date.gte"] == today
+    tomorrow = (datetime.now(timezone.utc) + timedelta(days=1)).strftime("%Y-%m-%d")
+    assert captured["params"]["first_air_date.gte"] == tomorrow
     # "today" itself isn't strictly in the future, so is_tv_upcoming's own
     # re-check (not just trusting TMDB's date filter) correctly drops it.
     assert [s["name"] for s in result["results"]] == ["Airing Later"]

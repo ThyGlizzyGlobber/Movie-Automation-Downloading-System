@@ -6,6 +6,7 @@ import { movieHeroBadge, movieCertOf, tvHeroBadge, tvCertOf, type TaggedItem } f
 import AmbientGlow from './AmbientGlow'
 import './HeroCarousel.css'
 import Icon from './Icon'
+import { SAMPLE_SYNOPSIS, Skel, SkelWords } from './Skeleton'
 
 const HERO_TRAILER_COUNT = 2 // only the front slides ever get a background video
 const HERO_AUTOPLAY_MS = 7000 // flat dwell time for a poster-only slide
@@ -50,7 +51,55 @@ function movieLength(runtime: number | null): string {
   return h ? `${h}h ${m}m` : `${m}m`
 }
 
-export default function HeroCarousel({ items }: { items: TaggedItem[] }) {
+const HERO_SKELETON_DOTS = 5
+
+// The hero while its titles load: one slide of the same markup, with the
+// backdrop, logo, status line, blurb and buttons as placeholders.
+function HeroSkeleton() {
+  return (
+    <div className="home-hero" aria-busy="true">
+      <div className="home-hero-slide active" aria-hidden="true">
+        <AmbientGlow posterPath={null} />
+        <div className="home-hero-media">
+          <Skel className="home-hero-art-skel" />
+        </div>
+        <div className="home-hero-fade" />
+        <div className="home-hero-content">
+          <div className="home-hero-body">
+            <h1 className="has-logo">
+              <Skel className="hero-logo hero-logo-skel" />
+            </h1>
+            <div className="hero-line">
+              <Skel className="hero-line-skel">
+                <Icon name="chart" />
+                #1 trending this week
+              </Skel>
+            </div>
+            <p className="hero-syn">
+              <SkelWords text={SAMPLE_SYNOPSIS} />
+            </p>
+            <div className="home-hero-actions">
+              <Skel className="btn pri">
+                <Icon name="plus" />
+                Not on Plex yet
+              </Skel>
+              <Skel className="btn sec circ">
+                <Icon name="info" />
+              </Skel>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div className="home-hero-dots" aria-hidden="true">
+        {Array.from({ length: HERO_SKELETON_DOTS }, (_, i) => (
+          <span key={i} className={`home-hero-dot${i === 0 ? ' active' : ''}`} />
+        ))}
+      </div>
+    </div>
+  )
+}
+
+export default function HeroCarousel({ items, loading = false }: { items: TaggedItem[]; loading?: boolean }) {
   const [activeIndex, setActiveIndex] = useState(0)
   const [muted, setMuted] = useState(true)
   const [videoUrls, setVideoUrls] = useState<Record<number, string | null>>({})
@@ -260,6 +309,7 @@ export default function HeroCarousel({ items }: { items: TaggedItem[] }) {
     setCursorNear(e.clientX > r.left - pad && e.clientX < r.right + pad && e.clientY > r.top - pad && e.clientY < r.bottom + pad)
   }
 
+  if (loading) return <HeroSkeleton />
   if (!items.length) return null
 
   return (

@@ -4,7 +4,7 @@ import { getTvDiscoverByGenre, getTvDiscoverByProvider, getTvDiscoverPopular, ge
 import HeroCarousel from '../../components/HeroCarousel'
 import MediaRow from '../../components/MediaRow'
 import ProviderChips from '../../components/ProviderChips'
-import LoadingState from '../../components/LoadingState'
+import { PosterCardSkeleton } from '../../components/Skeleton'
 import ErrorState from '../../components/ErrorState'
 import { usePageTitle, useSetHasHero } from '../../lib/chrome'
 import { ROW_PROVIDERS } from '../../lib/providers'
@@ -32,6 +32,9 @@ const TV_GENRES = [
   { id: 10764, label: 'Reality' },
 ]
 
+// Followed shows carry no year or genre, so their cards have no meta line.
+const followedSkeleton = () => <PosterCardSkeleton meta={false} />
+
 export default function TvLandingPage() {
   usePageTitle('TV Shows')
   useSetHasHero(true)
@@ -58,9 +61,12 @@ export default function TvLandingPage() {
     [trending.data],
   )
 
-  if (trending.isLoading || popular.isLoading || comingSoon.isLoading) return <LoadingState />
+  // Each section shows its own skeleton until its data arrives; the page
+  // only gives way to an error once the main lists have all failed.
   const firstError = trending.error || popular.error || comingSoon.error
-  if (firstError) return <ErrorState message={firstError instanceof Error ? firstError.message : undefined} />
+  if (firstError && !trending.data && !popular.data && !comingSoon.data) {
+    return <ErrorState message={firstError instanceof Error ? firstError.message : undefined} />
+  }
 
   // Most-recently-subscribed first — not blocking/critical, so a failed
   // fetch here just means an empty (hidden) row rather than an error page.
@@ -74,17 +80,18 @@ export default function TvLandingPage() {
 
   return (
     <>
-      <HeroCarousel items={heroItems} />
-      <MediaRow title="Shows" qualifier="you follow" items={subscribedShows} mediaType="tv" expandHref="/tv/watching" />
-      <MediaRow title="Trending" qualifier="shows" items={trending.data?.results ?? []} mediaType="tv" expandHref={browseHref({ type: 'tv', sort: 'trending' })} />
-      <MediaRow title="Popular" items={popular.data?.results ?? []} mediaType="tv" expandHref={browseHref({ type: 'tv' })} />
-      <MediaRow title="Coming" qualifier="soon" items={comingSoon.data?.results ?? []} mediaType="tv" expandHref={browseHref({ type: 'tv', list: 'coming-soon' })} />
+      <HeroCarousel items={heroItems} loading={trending.isLoading} />
+      <MediaRow title="Shows" qualifier="you follow" items={subscribedShows} mediaType="tv" loading={shows.isLoading} renderSkeleton={followedSkeleton} expandHref="/tv/watching" />
+      <MediaRow title="Trending" qualifier="shows" items={trending.data?.results ?? []} mediaType="tv" loading={trending.isLoading} expandHref={browseHref({ type: 'tv', sort: 'trending' })} />
+      <MediaRow title="Popular" items={popular.data?.results ?? []} mediaType="tv" loading={popular.isLoading} expandHref={browseHref({ type: 'tv' })} />
+      <MediaRow title="Coming" qualifier="soon" items={comingSoon.data?.results ?? []} mediaType="tv" loading={comingSoon.isLoading} expandHref={browseHref({ type: 'tv', list: 'coming-soon' })} />
       {TV_GENRES.map((g, i) => (
         <MediaRow
           key={g.id}
           title={g.label}
           items={genreResults[i].data?.results ?? []}
           mediaType="tv"
+          loading={genreResults[i].isLoading}
           expandHref={browseHref({ type: 'tv', genre: g.id })}
         />
       ))}
@@ -101,6 +108,7 @@ export default function TvLandingPage() {
           qualifier={`on ${p.name}`}
           items={providerResults[i].data?.results ?? []}
           mediaType="tv"
+          loading={providerResults[i].isLoading}
           expandHref={browseHref({ type: 'tv', provider: p.id })}
         />
       ))}

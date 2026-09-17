@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import MediaRow from './MediaRow'
 import PosterCard from './PosterCard'
+import { PosterCardSkeleton } from './Skeleton'
 import type { TmdbListItem } from '../types/movies'
 import { rankMoves, type RankMove } from '../lib/topTen'
 import { browseHref } from '../api/browse'
@@ -23,7 +24,7 @@ function MoveChip({ move }: { move: RankMove }) {
 // switch in the header. Numerals are drawn as text with the gradient
 // clipped to the glyph so they read as light through glass rather than
 // as solid digits.
-export default function TopTenRow({ movies, shows }: { movies: TmdbListItem[]; shows: TmdbListItem[] }) {
+export default function TopTenRow({ movies, shows, loading = false }: { movies: TmdbListItem[]; shows: TmdbListItem[]; loading?: boolean }) {
   const [mediaType, setMediaType] = useState<'movie' | 'tv'>('movie')
   const items = useMemo(() => (mediaType === 'movie' ? movies : shows).slice(0, TOP_N), [mediaType, movies, shows])
   const moves = useMemo(
@@ -34,7 +35,7 @@ export default function TopTenRow({ movies, shows }: { movies: TmdbListItem[]; s
       ),
     [mediaType, items],
   )
-  if (!items.length) return null
+  if (!loading && !items.length) return null
 
   return (
     <MediaRow
@@ -43,6 +44,16 @@ export default function TopTenRow({ movies, shows }: { movies: TmdbListItem[]; s
       qualifier="this week"
       items={items}
       mediaType={mediaType}
+      loading={loading}
+      skeletonCount={TOP_N}
+      renderSkeleton={(index) => (
+        <div className="top10-card">
+          <div className="top10-num">{index + 1}</div>
+          <div className="top10-poster">
+            <PosterCardSkeleton caption={false} />
+          </div>
+        </div>
+      )}
       expandHref={browseHref({ type: mediaType, sort: 'trending' })}
       headerRight={
         <div className="seg" role="tablist" aria-label="Top 10 type">

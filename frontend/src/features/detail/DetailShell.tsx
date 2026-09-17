@@ -2,7 +2,7 @@ import type { ReactNode } from 'react'
 import AmbientGlow from '../../components/AmbientGlow'
 import Icon from '../../components/Icon'
 import Img from '../../components/Img'
-import { Skel, SkelText, SkelWords } from '../../components/Skeleton'
+import { SAMPLE_SYNOPSIS, Skel, SkelText, SkelWords } from '../../components/Skeleton'
 import { backdropUrl, logoUrl, posterUrl } from '../../lib/tmdbImage'
 import type { BannerPill } from '../../lib/homeHero'
 import './DetailShell.css'
@@ -216,9 +216,6 @@ export interface DetailSkeletonShape {
 }
 
 const FACT_WIDTHS = ['38%', '62%', '44%', '70%', '56%', '80%', '48%', '66%']
-// A synopsis of typical length (about 300 characters) and a genres line.
-const SAMPLE_SYNOPSIS =
-  'A reluctant hero is pulled back into a world they left behind when an old friend goes missing, and every step toward the truth costs something. Old loyalties are tested, a city keeps its secrets, and the only way out is through the people they swore never to trust again before it is too late.'
 const SAMPLE_GENRES = 'Science Fiction · Adventure'
 
 export function DetailShellSkeleton({ shape, aside, children }: { shape: DetailSkeletonShape; aside?: ReactNode; children?: ReactNode }) {

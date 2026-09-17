@@ -14,7 +14,7 @@ import ContinueWatchingRow from '../../components/ContinueWatchingRow'
 import RecentlyAddedRow from '../../components/RecentlyAddedRow'
 import RequestedRow from '../../components/RequestedRow'
 import ProviderChips from '../../components/ProviderChips'
-import LoadingState from '../../components/LoadingState'
+import { PosterCardSkeleton } from '../../components/Skeleton'
 import ErrorState from '../../components/ErrorState'
 import { usePageTitle, useSetHasHero } from '../../lib/chrome'
 import { mixTrending, tagMediaType } from '../../lib/homeHero'
@@ -36,6 +36,9 @@ const HOME_GENRES = [
 // The merged Home feed — mixes movies and TV into one curated, row-based
 // landing page, alongside (not instead of) the separate movie-only/
 // TV-only Movies/TV pages. No subnav — straight into the hero + rows.
+// Followed shows carry no year or genre, so their cards have no meta line.
+const followedSkeleton = () => <PosterCardSkeleton meta={false} />
+
 export default function HomePage() {
   usePageTitle(null)
   useSetHasHero(true)
@@ -83,11 +86,13 @@ export default function HomePage() {
   // dependency-array stability, not re-rolled on every render.
   const watchingRowPosition = useMemo(() => Math.floor(Math.random() * (HOME_GENRES.length + 4)), [])
 
-  if (movieTrending.isLoading || tvTrending.isLoading || moviePopular.isLoading || tvPopular.isLoading || comingSoon.isLoading) {
-    return <LoadingState />
-  }
+  // Each section shows its own skeleton until its data arrives; the page
+  // only gives way to an error once the main lists have all failed.
+  const trendingLoading = movieTrending.isLoading || tvTrending.isLoading
   const firstError = movieTrending.error || tvTrending.error || moviePopular.error || tvPopular.error || comingSoon.error
-  if (firstError) return <ErrorState message={firstError instanceof Error ? firstError.message : undefined} />
+  if (firstError && !movieTrending.data && !tvTrending.data && !moviePopular.data && !tvPopular.data && !comingSoon.data) {
+    return <ErrorState message={firstError instanceof Error ? firstError.message : undefined} />
+  }
 
   const genreRows = HOME_GENRES.map((g, i) => {
     const movieItems = tagMediaType(genreMovieResults[i].data?.results ?? [], 'movie')
@@ -103,6 +108,7 @@ export default function HomePage() {
         title={g.label}
         items={merged}
         mediaType={(it) => it.mediaType}
+        loading={genreMovieResults[i].isLoading || genreTvResults[i].isLoading}
         expandHref={browseHref({ type: 'movie', genre: g.movieId })}
       />
     )
@@ -110,28 +116,28 @@ export default function HomePage() {
 
   const contentRows = [
     // Top 10 leads, straight under the hero (the reference's order).
-    <TopTenRow key="top10" movies={movieTrending.data?.results ?? []} shows={tvTrending.data?.results ?? []} />,
+    <TopTenRow key="top10" movies={movieTrending.data?.results ?? []} shows={tvTrending.data?.results ?? []} loading={trendingLoading} />,
     // Plex's own Continue Watching; renders nothing when Plex has none.
     <ContinueWatchingRow key="continue" />,
     <RecentlyAddedRow key="recent" />,
     <RequestedRow key="requested" />,
-    <MediaRow key="trending" title="Trending" qualifier="now" items={mixedTrending} mediaType={(it) => it.mediaType} expandHref={browseHref({ type: 'movie', sort: 'trending' })} />,
-    <MediaRow key="popular-movies" title="Popular" qualifier="movies" items={moviePopular.data?.results ?? []} mediaType="movie" expandHref={browseHref({ type: 'movie' })} />,
-    <MediaRow key="popular-tv" title="Popular" qualifier="TV shows" items={tvPopular.data?.results ?? []} mediaType="tv" expandHref={browseHref({ type: 'tv' })} />,
-    <MediaRow key="coming-soon" title="Coming" qualifier="soon" items={comingSoon.data?.results ?? []} mediaType="movie" expandHref={browseHref({ type: 'movie', list: 'coming-soon' })} />,
+    <MediaRow key="trending" title="Trending" qualifier="now" items={mixedTrending} mediaType={(it) => it.mediaType} loading={trendingLoading} expandHref={browseHref({ type: 'movie', sort: 'trending' })} />,
+    <MediaRow key="popular-movies" title="Popular" qualifier="movies" items={moviePopular.data?.results ?? []} mediaType="movie" loading={moviePopular.isLoading} expandHref={browseHref({ type: 'movie' })} />,
+    <MediaRow key="popular-tv" title="Popular" qualifier="TV shows" items={tvPopular.data?.results ?? []} mediaType="tv" loading={tvPopular.isLoading} expandHref={browseHref({ type: 'tv' })} />,
+    <MediaRow key="coming-soon" title="Coming" qualifier="soon" items={comingSoon.data?.results ?? []} mediaType="movie" loading={comingSoon.isLoading} expandHref={browseHref({ type: 'movie', list: 'coming-soon' })} />,
     ...genreRows,
   ]
-  if (subscribedShows.length) {
+  if (shows.isLoading || subscribedShows.length) {
     contentRows.splice(
       Math.min(watchingRowPosition, contentRows.length),
       0,
-      <MediaRow key="subscribed" title="Shows" qualifier="you follow" items={subscribedShows} mediaType="tv" expandHref="/tv/watching" />,
+      <MediaRow key="subscribed" title="Shows" qualifier="you follow" items={subscribedShows} mediaType="tv" loading={shows.isLoading} renderSkeleton={followedSkeleton} expandHref="/tv/watching" />,
     )
   }
 
   return (
     <>
-      <HeroCarousel items={heroItems} />
+      <HeroCarousel items={heroItems} loading={trendingLoading} />
       {contentRows}
       <section className="row">
         <h2>

@@ -4,7 +4,6 @@ import { getDiscoverByGenre, getDiscoverByProvider, getDiscoverPopular, getDisco
 import HeroCarousel from '../../components/HeroCarousel'
 import MediaRow from '../../components/MediaRow'
 import ProviderChips from '../../components/ProviderChips'
-import LoadingState from '../../components/LoadingState'
 import ErrorState from '../../components/ErrorState'
 import { usePageTitle, useSetHasHero } from '../../lib/chrome'
 import { ROW_PROVIDERS } from '../../lib/providers'
@@ -52,22 +51,26 @@ export default function MoviesLandingPage() {
     [trending.data],
   )
 
-  if (trending.isLoading || popular.isLoading || comingSoon.isLoading) return <LoadingState />
+  // Each section shows its own skeleton until its data arrives; the page
+  // only gives way to an error once the main lists have all failed.
   const firstError = trending.error || popular.error || comingSoon.error
-  if (firstError) return <ErrorState message={firstError instanceof Error ? firstError.message : undefined} />
+  if (firstError && !trending.data && !popular.data && !comingSoon.data) {
+    return <ErrorState message={firstError instanceof Error ? firstError.message : undefined} />
+  }
 
   return (
     <>
-      <HeroCarousel items={heroItems} />
-      <MediaRow title="Trending" qualifier="movies" items={trending.data?.results ?? []} mediaType="movie" expandHref={browseHref({ type: 'movie', sort: 'trending' })} />
-      <MediaRow title="Popular" items={popular.data?.results ?? []} mediaType="movie" expandHref={browseHref({ type: 'movie' })} />
-      <MediaRow title="Coming" qualifier="soon" items={comingSoon.data?.results ?? []} mediaType="movie" expandHref={browseHref({ type: 'movie', list: 'coming-soon' })} />
+      <HeroCarousel items={heroItems} loading={trending.isLoading} />
+      <MediaRow title="Trending" qualifier="movies" items={trending.data?.results ?? []} mediaType="movie" loading={trending.isLoading} expandHref={browseHref({ type: 'movie', sort: 'trending' })} />
+      <MediaRow title="Popular" items={popular.data?.results ?? []} mediaType="movie" loading={popular.isLoading} expandHref={browseHref({ type: 'movie' })} />
+      <MediaRow title="Coming" qualifier="soon" items={comingSoon.data?.results ?? []} mediaType="movie" loading={comingSoon.isLoading} expandHref={browseHref({ type: 'movie', list: 'coming-soon' })} />
       {MOVIE_GENRES.map((g, i) => (
         <MediaRow
           key={g.id}
           title={g.label}
           items={genreResults[i].data?.results ?? []}
           mediaType="movie"
+          loading={genreResults[i].isLoading}
           expandHref={browseHref({ type: 'movie', genre: g.id })}
         />
       ))}
@@ -84,6 +87,7 @@ export default function MoviesLandingPage() {
           qualifier={`on ${p.name}`}
           items={providerResults[i].data?.results ?? []}
           mediaType="movie"
+          loading={providerResults[i].isLoading}
           expandHref={browseHref({ type: 'movie', provider: p.id })}
         />
       ))}

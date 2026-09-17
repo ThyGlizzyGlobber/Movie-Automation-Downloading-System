@@ -6,7 +6,6 @@ import { createRequest, rejectRequest } from '../../api/requests'
 import MediaRow from '../../components/MediaRow'
 import RedownloadModal from '../../components/RedownloadModal'
 import RequestModal from '../../components/RequestModal'
-import { MediaRowSkeleton } from '../../components/Skeleton'
 import ErrorState from '../../components/ErrorState'
 import Icon from '../../components/Icon'
 import DetailShell, { DetailShellSkeleton, type DetailPill, type DetailRow, type DetailTile } from '../detail/DetailShell'
@@ -40,7 +39,7 @@ function MovieDetailSkeleton() {
         <DetailTrailerSkeleton />
       </DetailShellSkeleton>
       <div className="detail-rows">
-        <MediaRowSkeleton title="More" qualifier="like this" />
+        <MediaRow loading title="More" qualifier="like this" items={[]} mediaType="movie" />
       </div>
     </>
   )

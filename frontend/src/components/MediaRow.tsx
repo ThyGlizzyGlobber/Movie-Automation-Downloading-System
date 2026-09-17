@@ -1,12 +1,12 @@
 import { useRef, useState, type ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import PosterCard, { type PosterCardItem } from './PosterCard'
+import { PosterCardSkeleton } from './Skeleton'
 import './MediaRow.css'
 import Icon from './Icon'
 
-/* "Trending" + the muted "movies": the heading text, shared with the
-   row's loading skeleton. */
-export function MediaRowHeading({ title, qualifier }: { title: string; qualifier?: string }) {
+/* "Trending" + the muted "movies". */
+function MediaRowHeading({ title, qualifier }: { title: string; qualifier?: string }) {
   return (
     <>
       {title}
@@ -25,6 +25,9 @@ export default function MediaRow<T extends PosterCardItem>({
   headerRight,
   className,
   seeAllLabel = 'See all',
+  loading = false,
+  renderSkeleton,
+  skeletonCount = 10,
 }: {
   title: string
   /* The muted second half of the heading ("Top 10" + "this week"). */
@@ -41,6 +44,12 @@ export default function MediaRow<T extends PosterCardItem>({
   headerRight?: ReactNode
   className?: string
   seeAllLabel?: string
+  /* While the row's data loads: the same heading and track, with
+     skeleton cards (a poster card unless `renderSkeleton` draws the
+     row's own card shape). */
+  loading?: boolean
+  renderSkeleton?: (index: number) => ReactNode
+  skeletonCount?: number
 }) {
   const trackRef = useRef<HTMLDivElement>(null)
   const [atStart, setAtStart] = useState(true)
@@ -62,7 +71,7 @@ export default function MediaRow<T extends PosterCardItem>({
     else track.scrollBy({ left: dir * track.clientWidth, behavior: 'smooth' })
   }
 
-  if (!items.length) return null
+  if (!loading && !items.length) return null
 
   // A row that expands to a full browse page gets a clickable title and
   // a "See all" at the right edge (the reference's row head).
@@ -97,24 +106,38 @@ export default function MediaRow<T extends PosterCardItem>({
       ) : (
         heading
       )}
-      <div className={`hscroll-wrap${atStart ? ' at-start' : ''}`}>
+      <div className={`hscroll-wrap${atStart ? ' at-start' : ''}`} aria-busy={loading || undefined}>
         <div className="hscroll" ref={trackRef} onScroll={handleScroll}>
-          {items.map((item, index) =>
-            renderItem ? (
-              <div key={item.id} className="hscroll-item">
-                {renderItem(item, index)}
-              </div>
-            ) : (
-              <PosterCard key={item.id} item={item} mediaType={mixed ? (mediaType as (i: T) => 'movie' | 'tv')(item) : (mediaType as 'movie' | 'tv')} mixed={mixed} />
-            ),
-          )}
+          {loading
+            ? Array.from({ length: skeletonCount }, (_, index) =>
+                renderSkeleton ? (
+                  <div key={index} className="hscroll-item" aria-hidden="true">
+                    {renderSkeleton(index)}
+                  </div>
+                ) : (
+                  <PosterCardSkeleton key={index} />
+                ),
+              )
+            : items.map((item, index) =>
+                renderItem ? (
+                  <div key={item.id} className="hscroll-item">
+                    {renderItem(item, index)}
+                  </div>
+                ) : (
+                  <PosterCard key={item.id} item={item} mediaType={mixed ? (mediaType as (i: T) => 'movie' | 'tv')(item) : (mediaType as 'movie' | 'tv')} mixed={mixed} />
+                ),
+              )}
         </div>
-        <button className="hscroll-arrow hscroll-arrow-left" aria-label="Scroll left" onClick={() => scrollByPage(-1)}>
-          <Icon name="back" />
-        </button>
-        <button className="hscroll-arrow hscroll-arrow-right" aria-label="Scroll right" onClick={() => scrollByPage(1)}>
-          <Icon name="next" />
-        </button>
+        {!loading && (
+          <>
+            <button className="hscroll-arrow hscroll-arrow-left" aria-label="Scroll left" onClick={() => scrollByPage(-1)}>
+              <Icon name="back" />
+            </button>
+            <button className="hscroll-arrow hscroll-arrow-right" aria-label="Scroll right" onClick={() => scrollByPage(1)}>
+              <Icon name="next" />
+            </button>
+          </>
+        )}
       </div>
     </section>
   )

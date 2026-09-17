@@ -206,6 +206,38 @@
   opacity: 0;
   margin-bottom: 0;
 }
+/* Loading: a backdrop-shaped block where the art will sit (the same
+   right-hand placement and left-edge fade) and a logo-shaped block. */
+.home-hero-art-skel {
+  position: absolute;
+  top: 0;
+  right: 0;
+  height: 100%;
+  aspect-ratio: 16 / 9;
+  border-radius: 0;
+  mask-image: linear-gradient(
+    90deg,
+    transparent 0,
+    rgba(0, 0, 0, 0.35) calc(0.4 * var(--hero-h)),
+    black var(--hero-h)
+  );
+  -webkit-mask-image: linear-gradient(
+    90deg,
+    transparent 0,
+    rgba(0, 0, 0, 0.35) calc(0.4 * var(--hero-h)),
+    black var(--hero-h)
+  );
+}
+.hero-line-skel {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.hero-logo.hero-logo-skel {
+  width: 100vw;
+  aspect-ratio: 4 / 1;
+  height: auto;
+}
 /* Rolling button label ("On Plex" → "Watch now"). */
 .flip {
   display: inline-grid;
@@ -336,7 +368,8 @@
    crop) instead of hugging the right edge with a left-hand fade. */
 @media (max-width: 639px) {
   .home-hero-media img,
-  .home-hero-video-wrap {
+  .home-hero-video-wrap,
+  .home-hero-art-skel {
     width: 100%;
     height: 100%;
     object-fit: cover;

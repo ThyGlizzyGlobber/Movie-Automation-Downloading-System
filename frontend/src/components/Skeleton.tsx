@@ -1,11 +1,15 @@
 import type { CSSProperties, ReactNode } from 'react'
-import { MediaRowHeading } from './MediaRow'
 
 // Loading placeholders (styles/skeleton.css). Pages build their loading
 // state from their own markup with these in the gaps, so the skeleton
 // takes the loaded layout's size at every width.
 
 type Width = number | string
+
+// Sample text of typical length for text still to come: a synopsis of
+// about 300 characters.
+export const SAMPLE_SYNOPSIS =
+  'A reluctant hero is pulled back into a world they left behind when an old friend goes missing, and every step toward the truth costs something. Old loyalties are tested, a city keeps its secrets, and the only way out is through the people they swore never to trust again before it is too late.'
 
 function widthStyle(width?: Width): CSSProperties | undefined {
   if (width == null) return undefined
@@ -35,8 +39,9 @@ export function SkelWords({ text }: { text: string }) {
   )
 }
 
-/* A poster card as the rows and grids draw it: art, title, meta line. */
-export function PosterCardSkeleton({ caption = true }: { caption?: boolean }) {
+/* A poster card as the rows and grids draw it: art, title, and the
+   "year · genre" line unless the row's cards have none. */
+export function PosterCardSkeleton({ caption = true, meta = true }: { caption?: boolean; meta?: boolean }) {
   return (
     <div className="poster-card" aria-hidden="true">
       <div className="poster-art">
@@ -47,29 +52,13 @@ export function PosterCardSkeleton({ caption = true }: { caption?: boolean }) {
           <b>
             <SkelText width="78%" />
           </b>
-          <small>
-            <SkelText width="48%" />
-          </small>
+          {meta && (
+            <small>
+              <SkelText width="48%" />
+            </small>
+          )}
         </div>
       )}
     </div>
-  )
-}
-
-/* A poster row with its real heading and shimmer cards. */
-export function MediaRowSkeleton({ title, qualifier, count = 10 }: { title: string; qualifier?: string; count?: number }) {
-  return (
-    <section className="row" aria-busy="true">
-      <h2>
-        <MediaRowHeading title={title} qualifier={qualifier} />
-      </h2>
-      <div className="hscroll-wrap">
-        <div className="hscroll">
-          {Array.from({ length: count }, (_, i) => (
-            <PosterCardSkeleton key={i} />
-          ))}
-        </div>
-      </div>
-    </section>
   )
 }
