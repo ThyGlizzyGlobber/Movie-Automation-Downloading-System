@@ -105,7 +105,7 @@ export default function MovieDetailPage() {
       ? { label: 'Status', value: (<><Icon name="check-circle" />Available on Plex</>), tone: 'mint' }
       : { label: 'Status', value: movie.is_coming_soon ? 'Coming soon' : active ? 'On the way' : 'Not on Plex yet', tone: active ? 'ice' : 'dim' },
   )
-  if (requests[0]?.requested_by_username) sideTiles.push({ label: 'Requested by', value: requests[0].requested_by_username })
+  if (requests[0]?.requested_by_username) sideTiles.push({ label: 'Requested by', value: requests[0].requested_by_username, wide: true })
 
   const fileTiles: DetailTile[] | null = winner
     ? [
