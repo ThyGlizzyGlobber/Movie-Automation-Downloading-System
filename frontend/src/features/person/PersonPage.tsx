@@ -6,6 +6,8 @@ import LoadingState from '../../components/LoadingState'
 import ErrorState from '../../components/ErrorState'
 import EmptyState from '../../components/EmptyState'
 import { usePageTitle, useSetHasHero } from '../../lib/chrome'
+import { profileUrl } from '../../lib/tmdbImage'
+import './PersonPage.css'
 
 // A cast member's own page — their filmography, reusing the same
 // PosterCard/.grid every other mixed movie/TV list already uses, since
@@ -25,12 +27,17 @@ export default function PersonPage() {
   }
 
   const count = person.credits.length
+  const role = person.known_for_department === 'Acting' ? 'Actor' : person.known_for_department || null
+  const meta = [role, `${count} title${count === 1 ? '' : 's'}`].filter(Boolean).join(' · ')
 
   return (
     <>
-      <h1 className="page-title">{person.name || 'Unknown'}</h1>
-      <div className="page-subtitle">
-        {count} result{count === 1 ? '' : 's'} with {person.name || 'this person'}
+      <div className="person-head">
+        <img src={profileUrl(person.profile_path)} alt="" />
+        <div>
+          <h1 className="page-title">{person.name || 'Unknown'}</h1>
+          <div className="person-head-meta">{meta}</div>
+        </div>
       </div>
       {count ? (
         <div className="grid person-grid">
