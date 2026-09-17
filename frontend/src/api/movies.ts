@@ -33,6 +33,13 @@ export function getMovie(tmdbId: number) {
   return request<MovieDetail>(`/api/movies/${tmdbId}`)
 }
 
+// "This copy is broken" for the filed copy of a movie: the library ledger
+// (or, for a file Meridian never added, Plex) points at it; it's deleted
+// and its release blacklisted for the title.
+export function rejectCurrentMovieCopy(tmdbId: number) {
+  return request<{ removed: string[] }>(`/api/movies/${tmdbId}/reject-current`, { method: 'POST' })
+}
+
 export function getMovieTrailer(tmdbId: number) {
   return request<MovieTrailer>(`/api/movies/${tmdbId}/trailer`)
 }

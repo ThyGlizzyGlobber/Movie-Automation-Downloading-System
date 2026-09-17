@@ -88,6 +88,7 @@ def _search_variant(
     identity: MediaIdentity,
     existing_hashes: set[str],
     settings: PipelineSettings,
+    excluded_releases: list[dict] | None = None,
 ) -> list[dict]:
     # Search unscoped ("all"), not `settings.category` — confirmed live
     # (Stage 12's real Lanterns S01E03 validation) that at least one real,
@@ -103,6 +104,11 @@ def _search_variant(
     raw_results = qbt.search(variant, category="all")
     trustworthy = [r for r in raw_results if is_trustworthy(r)]
     relevant = [r for r in trustworthy if passes_relevance_gate(r.get("fileName", ""), identity, settings)]
+    if excluded_releases:
+        # A copy rejected without a hash (this app never added it) is
+        # skipped however it's listed — matched by size, or by a name
+        # that still says which release it was.
+        relevant = [r for r in relevant if not any(_is_rejected_release(r, rej) for rej in excluded_releases)]
     viable = [r for r in relevant if passes_viability_gate(r, settings)]
     deduped = dedup_candidates(viable)
     return exclude_existing(deduped, existing_hashes)
@@ -217,6 +223,25 @@ def _same_release(torrent_name: str | None, file_name: str | None) -> bool:
     return bool(a and b) and (a <= b or b <= a)
 
 
+# A name only identifies a release when it still carries release
+# metadata; "Title (Year)" after filing names every copy at once.
+_RELEASE_METADATA_TOKENS = {"2160p", "1080p", "720p", "480p", "4k", "uhd", "remux", "bluray", "brrip", "bdrip", "web", "webrip", "webdl", "hdtv", "dvdrip", "x264", "x265", "h264", "h265", "hevc", "avc", "xvid"}
+
+
+def _is_rejected_release(candidate: dict, rejected: dict) -> bool:
+    """Whether a search row is a copy rejected without a torrent hash:
+    the same size within half a percent (the fingerprint that survives a
+    rename), or the same release name when that name still carries
+    release metadata."""
+    size, rejected_size = candidate.get("fileSize") or 0, rejected.get("size_bytes") or 0
+    if size > 0 and rejected_size > 0 and abs(size - rejected_size) <= rejected_size * 0.005:
+        return True
+    name = rejected.get("name") or ""
+    if set(tokenize(name)) & _RELEASE_METADATA_TOKENS:
+        return _same_release(candidate.get("fileName"), name)
+    return False
+
+
 def _claim_ours(qbt: QBTClient, new_hashes: set[str], winner: dict, stragglers: list[dict]) -> str | None:
     """Which of the hashes that appeared after an add is the one just
     added. A single new hash with nothing else in flight is ours. When an
@@ -300,6 +325,7 @@ def download(
     qbt: QBTClient,
     settings: PipelineSettings | None = None,
     excluded_hashes: set[str] | None = None,
+    excluded_releases: list[dict] | None = None,
 ) -> DownloadResult:
     """`excluded_hashes` (Stage 15): torrent hashes explicitly rejected as
     genuinely defective on a previous attempt for this same movie (see
@@ -316,7 +342,7 @@ def download(
 
     candidates = _merge_variant_candidates(
         identity.variants,
-        lambda variant: _search_variant(qbt, variant, identity, existing_hashes, settings),
+        lambda variant: _search_variant(qbt, variant, identity, existing_hashes, settings, excluded_releases),
     )
     if not candidates:
         return DownloadResult(status="no qualifying results", identity=identity)

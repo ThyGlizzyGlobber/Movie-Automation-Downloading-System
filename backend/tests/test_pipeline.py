@@ -1155,3 +1155,39 @@ def test_download_removes_an_earlier_candidate_that_lands_late(monkeypatch):
     assert result.winner["fileName"] == "Dune.Part.Two.2024.2160p.WEBRip.mkv"
     assert result.torrent_hash == "bbbb"
     assert qbt.deleted == ["aaaa"]
+
+
+def test_download_skips_a_rejected_copy_by_size_even_after_it_was_renamed():
+    """A filed copy has been renamed to "Title (Year)", which names every
+    release of the film — its exact size is what still identifies it."""
+    qbt = FakeQBTClient(
+        results_by_variant={
+            "Dune: Part Two": [
+                _result(fileName="Dune.Part.Two.2024.2160p.REMUX.mkv", fileUrl="magnet:?xt=urn:btih:AAAA", fileSize=51_000_000_000),
+                _result(fileName="Dune.Part.Two.2024.2160p.WEB-DL.mkv", fileUrl="magnet:?xt=urn:btih:BBBB", fileSize=20_000_000_000, nbSeeders=50),
+            ]
+        }
+    )
+
+    result = download(693134, FakeTMDBClient(), qbt, excluded_releases=[{"name": "Dune Part Two (2024)", "size_bytes": 51_050_000_000}])
+
+    assert result.status == "added"
+    assert result.winner["fileName"] == "Dune.Part.Two.2024.2160p.WEB-DL.mkv"
+
+
+def test_download_skips_a_rejected_copy_by_release_name_when_the_name_still_says_which():
+    qbt = FakeQBTClient(
+        results_by_variant={
+            "Dune: Part Two": [
+                _result(fileName="Dune.Part.Two.2024.2160p.REMUX.mkv", fileUrl="magnet:?xt=urn:btih:AAAA", fileSize=51_000_000_000),
+                _result(fileName="Dune.Part.Two.2024.2160p.WEB-DL.mkv", fileUrl="magnet:?xt=urn:btih:BBBB", fileSize=20_000_000_000, nbSeeders=50),
+            ]
+        }
+    )
+
+    result = download(693134, FakeTMDBClient(), qbt, excluded_releases=[{"name": "Dune.Part.Two.2024.2160p.REMUX", "size_bytes": None}])
+    assert result.winner["fileName"] == "Dune.Part.Two.2024.2160p.WEB-DL.mkv"
+
+    # A bare "Title (Year)" with no size rules nothing out — it would rule out everything.
+    result = download(693134, FakeTMDBClient(), FakeQBTClient(results_by_variant=qbt.results_by_variant), excluded_releases=[{"name": "Dune Part Two (2024)", "size_bytes": None}])
+    assert result.winner["fileName"] == "Dune.Part.Two.2024.2160p.REMUX.mkv"

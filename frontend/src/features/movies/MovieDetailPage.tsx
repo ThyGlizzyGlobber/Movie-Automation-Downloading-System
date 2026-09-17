@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useParams } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { getMovie } from '../../api/movies'
+import { getMovie, rejectCurrentMovieCopy } from '../../api/movies'
 import { createRequest, rejectRequest } from '../../api/requests'
 import MediaRow from '../../components/MediaRow'
 import RedownloadModal from '../../components/RedownloadModal'
@@ -216,17 +216,20 @@ export default function MovieDetailPage() {
       <RedownloadModal
         open={modalOpen}
         targetLabel={title}
-        trackedAvailable={movie.on_plex_tracked}
+        trackedAvailable={movie.on_plex_tracked || !!movie.plex_file_available}
         canReject
         onClose={() => setModalOpen(false)}
         onChoose={async (mode) => {
           setModalOpen(false)
           if (mode === 'reject') {
-            // Bin the copy on record (blacklisting its release), then ask afresh.
-            const current = requests.find((r) => r.status === 'complete' || r.status === 'downloading')
-            if (!current) return
+            // Bin the copy (blacklisting its release), then ask afresh. A copy
+            // still downloading is rejected by its request; a filed one through
+            // the library ledger (or, for a file Meridian never added, the file
+            // Plex points at).
+            const downloading = requests.find((r) => r.status === 'downloading')
             try {
-              await rejectRequest(current.id)
+              if (downloading) await rejectRequest(downloading.id)
+              else await rejectCurrentMovieCopy(tmdbId)
             } catch (err) {
               toast({ tone: 'error', title: "Couldn't bin that copy", body: errorText(err) })
               return

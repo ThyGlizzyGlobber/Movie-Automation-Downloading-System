@@ -5,6 +5,7 @@ A single connection with `check_same_thread=False` guarded by a
 `asyncio.to_thread` so a query never blocks the event loop."""
 
 import json
+import os
 import secrets
 import sqlite3
 from dataclasses import dataclass
@@ -274,6 +275,7 @@ class RequestStore:
         self._conn = sqlite3.connect(str(db_path), check_same_thread=False)
         self._conn.row_factory = sqlite3.Row
         self._init_schema()
+        self._backfill_library_items()
 
     def _init_schema(self) -> None:
         with self._lock:
@@ -380,6 +382,39 @@ class RequestStore:
                     torrent_hash TEXT NOT NULL,
                     created_at TEXT NOT NULL,
                     UNIQUE(tmdb_id, torrent_hash)
+                )
+                """
+            )
+            # The library ledger: every file this app filed, kept for as long
+            # as the file is — clearing request history never touches it.
+            # This, not the request row, is how the app knows a title on
+            # Plex is one it added, which release it was, and where it is.
+            self._conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS library_items (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    tmdb_id INTEGER NOT NULL,
+                    media_type TEXT NOT NULL,
+                    season_number INTEGER,
+                    episode_number INTEGER,
+                    path TEXT NOT NULL UNIQUE,
+                    torrent_hash TEXT,
+                    release_name TEXT,
+                    size_bytes INTEGER,
+                    request_id INTEGER,
+                    created_at TEXT NOT NULL
+                )
+                """
+            )
+            self._conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS rejected_releases (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    tmdb_id INTEGER NOT NULL,
+                    name TEXT NOT NULL,
+                    size_bytes INTEGER,
+                    created_at TEXT NOT NULL,
+                    UNIQUE(tmdb_id, name)
                 )
                 """
             )
@@ -819,6 +854,7 @@ class RequestStore:
             }
             if superseded_paths:
                 merged["superseded_paths"] = superseded_paths
+            self._record_library_items(request_id, organized_paths, merged)
             self._conn.execute(
                 "UPDATE requests SET status = 'complete', error_message = NULL, result_json = ?, "
                 "source_cleanup_status = 'pending', source_cleanup_next_attempt_at = ?, updated_at = ? "
@@ -966,6 +1002,91 @@ class RequestStore:
             "SELECT torrent_hash FROM rejected_torrents WHERE tmdb_id = ?", (tmdb_id,)
         ).fetchall()
         return {row["torrent_hash"] for row in rows}
+
+    # -- library_items: what this app filed, durable across history clears --
+
+    def _record_library_items(self, request_id: int, paths: list[str], result: dict) -> None:
+        """Inside `mark_organized`'s lock: one ledger row per filed path,
+        carrying the request's identity and the release it came from."""
+        row = self._conn.execute("SELECT * FROM requests WHERE id = ?", (request_id,)).fetchone()
+        if row is None:
+            return
+        winner = result.get("winner") or {}
+        now = _now()
+        for path in paths:
+            try:
+                size = os.path.getsize(path)
+            except OSError:
+                size = None
+            self._conn.execute(
+                "INSERT INTO library_items (tmdb_id, media_type, season_number, episode_number, path, torrent_hash, "
+                "release_name, size_bytes, request_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
+                "ON CONFLICT(path) DO UPDATE SET tmdb_id = excluded.tmdb_id, torrent_hash = excluded.torrent_hash, "
+                "release_name = excluded.release_name, size_bytes = excluded.size_bytes, request_id = excluded.request_id, "
+                "created_at = excluded.created_at",
+                (
+                    row["tmdb_id"],
+                    row["media_type"],
+                    row["season_number"],
+                    row["episode_number"],
+                    path,
+                    result.get("torrent_hash"),
+                    winner.get("fileName"),
+                    size,
+                    request_id,
+                    now,
+                ),
+            )
+
+    def _backfill_library_items(self) -> None:
+        """One-off on start: ledger rows for files filed before the ledger
+        existed, from whatever complete request rows are still around."""
+        rows = self._conn.execute(
+            "SELECT id, result_json FROM requests WHERE status = 'complete' AND result_json LIKE '%organized_paths%'"
+        ).fetchall()
+        with self._lock:
+            for row in rows:
+                try:
+                    result = json.loads(row["result_json"]) if row["result_json"] else {}
+                except ValueError:
+                    continue
+                paths = [p for p in result.get("organized_paths") or [] if isinstance(p, str)]
+                if paths:
+                    self._record_library_items(row["id"], paths, result)
+            self._conn.commit()
+
+    def get_library_items(self, tmdb_id: int, media_type: str | None = None) -> list[dict]:
+        """The files this app filed for a title, newest first."""
+        if media_type:
+            rows = self._conn.execute(
+                "SELECT * FROM library_items WHERE tmdb_id = ? AND media_type = ? ORDER BY id DESC", (tmdb_id, media_type)
+            ).fetchall()
+        else:
+            rows = self._conn.execute("SELECT * FROM library_items WHERE tmdb_id = ? ORDER BY id DESC", (tmdb_id,)).fetchall()
+        return [dict(r) for r in rows]
+
+    def remove_library_item(self, path: str) -> None:
+        with self._lock:
+            self._conn.execute("DELETE FROM library_items WHERE path = ?", (path,))
+            self._conn.commit()
+
+    def add_rejected_release(self, tmdb_id: int, name: str, size_bytes: int | None = None) -> None:
+        """Blacklists a copy this app didn't add itself (so there's no
+        torrent hash on record): the file's name as Plex held it and its
+        exact size. The size is the real fingerprint — a filed copy has
+        usually been renamed to "Title (Year)", which names nothing — and
+        the name only counts when it still carries release metadata
+        (see pipeline._is_rejected_release)."""
+        with self._lock:
+            self._conn.execute(
+                "INSERT OR IGNORE INTO rejected_releases (tmdb_id, name, size_bytes, created_at) VALUES (?, ?, ?, ?)",
+                (tmdb_id, name, size_bytes, _now()),
+            )
+            self._conn.commit()
+
+    def get_rejected_releases(self, tmdb_id: int) -> list[dict]:
+        rows = self._conn.execute("SELECT name, size_bytes FROM rejected_releases WHERE tmdb_id = ?", (tmdb_id,)).fetchall()
+        return [{"name": row["name"], "size_bytes": row["size_bytes"]} for row in rows]
 
     # -- shows (Stage 12 standing subscriptions) --
 

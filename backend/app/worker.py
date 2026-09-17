@@ -285,7 +285,10 @@ class Worker:
                     rejected_hashes,
                 )
             else:
-                result = await asyncio.to_thread(download, row.tmdb_id, self.tmdb, self.qbt, settings, rejected_hashes)
+                rejected_releases = await asyncio.to_thread(self.store.get_rejected_releases, row.tmdb_id)
+                result = await asyncio.to_thread(
+                    download, row.tmdb_id, self.tmdb, self.qbt, settings, rejected_hashes, rejected_releases
+                )
         except Exception as exc:  # fail safe, not silent — never leave a row stuck
             logger.exception("request %d failed", request_id)
             await asyncio.to_thread(self.store.update_status, request_id, "failed", error_message=str(exc))
@@ -628,11 +631,15 @@ class Worker:
         # nothing extra to schedule in that case.
         superseded_paths: list[str] = []
         if row.redownload_mode == "overwrite":
-            prior = await asyncio.to_thread(self.store.get_latest_organized_request, row.tmdb_id, ("movie",))
-            if prior and prior.id != row.id:
-                superseded_paths = [
-                    p for p in (prior.result or {}).get("organized_paths", []) if p != str(target_path)
-                ]
+            # The library ledger knows every copy this app filed for the
+            # title, however long ago and whether or not the request row
+            # still exists; failing that, the copy Plex points at.
+            items = await asyncio.to_thread(self.store.get_library_items, row.tmdb_id, "movie")
+            superseded_paths = [it["path"] for it in items if it["path"] != str(target_path) and it["request_id"] != row.id]
+            if not superseded_paths:
+                previous = await asyncio.to_thread(plex.local_file_for_title, self.store, "movie", row.title, row.release_year)
+                if previous is not None and str(previous) != str(target_path):
+                    superseded_paths = [str(previous)]
 
         await asyncio.to_thread(
             self.store.mark_organized,
@@ -834,6 +841,7 @@ class Worker:
                 path = Path(path_str)
                 if await asyncio.to_thread(path.exists):
                     await asyncio.to_thread(path.unlink)
+                    await asyncio.to_thread(self.store.remove_library_item, path_str)
                     logger.info(
                         "source cleanup: removed superseded file %r (%s) after redownload overwrite", path_str, label
                     )

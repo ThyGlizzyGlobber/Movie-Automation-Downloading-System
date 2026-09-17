@@ -667,3 +667,47 @@ def test_a_failed_request_does_not_count_as_live_and_gives_up_its_slot():
     assert store.list_show_episodes(show.id)[0].request_id == second.id
     store.update_status(second.id, "complete")
     assert store.has_live_show_episode(show.id, 1, 1) is True
+
+
+def test_rejected_releases_round_trip():
+    store = RequestStore(":memory:")
+    store.add_rejected_release(1, "Mutiny (2026)", 51_000_000_000)
+    store.add_rejected_release(1, "Mutiny (2026)", 51_000_000_000)
+    assert store.get_rejected_releases(1) == [{"name": "Mutiny (2026)", "size_bytes": 51_000_000_000}]
+    assert store.get_rejected_releases(2) == []
+
+
+def test_filing_records_a_library_item_that_survives_clearing_history(tmp_path):
+    """The End of Oak Street (live 2026-09-17): downloaded by Meridian, but
+    "Clear finished" had wiped the request row, and with it the only
+    record that the file was Meridian's. The ledger outlives history."""
+    store = RequestStore(":memory:")
+    filed = tmp_path / "The End of Oak Street (2025).mkv"
+    filed.write_bytes(b"x" * 10)
+    row = store.create_request(tmdb_id=1, title="The End of Oak Street", release_year=2025, query=None)
+    store.update_status(row.id, "downloading", result={"torrent_hash": "abcd", "winner": {"fileName": "The.End.of.Oak.Street.2025.2160p.WEB-DL.mkv"}})
+    store.mark_organized(row.id, [str(filed)], ["abcd"], "2000-01-01T00:00:00+00:00")
+
+    [item] = store.get_library_items(1, "movie")
+    assert (item["path"], item["torrent_hash"], item["release_name"], item["size_bytes"]) == (str(filed), "abcd", "The.End.of.Oak.Street.2025.2160p.WEB-DL.mkv", 10)
+
+    assert store.purge_requests_older_than(days=0) == 1
+    assert store.get_request(row.id) is None
+    assert len(store.get_library_items(1, "movie")) == 1
+
+    store.remove_library_item(str(filed))
+    assert store.get_library_items(1) == []
+
+
+def test_library_items_are_backfilled_from_old_complete_requests(tmp_path):
+    db_file = tmp_path / "app.db"
+    store = RequestStore(str(db_file))
+    row = store.create_request(tmdb_id=1, title="Dune", release_year=2024, query=None)
+    store.update_status(row.id, "complete", result={"torrent_hash": "ffff", "organized_paths": ["/library/Dune (2024).mkv"], "winner": {"fileName": "Dune.2024.2160p.mkv"}})
+    store._conn.execute("DELETE FROM library_items")
+    store._conn.commit()
+    assert store.get_library_items(1) == []
+
+    reopened = RequestStore(str(db_file))
+    [item] = reopened.get_library_items(1, "movie")
+    assert item["torrent_hash"] == "ffff" and item["path"] == "/library/Dune (2024).mkv"

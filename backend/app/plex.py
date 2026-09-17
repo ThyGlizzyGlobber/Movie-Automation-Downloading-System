@@ -17,6 +17,7 @@ from typing import Callable
 from urllib.parse import urlencode
 
 import logging
+from pathlib import Path
 import requests
 
 from app.cache import TTLCache
@@ -264,6 +265,24 @@ class PlexClient:
             return None
         count = items[0].get("leafCount")
         return int(count) if count is not None else None
+
+    def file_paths(self, server_url: str, server_token: str, rating_key: str) -> list[str]:
+        """The media file paths Plex has for an item, as Plex sees them."""
+        response = self.session.get(
+            f"{server_url}/library/metadata/{rating_key}",
+            headers={"Accept": "application/json", "X-Plex-Token": server_token},
+            timeout=10,
+        )
+        if not response.ok:
+            raise PlexError(f"Plex metadata fetch failed: {response.status_code}")
+        items = response.json().get("MediaContainer", {}).get("Metadata", []) or []
+        paths: list[str] = []
+        for item in items:
+            for media in item.get("Media", []) or []:
+                for part in media.get("Part", []) or []:
+                    if part.get("file"):
+                        paths.append(part["file"])
+        return paths
 
     def show_episodes(self, server_url: str, server_token: str, rating_key: str) -> set[tuple[int, int]]:
         """Every episode the server holds for a show, as (season, episode)
@@ -662,3 +681,42 @@ def plex_show_episodes(store, title: str, year: int | None) -> set[tuple[int, in
         episodes = None
     _show_episodes_cache[key] = (now, episodes)
     return episodes
+
+
+def plex_title_files(store, media_type: str, title: str, year: int | None) -> list[str] | None:
+    """The file paths Plex holds for a title, or None when Plex isn't
+    linked or doesn't have it."""
+    settings = store.get_settings()
+    server_url, server_token = settings.get("plex_server_url"), settings.get("plex_server_token")
+    if not server_url or not server_token:
+        return None
+    client = PlexClient(settings.get("plex_client_id") or new_client_identifier())
+    try:
+        item = client.locate(server_url, server_token, media_type, title, year)
+        return client.file_paths(server_url, server_token, item["rating_key"]) if item else None
+    except PlexError:
+        return None
+
+
+def local_file_for_title(store, media_type: str, title: str, year: int | None) -> Path | None:
+    """Where a title's file (per Plex) is from this app's point of view.
+    Plex's own path is used when it exists here; otherwise the file is
+    looked up by name under the library root, since Plex and this app
+    may mount the same library at different paths. None when Plex has
+    no file, or it can't be found from here — nothing is ever deleted
+    on a guess."""
+    from app import config  # late: config reads library roots at call time
+
+    paths = plex_title_files(store, media_type, title, year)
+    if not paths:
+        return None
+    root = config.MOVIE_LIBRARY_ROOT if media_type == "movie" else config.TV_LIBRARY_ROOT
+    for raw in paths:
+        candidate = Path(raw)
+        if candidate.is_file():
+            return candidate
+        if root.is_dir():
+            for found in root.rglob(candidate.name):
+                if found.is_file():
+                    return found
+    return None

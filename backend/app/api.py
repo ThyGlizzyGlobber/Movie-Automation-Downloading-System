@@ -45,7 +45,15 @@ from app.pipeline_settings import (
     resolve_pipeline_settings,
     settings_from_raw,
 )
-from app.plex import LoginSession, PlexClient, PlexError, PlexLinker, new_client_identifier, plex_library_lookup
+from app.plex import (
+    LoginSession,
+    PlexClient,
+    PlexError,
+    PlexLinker,
+    local_file_for_title,
+    new_client_identifier,
+    plex_library_lookup,
+)
 from app.qbt import QBTClient
 from app.resolve import resolve
 from app.tmdb import BROWSE_SORTS, TMDBClient, TMDBError, best_logo_path, best_trailer_key, is_movie_coming_soon, is_tv_upcoming
@@ -707,9 +715,14 @@ def get_movie_detail(
     # Soon titles use this to grey out their own Add to Plex button.
     release_dates = movie.get("release_dates", {}).get("results", [])
     is_coming_soon = is_movie_coming_soon(movie, release_dates, region="US")
+    on_plex = _on_plex_for(movie.get("title") or "", year, "movie", store)
+    tracked = bool(store.get_library_items(tmdb_id, "movie")) or store.get_latest_organized_request(tmdb_id, ("movie",)) is not None
     return {
         **movie,
-        "on_plex": _on_plex_for(movie.get("title") or "", year, "movie", store),
+        "on_plex": on_plex,
+        # A file this app didn't add, but Plex can point at from here: enough
+        # to offer "Replace it" and "This copy is broken" for it.
+        "plex_file_available": bool(on_plex and not tracked and local_file_for_title(store, "movie", movie.get("title") or "", year) is not None),
         "is_coming_soon": is_coming_soon,
         "logo_path": best_logo_path(movie.get("images")),
         # Frontend migration Part K2 — true only when this app has a
@@ -717,7 +730,7 @@ def get_movie_detail(
         # itself, never derived from the same fuzzy on_plex title/year
         # match above. Drives whether "Overwrite existing" is even
         # offered in the redownload confirmation modal.
-        "on_plex_tracked": store.get_latest_organized_request(tmdb_id, ("movie",)) is not None,
+        "on_plex_tracked": tracked,
     }
 
 
@@ -960,13 +973,18 @@ def create_request(
     except TMDBError as exc:
         raise HTTPException(status_code=404, detail=f"tmdb_id {body.tmdb_id} not found") from exc
 
-    if body.redownload_mode == "overwrite" and store.get_latest_organized_request(body.tmdb_id, ("movie",)) is None:
+    if (
+        body.redownload_mode == "overwrite"
+        and not store.get_library_items(body.tmdb_id, "movie")
+        and store.get_latest_organized_request(body.tmdb_id, ("movie",)) is None
+        and local_file_for_title(store, "movie", identity.title, identity.release_year) is None
+    ):
         # Defense in depth — never trust the frontend's button state
         # alone. "Overwrite" is only ever offered against a file this
-        # app has a confirmed record of organizing itself, never a guess
-        # from the same fuzzy on_plex title/year match.
+        # app organized itself, or one Plex can point at from here —
+        # never a guess from the fuzzy on_plex title/year match.
         raise HTTPException(
-            status_code=400, detail="nothing on record for this title that this app organized itself"
+            status_code=400, detail="no file on record for this title, and Plex can't point at one from here"
         )
 
     row = store.create_request(
@@ -1079,6 +1097,58 @@ def cancel_request(
     _cancel_active_torrent(row, store, qbt)
     logger.info("request %d (%s) downloading/complete -> cancelled (via API)", request_id, row.title)
     return RequestOut.from_row(store.get_request(request_id))
+
+
+@router.post("/api/movies/{tmdb_id}/reject-current")
+def reject_current_movie_copy(
+    tmdb_id: int,
+    store: RequestStore = Depends(get_store),
+    tmdb: TMDBClient = Depends(get_tmdb),
+    session: SessionRow = Depends(require_can_request),
+) -> dict:
+    """"This copy is broken" for the copy of a movie on Plex. A copy this
+    app filed is in the library ledger with its torrent hash and release
+    name, however long ago and whether or not the request row still
+    exists: the hash and name are blacklisted for the title and the file
+    deleted. A copy this app never added is found through Plex instead
+    and blacklisted by size and name, for what those are worth. Either
+    way the fresh request that follows can't pick the same release."""
+    try:
+        identity = resolve(tmdb_id, tmdb)
+    except TMDBError as exc:
+        raise HTTPException(status_code=404, detail=f"tmdb_id {tmdb_id} not found") from exc
+
+    removed: list[str] = []
+    items = store.get_library_items(tmdb_id, "movie")
+    if items:
+        for item in items:
+            if item.get("torrent_hash"):
+                store.add_rejected_torrent(tmdb_id, item["torrent_hash"])
+            if item.get("release_name") or item.get("size_bytes"):
+                store.add_rejected_release(tmdb_id, item.get("release_name") or Path(item["path"]).stem, item.get("size_bytes"))
+            path = Path(item["path"])
+            try:
+                path.unlink(missing_ok=True)
+            except OSError as exc:
+                raise HTTPException(status_code=500, detail=f"couldn't delete {path.name}: {exc}") from exc
+            store.remove_library_item(item["path"])
+            removed.append(path.name)
+    else:
+        path = local_file_for_title(store, "movie", identity.title, identity.release_year)
+        if path is None:
+            raise HTTPException(status_code=409, detail="Plex can't point at a file for this title from here")
+        try:
+            size_bytes = path.stat().st_size
+        except OSError:
+            size_bytes = None
+        store.add_rejected_release(tmdb_id, path.stem, size_bytes)
+        try:
+            path.unlink()
+        except OSError as exc:
+            raise HTTPException(status_code=500, detail=f"couldn't delete {path.name}: {exc}") from exc
+        removed.append(path.name)
+    logger.info("movie %d (%s): current copy rejected by %s: %s", tmdb_id, identity.title, session.username, ", ".join(removed))
+    return {"removed": removed}
 
 
 @router.post("/api/requests/{request_id}/reject")

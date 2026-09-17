@@ -973,7 +973,7 @@ def test_get_movie_detail_returns_full_movie(client_and_deps):
     # regardless of no release_dates data being present on the fixture.
     # on_plex_tracked is False — no completed, organized request exists
     # for this tmdb_id in a fresh store.
-    assert response.json() == dict(MOVIE, on_plex=False, is_coming_soon=False, on_plex_tracked=False, logo_path=None)
+    assert response.json() == dict(MOVIE, on_plex=False, plex_file_available=False, is_coming_soon=False, on_plex_tracked=False, logo_path=None)
 
 
 def test_get_movie_detail_on_plex_tracked_true_after_a_completed_organized_request(client_and_deps):
@@ -2819,3 +2819,63 @@ def test_plex_locate_degrades_when_unlinked_and_rejects_bad_type(client_and_deps
     client, _, _, _, _, _ = client_and_deps
     assert client.get("/api/plex/locate", params={"type": "movie", "title": "Undertow"}).json() == {"available": False}
     assert client.get("/api/plex/locate", params={"type": "song", "title": "x"}).status_code == 400
+
+
+def test_reject_current_copy_uses_the_library_ledger_when_this_app_filed_it(client_and_deps, tmp_path):
+    """Meridian's own copy, request history long cleared: the ledger still
+    knows the torrent hash and release, so both are blacklisted and the
+    file removed."""
+    client, store, _, _, _, _ = client_and_deps
+    filed = tmp_path / "Mutiny (2026).mkv"
+    filed.write_bytes(b"x" * 20)
+    row = store.create_request(tmdb_id=693134, title="Dune: Part Two", release_year=2024, query=None)
+    store.update_status(row.id, "downloading", result={"torrent_hash": "dead", "winner": {"fileName": "Mutiny.2026.2160p.REMUX.mkv"}})
+    store.mark_organized(row.id, [str(filed)], ["dead"], "2000-01-01T00:00:00+00:00")
+    store.purge_requests_older_than(days=0)
+    assert client.get("/api/movies/693134").json()["on_plex_tracked"] is True
+
+    response = client.post("/api/movies/693134/reject-current")
+
+    assert response.status_code == 200, response.text
+    assert response.json() == {"removed": [filed.name]}
+    assert not filed.exists()
+    assert store.get_rejected_torrent_hashes(693134) == {"dead"}
+    assert store.get_rejected_releases(693134) == [{"name": "Mutiny.2026.2160p.REMUX.mkv", "size_bytes": 20}]
+    assert store.get_library_items(693134) == []
+
+
+def test_reject_current_copy_for_a_file_this_app_never_added(client_and_deps, monkeypatch, tmp_path):
+    """The End of Oak Street (live 2026-09-17): on Plex, but not added by
+    Meridian, so "This copy is broken" was greyed out. Plex points at the
+    file; it's deleted and its release name blacklisted."""
+    from app import api
+
+    filed = tmp_path / "The.End.of.Oak.Street.2025.2160p.WEB-DL.mkv"
+    filed.write_bytes(b"broken")
+    monkeypatch.setattr(api, "local_file_for_title", lambda store, media_type, title, year: filed)
+    client, store, _, _, _, _ = client_and_deps
+
+    response = client.post("/api/movies/693134/reject-current")
+
+    assert response.status_code == 200, response.text
+    assert response.json() == {"removed": [filed.name]}
+    assert not filed.exists()
+    assert store.get_rejected_releases(693134) == [{"name": "The.End.of.Oak.Street.2025.2160p.WEB-DL", "size_bytes": 6}]
+
+    monkeypatch.setattr(api, "local_file_for_title", lambda store, media_type, title, year: None)
+    assert client.post("/api/movies/693134/reject-current").status_code == 409
+
+
+def test_overwrite_is_allowed_when_plex_can_point_at_the_file(client_and_deps, monkeypatch, tmp_path):
+    from app import api
+
+    client, _, _, _, _, _ = client_and_deps
+    monkeypatch.setattr(api, "local_file_for_title", lambda store, media_type, title, year: None)
+    assert client.post("/api/requests", json={"tmdb_id": 693134, "redownload_mode": "overwrite"}).status_code == 400
+
+    filed = tmp_path / "Dune.mkv"
+    filed.write_bytes(b"x")
+    monkeypatch.setattr(api, "local_file_for_title", lambda store, media_type, title, year: filed)
+    assert client.post("/api/requests", json={"tmdb_id": 693134, "redownload_mode": "overwrite"}).status_code == 201
+    detail = client.get("/api/movies/693134").json()
+    assert detail["plex_file_available"] is (detail["on_plex"] is True)
