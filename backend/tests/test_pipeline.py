@@ -1174,10 +1174,15 @@ def test_download_skips_a_rejected_copy_by_size_even_after_it_was_renamed():
         }
     )
 
-    result = download(693134, FakeTMDBClient(), qbt, excluded_releases=[{"name": "Dune Part Two (2024)", "size_bytes": 51_050_000_000}])
+    result = download(693134, FakeTMDBClient(), qbt, excluded_releases=[{"name": "Dune Part Two (2024)", "size_bytes": 51_010_000_000}])
 
     assert result.status == "added"
     assert result.winner["fileName"] == "Dune.Part.Two.2024.2160p.WEB-DL.mkv"
+
+    # A merely similar size (half a percent off) is a different encode, not this one.
+    qbt2 = FakeQBTClient(results_by_variant=qbt.results_by_variant)
+    result = download(693134, FakeTMDBClient(), qbt2, excluded_releases=[{"name": "Dune Part Two (2024)", "size_bytes": 51_250_000_000}])
+    assert result.winner["fileName"] == "Dune.Part.Two.2024.2160p.REMUX.mkv"
 
 
 def test_download_skips_a_rejected_copy_by_release_name_when_the_name_still_says_which():

@@ -229,12 +229,14 @@ _RELEASE_METADATA_TOKENS = {"2160p", "1080p", "720p", "480p", "4k", "uhd", "remu
 
 
 def _is_rejected_release(candidate: dict, rejected: dict) -> bool:
-    """Whether a search row is a copy rejected without a torrent hash:
-    the same size within half a percent (the fingerprint that survives a
-    rename), or the same release name when that name still carries
-    release metadata."""
+    """Whether a search row is a rejected copy: the same release name
+    when that name still carries release metadata, or — only when a
+    rejection had nothing but the file to go on — the same size to
+    within a twentieth of a percent (10 MB on a 20 GB file: identical
+    streams, not merely a similar encode; live 2026-09-17 a half-percent
+    band swallowed a different 2160p release of Mutiny)."""
     size, rejected_size = candidate.get("fileSize") or 0, rejected.get("size_bytes") or 0
-    if size > 0 and rejected_size > 0 and abs(size - rejected_size) <= rejected_size * 0.005:
+    if size > 0 and rejected_size > 0 and abs(size - rejected_size) <= rejected_size * 0.0005:
         return True
     name = rejected.get("name") or ""
     if set(tokenize(name)) & _RELEASE_METADATA_TOKENS:

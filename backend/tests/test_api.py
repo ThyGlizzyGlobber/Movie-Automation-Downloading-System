@@ -587,7 +587,7 @@ def test_reject_by_request_also_blacklists_the_release_name_and_size(client_and_
 
     assert client.post(f"/api/requests/{created['id']}/reject").status_code == 200
     assert store.get_rejected_torrent_hashes(693134) == {"aaaa"}
-    assert store.get_rejected_releases(693134) == [{"name": "Mutiny.2026.2160p.REMUX.mkv", "size_bytes": 51_000_000_000}]
+    assert store.get_rejected_releases(693134) == [{"name": "Mutiny.2026.2160p.REMUX.mkv", "size_bytes": None}]
 
 
 def test_reject_works_from_complete_status_too(client_and_deps):
@@ -2857,7 +2857,7 @@ def test_reject_current_copy_uses_the_library_ledger_when_this_app_filed_it(clie
     assert response.json() == {"removed": [filed.name]}
     assert not filed.exists()
     assert store.get_rejected_torrent_hashes(693134) == {"dead"}
-    assert store.get_rejected_releases(693134) == [{"name": "Mutiny.2026.2160p.REMUX.mkv", "size_bytes": 20}]
+    assert store.get_rejected_releases(693134) == [{"name": "Mutiny.2026.2160p.REMUX.mkv", "size_bytes": None}]
     assert store.get_library_items(693134) == []
 
 

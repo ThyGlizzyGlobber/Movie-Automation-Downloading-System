@@ -1124,8 +1124,10 @@ def reject_current_movie_copy(
         for item in items:
             if item.get("torrent_hash"):
                 store.add_rejected_torrent(tmdb_id, item["torrent_hash"])
-            if item.get("release_name") or item.get("size_bytes"):
-                store.add_rejected_release(tmdb_id, item.get("release_name") or Path(item["path"]).stem, item.get("size_bytes"))
+            if item.get("release_name"):
+                store.add_rejected_release(tmdb_id, item["release_name"])
+            elif item.get("size_bytes"):
+                store.add_rejected_release(tmdb_id, Path(item["path"]).stem, item["size_bytes"])
             path = Path(item["path"])
             try:
                 path.unlink(missing_ok=True)
@@ -1201,7 +1203,7 @@ def reject_request(
     # however it's listed.
     winner = (row.result or {}).get("winner") or {}
     if winner.get("fileName"):
-        store.add_rejected_release(row.tmdb_id, winner["fileName"], winner.get("fileSize") or None)
+        store.add_rejected_release(row.tmdb_id, winner["fileName"])
     logger.info(
         "request %d (%s) downloading/complete -> cancelled (rejected, torrent hash blacklisted)",
         request_id,
