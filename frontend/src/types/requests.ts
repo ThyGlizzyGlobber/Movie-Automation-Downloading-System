@@ -22,6 +22,10 @@ export interface RequestOut {
   release_year: number | null
   status: RequestStatus
   error_message: string | null
+  // The pipeline's audit snapshot: which release won and how it scored.
+  // Stays loosely typed because the worker writes several result shapes
+  // into it (movie, episode, pack) plus later additions like
+  // stall_attempts — `RequestPick` narrows the part the UI reads.
   result: Record<string, unknown> | null
   created_at: string
   updated_at: string
@@ -59,4 +63,33 @@ export interface BulkDownloadBody {
   scope: 'season' | 'series'
   season_number?: number | null
   redownload_mode?: RedownloadMode | null
+}
+
+/** The winning candidate and its score, as `worker._result_summary`
+ *  persists them onto `RequestOut.result`. Every field is optional:
+ *  older rows predate parts of the snapshot, and a request that never
+ *  got as far as picking anything has no winner at all. */
+export interface RequestPick {
+  winner?: {
+    fileName?: string | null
+    engineName?: string | null
+    fileSize?: number | null
+    // -1 or missing means the plugin reported no seeder count. That is
+    // a meaningfully different thing from zero, and the reason this is
+    // worth showing: an unreported swarm is the one that strands a
+    // download at 0%.
+    nbSeeders?: number | null
+  } | null
+  score?: {
+    resolution_score?: number
+    source_score?: number
+    codec_score?: number
+    container_score?: number
+    seeder_score?: number
+    composite?: number
+  } | null
+  candidates_considered?: number | null
+  variant_used?: string | null
+  add_error?: string | null
+  stall_attempts?: number | null
 }

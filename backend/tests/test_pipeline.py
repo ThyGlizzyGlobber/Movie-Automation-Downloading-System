@@ -1210,8 +1210,12 @@ def test_download_excludes_a_rejected_release_listed_as_a_direct_torrent_link(_f
     being added at all."""
     results = {
         "Dune: Part Two": [
+            # Equal swarms, so source still decides and the REMUX ranks
+            # first — this test is about rejected-release exclusion, not
+            # ranking, and it needs the direct .torrent link to be the
+            # candidate the pipeline reaches for.
             _result(fileName="Dune.Part.Two.2024.2160p.REMUX.mkv", fileUrl="https://tracker/remux.torrent", fileSize=51_000_000_000, nbSeeders=40),
-            _result(fileName="Dune.Part.Two.2024.2160p.WEB-DL.mkv", fileUrl="magnet:?xt=urn:btih:BBBB", fileSize=20_000_000_000, nbSeeders=50),
+            _result(fileName="Dune.Part.Two.2024.2160p.WEB-DL.mkv", fileUrl="magnet:?xt=urn:btih:BBBB", fileSize=20_000_000_000, nbSeeders=40),
         ]
     }
     qbt = FakeQBTClient(results_by_variant=results)

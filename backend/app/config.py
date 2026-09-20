@@ -234,15 +234,32 @@ CONTAINER_TIERS = (
 # plugin — scoring seeders-first would silently starve results from it).
 # But a bare "not completely dead" floor of 1 doesn't protect against a
 # genuinely slow download, so MIN_SEEDERS is a real practical floor, and
-# SEEDER_TIERS gives ranking a modest nudge (weighted below container) so a
-# much healthier swarm can still edge out an equally-tiered but barely-alive
-# one — without letting seed count override real quality differences.
+# within one resolution SEEDER_TIERS outranks source, codec and container:
+# the healthiest copy of the resolution you asked for is the one that
+# actually arrives.
+#
+# The ladder is deliberately fine. At 10/30/100 it was coarse enough that
+# everything above 100 tied, and inside a tier source and codec decided —
+# so a 2160p REMUX on 100 seeders beat a 2160p WEB-DL on 5000, and a
+# 31-seeder x265 beat a 99-seeder x264 (live 2026-09-21, The Empty Man:
+# "it chose a 13 seed one over the 62 seed one"). Roughly doubling each
+# step means a real health gap always crosses a tier, while counts close
+# enough to be noise — 100 against 105 — stay level and let genuine
+# quality differences decide, which is the behaviour the coarse ladder
+# was reaching for in the first place.
+#
 # Unknown seeders score as tier 1 (viable, not punished — Stage 0's
-# "unknown != zero"), same as a candidate just barely clearing the floor.
+# "unknown != zero"). Since Score.sort_key ranks known-swarm candidates
+# above unknown ones outright, that value only ever compares unknowns
+# against each other, where it is uniform.
 MIN_SEEDERS = 10  # nbSeeders == -1 (unknown) always passes; a known count must clear this
 SEEDER_TIERS = (
-    (3, 100),
-    (2, 30),
+    (7, 1000),
+    (6, 500),
+    (5, 250),
+    (4, 100),
+    (3, 50),
+    (2, 25),
     (1, 10),
 )
 UNKNOWN_SEEDERS_SCORE = 1

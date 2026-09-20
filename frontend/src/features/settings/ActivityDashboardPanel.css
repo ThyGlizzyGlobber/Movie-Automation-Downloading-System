@@ -57,3 +57,33 @@
   color: var(--text-dim);
   margin-top: 2px;
 }
+
+/* The pick: which release won and how healthy its swarm was. Surfaced
+   because it was previously recorded but visible nowhere, so "it chose
+   a bad copy" could only ever be a guess (live 2026-09-21, The Empty
+   Man). The release name is the wide part, so it gets the ellipsis and
+   the full string on hover. */
+.activity-pick-name {
+  font-size: 12px;
+  font-family: var(--font-mono);
+  color: var(--text-dim);
+  margin-top: 6px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.activity-pick-meta {
+  font-size: 12px;
+  color: var(--text-dim);
+  margin-top: 2px;
+}
+.activity-pick-seeds {
+  color: var(--status-complete);
+  font-weight: 700;
+}
+/* An unreported swarm, or a retry after a stall — the two states worth
+   noticing at a glance, since both mean the pick may not be sound. */
+.activity-pick-warn {
+  color: var(--status-nomatch);
+  font-weight: 700;
+}

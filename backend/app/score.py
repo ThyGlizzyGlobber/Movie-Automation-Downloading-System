@@ -332,25 +332,44 @@ def exclude_existing(results: list[dict], existing_hashes: set[str]) -> list[dic
 # Pass two: quality score
 # ---------------------------------------------------------------------------
 
-# Each weight must exceed the maximum possible sum of every lower-priority
-# term, so one tier's difference always dominates the next tier down:
-# resolution > source > codec > seeder health > container. Seeder health
-# sits above container deliberately: a real-world cross-check (Dune: Part
-# Two, 2026-09-04) found a 267-seeder REMUX losing to a 10-seeder release
-# of the same source/codec tier purely because the loser's filename
-# happened to state "MP4" explicitly while the winner's container was
-# unstated (near-certainly MKV by REMUX convention, just not spelled out —
-# and REMUX audio like TrueHD/Atmos barely fits in MP4 anyway). Container
-# format is a much weaker, noisier quality signal than a large swarm-size
-# gap, so it's now the one seeder health is allowed to override; codec and
-# above still can't be — see config.py's SEEDER_TIERS comment.
-# Resolution first, then swarm health, then source and codec: within one
-# resolution a copy hundreds of people are seeding beats a barely-alive
-# REMUX (live 2026-09-17: the same near-dead 2160p REMUX of Mutiny kept
-# winning over well-seeded copies), but seeders never buy a lower
-# resolution.
-_RESOLUTION_WEIGHT = 10000
-_SEEDER_WEIGHT = 1000
+# Priority: resolution > swarm health > source > codec > container.
+#
+# Resolution is absolute — swarm health never buys a lower resolution,
+# because a 1080p copy is not the thing that was asked for however many
+# people are seeding it. Everything below resolution answers a different
+# question: of the copies at the resolution you asked for, which one
+# actually arrives? That is the healthiest swarm, not the best-labelled
+# release, and three separate live cases say so:
+#
+#   - Dune: Part Two, 2026-09-04 — a 267-seeder REMUX lost to a
+#     10-seeder release of the same source/codec tier purely because
+#     the loser's name said "MP4" and the winner's container was
+#     unstated (near-certainly MKV by REMUX convention; TrueHD/Atmos
+#     barely fits in MP4 anyway).
+#   - Mutiny, 2026-09-17 — a near-dead 2160p REMUX kept beating
+#     well-seeded copies of the same resolution.
+#   - The Empty Man, 2026-09-21 — a 2160p pick on a handful of seeders
+#     beat one on far more, because both sat in the same coarse seeder
+#     tier and codec/container decided it.
+#
+# Source, codec and container are weak, noisy signals read out of a
+# filename a stranger wrote; seeder count is measured. So they rank
+# below it and only decide between candidates of comparable health —
+# which, with SEEDER_TIERS' finer ladder, means genuinely comparable
+# rather than "both somewhere above 100".
+#
+# Rescaled 2026-09-21 for that finer ladder: seven tiers at
+# the old weight of 1000 would have reached 7000 and started colliding
+# with resolution's 10000 step, i.e. swarm health silently buying a lower
+# resolution — the one thing it must never do. Each weight still exceeds
+# the largest possible sum of everything below it:
+#   container  2·1                      = 2
+#   codec      2·10                     = 20   > 2
+#   source     5·100                    = 500  > 22
+#   seeders    7·10000                  = 70000 > 522
+#   resolution 4·100000                 = ...  > 70522
+_RESOLUTION_WEIGHT = 100000
+_SEEDER_WEIGHT = 10000
 _SOURCE_WEIGHT = 100
 _CODEC_WEIGHT = 10
 _CONTAINER_WEIGHT = 1

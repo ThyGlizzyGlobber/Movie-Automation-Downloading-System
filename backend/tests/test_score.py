@@ -548,8 +548,17 @@ def test_rank_candidates_raw_seeders_break_tie_within_same_seeder_tier():
 
 
 def test_seeder_tiers():
-    assert score_candidate(_result(nbSeeders=150)).seeder_score == 3
+    """Each step roughly doubles, so a real health gap crosses a tier
+    while counts close enough to be noise stay level."""
+    assert score_candidate(_result(nbSeeders=5000)).seeder_score == 7
+    assert score_candidate(_result(nbSeeders=1000)).seeder_score == 7
+    assert score_candidate(_result(nbSeeders=500)).seeder_score == 6
+    assert score_candidate(_result(nbSeeders=250)).seeder_score == 5
+    assert score_candidate(_result(nbSeeders=150)).seeder_score == 4
+    assert score_candidate(_result(nbSeeders=100)).seeder_score == 4
+    assert score_candidate(_result(nbSeeders=50)).seeder_score == 3
     assert score_candidate(_result(nbSeeders=30)).seeder_score == 2
+    assert score_candidate(_result(nbSeeders=25)).seeder_score == 2
     assert score_candidate(_result(nbSeeders=10)).seeder_score == 1
     assert score_candidate(_result(nbSeeders=9)).seeder_score == 0
     assert score_candidate(_result(nbSeeders=-1)).seeder_score == 1  # unknown: viable, not punished, but not rewarded either
@@ -573,11 +582,53 @@ def test_rank_candidates_seed_health_outranks_source_and_codec_but_never_resolut
     assert [r[0]["fileUrl"][-1] for r in ranked] == ["2", "1", "3"]
 
 
-def test_rank_candidates_same_seeder_tier_still_prefers_the_better_source():
+def test_rank_candidates_comparable_health_still_prefers_the_better_source():
+    """Source, codec and container still decide — but only between
+    candidates whose swarms are genuinely comparable. 150 and 200 sit in
+    the same tier, so the difference is noise and quality wins."""
     remux = _result(fileName="Dune.2024.2160p.REMUX.mkv", fileSize=40_000_000_000, nbSeeders=150, fileUrl="magnet:?xt=urn:btih:1")
-    webdl = _result(fileName="Dune.2024.2160p.WEB-DL.mkv", fileSize=20_000_000_000, nbSeeders=400, fileUrl="magnet:?xt=urn:btih:2")
+    webdl = _result(fileName="Dune.2024.2160p.WEB-DL.mkv", fileSize=20_000_000_000, nbSeeders=200, fileUrl="magnet:?xt=urn:btih:2")
 
     ranked = rank_candidates([remux, webdl])
+    assert ranked[0][0]["fileUrl"] == "magnet:?xt=urn:btih:1"
+
+
+def test_rank_candidates_a_real_health_gap_beats_a_better_source():
+    """The counterpart: 150 against 5000 is not noise. The old 10/30/100
+    ladder put both in its top tier and let source decide, so a REMUX on
+    100 seeders beat a WEB-DL on 5000 — the copy that would actually
+    have arrived first, at the same resolution."""
+    remux = _result(fileName="Dune.2024.2160p.REMUX.mkv", fileSize=40_000_000_000, nbSeeders=150, fileUrl="magnet:?xt=urn:btih:1")
+    webdl = _result(fileName="Dune.2024.2160p.WEB-DL.mkv", fileSize=20_000_000_000, nbSeeders=5000, fileUrl="magnet:?xt=urn:btih:2")
+
+    ranked = rank_candidates([remux, webdl])
+    assert ranked[0][0]["fileUrl"] == "magnet:?xt=urn:btih:2"
+
+
+def test_rank_candidates_healthier_swarm_beats_codec_and_container():
+    """Live 2026-09-21, The Empty Man: the pick sat on a fraction of the
+    seeders another copy of the same resolution had, because both landed
+    in one coarse tier and codec/container broke the tie. A filename's
+    codec claim is a weaker signal than a measured swarm three times the
+    size."""
+    fewer_seeds_better_labels = _result(
+        fileName="The.Empty.Man.2020.2160p.WEB-DL.x265.mkv", fileSize=18_000_000_000, nbSeeders=31, fileUrl="magnet:?xt=urn:btih:1"
+    )
+    healthier = _result(
+        fileName="The.Empty.Man.2020.2160p.WEB-DL.x264.mp4", fileSize=18_000_000_000, nbSeeders=99, fileUrl="magnet:?xt=urn:btih:2"
+    )
+
+    ranked = rank_candidates([fewer_seeds_better_labels, healthier])
+    assert ranked[0][0]["fileUrl"] == "magnet:?xt=urn:btih:2"
+
+
+def test_rank_candidates_swarm_health_never_buys_a_lower_resolution():
+    """The one thing the rescale must not break: 4K asked for is 4K
+    delivered, however popular the 1080p copy is."""
+    uhd_thin = _result(fileName="Dune.2024.2160p.WEB-DL.x265.mkv", fileSize=20_000_000_000, nbSeeders=10, fileUrl="magnet:?xt=urn:btih:1")
+    fhd_huge = _result(fileName="Dune.2024.1080p.REMUX.mkv", fileSize=30_000_000_000, nbSeeders=5000, fileUrl="magnet:?xt=urn:btih:2")
+
+    ranked = rank_candidates([uhd_thin, fhd_huge])
     assert ranked[0][0]["fileUrl"] == "magnet:?xt=urn:btih:1"
 
 
