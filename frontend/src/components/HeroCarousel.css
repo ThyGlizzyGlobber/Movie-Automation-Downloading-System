@@ -124,8 +124,17 @@
 }
 /* Prime-style hero body: logo or title, one status line, the buttons,
    and an availability line. Nothing else competes with the artwork. */
+/* Full width of the content box, not a 640px column. The logo's
+   max-width is a percentage (to match the banner's), and a percentage
+   needs a definite basis: in a shrink-to-fit box the logo's width would
+   depend on the box that depends on the logo, and it collapsed to 0.
+   Width here resolves against .home-hero-content's box, whose 48px
+   padding is the same inset .detail-banner-text uses — so the same
+   percentage lands on the same number in both heroes.
+   The prose that actually wanted a measure keeps its own: .hero-syn is
+   capped at 52ch below. */
 .home-hero-body {
-  max-width: 640px;
+  width: 100%;
   min-width: 0;
 }
 .home-hero-body h1 {
@@ -139,14 +148,18 @@
 .home-hero-body h1.has-logo {
   line-height: 0;
 }
-/* Sized against the viewport rather than a fixed ceiling: the frame's
-   height is now a function of its width, so a logo capped at a constant
-   170px would swallow a short frame on a narrow screen. */
+/* The same ceiling a content page's banner logo uses (DetailShell.css's
+   .detail-banner-text .detail-logo), so a title's logo is the same size
+   whichever hero it appears in — the two frames are the same width at
+   any given viewport, so the percentage resolves to the same number.
+   In practice the width is what binds: a typical 4:1 logo hits 44% long
+   before it reaches 240px tall, and the max-height only catches the
+   unusually square ones. */
 .hero-logo {
   display: block;
   width: auto;
-  max-width: min(480px, 50%);
-  max-height: clamp(44px, 9vw, 150px);
+  max-width: min(720px, 44%);
+  max-height: 240px;
   object-fit: contain;
   object-position: left bottom;
   filter: drop-shadow(0 12px 30px rgba(0, 0, 0, 0.55));
