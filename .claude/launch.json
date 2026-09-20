@@ -3,13 +3,10 @@
   "configurations": [
     {
       "name": "frontend-dev",
-      "runtimeExecutable": "npm",
+      "runtimeExecutable": "node",
       "runtimeArgs": [
-        "--prefix",
+        "frontend/node_modules/vite/bin/vite.js",
         "frontend",
-        "run",
-        "dev",
-        "--",
         "--host"
       ],
       "port": 5173
