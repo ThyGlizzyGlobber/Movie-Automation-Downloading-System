@@ -45,7 +45,6 @@ section.row .row-more {
   font-size: 13px;
   font-weight: 700;
   color: var(--text-dim);
-  margin-right: 14px;
   white-space: nowrap;
 }
 section.row .row-more-circ {
@@ -68,15 +67,20 @@ section.row .row-more:hover .row-more-circ {
   background: var(--btn-primary-bg);
   color: var(--on-light);
 }
-/* Header with controls on the right (Top 10's Movies/TV toggle). The
-   heading keeps its own left inset; the right side mirrors it against
-   main's 14px edge padding. */
+/* Header with controls on the right ("See all", Top 10's Movies/TV
+   toggle). The heading keeps its own left inset and the right side now
+   genuinely mirrors it: --row-inset here, on top of main's own 14px,
+   puts "See all" the same distance from the right edge as the title is
+   from the left. It previously sat on .row-more as a flat 14px, which
+   left it 28px off the edge against the title's 64px — close enough to
+   the viewport edge to read as unpadded, and it did nothing at all for
+   a header whose right side is a toggle rather than a link. */
 section.row .row-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  margin-right: 0;
+  margin-right: var(--row-inset);
 }
 section.row .row-head h2,
 section.row .row-head .row-title {
