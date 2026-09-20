@@ -894,6 +894,11 @@ def get_tv_detail(tmdb_id: int, store: RequestStore = Depends(get_store), tmdb: 
         # above. A show's organized history is episode/pack rows, never
         # a single fixed media_type the way a movie's always is.
         "on_plex_tracked": store.get_latest_organized_request(tmdb_id, ("episode", "pack")) is not None,
+        # The show-level equivalent of the movie page's "File" tiles.
+        # Rolled up here rather than per-episode: a show's quality and
+        # disk footprint are properties of the whole run, and episode
+        # rows are both media types a show can be filed under.
+        "library": store.library_summary(tmdb_id, ("episode", "pack")),
     }
 
 

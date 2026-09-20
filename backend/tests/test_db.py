@@ -711,3 +711,70 @@ def test_library_items_are_backfilled_from_old_complete_requests(tmp_path):
     reopened = RequestStore(str(db_file))
     [item] = reopened.get_library_items(1, "movie")
     assert item["torrent_hash"] == "ffff" and item["path"] == "/library/Dune (2024).mkv"
+
+
+def _file_episode(store, tmp_path, *, season: int, episode: int, release: str, size: int):
+    """One filed episode in the library ledger, via the real
+    mark_organized path so `size_bytes` is a genuine on-disk size."""
+    filed = tmp_path / f"Show S{season:02d}E{episode:02d} {release}.mkv"
+    filed.write_bytes(b"x" * size)
+    row = store.create_episode_request(
+        tmdb_id=77, show_id=77, title="Show", season_number=season, episode_number=episode
+    )
+    store.update_status(row.id, "downloading", result={"torrent_hash": f"h{season}{episode}", "winner": {"fileName": release}})
+    store.mark_organized(row.id, [str(filed)], [f"h{season}{episode}"], "2000-01-01T00:00:00+00:00")
+    return filed
+
+
+def test_library_summary_totals_every_season(tmp_path):
+    """A show's footprint is the whole run, not one request's recorded
+    winner the way a movie's is."""
+    store = RequestStore(":memory:")
+    _file_episode(store, tmp_path, season=1, episode=1, release="Show.S01.1080p.WEB-DL.x265", size=10)
+    _file_episode(store, tmp_path, season=1, episode=2, release="Show.S01.1080p.WEB-DL.x265", size=20)
+    _file_episode(store, tmp_path, season=2, episode=1, release="Show.S02.1080p.WEB-DL.x265", size=30)
+
+    summary = store.library_summary(77, ("episode", "pack"))
+
+    assert summary["files"] == 3
+    assert summary["total_bytes"] == 60
+    # Distinct releases, not one per file — two episodes came from the
+    # same season pack.
+    assert summary["releases"] == ["Show.S01.1080p.WEB-DL.x265", "Show.S02.1080p.WEB-DL.x265"]
+
+
+def test_library_summary_reports_every_distinct_release_when_mixed(tmp_path):
+    """A show acquired over time really can be mixed — a 1080p season
+    early, a 2160p one later. Both names come back so the page can say
+    so rather than claiming either number."""
+    store = RequestStore(":memory:")
+    _file_episode(store, tmp_path, season=1, episode=1, release="Show.S01.1080p.WEB-DL.x265", size=10)
+    _file_episode(store, tmp_path, season=2, episode=1, release="Show.S02.2160p.WEB-DL.x265", size=40)
+
+    summary = store.library_summary(77, ("episode", "pack"))
+
+    assert summary["files"] == 2
+    assert summary["total_bytes"] == 50
+    assert len(summary["releases"]) == 2
+
+
+def test_library_summary_is_empty_for_a_show_with_nothing_filed():
+    store = RequestStore(":memory:")
+
+    assert store.library_summary(77, ("episode", "pack")) == {"files": 0, "total_bytes": 0, "releases": []}
+
+
+def test_library_summary_ignores_other_titles_and_media_types(tmp_path):
+    store = RequestStore(":memory:")
+    _file_episode(store, tmp_path, season=1, episode=1, release="Show.S01.1080p.WEB-DL.x265", size=10)
+    # A movie filed under a different tmdb_id must not land in the show's total.
+    other = tmp_path / "Other Movie.mkv"
+    other.write_bytes(b"x" * 999)
+    movie = store.create_request(tmdb_id=88, title="Other Movie", release_year=2021, query=None)
+    store.update_status(movie.id, "downloading", result={"torrent_hash": "m1", "winner": {"fileName": "Other.Movie.2160p.mkv"}})
+    store.mark_organized(movie.id, [str(other)], ["m1"], "2000-01-01T00:00:00+00:00")
+
+    summary = store.library_summary(77, ("episode", "pack"))
+
+    assert summary["files"] == 1
+    assert summary["total_bytes"] == 10

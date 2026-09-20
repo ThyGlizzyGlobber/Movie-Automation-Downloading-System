@@ -9,7 +9,8 @@ import RedownloadModal from '../../components/RedownloadModal'
 import ErrorState from '../../components/ErrorState'
 import Icon from '../../components/Icon'
 import DetailShell, { DetailShellSkeleton, type DetailPill, type DetailRow, type DetailTile } from '../detail/DetailShell'
-import { DetailCast, DetailCastSkeleton, DetailTrailer, DetailTrailerSkeleton, genreLinks, peopleLinks, usePlexHref } from '../detail/DetailBits'
+import { DetailCast, DetailCastSkeleton, DetailTrailer, DetailTrailerSkeleton, FactTiles, genreLinks, peopleLinks, qualityFromName, sourceFromName, usePlexHref } from '../detail/DetailBits'
+import { formatBytes } from '../../lib/format'
 import { usePageTitle, useSetHasHero } from '../../lib/chrome'
 import { errorText, useToast } from '../../lib/toast'
 import { languageNameOf, tvCertificationOf, yearOf } from '../../lib/detailHelpers'
@@ -22,6 +23,18 @@ interface PendingBulk {
   scope: 'season' | 'series'
   seasonNumber: number | null
   label: string
+}
+
+/** One label for a whole show: the shared value when every release
+ *  agrees, "Various" when they don't, an em dash when nothing parsed.
+ *  Releases a parser can't read (an unusual name with no resolution
+ *  token) are dropped rather than counted as a difference — one
+ *  unreadable name among ten 1080p ones shouldn't turn the tile into
+ *  "Various" when the show plainly isn't mixed. */
+function acrossReleases(releases: string[], read: (name: string) => string): string {
+  const distinct = [...new Set(releases.map(read).filter(Boolean))]
+  if (distinct.length === 0) return '—'
+  return distinct.length === 1 ? distinct[0] : 'Various'
 }
 
 // A show page's usual shape: Following, Seasons and a full-width Next
@@ -213,6 +226,22 @@ export default function ShowDetailPage() {
   else sideTiles.push({ label: 'Seasons', value: String(seasons.length || '—') })
   sideTiles.push({ label: 'Next episode', value: nextLabel, tone: next ? 'ice' : 'dim', wide: true })
 
+  // The movie page reads one request's recorded winner; a show has as
+  // many as it has episodes and packs, so this is the whole run rolled
+  // up server-side. A show downloaded over time genuinely can be mixed
+  // (a 1080p season pack, a 2160p one later), and claiming either
+  // number would be wrong — hence "Various" rather than picking one.
+  const library = show.library
+  const fileTiles: DetailTile[] | null =
+    library && library.files > 0
+      ? [
+          { label: 'Quality', value: acrossReleases(library.releases, qualityFromName), tone: 'mint' },
+          { label: 'Size', value: library.total_bytes ? formatBytes(library.total_bytes) : '—' },
+          { label: 'Episodes', value: String(library.files) },
+          { label: 'Source', value: acrossReleases(library.releases, sourceFromName) },
+        ]
+      : null
+
   const crew = show.credits?.crew ?? []
   const creators = crew.filter((c) => c.job === 'Creator' || c.job === 'Executive Producer').slice(0, 3)
   const details: DetailRow[] = []
@@ -281,6 +310,12 @@ export default function ShowDetailPage() {
         aside={<DetailCast cast={show.credits?.cast} limit={8} />}
       >
         <DetailTrailer type="tv" tmdbId={tmdbId} backdropPath={show.backdrop_path} />
+        {fileTiles && (
+          <>
+            <h4 className="detail-h4">On disk</h4>
+            <FactTiles tiles={fileTiles} />
+          </>
+        )}
       </DetailShell>
 
       {seasons.length > 0 && currentSeason != null && (

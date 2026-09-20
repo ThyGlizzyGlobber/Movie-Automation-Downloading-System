@@ -1302,7 +1302,17 @@ def test_get_tv_detail_returns_full_show(client_and_deps):
     # is deterministically False. on_plex_tracked is False — no completed,
     # organized episode/pack request exists for this tmdb_id in a fresh
     # store.
-    assert response.json() == dict(SHOW, on_plex=False, plex_complete=False, is_coming_soon=False, on_plex_tracked=False, logo_path=None)
+    assert response.json() == dict(
+        SHOW,
+        on_plex=False,
+        plex_complete=False,
+        is_coming_soon=False,
+        on_plex_tracked=False,
+        logo_path=None,
+        # Nothing filed for this show, so the show-level "On disk" tiles
+        # have nothing to render.
+        library={"files": 0, "total_bytes": 0, "releases": []},
+    )
 
 
 def test_aired_episode_count_counts_whole_earlier_seasons_plus_the_last_aired_episode():

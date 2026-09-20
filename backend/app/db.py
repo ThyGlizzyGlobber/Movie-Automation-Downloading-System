@@ -1033,6 +1033,44 @@ class RequestStore:
             rows = self._conn.execute("SELECT * FROM library_items WHERE tmdb_id = ? ORDER BY id DESC", (tmdb_id,)).fetchall()
         return [dict(r) for r in rows]
 
+    def library_summary(self, tmdb_id: int, media_types: tuple[str, ...]) -> dict:
+        """What this app has actually filed for one title, rolled up: how
+        many files, how much disk they occupy between them, and the
+        distinct releases they came from.
+
+        Sizes are the real on-disk ones `_record_library_items` measured
+        with `os.path.getsize`, not a torrent's advertised size, so a
+        show's total is what it genuinely takes up across every season —
+        which is the whole point of asking at the show level rather than
+        reading one request's recorded winner the way the movie page
+        does.
+
+        Release names come back raw and distinct rather than as a parsed
+        resolution: the detail pages already derive that label from a
+        release name (DetailBits' `qualityFromName`), and one parser
+        shared by the movie and show pages is worth more than a second
+        one here that could quietly drift from it. The list is bounded by
+        how many distinct releases a title was actually filed from — one
+        per season pack, so typically a handful even for a long show."""
+        placeholders = ",".join("?" for _ in media_types)
+        params = (tmdb_id, *media_types)
+        totals = self._conn.execute(
+            f"SELECT COUNT(*) AS files, COALESCE(SUM(size_bytes), 0) AS total_bytes "
+            f"FROM library_items WHERE tmdb_id = ? AND media_type IN ({placeholders})",
+            params,
+        ).fetchone()
+        releases = self._conn.execute(
+            f"SELECT DISTINCT release_name FROM library_items "
+            f"WHERE tmdb_id = ? AND media_type IN ({placeholders}) "
+            f"AND release_name IS NOT NULL AND release_name != '' ORDER BY release_name",
+            params,
+        ).fetchall()
+        return {
+            "files": totals["files"],
+            "total_bytes": totals["total_bytes"],
+            "releases": [r["release_name"] for r in releases],
+        }
+
     def remove_library_item(self, path: str) -> None:
         with self._lock:
             self._conn.execute("DELETE FROM library_items WHERE path = ?", (path,))
