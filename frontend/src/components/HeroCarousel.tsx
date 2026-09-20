@@ -1,12 +1,14 @@
 import { useEffect, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react'
 import { getMovie, getMovieTrailer } from '../api/movies'
 import { getTvShow, getTvTrailer } from '../api/tv'
-import { backdropUrl, logoUrl } from '../lib/tmdbImage'
+import { backdropUrl, logoUrl, posterUrl } from '../lib/tmdbImage'
+import { yearOf } from '../lib/detailHelpers'
 import { movieHeroBadge, movieCertOf, tvHeroBadge, tvCertOf, type TaggedItem } from '../lib/homeHero'
 import AmbientGlow from './AmbientGlow'
 import './HeroCarousel.css'
 import Icon from './Icon'
 import { SAMPLE_SYNOPSIS, Skel, SkelWords } from './Skeleton'
+import { useMediaQuery } from '../lib/hooks'
 
 const HERO_TRAILER_COUNT = 2 // only the front slides ever get a background video
 const HERO_AUTOPLAY_MS = 7000 // flat dwell time for a poster-only slide
@@ -100,6 +102,15 @@ function HeroSkeleton() {
 }
 
 export default function HeroCarousel({ items, loading = false }: { items: TaggedItem[]; loading?: boolean }) {
+  // Phones get a different hero entirely (see HeroCarousel.css): portrait
+  // key art in a card, with the meta line, synopsis and two stacked
+  // buttons below it rather than overlaid on a scope frame.
+  const isPhone = useMediaQuery('(max-width: 639px)')
+  // And no trailers there. The card's art is a portrait poster, which a
+  // landscape trailer can't fill without cropping it to a strip, and it
+  // would cost a mobile connection a video fetch per slide. Gates the
+  // fetch too, not just playback, so nothing is downloaded to sit unused.
+  const trailersEnabled = !isPhone
   const [activeIndex, setActiveIndex] = useState(0)
   const [muted, setMuted] = useState(true)
   const [videoUrls, setVideoUrls] = useState<Record<number, string | null>>({})
@@ -123,6 +134,13 @@ export default function HeroCarousel({ items, loading = false }: { items: Tagged
   // entirely driven by the scheduling effect below, gated on the slide
   // actually being active.
   useEffect(() => {
+    if (!trailersEnabled) {
+      // Also clears anything fetched before the viewport narrowed, so
+      // rotating a phone doesn't leave a video mid-play.
+      setVideoUrls({})
+      setVideoVisible({})
+      return
+    }
     let cancelled = false
     items.slice(0, HERO_TRAILER_COUNT).forEach(async (item, i) => {
       try {
@@ -135,7 +153,7 @@ export default function HeroCarousel({ items, loading = false }: { items: Tagged
     return () => {
       cancelled = true
     }
-  }, [items])
+  }, [items, trailersEnabled])
 
   // Per-slide status badge + age-rating pill — needs the full detail
   // call (TMDB's list/trending items carry neither).
@@ -326,9 +344,13 @@ export default function HeroCarousel({ items, loading = false }: { items: Tagged
           <div className={`home-hero-slide${i === activeIndex ? ' active' : ''}`} key={item.id}>
             <AmbientGlow posterPath={item.poster_path} dimmed={!!videoVisible[i]} />
             <a className="home-hero-media" href={href} aria-label={title}>
+              {/* Portrait key art on a phone, the landscape backdrop
+                  everywhere else: the phone card's art well is taller
+                  than it is wide, and a 16:9 backdrop cropped into it
+                  loses almost everything either side of centre. */}
               <img
                 className={videoVisible[i] ? 'home-hero-poster-hidden' : ''}
-                src={backdropUrl(item.backdrop_path)}
+                src={isPhone ? posterUrl(item.poster_path) : backdropUrl(item.backdrop_path)}
                 alt=""
                 loading={i === 0 ? 'eager' : 'lazy'}
               />
@@ -381,6 +403,21 @@ export default function HeroCarousel({ items, loading = false }: { items: Tagged
                   <Icon name={info?.badge ? 'megaphone' : 'chart'} />
                   {info?.badge ?? `#${i + 1} trending this week`}
                 </div>
+                {/* The phone card's dot-separated facts line. Rendered
+                    always, shown only under 640px (the desktop frame
+                    says the same things through its pills and the cert
+                    badge in the corner). */}
+                <div className="home-hero-meta">
+                  {[
+                    isTv ? 'Show' : 'Movie',
+                    info?.genres,
+                    yearOf(item.release_date ?? item.first_air_date),
+                    info?.length,
+                    info?.cert,
+                  ]
+                    .filter(Boolean)
+                    .join(' · ')}
+                </div>
                 {item.overview && (
                   <p className={`hero-syn${videoVisible[i] && !cursorNear ? ' hidden-for-video' : ''}`}>{item.overview}</p>
                 )}
@@ -389,8 +426,13 @@ export default function HeroCarousel({ items, loading = false }: { items: Tagged
                     <Icon name={onPlex ? 'play' : 'plus'} />
                     <FlipLabel first={onPlex ? 'On Plex' : 'Not on Plex yet'} second={onPlex ? 'Watch now' : 'Add to Plex'} active={i === activeIndex} />
                   </a>
-                  <a className="btn sec circ" href={href} aria-label="More info">
+                  {/* Icon-only on desktop, a full-width labelled button
+                      on the phone card — same link either way, so the
+                      label is markup the CSS reveals rather than a
+                      second control. */}
+                  <a className="btn sec circ home-hero-info" href={href} aria-label="More info">
                     <Icon name="info" />
+                    <span className="home-hero-info-label">More info</span>
                   </a>
                   {i === activeIndex && hasVideo && (
                     <button
