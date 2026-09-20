@@ -710,3 +710,54 @@ def test_relevance_gate_rejects_a_sequel_or_longer_title_for_a_short_one():
     assert passes_relevance_gate("Ted.2.2015.2160p.BluRay.mkv", ted) is False
     assert passes_relevance_gate("Ted.2012.UNRATED.2160p.BluRay.mkv", ted) is True
     assert passes_relevance_gate("Ted.UNRATED.2012.2160p.BluRay.mkv", ted) is True
+
+
+def test_rank_candidates_unreported_swarm_loses_to_any_verified_one():
+    """The Empty Man, live 2026-09-20. A 2160p WEB-DL whose plugin
+    reported no seeder count at all outranked a 2160p with 62 seeders
+    and a 1080p with 124 — resolution is weighted 10000 and a whole tier
+    of swarm health only 1000, so `seeders_known` sitting behind
+    `composite` in the sort key never got a say. It landed with zero
+    seeds and sat at 0% for two days."""
+    unreported_2160p = _result(
+        fileName="The.Empty.Man.2020.2160p.DSNP.WEB-DL.DDP5.1.DV.MKV.x265-SiGLA",
+        fileSize=17_245_000_000,
+        nbSeeders=-1,
+        fileUrl="magnet:?xt=urn:btih:SIGLA",
+    )
+    verified_2160p = _result(
+        fileName="The.Empty.Man.2020.4K.HDR.DV.2160p.WEBDL.Ita.Eng.x265-NAHOM",
+        fileSize=18_000_000_000,
+        nbSeeders=62,
+        fileUrl="magnet:?xt=urn:btih:NAHOM",
+    )
+    verified_1080p = _result(
+        fileName="The.Empty.Man.2020.1080p.WEBRip.x264-YTSMX",
+        fileSize=2_700_000_000,
+        nbSeeders=124,
+        fileUrl="magnet:?xt=urn:btih:YTSMX",
+    )
+
+    ranked = rank_candidates([unreported_2160p, verified_2160p, verified_1080p])
+
+    # Resolution preference is intact among candidates we can measure:
+    # the verified 2160p still beats the better-seeded 1080p.
+    assert ranked[0][0]["fileUrl"] == "magnet:?xt=urn:btih:NAHOM"
+    # The unmeasurable one drops below both, rather than winning on a
+    # resolution nobody can actually download.
+    assert ranked[-1][0]["fileUrl"] == "magnet:?xt=urn:btih:SIGLA"
+
+
+def test_rank_candidates_unreported_swarm_is_demoted_not_discarded():
+    """A plugin that never reports seeders stays usable when it's all
+    there is — and the usual quality order still applies among them."""
+    unreported_1080p = _result(
+        fileName="The.Empty.Man.2020.1080p.WEB-DL.x265.mkv", nbSeeders=-1, fileUrl="magnet:?xt=urn:btih:FHD"
+    )
+    unreported_2160p = _result(
+        fileName="The.Empty.Man.2020.2160p.WEB-DL.x265.mkv", nbSeeders=-1, fileUrl="magnet:?xt=urn:btih:UHD"
+    )
+
+    ranked = rank_candidates([unreported_1080p, unreported_2160p])
+
+    assert [r[0]["fileUrl"] for r in ranked] == ["magnet:?xt=urn:btih:UHD", "magnet:?xt=urn:btih:FHD"]

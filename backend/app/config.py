@@ -250,6 +250,22 @@ UNKNOWN_SEEDERS_SCORE = 1
 MIN_SIZE_GB = 1
 MAX_SIZE_GB = 150
 
+# A pick whose swarm never materialises. worker._check_downloading only
+# ever recognised two outcomes — the torrent vanished, or it finished —
+# so "qBittorrent still has it, and it has downloaded nothing from
+# nobody" matched neither and simply sat there (live 2026-09-20: three
+# rows stalled at 0%, the oldest two days in). Past the grace period
+# such a pick is rejected like a manually-flagged bad copy and the
+# search runs again without it.
+#
+# The grace is generous on purpose: a healthy torrent finds seeds in
+# minutes, but a tracker announce or DHT bootstrap can be slow, and the
+# cost of being wrong is discarding a download that would have started.
+STALL_GRACE_SECONDS = int(os.environ.get("STALL_GRACE_SECONDS", "1800"))
+# Attempts *per request*, counting the original. Bounded so a title with
+# nothing alive behind it fails visibly instead of cycling forever.
+STALL_MAX_ATTEMPTS = int(os.environ.get("STALL_MAX_ATTEMPTS", "3"))
+
 # Plugins known (from Stage 0's live spike) to return error/config rows
 # disguised as results rather than real torrents — excluded outright.
 PLUGIN_DISTRUST = frozenset({"jackett"})

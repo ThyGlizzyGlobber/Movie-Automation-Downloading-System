@@ -1,4 +1,5 @@
 import asyncio
+import time
 import re
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -2685,3 +2686,88 @@ def test_source_cleanup_never_retries_once_marked_done(tmp_path):
     # ever returns 'pending' rows, and this one is now 'done'.
     asyncio.run(worker._run_due_source_cleanups())
     assert len(qbt.deleted) == 1  # unchanged — delete_torrent was not called again
+
+
+# ---------------------------------------------------------------------------
+# Stall recovery — a pick whose swarm never appeared (The Empty Man,
+# live 2026-09-20). _check_downloading only ever recognised "gone" and
+# "finished", so a torrent sitting at 0% with nobody to download from
+# matched neither and stayed there indefinitely.
+# ---------------------------------------------------------------------------
+
+
+def _stalled_state(age_seconds: float) -> dict:
+    return {"progress": 0, "num_seeds": 0, "added_on": time.time() - age_seconds}
+
+
+def _downloading_row(store, torrent_hash: str, **result_extra):
+    row = store.create_request(tmdb_id=693134, title="The Empty Man", release_year=2020, query=None)
+    result = {
+        "torrent_hash": torrent_hash,
+        "winner": {"fileName": "The.Empty.Man.2020.2160p.DSNP.WEB-DL.x265-SiGLA"},
+    }
+    result.update(result_extra)
+    store.update_status(row.id, "downloading", result=result)
+    return row
+
+
+def test_check_downloading_requeues_a_pick_whose_swarm_never_appeared():
+    store = RequestStore(":memory:")
+    row = _downloading_row(store, "dead")
+    qbt = FakeQBTClient(torrent_states={"dead": _stalled_state(config.STALL_GRACE_SECONDS + 1)})
+    worker = Worker(store, FakeTMDBClient(), qbt)
+
+    asyncio.run(worker._check_downloading())
+
+    refreshed = store.get_request(row.id)
+    assert refreshed.status == "queued"
+    assert ("dead", True) in qbt.deleted
+    # Both blacklisted — the hash only rules out magnet listings, and the
+    # name is what rules the release out when it came from a .torrent link.
+    assert "dead" in store.get_rejected_torrent_hashes(693134)
+    assert refreshed.result["stall_attempts"] == 2
+
+
+def test_check_downloading_leaves_a_stalled_torrent_alone_inside_the_grace_period():
+    """A torrent still finding peers looks identical to a dead one for
+    the first few minutes, so the grace period is the whole safeguard."""
+    store = RequestStore(":memory:")
+    row = _downloading_row(store, "young")
+    qbt = FakeQBTClient(torrent_states={"young": _stalled_state(60)})
+    worker = Worker(store, FakeTMDBClient(), qbt)
+
+    asyncio.run(worker._check_downloading())
+
+    assert store.get_request(row.id).status == "downloading"
+    assert qbt.deleted == []
+
+
+def test_check_downloading_leaves_a_slow_torrent_with_seeds_alone():
+    """Zero progress is not enough on its own — a big torrent that has
+    seeds but hasn't written a full percent yet must not be abandoned."""
+    store = RequestStore(":memory:")
+    row = _downloading_row(store, "slow")
+    state = _stalled_state(config.STALL_GRACE_SECONDS + 1)
+    state["num_seeds"] = 3
+    qbt = FakeQBTClient(torrent_states={"slow": state})
+    worker = Worker(store, FakeTMDBClient(), qbt)
+
+    asyncio.run(worker._check_downloading())
+
+    assert store.get_request(row.id).status == "downloading"
+    assert qbt.deleted == []
+
+
+def test_check_downloading_fails_the_request_once_attempts_are_exhausted():
+    store = RequestStore(":memory:")
+    row = _downloading_row(store, "dead-last", stall_attempts=config.STALL_MAX_ATTEMPTS)
+    qbt = FakeQBTClient(torrent_states={"dead-last": _stalled_state(config.STALL_GRACE_SECONDS + 1)})
+    worker = Worker(store, FakeTMDBClient(), qbt)
+
+    asyncio.run(worker._check_downloading())
+
+    refreshed = store.get_request(row.id)
+    assert refreshed.status == "failed"
+    assert "stalled with no seeds" in refreshed.error_message
+    # Still blacklisted on the way out, so a manual retry can't re-pick it.
+    assert "dead-last" in store.get_rejected_torrent_hashes(693134)

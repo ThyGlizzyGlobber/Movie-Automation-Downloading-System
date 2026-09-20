@@ -98,6 +98,7 @@ import asyncio
 
 import dataclasses
 import logging
+import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -114,7 +115,7 @@ from app.media_organizer import (
 )
 from app.pipeline import download, download_episode, download_pack, find_best_episode_candidate, same_release
 from app.pipeline_settings import resolve_pipeline_settings
-from app.qbt import QBTClient
+from app.qbt import QBTClient, QBTError
 from app.resolve import resolve
 from app.tmdb import TMDBClient, TMDBError
 from app.tv_resolve import ShowIdentity, aired_episode_numbers, resolve_show, season_is_complete
@@ -129,6 +130,28 @@ _DIRECT_TERMINAL_STATUSES = {"no qualifying results", "insufficient free space"}
 # How long a "downloading" row with no torrent on record gets to turn up
 # in qBittorrent before it's marked failed rather than left spinning.
 _UNTRACKED_GRACE = timedelta(hours=1)
+
+
+def _stalled_with_dead_swarm(info: dict) -> bool:
+    """Whether a torrent qBittorrent still holds has downloaded nothing,
+    from nobody, for long enough that it isn't going to.
+
+    Deliberately narrow — all three of zero progress (not "slow"), zero
+    connected seeds, and past the grace period. A torrent that is merely
+    throttled, queued behind others, or still finding peers fails at
+    least one of them, so the only thing this catches is a pick with no
+    swarm behind it at all."""
+    if (info.get("progress") or 0) > 0:
+        return False
+    if (info.get("num_seeds") or 0) > 0:
+        return False
+    # qBittorrent's own clock for this torrent. Absent or nonsensical
+    # (an adopted untracked torrent, a client that didn't report it)
+    # means we can't say how long it's been like this — so we don't.
+    added_on = info.get("added_on") or 0
+    if added_on <= 0:
+        return False
+    return (time.time() - added_on) >= config.STALL_GRACE_SECONDS
 
 
 def _request_label(row) -> str:
@@ -483,6 +506,49 @@ class Worker:
         except Exception:
             logger.exception("plex refresh after import failed")
 
+    async def _retry_stalled_download(self, row, torrent_hash: str) -> None:
+        """Abandon a pick whose swarm never showed up, and search again
+        without it.
+
+        Reuses Stage 15's rejection machinery rather than growing a
+        second one: the worker's `queued` handler already excludes
+        rejected hashes and release names, so blacklisting and
+        re-queueing is the whole retry. Both are blacklisted, not just
+        the hash — most winners are direct .torrent links that carry no
+        hash to compare, so the name is what actually rules the release
+        out on the next pass (the same reason api.py's reject route does
+        both)."""
+        result = dict(row.result or {})
+        attempts = int(result.get("stall_attempts") or 1) + 1
+        result["stall_attempts"] = attempts
+
+        try:
+            await asyncio.to_thread(self.qbt.delete_torrent, torrent_hash, True)
+        except QBTError as exc:
+            # Worth continuing anyway: the point is to stop re-picking
+            # this release, and the blacklist below is what does that.
+            logger.warning("request %d: couldn't remove stalled torrent %s: %s", row.id, torrent_hash, exc)
+
+        await asyncio.to_thread(self.store.add_rejected_torrent, row.tmdb_id, torrent_hash)
+        winner = result.get("winner") or {}
+        if winner.get("fileName"):
+            await asyncio.to_thread(self.store.add_rejected_release, row.tmdb_id, winner["fileName"])
+
+        if attempts > config.STALL_MAX_ATTEMPTS:
+            message = f"No usable copy found — {config.STALL_MAX_ATTEMPTS} attempts stalled with no seeds."
+            logger.info("request %d (%s) downloading -> failed (%s)", row.id, _request_label(row), message)
+            await asyncio.to_thread(self.store.update_status, row.id, "failed", message, result)
+            return
+
+        logger.info(
+            "request %d (%s) downloading -> queued (stalled with no seeds, attempt %d of %d)",
+            row.id,
+            _request_label(row),
+            attempts,
+            config.STALL_MAX_ATTEMPTS,
+        )
+        await asyncio.to_thread(self.store.update_status, row.id, "queued", None, result)
+
     async def _check_downloading(self) -> None:
         for row in await asyncio.to_thread(self.store.list_requests, "downloading"):
             torrent_hash = (row.result or {}).get("torrent_hash") or await self._adopt_untracked_torrent(row)
@@ -520,6 +586,8 @@ class Worker:
                     )
                     logger.info("request %d (%s) downloading -> cancelled (%s)", row.id, row.title, message)
                     await asyncio.to_thread(self.store.update_status, row.id, "cancelled", error_message=message)
+            elif _stalled_with_dead_swarm(info):
+                await self._retry_stalled_download(row, torrent_hash)
             elif info.get("progress", 0) >= 1:
                 if row.media_type == "episode":
                     await self._organize_and_complete_episode(row)

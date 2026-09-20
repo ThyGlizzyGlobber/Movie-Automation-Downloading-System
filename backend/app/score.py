@@ -369,13 +369,33 @@ class Score:
 
     @property
     def sort_key(self) -> tuple:
-        # Known-and-healthy beats unknown before a (usually noise-level)
-        # size difference gets a say — same real-world case as above: two
-        # releases can differ by <0.1% in size for reasons as trivial as a
-        # bundled sample file, which shouldn't outweigh "we know this swarm
-        # is actually alive."
+        # Proven-alive outranks everything, including resolution.
+        #
+        # Anything that reaches ranking has either cleared MIN_SEEDERS or
+        # reported no seeder count at all, because passes_viability_gate
+        # deliberately lets "unknown" (-1) through — "unknown != zero",
+        # Stage 0. So this flag is precisely "we know this swarm exists"
+        # versus "we are guessing", and guessing now loses to knowing.
+        #
+        # It used to sit *behind* `composite`, which made it nearly
+        # inert: resolution is weighted 10000 and a whole tier of swarm
+        # health only 1000, so an unreported swarm at a better resolution
+        # beat every verified one. Live 2026-09-20, The Empty Man: a
+        # 2160p WEB-DL whose plugin reported nothing won over a 2160p
+        # with 62 seeders and a 1080p with 124, landed with zero seeds,
+        # and sat at 0% for two days.
+        #
+        # Quality ordering is untouched *among* candidates we can verify
+        # — a 2160p with 62 seeders still beats a 1080p with 124, which
+        # is the point. An unreported swarm just stops being treated as
+        # a peer of a measured one and becomes the last resort it always
+        # was, still eligible when nothing verifiable turns up.
+        #
+        # Size stays last: two releases can differ by <0.1% for reasons
+        # as trivial as a bundled sample file, which shouldn't outweigh
+        # anything above it.
         seeders_known = 1 if self.seeders >= 0 else 0
-        return (self.composite, seeders_known, self.seeders, self.size_bytes)
+        return (seeders_known, self.composite, self.seeders, self.size_bytes)
 
 
 def _best_tier(tokens: list[str], tiers: tuple) -> int:
