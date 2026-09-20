@@ -1060,6 +1060,9 @@ def test_get_movie_detail_still_reports_the_file_after_history_is_cleared(client
     # coarse clock a row created microseconds earlier can fail
     # `created_at < cutoff` — the flake behind test_db's own
     # purge-at-zero test. Not what this test is about.
+    # A row owing a source cleanup is not purgeable, and mark_organized
+    # leaves one owed — let the sweep finish first, as it would in life.
+    store.mark_source_cleanup_done(row.id)
     store.purge_requests_older_than(days=-1)
     assert store.get_request(row.id) is None
 

@@ -1,11 +1,14 @@
 import argparse
 import sys
+from pathlib import Path
 
 from app import config
 from app.config import QBIT_HOST, QBIT_PASSWORD, QBIT_PORT, QBIT_USERNAME, TMDB_API_KEY
+from app.db import RequestStore
 from app.media_organizer import MediaOrganizerError, organize_episode, organize_movie, organize_pack, select_video_file
 from app.pipeline import download, download_episode, download_pack
 from app.qbt import QBTClient
+from app.reconcile import remove_orphaned_download_dirs, remove_redundant_sources
 from app.resolve import resolve
 from app.tmdb import TMDBClient
 from app.tv_resolve import resolve_show
@@ -202,6 +205,63 @@ def cmd_organize_movie(args: argparse.Namespace) -> int:
     return 0
 
 
+def _state(item: dict, applying: bool) -> str:
+    if item.get("error"):
+        return "FAILED"
+    return "removed" if item.get("removed") else ("would remove" if not applying else "skipped")
+
+
+def cmd_cleanup_orphans(args: argparse.Namespace) -> int:
+    """Source folders left behind by the two cleanup bugs (see
+    reconcile.py). Dry run unless --apply: this deletes files, and the
+    whole reason these are here is that a delete happened at the wrong
+    time before."""
+    store = RequestStore(config.DB_PATH)
+    qbt = QBTClient(QBIT_HOST, QBIT_PORT, QBIT_USERNAME, QBIT_PASSWORD)
+
+    total = 0
+    failures = 0
+
+    # Torrents qBittorrent still holds.
+    torrents = remove_redundant_sources(store, qbt, apply=args.apply)
+    for item in torrents:
+        total += item["size_bytes"] or 0
+        failures += 1 if item.get("error") else 0
+        print(f"{_state(item, args.apply):>12}  torrent  {item['hash'][:8]}  {item['name']}")
+        for path in item["filed_paths"]:
+            print(f"                       filed: {path}")
+        if item.get("error"):
+            print(f"                       error: {item['error']}")
+
+    # Folders left on disk after qBittorrent forgot the torrent — no
+    # entry left to match on, so these are found by hardlink identity.
+    roots = args.root or [str(config.MOVIE_LIBRARY_ROOT), str(config.TV_LIBRARY_ROOT)]
+    folders = remove_orphaned_download_dirs(store, roots, apply=args.apply)
+    for item in folders:
+        total += item["size_bytes"] or 0
+        failures += 1 if item.get("error") else 0
+        print(f"{_state(item, args.apply):>12}  folder   {item['path']}")
+        for video, filed in zip(item["videos"], item["filed_as"]):
+            print(f"                       {Path(video).name}")
+            print(f"                       filed as: {filed}")
+        if item.get("error"):
+            print(f"                       error: {item['error']}")
+
+    found = len(torrents) + len(folders)
+    if not found:
+        print("nothing to clean up — no torrent or folder has filed copies that are all still in place")
+        print(f"(looked under: {', '.join(roots)})")
+        return 0
+
+    gib = total / 1024**3
+    if args.apply:
+        removed = sum(1 for i in torrents + folders if i.get("removed"))
+        print(f"\nremoved {removed} of {found}, about {gib:.1f} GiB reclaimed")
+        return 1 if failures else 0
+    print(f"\n{found} item(s) would be removed, about {gib:.1f} GiB. Re-run with --apply.")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="app.cli")
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -258,6 +318,21 @@ def main(argv: list[str] | None = None) -> int:
     organize_movie_parser.add_argument("tmdb_id", type=int)
     organize_movie_parser.add_argument("torrent_hash", type=str)
     organize_movie_parser.set_defaults(func=cmd_organize_movie)
+
+    cleanup_parser = subparsers.add_parser(
+        "cleanup-orphans",
+        help="Remove source torrents whose files are already filed in the library (dry run unless --apply)",
+    )
+    cleanup_parser.add_argument(
+        "--apply", action="store_true", help="Actually delete them; without this, only lists what would go"
+    )
+    cleanup_parser.add_argument(
+        "--root",
+        action="append",
+        help="Directory to scan for leftover download folders (repeatable). "
+        "Defaults to the movie and TV library roots.",
+    )
+    cleanup_parser.set_defaults(func=cmd_cleanup_orphans)
 
     args = parser.parse_args(argv)
     return args.func(args)

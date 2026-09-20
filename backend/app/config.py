@@ -441,6 +441,16 @@ EPISODE_RECHECK_POLL_INTERVAL_SECONDS = int(os.environ.get("EPISODE_RECHECK_POLL
 # behind on the real NAS).
 SOURCE_CLEANUP_DELAY_SECONDS = int(os.environ.get("SOURCE_CLEANUP_DELAY_SECONDS", "60"))
 
+# How many sweeps may find an organized copy unreadable before cleanup
+# of its original is abandoned. The original must not be deleted while
+# any organized copy is missing — it may be the only copy left — but
+# treating the first look as final meant a momentarily unreadable path
+# (a NAS busy with several downloads, a file mid-move during a Plex
+# scan) orphaned the source folder permanently and silently. Six
+# attempts at SOURCE_CLEANUP_DELAY_SECONDS apart is several minutes of
+# grace before giving up, and giving up now says so at warning level.
+SOURCE_CLEANUP_VERIFY_ATTEMPTS = int(os.environ.get("SOURCE_CLEANUP_VERIFY_ATTEMPTS", "6"))
+
 # Post-fix (originally fire-and-forget, in-memory only — lost its work
 # permanently if the backend restarted or the one-shot delete failed
 # anywhere in the delay window, a real gap found live): how often

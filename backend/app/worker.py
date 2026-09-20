@@ -920,14 +920,41 @@ class Worker:
         # would let a row with no on-record organized copy sail straight
         # past the safety check below and delete originals no one ever
         # confirmed were safe to remove.
-        still_present = bool(organized_paths) and all(
-            [await asyncio.to_thread(Path(p).exists) for p in organized_paths]
-        )
-        if not still_present:
+        missing = [p for p in organized_paths if not await asyncio.to_thread(Path(p).exists)]
+        if not organized_paths or missing:
+            # Still all-or-nothing on purpose: one torrent produced every
+            # one of these files, so while any is missing the original
+            # may be the only copy of it left and must not be deleted.
+            #
+            # What changed is giving up. This used to mark the row done
+            # on the first look — permanently, silently — so a path that
+            # was merely *momentarily* unreadable (a NAS under load, a
+            # file being moved by a Plex scan) orphaned the source folder
+            # forever with nothing left to say cleanup was ever owed.
+            # That is the shape of the reported failure: folders skipped
+            # entirely, more of them the busier the box was. Now it
+            # retries a bounded number of times first, and only then
+            # gives up — loudly.
+            attempts = int(result.get("cleanup_verify_attempts") or 0) + 1
+            if attempts < config.SOURCE_CLEANUP_VERIFY_ATTEMPTS:
+                logger.info(
+                    "source cleanup for request %d (%s) deferred — %d organized copy/copies not readable "
+                    "(attempt %d of %d): %s",
+                    row.id, label, len(missing), attempts, config.SOURCE_CLEANUP_VERIFY_ATTEMPTS, missing[:3],
+                )
+                await asyncio.to_thread(
+                    self.store.defer_source_cleanup,
+                    row.id,
+                    hashes,
+                    self._next_cleanup_attempt_at(),
+                    remaining_superseded_paths=superseded_paths,
+                    verify_attempts=attempts,
+                )
+                return
             logger.warning(
-                "source cleanup for request %d (%s) skipped — an organized copy is missing, not touching the original",
-                row.id,
-                label,
+                "source cleanup for request %d (%s) abandoned after %d attempts — organized copy still missing, "
+                "leaving the original alone: %s",
+                row.id, label, attempts, missing[:3],
             )
             await asyncio.to_thread(self.store.mark_source_cleanup_done, row.id)
             return

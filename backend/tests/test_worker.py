@@ -2356,11 +2356,14 @@ def _pending_cleanup_row(
     return row.id
 
 
-def test_source_cleanup_skips_when_organized_copy_is_missing():
-    """A safety abort, not expected in practice: if the organized copy has
-    somehow vanished by the time this runs, the original must not be
-    deleted — losing both would be unrecoverable. This is a deliberate,
-    permanent skip (marked 'done'), not something later retried."""
+def test_source_cleanup_defers_while_an_organized_copy_is_unreadable():
+    """A safety abort: if the organized copy has vanished the original
+    must not be deleted — losing both would be unrecoverable.
+
+    But the first look is not final. A path can be momentarily
+    unreadable on a busy NAS, and marking the row done there orphaned
+    the source folder permanently and silently. It stays pending for a
+    bounded number of sweeps first."""
     store = RequestStore(":memory:")
     qbt = FakeQBTClient(torrent_states={"aaaa": {"progress": 1.0}})
     worker = Worker(store, FakeTMDBClient(), qbt)
@@ -2369,7 +2372,25 @@ def test_source_cleanup_skips_when_organized_copy_is_missing():
     asyncio.run(worker._attempt_source_cleanup(store.get_request(request_id)))
 
     assert qbt.deleted == []
+    assert store.get_request(request_id).source_cleanup_status == "pending"
+    assert store.get_request(request_id).result["cleanup_verify_attempts"] == 1
+
+
+def test_source_cleanup_gives_up_loudly_once_the_attempts_run_out(caplog):
+    """Bounded, not infinite — and the row says why rather than going
+    quiet."""
+    store = RequestStore(":memory:")
+    qbt = FakeQBTClient(torrent_states={"aaaa": {"progress": 1.0}})
+    worker = Worker(store, FakeTMDBClient(), qbt)
+    request_id = _pending_cleanup_row(store, "aaaa", [Path("/does/not/exist.mkv")], ["aaaa"])
+
+    with caplog.at_level("WARNING"):
+        for _ in range(config.SOURCE_CLEANUP_VERIFY_ATTEMPTS):
+            asyncio.run(worker._attempt_source_cleanup(store.get_request(request_id)))
+
+    assert qbt.deleted == []
     assert store.get_request(request_id).source_cleanup_status == "done"
+    assert "abandoned after" in caplog.text
 
 
 def test_source_cleanup_skips_when_organized_paths_is_empty():
@@ -2385,7 +2406,8 @@ def test_source_cleanup_skips_when_organized_paths_is_empty():
     asyncio.run(worker._attempt_source_cleanup(store.get_request(request_id)))
 
     assert qbt.deleted == []
-    assert store.get_request(request_id).source_cleanup_status == "done"
+    # Deferred like any other unverifiable row rather than deleting.
+    assert store.get_request(request_id).source_cleanup_status == "pending"
 
 
 def test_source_cleanup_noop_when_torrent_already_gone(tmp_path):
@@ -2462,7 +2484,9 @@ def test_source_cleanup_does_not_delete_superseded_file_when_new_copy_is_missing
     asyncio.run(worker._attempt_source_cleanup(store.get_request(request_id)))
 
     assert old_copy.exists()  # never touched
-    assert store.get_request(request_id).source_cleanup_status == "done"  # deliberate permanent skip
+    # Deferred, not abandoned: the old copy is the only one left while
+    # the new one is unreadable, so it must survive a transient blip too.
+    assert store.get_request(request_id).source_cleanup_status == "pending"
 
 
 def test_source_cleanup_noop_when_superseded_file_already_gone(tmp_path):

@@ -931,6 +931,7 @@ class RequestStore:
         remaining_hashes: list[str],
         next_attempt_at: str,
         remaining_superseded_paths: list[str] | None = None,
+        verify_attempts: int | None = None,
     ) -> None:
         """A cleanup attempt failed (or only partially succeeded, e.g. the
         current torrent deleted but a superseded one didn't) — stays
@@ -944,6 +945,11 @@ class RequestStore:
             merged = {**existing, "pending_cleanup_hashes": remaining_hashes}
             if remaining_superseded_paths is not None:
                 merged["superseded_paths"] = remaining_superseded_paths
+            if verify_attempts is not None:
+                # How many sweeps have found an organized copy unreadable.
+                # Carried on the row, not in memory, so the count survives
+                # a restart the same way the rest of this does.
+                merged["cleanup_verify_attempts"] = verify_attempts
             self._conn.execute(
                 "UPDATE requests SET result_json = ?, source_cleanup_next_attempt_at = ? WHERE id = ?",
                 (json.dumps(merged), next_attempt_at, request_id),
@@ -977,12 +983,21 @@ class RequestStore:
         """Deletes terminal (non-active) requests created more than `days`
         ago. `days=0` deletes every terminal request regardless of age —
         used by the "Clear My Requests" button, which reuses this same
-        safety-filtered query rather than a separate unrestricted DELETE."""
+        safety-filtered query rather than a separate unrestricted DELETE.
+
+        A row still owing its source cleanup is never deleted, however
+        old or terminal it is. What needs cleaning up lives *on the
+        request row* (`pending_cleanup_hashes`), so deleting one before
+        its sweep runs doesn't cancel the cleanup — it loses it, leaving
+        the original torrent and its folder on disk with nothing left to
+        say they were ever owed. Clearing history had been quietly
+        orphaning exactly the folders this app had just organized."""
         cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
         placeholders = ",".join("?" for _ in NON_TERMINAL_STATUSES)
         with self._lock:
             cur = self._conn.execute(
-                f"DELETE FROM requests WHERE created_at < ? AND status NOT IN ({placeholders})",
+                f"DELETE FROM requests WHERE created_at < ? AND status NOT IN ({placeholders}) "
+                "AND (source_cleanup_status IS NULL OR source_cleanup_status != 'pending')",
                 (cutoff, *NON_TERMINAL_STATUSES),
             )
             self._conn.commit()
@@ -1094,6 +1109,29 @@ class RequestStore:
                 if paths:
                     self._record_library_items(row["id"], paths, result)
             self._conn.commit()
+
+    def all_library_paths(self) -> list[str]:
+        """Every path this app has filed into the library, whatever it
+        came from. Used to recognise a download folder's files as
+        duplicates of something already kept."""
+        rows = self._conn.execute("SELECT path FROM library_items").fetchall()
+        return [row["path"] for row in rows]
+
+    def library_paths_by_torrent_hash(self) -> dict[str, list[str]]:
+        """Every filed path, grouped by the torrent it came from.
+
+        The ledger is the only record that survives history being
+        cleared, which is exactly the case that left source folders
+        orphaned — the request row carrying `pending_cleanup_hashes` was
+        deleted before its sweep ran. This is what lets a reconciler
+        find those folders again afterwards."""
+        rows = self._conn.execute(
+            "SELECT torrent_hash, path FROM library_items WHERE torrent_hash IS NOT NULL AND torrent_hash != ''"
+        ).fetchall()
+        grouped: dict[str, list[str]] = {}
+        for row in rows:
+            grouped.setdefault(row["torrent_hash"].lower(), []).append(row["path"])
+        return grouped
 
     def get_library_items(self, tmdb_id: int, media_type: str | None = None) -> list[dict]:
         """The files this app filed for a title, newest first."""

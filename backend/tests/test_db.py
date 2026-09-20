@@ -691,6 +691,9 @@ def test_filing_records_a_library_item_that_survives_clearing_history(tmp_path):
     [item] = store.get_library_items(1, "movie")
     assert (item["path"], item["torrent_hash"], item["release_name"], item["size_bytes"]) == (str(filed), "abcd", "The.End.of.Oak.Street.2025.2160p.WEB-DL.mkv", 10)
 
+    # The row owes a source cleanup until the sweep runs, and a row that
+    # owes one is no longer purgeable — see purge_requests_older_than.
+    store.mark_source_cleanup_done(row.id)
     assert store.purge_requests_older_than(days=0) == 1
     assert store.get_request(row.id) is None
     assert len(store.get_library_items(1, "movie")) == 1
@@ -802,3 +805,45 @@ def test_library_summary_ignores_other_titles_and_media_types(tmp_path):
 
     assert summary["files"] == 1
     assert summary["total_bytes"] == 10
+
+
+def test_purge_never_deletes_a_row_that_still_owes_a_source_cleanup():
+    """What needs cleaning up lives on the request row, so deleting one
+    before its sweep runs doesn't cancel the cleanup — it loses it, and
+    the original torrent and its folder stay on disk with nothing left
+    to say they were owed. "Clear My Requests" was quietly orphaning
+    exactly the folders this app had just organized."""
+    store = _store()
+    owed = store.create_request(tmdb_id=1, title="Owed", release_year=2020, query=None)
+    store.update_status(owed.id, "downloading", result={"torrent_hash": "aaaa"})
+    store.mark_organized(owed.id, ["/library/Owed.mkv"], ["aaaa"], "2000-01-01T00:00:00+00:00")
+
+    settled = store.create_request(tmdb_id=2, title="Settled", release_year=2020, query=None)
+    store.update_status(settled.id, "failed", error_message="boom")
+    _backdate(store, settled.id, days_ago=2)
+    _backdate(store, owed.id, days_ago=2)
+
+    removed = store.purge_requests_older_than(days=1)
+
+    assert removed == 1
+    assert store.get_request(settled.id) is None
+    assert store.get_request(owed.id) is not None
+    assert store.get_request(owed.id).result["pending_cleanup_hashes"] == ["aaaa"]
+
+
+def test_purge_deletes_the_row_once_its_cleanup_has_run():
+    """The hold is only until the sweep finishes — history still clears
+    afterwards, or a row owing a cleanup that never completes would pin
+    itself in the list forever."""
+    store = _store()
+    row = store.create_request(tmdb_id=1, title="Done", release_year=2020, query=None)
+    store.update_status(row.id, "downloading", result={"torrent_hash": "aaaa"})
+    store.mark_organized(row.id, ["/library/Done.mkv"], ["aaaa"], "2000-01-01T00:00:00+00:00")
+    _backdate(store, row.id, days_ago=2)
+
+    assert store.purge_requests_older_than(days=1) == 0
+
+    store.mark_source_cleanup_done(row.id)
+
+    assert store.purge_requests_older_than(days=1) == 1
+    assert store.get_request(row.id) is None
