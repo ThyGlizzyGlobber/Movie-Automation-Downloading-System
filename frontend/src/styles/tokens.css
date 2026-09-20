@@ -160,6 +160,14 @@
      #app's own right padding so a row's content reaches the true
      viewport edge, per direct request. */
   --row-inset: calc(var(--edge-inset) - 14px);
+  /* The gap between the bottom of the top bar and the top of a page's
+     hero — the landing pages' carousel and a content page's banner
+     alike, so the two read as the same component starting in the same
+     place. Applied differently at each end only because the two frames
+     reach the top bar differently: the landing hero sits inside main's
+     own 14px top padding, while .detail cancels that padding and pads
+     itself back down from the viewport edge. */
+  --hero-top-gap: 25px;
   /* Poster card width scales continuously with viewport width (14vw)
      between a mobile floor and a desktop ceiling, rather than jumping
      between a handful of hand-picked breakpoint values — see .hscroll/

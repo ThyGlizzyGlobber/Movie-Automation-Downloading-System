@@ -6,7 +6,9 @@
    background video — every other slide is a plain backdrop image. */
 .home-hero {
   position: relative;
-  width: 100%;
+  /* auto, not 100% — the margins below inset it, and 100% would ignore
+     them and push it past the right edge. */
+  width: auto;
   /* Cinema scope, at every width. The frame's shape is fixed rather
      than following the viewport height, so a trailer scaled to cover it
      lands in the ratio it was shot in: a 2.39:1 trailer fills it exactly,
@@ -14,12 +16,18 @@
      the top and bottom instead of being letterboxed a second time
      inside the frame. */
   aspect-ratio: 2.39 / 1;
-  /* Capping the width, not the height. With aspect-ratio a max-height
-     would narrow the box instead and leave gaps at the gutters; capping
-     width keeps the ratio exact and just stops the frame growing past a
-     sensible height on an ultrawide monitor (1480 / 2.39 ≈ 620px). */
-  max-width: 1480px;
-  margin: 0 auto 28px;
+  /* Full width of the content column, lined up with the rows below:
+     --row-inset is what a row's title and first poster sit at, on top
+     of main's own 14px. Previously this was capped at 1480 and centred,
+     which on a wide screen left its left edge well inside where every
+     row beneath it started.
+     Height follows the width now, with nothing capping it — that is the
+     deal with a fixed ratio, and it is what keeps a trailer in the shape
+     it was shot in at any width. */
+  /* The -14px cancels main's own top padding (global.css), so the gap
+     below the top bar is exactly --hero-top-gap rather than that plus
+     whatever main already contributes. */
+  margin: calc(var(--hero-top-gap) - 14px) var(--row-inset) 28px;
   /* The detail page's banner, which this now matches. */
   border-radius: 30px;
   overflow: hidden;

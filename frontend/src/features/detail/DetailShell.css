@@ -4,7 +4,11 @@
   position: relative;
   width: calc(100% + 28px);
   margin: calc(-1 * (var(--topbar-h, 64px) + 14px)) -14px 0;
-  padding: calc(var(--topbar-h, 64px) + 40px) var(--edge-inset) 56px;
+  /* This element cancels main's top padding above and pads itself back
+     down from the viewport edge, so the top bar's height plus the gap
+     *is* the padding — no other term to subtract. Was +40px, which
+     started the banner 15px lower than the landing pages' hero. */
+  padding: calc(var(--topbar-h, 64px) + var(--hero-top-gap)) var(--edge-inset) 56px;
   /* clip, not hidden: hidden would make this the sticky column's
      scroll container and the poster stack would never move. */
   overflow: clip;
@@ -695,7 +699,10 @@
 }
 @media (max-width: 859px) {
   .detail {
-    padding-top: calc(var(--topbar-h, 64px) + 20px);
+    /* Same gap as every other tier — there's no banner below 860px,
+       but the poster layout that replaces it should still start where
+       a hero would. */
+    padding-top: calc(var(--topbar-h, 64px) + var(--hero-top-gap));
     padding-bottom: 24px;
   }
   /* One column, read top to bottom: the banner (status line and logo
