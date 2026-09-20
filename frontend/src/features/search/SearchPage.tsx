@@ -5,7 +5,7 @@ import { searchTv } from '../../api/tv'
 import PosterCard from '../../components/PosterCard'
 import { PosterCardSkeleton } from '../../components/Skeleton'
 import EmptyState from '../../components/EmptyState'
-import { usePageTitle, useSetHasHero } from '../../lib/chrome'
+import { usePageTitle } from '../../lib/chrome'
 
 // Unified search — movies and TV shows in parallel, each independently
 // empty-stated rather than one combined list, since a title only ever
@@ -31,7 +31,6 @@ export default function SearchPage() {
   const { query: rawQuery } = useParams()
   const query = rawQuery ? decodeURIComponent(rawQuery) : ''
   usePageTitle(`“${query}”`)
-  useSetHasHero(false)
 
   const moviesQuery = useQuery({
     queryKey: ['search', 'movie', query],

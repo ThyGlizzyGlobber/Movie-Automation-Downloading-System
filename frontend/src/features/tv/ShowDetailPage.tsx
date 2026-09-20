@@ -11,7 +11,7 @@ import Icon from '../../components/Icon'
 import DetailShell, { DetailShellSkeleton, type DetailPill, type DetailRow, type DetailTile } from '../detail/DetailShell'
 import { acrossReleases, DetailCast, DetailCastSkeleton, DetailTrailer, DetailTrailerSkeleton, FactTiles, genreLinks, peopleLinks, qualityFromName, sourceFromName, usePlexHref } from '../detail/DetailBits'
 import { formatBytes } from '../../lib/format'
-import { usePageTitle, useSetHasHero } from '../../lib/chrome'
+import { usePageTitle } from '../../lib/chrome'
 import { errorText, useToast } from '../../lib/toast'
 import { languageNameOf, tvCertificationOf, yearOf } from '../../lib/detailHelpers'
 import { showPill, startOfToday } from '../../lib/homeHero'
@@ -48,7 +48,6 @@ function ShowDetailSkeleton() {
 export default function ShowDetailPage() {
   const { id } = useParams()
   const tmdbId = Number(id)
-  useSetHasHero(true)
   const queryClient = useQueryClient()
   const { toast } = useToast()
 

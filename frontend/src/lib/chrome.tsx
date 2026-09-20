@@ -1,41 +1,12 @@
-import { createContext, useContext, useEffect, useState, type ReactNode, type RefObject } from 'react'
+import { useEffect, type RefObject } from 'react'
 
-// Ports setChrome({hasHero})'s job from the old app: whether the current
-// page wants the topbar's see-through hero treatment instead of its
-// normal frosted-bar background. Pages that have a hero (Home, movie/show
-// detail — none built yet) call useSetHasHero(true); everything else
-// implicitly stays false. A tiny context rather than prop-drilling,
-// since Topbar and the page setting it are siblings under AppShell, not
-// parent/child.
-const ChromeContext = createContext<{ hasHero: boolean; setHasHero: (v: boolean) => void } | null>(null)
-
-export function ChromeProvider({ children }: { children: ReactNode }) {
-  const [hasHero, setHasHero] = useState(false)
-  // Drives Topbar.css's body.has-hero rules (transparent header over a
-  // hero backdrop until scrolled) — the context alone doesn't touch the
-  // DOM on its own.
-  useEffect(() => {
-    document.body.classList.toggle('has-hero', hasHero)
-    return () => document.body.classList.remove('has-hero')
-  }, [hasHero])
-  return <ChromeContext.Provider value={{ hasHero, setHasHero }}>{children}</ChromeContext.Provider>
-}
-
-export function useChrome() {
-  const ctx = useContext(ChromeContext)
-  if (!ctx) throw new Error('useChrome must be used within ChromeProvider')
-  return ctx
-}
-
-// A page calls this to opt into the hero topbar treatment for as long as
-// it's mounted — resets automatically on unmount/navigation-away.
-export function useSetHasHero(value: boolean) {
-  const { setHasHero } = useChrome()
-  useEffect(() => {
-    setHasHero(value)
-    return () => setHasHero(false)
-  }, [value, setHasHero])
-}
+// There was a `hasHero` context here, toggling a `has-hero` class on
+// <body> that twenty-five pages opted into. Nothing styled it: the
+// Topbar.css rules its comments described had already gone, so the
+// class was set and cleared on every navigation to no effect. Removed
+// along with the provider and the per-page calls. The top bar is a
+// floating glass pill on every page now, hero or not, and the hero is
+// an inset pane that never runs under it.
 
 // Ports setChrome({title})'s document.title job.
 export function usePageTitle(title: string | null) {

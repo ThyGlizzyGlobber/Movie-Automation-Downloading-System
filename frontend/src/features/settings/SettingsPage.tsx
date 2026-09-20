@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useMediaQuery } from '../../lib/hooks'
-import { usePageTitle, useSetHasHero } from '../../lib/chrome'
+import { usePageTitle } from '../../lib/chrome'
 import SettingsNav, { SETTINGS_SECTIONS } from './SettingsNav'
 import DashboardPanel from './DashboardPanel'
 import PipelinePanel from './PipelinePanel'
@@ -58,7 +58,6 @@ function sectionFromHash(): string | null {
 // dashboard, no page title. Phones: the section list, drilling into one section.
 export default function SettingsPage() {
   usePageTitle('Settings')
-  useSetHasHero(false)
   const isDesktop = useMediaQuery('(min-width: 860px)')
   const [section, setSection] = useState<string | null>(() => sectionFromHash())
 

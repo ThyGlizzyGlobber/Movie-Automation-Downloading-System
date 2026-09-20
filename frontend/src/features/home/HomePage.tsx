@@ -16,7 +16,7 @@ import RequestedRow from '../../components/RequestedRow'
 import ProviderChips from '../../components/ProviderChips'
 import { PosterCardSkeleton } from '../../components/Skeleton'
 import ErrorState from '../../components/ErrorState'
-import { usePageTitle, useSetHasHero } from '../../lib/chrome'
+import { usePageTitle } from '../../lib/chrome'
 import { mixTrending, tagMediaType } from '../../lib/homeHero'
 import { browseHref } from '../../api/browse'
 
@@ -56,7 +56,6 @@ const followedSkeleton = () => <PosterCardSkeleton meta={false} />
 
 export default function HomePage() {
   usePageTitle(null)
-  useSetHasHero(true)
 
   const movieTrending = useQuery({ queryKey: ['movies', 'trending'], queryFn: () => getDiscoverTrending(1) })
   const tvTrending = useQuery({ queryKey: ['tv', 'trending'], queryFn: () => getTvDiscoverTrending(1) })

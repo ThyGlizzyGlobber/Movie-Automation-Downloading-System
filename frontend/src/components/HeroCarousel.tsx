@@ -7,7 +7,7 @@ import { movieHeroBadge, movieCertOf, tvHeroBadge, tvCertOf, type TaggedItem } f
 import AmbientGlow from './AmbientGlow'
 import './HeroCarousel.css'
 import Icon from './Icon'
-import { SAMPLE_SYNOPSIS, Skel, SkelWords } from './Skeleton'
+import { SAMPLE_SYNOPSIS, Skel, SkelText, SkelWords } from './Skeleton'
 import { useMediaQuery } from '../lib/hooks'
 
 const HERO_TRAILER_COUNT = 2 // only the front slides ever get a background video
@@ -55,8 +55,10 @@ function movieLength(runtime: number | null): string {
 
 const HERO_SKELETON_DOTS = 5
 
-// The hero while its titles load: one slide of the same markup, with the
-// backdrop, logo, status line, blurb and buttons as placeholders.
+// The hero while its titles load: one slide of the real markup, so the
+// same CSS shapes it — a scope frame with the art, logo, status line,
+// blurb and buttons over it on desktop, and the same elements as a
+// portrait card with the facts line and two stacked buttons on a phone.
 function HeroSkeleton() {
   return (
     <div className="home-hero" aria-busy="true">
@@ -77,6 +79,11 @@ function HeroSkeleton() {
                 #1 trending this week
               </Skel>
             </div>
+            {/* Phone-only, like the real one: the wrapper's own rule
+                hides it above 640px, taking the bar with it. */}
+            <div className="home-hero-meta">
+              <SkelText width="68%" />
+            </div>
             <p className="hero-syn">
               <SkelWords text={SAMPLE_SYNOPSIS} />
             </p>
@@ -85,8 +92,12 @@ function HeroSkeleton() {
                 <Icon name="plus" />
                 Not on Plex yet
               </Skel>
-              <Skel className="btn sec circ">
+              {/* Carries home-hero-info and the label, so on a phone it
+                  widens into the second full-width button rather than
+                  staying a 54px circle the loaded card doesn't have. */}
+              <Skel className="btn sec circ home-hero-info">
                 <Icon name="info" />
+                <span className="home-hero-info-label">More info</span>
               </Skel>
             </div>
           </div>

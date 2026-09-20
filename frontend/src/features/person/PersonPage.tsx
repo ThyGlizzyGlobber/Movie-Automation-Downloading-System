@@ -6,7 +6,7 @@ import Img from '../../components/Img'
 import { PosterCardSkeleton, Skel, SkelText } from '../../components/Skeleton'
 import ErrorState from '../../components/ErrorState'
 import EmptyState from '../../components/EmptyState'
-import { usePageTitle, useSetHasHero } from '../../lib/chrome'
+import { usePageTitle } from '../../lib/chrome'
 import { profileUrl } from '../../lib/tmdbImage'
 import './PersonPage.css'
 
@@ -16,7 +16,6 @@ import './PersonPage.css'
 export default function PersonPage() {
   const { id } = useParams()
   const personId = Number(id)
-  useSetHasHero(false)
 
   const personQuery = useQuery({ queryKey: ['person', personId], queryFn: () => getPerson(personId) })
   const person = personQuery.data

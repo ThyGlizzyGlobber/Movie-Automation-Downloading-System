@@ -10,7 +10,7 @@ import Img from '../../components/Img'
 import { Skel, SkelText, SkelWords } from '../../components/Skeleton'
 import ErrorState from '../../components/ErrorState'
 import EmptyState from '../../components/EmptyState'
-import { usePageTitle, useSetHasHero } from '../../lib/chrome'
+import { usePageTitle } from '../../lib/chrome'
 import { posterUrl } from '../../lib/tmdbImage'
 import { relativeTime } from '../../lib/format'
 import { CANCELLABLE, NON_TERMINAL, statusDetail, statusMeta } from '../../lib/status'
@@ -319,7 +319,6 @@ function ShowRow({ group, expanded, onToggle, onChanged }: { group: ShowGroup; e
 
 export default function RequestsPage() {
   usePageTitle('Requests')
-  useSetHasHero(false)
   const queryClient = useQueryClient()
   const session = useSession()
   const isAdmin = !!session.data?.is_admin

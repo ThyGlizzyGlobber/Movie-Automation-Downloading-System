@@ -6,7 +6,7 @@ import MediaRow from '../../components/MediaRow'
 import ProviderChips from '../../components/ProviderChips'
 import { PosterCardSkeleton } from '../../components/Skeleton'
 import ErrorState from '../../components/ErrorState'
-import { usePageTitle, useSetHasHero } from '../../lib/chrome'
+import { usePageTitle } from '../../lib/chrome'
 import { ROW_PROVIDERS } from '../../lib/providers'
 import { tagMediaType } from '../../lib/homeHero'
 import { browseHref } from '../../api/browse'
@@ -37,7 +37,6 @@ const followedSkeleton = () => <PosterCardSkeleton meta={false} />
 
 export default function TvLandingPage() {
   usePageTitle('TV Shows')
-  useSetHasHero(true)
 
   const shows = useQuery({ queryKey: ['shows'], queryFn: () => listShows() })
   const trending = useQuery({ queryKey: ['tv', 'trending'], queryFn: () => getTvDiscoverTrending(1) })

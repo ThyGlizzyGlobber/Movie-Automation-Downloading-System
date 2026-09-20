@@ -6,7 +6,7 @@ import Img from '../../components/Img'
 import { Skel, SkelText, SkelWords } from '../../components/Skeleton'
 import ErrorState from '../../components/ErrorState'
 import EmptyState from '../../components/EmptyState'
-import { usePageTitle, useSetHasHero } from '../../lib/chrome'
+import { usePageTitle } from '../../lib/chrome'
 import { posterUrl } from '../../lib/tmdbImage'
 import { relativeTime } from '../../lib/format'
 import { errorText, useToast } from '../../lib/toast'
@@ -106,7 +106,6 @@ function WatchingRowSkeleton() {
 
 export default function WatchingPage() {
   usePageTitle('Following')
-  useSetHasHero(false)
   const queryClient = useQueryClient()
   const showsQuery = useQuery({ queryKey: ['shows'], queryFn: () => listShows('watching') })
 

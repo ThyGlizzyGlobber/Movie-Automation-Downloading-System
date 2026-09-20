@@ -7,7 +7,7 @@ import { browsePage, type BrowseList, type BrowseParams, type BrowseSort, type B
 import { listRequests } from '../api/requests'
 import { CURATED_PROVIDERS } from '../lib/providers'
 import { counterpartGenre, genresFor } from '../lib/genres'
-import { usePageTitle, useSetHasHero } from '../lib/chrome'
+import { usePageTitle } from '../lib/chrome'
 import type { TmdbListItem } from '../types/movies'
 import './BrowsePage.css'
 
@@ -52,7 +52,6 @@ export default function BrowsePage() {
   const { type, sort, list, genre, provider, year, avail } = params
   const typeLabel = type === 'tv' ? 'TV Shows' : 'Movies'
   usePageTitle(typeLabel)
-  useSetHasHero(false)
 
   // Trending and Coming Soon are fixed lists, so the discover filters are
   // hidden while one of them is showing.

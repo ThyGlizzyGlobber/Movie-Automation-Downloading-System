@@ -10,7 +10,7 @@ import ErrorState from '../../components/ErrorState'
 import Icon from '../../components/Icon'
 import DetailShell, { DetailShellSkeleton, type DetailPill, type DetailRow, type DetailTile } from '../detail/DetailShell'
 import { acrossReleases, DetailCast, DetailCastSkeleton, DetailTrailer, DetailTrailerSkeleton, FactTiles, filedOnLabel, genreLinks, peopleLinks, qualityFromName, serviceTile, sourceFromName, usePlexHref, useTitleRequests } from '../detail/DetailBits'
-import { usePageTitle, useSetHasHero } from '../../lib/chrome'
+import { usePageTitle } from '../../lib/chrome'
 import { certificationOf, languageNameOf, yearOf } from '../../lib/detailHelpers'
 import { moviePill } from '../../lib/homeHero'
 import { formatBytes } from '../../lib/format'
@@ -48,7 +48,6 @@ function MovieDetailSkeleton() {
 export default function MovieDetailPage() {
   const { id } = useParams()
   const tmdbId = Number(id)
-  useSetHasHero(true)
   const queryClient = useQueryClient()
   const { toast } = useToast()
 

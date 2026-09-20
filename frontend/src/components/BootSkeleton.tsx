@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { useRef } from 'react'
 import { HashRouter, useLocation } from 'react-router-dom'
 import Icon from './Icon'
 import { HomeSkeleton } from '../features/home/HomePage'
@@ -6,9 +6,6 @@ import { useTopbarHeight } from '../lib/chrome'
 import { SECTIONS } from '../lib/sections'
 import './Topbar.css'
 import './Tabbar.css'
-
-// Pages whose top bar sits see-through over a hero (see useSetHasHero).
-const HERO_PATHS = [/^\/(home)?$/, /^\/movies(\/\d+)?$/, /^\/tv(\/\d+)?$/]
 
 // The app while it checks setup and the session: the top bar and tab bar
 // as the app draws them, the current section lit, and on Home the page's
@@ -27,12 +24,6 @@ function BootFrame() {
   const current = SECTIONS.find((s) => path === s.href || path.startsWith(`${s.href}/`))?.tab ?? (path === '/' ? 'home' : null)
   const topbarRef = useRef<HTMLDivElement>(null)
   useTopbarHeight(topbarRef)
-
-  const hero = HERO_PATHS.some((re) => re.test(path)) && path !== '/tv/watching'
-  useEffect(() => {
-    document.body.classList.toggle('has-hero', hero)
-    return () => document.body.classList.remove('has-hero')
-  }, [hero])
 
   return (
     <>

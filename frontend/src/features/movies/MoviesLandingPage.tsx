@@ -5,7 +5,7 @@ import HeroCarousel from '../../components/HeroCarousel'
 import MediaRow from '../../components/MediaRow'
 import ProviderChips from '../../components/ProviderChips'
 import ErrorState from '../../components/ErrorState'
-import { usePageTitle, useSetHasHero } from '../../lib/chrome'
+import { usePageTitle } from '../../lib/chrome'
 import { ROW_PROVIDERS } from '../../lib/providers'
 import { tagMediaType } from '../../lib/homeHero'
 import { browseHref } from '../../api/browse'
@@ -28,7 +28,6 @@ const MOVIE_GENRES = [
 
 export default function MoviesLandingPage() {
   usePageTitle('Movies')
-  useSetHasHero(true)
 
   const trending = useQuery({ queryKey: ['movies', 'trending'], queryFn: () => getDiscoverTrending(1) })
   const popular = useQuery({ queryKey: ['movies', 'popular'], queryFn: () => getDiscoverPopular(1) })
