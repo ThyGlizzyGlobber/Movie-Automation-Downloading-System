@@ -36,6 +36,11 @@ function EpisodePill({ ep }: { ep: EpisodeStatus }) {
   if (ep.state === 'unaired') {
     return <span className="status-pill status-queued episode-pill-muted">Not yet aired</span>
   }
+  if (ep.state === 'holding') {
+    // Out, but deliberately not searched for yet — see the air buffer in
+    // Settings › TV scheduling.
+    return <span className="status-pill status-queued episode-pill-muted">Waiting for a good copy</span>
+  }
   return <span className="status-pill status-queued episode-pill-muted">Not requested</span>
 }
 

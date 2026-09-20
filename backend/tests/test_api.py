@@ -3044,3 +3044,130 @@ def test_overwrite_is_allowed_when_plex_can_point_at_the_file(client_and_deps, m
     assert client.post("/api/requests", json={"tmdb_id": 693134, "redownload_mode": "overwrite"}).status_code == 201
     detail = client.get("/api/movies/693134").json()
     assert detail["plex_file_available"] is (detail["on_plex"] is True)
+
+
+# Long enough that an episode airing today is inside it whatever the
+# clock says when the suite runs.
+HELD_BUFFER_HOURS = 48
+
+
+def _season_with_todays_episode(tmdb):
+    """A season whose episode 2 aired today. Tests pair it with a buffer
+    of HELD_BUFFER_HOURS rather than a realistic 15: at 15 the result
+    would depend on the time of day the suite runs (a same-day episode
+    leaves a 15h buffer once 15:00 UTC passes), and the boundary itself
+    is pinned deterministically in test_tv_resolve.py against an
+    explicit `now`. Two days of buffer holds today's episode at any
+    hour."""
+    today = datetime.now(timezone.utc).date().isoformat()
+    tmdb.get_tv_season = lambda tmdb_id, season_number: [
+        {"episode_number": 1, "name": "Old", "air_date": "2020-01-01", "runtime": 50, "still_path": None},
+        {"episode_number": 2, "name": "Fresh", "air_date": today, "runtime": 50, "still_path": None},
+    ]
+    return today
+
+
+def test_season_episodes_marks_an_episode_inside_the_air_buffer_as_holding(client_and_deps):
+    """The show page used to call an episode requestable from UTC
+    midnight on its air_date while the scheduler wouldn't touch it for
+    hours — offering an "Add to Plex" button straight into the window
+    the buffer exists to sit out."""
+    client, store, tmdb, _, _, _ = client_and_deps
+    _season_with_todays_episode(tmdb)
+    store.update_settings({"episode_air_buffer_hours": HELD_BUFFER_HOURS})
+
+    body = client.get("/api/tv/95350/season/1/episodes").json()
+    by_number = {e["episode_number"]: e["state"] for e in body["episodes"]}
+
+    assert by_number[1] == "missing"   # long aired, genuinely requestable
+    assert by_number[2] == "holding"   # aired today, still held
+
+
+def test_requesting_an_episode_inside_the_air_buffer_is_refused(client_and_deps):
+    """The buffer is a safety setting, not a scheduling preference, so
+    the route that bypassed it is the one that let early fakes in."""
+    client, store, tmdb, worker, _, _ = client_and_deps
+    _season_with_todays_episode(tmdb)
+    store.update_settings({"episode_air_buffer_hours": HELD_BUFFER_HOURS})
+
+    refused = client.post("/api/tv/95350/episodes/1/2")
+
+    assert refused.status_code == 409
+    assert "aired too recently" in refused.json()["detail"]
+    assert worker.enqueued == []
+
+
+def test_the_air_buffer_gate_is_the_setting_not_a_hardcoded_rule(client_and_deps):
+    """At 0 the setting means "search the instant the air_date arrives",
+    and both the page and the route must honour that too."""
+    client, store, tmdb, _, _, _ = client_and_deps
+    _season_with_todays_episode(tmdb)
+    store.update_settings({"episode_air_buffer_hours": 0})
+
+    body = client.get("/api/tv/95350/season/1/episodes").json()
+    assert {e["episode_number"]: e["state"] for e in body["episodes"]}[2] == "missing"
+    assert client.post("/api/tv/95350/episodes/1/2").status_code == 201
+
+
+def test_an_unaired_episode_is_still_unaired_not_holding(client_and_deps):
+    """"Holding" is for something that has come out; a future episode
+    keeps its own state so the page doesn't imply it's nearly here."""
+    client, store, tmdb, _, _, _ = client_and_deps
+    tmdb.get_tv_season = lambda tmdb_id, season_number: [
+        {"episode_number": 1, "name": "Later", "air_date": "2999-01-01", "runtime": None, "still_path": None},
+    ]
+    store.update_settings({"episode_air_buffer_hours": HELD_BUFFER_HOURS})
+
+    body = client.get("/api/tv/95350/season/1/episodes").json()
+    assert body["episodes"][0]["state"] == "unaired"
+
+
+class FakeTVMaze:
+    """Stands in for the module-level TVmaze client. Returns whatever
+    map it was built with, for any show."""
+
+    def __init__(self, stamps):
+        self.stamps = stamps
+
+    def airstamps_for_show(self, tvdb_id, imdb_id):
+        return self.stamps
+
+
+def test_an_airstamp_holds_an_episode_the_date_rule_would_have_released(client_and_deps, monkeypatch):
+    """The Lanterns failure, end to end. TMDB dates an episode well in
+    the past, so the date rule calls it long released — but TVmaze says
+    it is only out in an hour, and the buffer runs from that. Held by
+    both the page and the request route.
+
+    The airstamp is relative to now so the test doesn't depend on the
+    clock; the real 2026-09-20 / 2026-09-21T01:00Z pair is pinned in
+    test_tv_resolve.py."""
+    client, store, tmdb, worker, _, _ = client_and_deps
+    out_in_an_hour = datetime.now(timezone.utc) + timedelta(hours=1)
+    tmdb.get_tv_season = lambda tmdb_id, season_number: [
+        {"episode_number": 6, "name": "Bad Optics", "air_date": "2020-01-01", "runtime": 55, "still_path": None},
+    ]
+    monkeypatch.setattr(api, "_tvmaze", FakeTVMaze({(1, 6): out_in_an_hour}))
+    store.update_settings({"episode_air_buffer_hours": 15})
+
+    body = client.get("/api/tv/95350/season/1/episodes").json()
+    assert body["episodes"][0]["state"] == "holding"
+
+    refused = client.post("/api/tv/95350/episodes/1/6")
+    assert refused.status_code == 409
+    assert worker.enqueued == []
+
+
+def test_without_an_airstamp_the_date_rule_still_applies(client_and_deps, monkeypatch):
+    """The fallback: a show TVmaze doesn't know behaves exactly as it
+    did before, rather than becoming unrequestable."""
+    client, store, tmdb, _, _, _ = client_and_deps
+    tmdb.get_tv_season = lambda tmdb_id, season_number: [
+        {"episode_number": 6, "name": "Bad Optics", "air_date": "2020-01-01", "runtime": 55, "still_path": None},
+    ]
+    monkeypatch.setattr(api, "_tvmaze", FakeTVMaze({}))
+    store.update_settings({"episode_air_buffer_hours": 15})
+
+    body = client.get("/api/tv/95350/season/1/episodes").json()
+    assert body["episodes"][0]["state"] == "missing"
+    assert client.post("/api/tv/95350/episodes/1/6").status_code == 201

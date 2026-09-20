@@ -430,7 +430,7 @@ def test_get_tv_requests_credits_and_content_ratings_append():
 
     assert captured["path"] == "/tv/1"
     assert captured["params"] == {
-        "append_to_response": "credits,content_ratings,recommendations,images",
+        "append_to_response": "credits,content_ratings,recommendations,images,external_ids",
         "include_image_language": "en,null",
     }
     assert result["name"] == "Lanterns"

@@ -59,8 +59,9 @@ from app.plex import (
 from app.qbt import QBTClient
 from app.resolve import resolve
 from app.tmdb import BROWSE_SORTS, TMDBClient, TMDBError, best_logo_path, best_trailer_key, is_movie_coming_soon, is_tv_upcoming
-from app.tv_resolve import resolve_show
+from app.tv_resolve import episode_is_released, resolve_show
 from app.tv_settings import resolve_tv_settings
+from app.tvmaze import TVMazeClient, season_airstamps
 from app.worker import Worker
 
 # Cache filenames are always trailers.cached_trailer_path()'s own
@@ -519,6 +520,22 @@ def _show_out(store: RequestStore, row: ShowRow) -> ShowOut:
 # whole-library Plex lookup per request rather than one live Plex call per
 # item. See plex.py's `plex_library_lookup` for the caching design.
 # ---------------------------------------------------------------------------
+
+
+_tvmaze = TVMazeClient()
+
+
+def _season_airstamps_for(tmdb_id: int, season_number: int, tmdb: TMDBClient) -> dict[int, datetime]:
+    """`{episode_number: released_at_utc}` from TVmaze for one season, so
+    the show page and the per-episode request route hold an episode for
+    the same window the worker does — measured from its real release
+    rather than midnight UTC on TMDB's date. `{}` on any failure, which
+    falls back to the date rule (tv_resolve.episode_is_released)."""
+    try:
+        identity = resolve_show(tmdb_id, tmdb)
+    except TMDBError:
+        return {}
+    return season_airstamps(_tvmaze.airstamps_for_show(identity.tvdb_id, identity.imdb_id), season_number)
 
 
 def _annotate_on_plex(
@@ -2005,7 +2022,14 @@ def get_season_episodes(
         on_disk = find_existing_episode_files(identity, season_number, numbers)
     except (TMDBError, OSError):
         on_disk = {}
+    # The air buffer the subscription scheduler honours, applied here too.
+    # Without it this list called an episode requestable from UTC midnight
+    # on its air_date while the scheduler wouldn't touch it for hours yet,
+    # so the show page offered an "Add to Plex" button straight into the
+    # exact window the setting exists to sit out.
     today = datetime.now(timezone.utc).date().isoformat()
+    buffer_hours = resolve_tv_settings(store).episode_air_buffer_hours
+    stamps = _season_airstamps_for(tmdb_id, season_number, tmdb) if buffer_hours else {}
     out = []
     for ep in episodes:
         number = ep.get("episode_number")
@@ -2025,6 +2049,11 @@ def get_season_episodes(
             state, status, request_id = "failed", row.status, row.id
         elif not air_date or air_date > today:
             state = "unaired"
+        elif not episode_is_released(air_date, stamps.get(number), buffer_hours=buffer_hours):
+            # Out, but inside the air buffer — the scheduler is
+            # deliberately waiting, so the page says so rather than
+            # offering a button that would jump the queue.
+            state = "holding"
         out.append(
             {
                 "episode_number": number,
@@ -2067,6 +2096,31 @@ def request_episode(
         show = store.create_show(tmdb_id=tmdb_id, title=identity.title, status="paused", poster_path=identity.poster_path)
     if store.has_show_episode(show.id, season_number, episode_number):
         raise HTTPException(status_code=409, detail="this episode is already tracked")
+
+    # The air buffer is a safety setting, not a scheduling preference: it
+    # exists because the hours right after an air_date rolls over are when
+    # fake and empty releases get uploaded to catch automated tools
+    # searching too early. Enforcing it only in the worker left this route
+    # as a way around it — and the show page was offering the button.
+    buffer_hours = resolve_tv_settings(store).episode_air_buffer_hours
+    if buffer_hours:
+        try:
+            episodes = tmdb.get_tv_season(tmdb_id, season_number)
+        except TMDBError:
+            episodes = []
+        air_date = next(
+            (e.get("air_date") for e in episodes if e.get("episode_number") == episode_number), None
+        )
+        stamps = _season_airstamps_for(tmdb_id, season_number, tmdb)
+        if air_date and not episode_is_released(air_date, stamps.get(episode_number), buffer_hours=buffer_hours):
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    f"this episode aired too recently — it's held for {buffer_hours:g}h after its air date "
+                    "so a real release has time to appear (Settings › TV scheduling)"
+                ),
+            )
+
     row = store.create_episode_request(
         tmdb_id=show.tmdb_id,
         show_id=show.id,

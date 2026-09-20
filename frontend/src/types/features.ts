@@ -2,7 +2,10 @@
 // pass" block): quality profiles, per-episode status, storage details,
 // Plex Continue Watching.
 
-export type EpisodeState = 'in_plex' | 'requested' | 'failed' | 'unaired' | 'missing'
+// 'holding': aired, but still inside the air buffer (Settings › TV
+// scheduling), so the scheduler is deliberately waiting before it
+// searches — distinct from 'unaired', which hasn't come out at all.
+export type EpisodeState = 'in_plex' | 'requested' | 'failed' | 'unaired' | 'holding' | 'missing'
 
 export interface EpisodeStatus {
   episode_number: number

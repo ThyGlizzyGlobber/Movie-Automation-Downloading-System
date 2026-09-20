@@ -316,7 +316,14 @@ class TMDBClient:
         # detail page's "Related" row.
         return self._get(
             f"/tv/{tmdb_id}",
-            {"append_to_response": "credits,content_ratings,recommendations,images", "include_image_language": "en,null"},
+            # external_ids: the TheTVDB/IMDb ids tvmaze.py needs to reach
+            # a show's episode release *times*, which TMDB has no field
+            # for. Folded into this existing call rather than a second
+            # request, same as everything else appended here.
+            {
+                "append_to_response": "credits,content_ratings,recommendations,images,external_ids",
+                "include_image_language": "en,null",
+            },
         )
 
     def get_person(self, person_id: int) -> dict:

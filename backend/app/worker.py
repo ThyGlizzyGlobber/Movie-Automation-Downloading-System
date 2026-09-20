@@ -119,6 +119,7 @@ from app.qbt import QBTClient, QBTError
 from app.resolve import resolve
 from app.tmdb import TMDBClient, TMDBError
 from app.tv_resolve import ShowIdentity, aired_episode_numbers, resolve_show, season_is_complete
+from app.tvmaze import TVMazeClient, season_airstamps
 from app.tv_settings import TVScheduleSettings, resolve_tv_settings
 
 logger = logging.getLogger("app.worker")
@@ -221,10 +222,14 @@ def _result_summary(result) -> dict:
 
 
 class Worker:
-    def __init__(self, store: RequestStore, tmdb: TMDBClient, qbt: QBTClient):
+    def __init__(self, store: RequestStore, tmdb: TMDBClient, qbt: QBTClient, tvmaze: TVMazeClient | None = None):
         self.store = store
         self.tmdb = tmdb
         self.qbt = qbt
+        # Episode release times, which TMDB has no field for. Optional so
+        # the existing three-argument construction keeps working; its own
+        # lookups are best effort and fall back to TMDB's date.
+        self.tvmaze = tvmaze or TVMazeClient()
         self.queue: asyncio.Queue[int] = asyncio.Queue()
         self._pipeline_lock = asyncio.Lock()
         self._tasks: list[asyncio.Task] = []
@@ -398,7 +403,10 @@ class Worker:
             except TMDBError:
                 logger.exception("pack fallback: couldn't fetch season %d for %s", season_number, _request_label(row))
                 continue
-            aired = aired_episode_numbers(episodes, buffer_hours=tv_settings.episode_air_buffer_hours)
+            stamps = await asyncio.to_thread(self._season_airstamps, identity, season_number)
+            aired = aired_episode_numbers(
+                episodes, buffer_hours=tv_settings.episode_air_buffer_hours, airstamps=stamps
+            )
             if not aired:
                 continue
             had = []
@@ -462,7 +470,10 @@ class Worker:
             except TMDBError:
                 logger.exception("pack fallback: couldn't fetch season %d for %s", season_number, _request_label(row))
                 continue
-            for episode_number in aired_episode_numbers(episodes, buffer_hours=tv_settings.episode_air_buffer_hours):
+            stamps = await asyncio.to_thread(self._season_airstamps, identity, season_number)
+            for episode_number in aired_episode_numbers(
+                episodes, buffer_hours=tv_settings.episode_air_buffer_hours, airstamps=stamps
+            ):
                 if await asyncio.to_thread(self.store.has_live_show_episode, show.id, season_number, episode_number):
                     continue
                 if (season_number, episode_number) in on_plex:
@@ -982,6 +993,19 @@ class Worker:
             except Exception:
                 logger.exception("show check crashed for show %d (%s)", show.id, show.title)
 
+    def _season_airstamps(self, identity: ShowIdentity, season_number: int) -> dict[int, datetime]:
+        """`{episode_number: released_at_utc}` for one season, from
+        TVmaze. `{}` when it doesn't know the show or can't be reached,
+        which is the signal to fall back to TMDB's date — see
+        tv_resolve.episode_is_released.
+
+        Called per season rather than threaded through every signature:
+        the client caches a show's whole episode list for hours, so the
+        repeat calls a multi-season backfill makes cost one HTTP request
+        between them."""
+        whole_show = self.tvmaze.airstamps_for_show(identity.tvdb_id, identity.imdb_id)
+        return season_airstamps(whole_show, season_number)
+
     def _unhandled_episodes_for_season(
         self,
         show: ShowRow,
@@ -1002,8 +1026,12 @@ class Worker:
 
         `buffer_hours` is `tv_settings.episode_air_buffer_hours`, passed
         straight through to `aired_episode_numbers` — see tv_resolve.py's
-        `_cutoff_date` for what it does and why."""
-        aired = set(aired_episode_numbers(episodes, buffer_hours=buffer_hours))
+        `aired_cutoff_date` for what it does and why."""
+        aired = set(
+            aired_episode_numbers(
+                episodes, buffer_hours=buffer_hours, airstamps=self._season_airstamps(identity, season_number)
+            )
+        )
         on_plex = self._episodes_on_plex(identity)
         unhandled = []
         for episode_number in sorted(aired):
@@ -1106,7 +1134,11 @@ class Worker:
         # week — the rest arrive one at a time, finale included. Confirmed
         # live 2026-09-17 (Reacher): the season finale dropped and the
         # check queued the whole season pack instead of the one episode.
-        aired = set(aired_episode_numbers(episodes, buffer_hours=buffer_hours))
+        aired = set(
+            aired_episode_numbers(
+                episodes, buffer_hours=buffer_hours, airstamps=self._season_airstamps(identity, season_number)
+            )
+        )
         untouched = len(unhandled) == len(aired)
 
         if season_complete and untouched:
@@ -1255,7 +1287,9 @@ class Worker:
                 episodes = self.tmdb.get_tv_season(show.tmdb_id, season_number)
             except TMDBError:
                 break
-            if not season_is_complete(episodes, buffer_hours=buffer_hours):
+            if not season_is_complete(
+                episodes, buffer_hours=buffer_hours, airstamps=self._season_airstamps(identity, season_number)
+            ):
                 break
             if not self._unhandled_episodes_for_season(show, identity, season_number, episodes, buffer_hours):
                 break
@@ -1415,7 +1449,11 @@ class Worker:
                     "show check: couldn't fetch season %d for show %d (%s)", season_number, show.id, show.title
                 )
                 continue
-            complete = season_is_complete(episodes, buffer_hours=tv_settings.episode_air_buffer_hours)
+            complete = season_is_complete(
+                episodes,
+                buffer_hours=tv_settings.episode_air_buffer_hours,
+                airstamps=self._season_airstamps(identity, season_number),
+            )
             pack_due = complete and self._should_attempt_pack(show, season_number, tv_settings)
             created += self._check_show_season(
                 show, identity, season_number, episodes, complete, pack_due, tv_settings.episode_air_buffer_hours

@@ -1,7 +1,9 @@
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 
 from app.tmdb import TMDBClient
 from app.tv_resolve import (
+    aired_cutoff_date,
+    episode_is_released,
     aired_episode_numbers,
     episode_query,
     resolve_show,
@@ -108,7 +110,7 @@ def test_resolve_show_requests_credits_append():
 
     assert captured["path"] == "/tv/1"
     assert captured["params"] == {
-        "append_to_response": "credits,content_ratings,recommendations,images",
+        "append_to_response": "credits,content_ratings,recommendations,images,external_ids",
         "include_image_language": "en,null",
     }
 
@@ -307,3 +309,104 @@ def test_finished_seasons_ignores_a_season_announced_for_the_future():
         "seasons": [{"season_number": 1, "air_date": "2020-01-01"}, {"season_number": 2, "air_date": "2999-01-01"}],
     }
     assert _finished_seasons(show, today="2026-09-17") == 1
+
+
+def test_aired_cutoff_date_holds_an_episode_until_the_buffer_has_passed():
+    """The air buffer's boundary, pinned against an explicit clock rather
+    than whatever time the suite happens to run at.
+
+    With 15 hours set, an episode dated 2026-09-21 is held through UTC
+    midnight and released once 15:00 UTC passes — which is the whole
+    point of the setting: the hours right after a date rolls over are
+    when fake and empty releases get uploaded to catch tools searching
+    too early.
+    """
+    air_date = "2026-09-21"
+    midnight = datetime(2026, 9, 21, 0, 0, tzinfo=timezone.utc)
+
+    def held_at(hour: float) -> bool:
+        cutoff = aired_cutoff_date(midnight + timedelta(hours=hour), buffer_hours=15)
+        return air_date > cutoff
+
+    assert held_at(0) is True       # the instant the date rolls over
+    assert held_at(14.9) is True    # still inside the buffer
+    assert held_at(15) is False     # released
+    assert held_at(23) is False
+
+
+def test_aired_cutoff_date_with_no_buffer_releases_at_midnight():
+    """0 means "search the instant the air_date arrives" — the behaviour
+    the buffer was added to replace, still available."""
+    midnight = datetime(2026, 9, 21, 0, 0, tzinfo=timezone.utc)
+
+    assert aired_cutoff_date(midnight, buffer_hours=0) == "2026-09-21"
+    assert aired_cutoff_date(midnight - timedelta(seconds=1), buffer_hours=0) == "2026-09-20"
+
+
+# ---------------------------------------------------------------------------
+# episode_is_released — the exact-timestamp path and its fallback.
+# ---------------------------------------------------------------------------
+
+
+def test_episode_is_released_measures_the_buffer_from_a_real_airstamp():
+    """Lanterns S01E06, the case this was built for. TMDB dates it
+    2026-09-20; HBO actually released it at 2026-09-21T01:00Z (21:00
+    America/New_York), which TVmaze publishes as `airstamp`.
+
+    Anchored to the airstamp, a 15-hour buffer finally means fifteen
+    hours after it was genuinely out."""
+    airstamp = datetime(2026, 9, 21, 1, 0, tzinfo=timezone.utc)
+
+    def released_at(when: datetime) -> bool:
+        return episode_is_released("2026-09-20", airstamp, now=when, buffer_hours=15)
+
+    assert released_at(datetime(2026, 9, 20, 15, 0, tzinfo=timezone.utc)) is False  # the old anchor's expiry
+    assert released_at(datetime(2026, 9, 21, 1, 0, tzinfo=timezone.utc)) is False   # the moment it aired
+    assert released_at(datetime(2026, 9, 21, 15, 59, tzinfo=timezone.utc)) is False
+    assert released_at(datetime(2026, 9, 21, 16, 0, tzinfo=timezone.utc)) is True   # airstamp + 15h
+
+
+def test_episode_is_released_shows_what_the_date_anchor_got_wrong():
+    """The same episode, same buffer, with no airstamp: the date rule
+    calls it ready at 15:00 on the 20th — ten hours before HBO put it
+    out. This is the behaviour TVmaze replaces, kept as the fallback
+    because it is still better than no delay for a show TVmaze doesn't
+    know."""
+    assert episode_is_released(
+        "2026-09-20", None, now=datetime(2026, 9, 20, 15, 0, tzinfo=timezone.utc), buffer_hours=15
+    ) is True
+
+
+def test_episode_is_released_falls_back_when_the_airstamp_is_missing():
+    """A show TVmaze has, with one episode it hasn't timestamped yet."""
+    early = datetime(2026, 9, 20, 6, 0, tzinfo=timezone.utc)
+    assert episode_is_released("2026-09-20", None, now=early, buffer_hours=15) is False
+    assert episode_is_released("2026-09-18", None, now=early, buffer_hours=15) is True
+
+
+def test_aired_episode_numbers_prefers_airstamps_per_episode():
+    """A season part-covered by TVmaze: each episode takes whichever
+    rule it has data for."""
+    episodes = [
+        {"episode_number": 1, "air_date": "2026-09-13"},
+        {"episode_number": 2, "air_date": "2026-09-20"},  # stamped, still held
+        {"episode_number": 3, "air_date": "2026-09-20"},  # unstamped, date rule releases it
+    ]
+    now = datetime(2026, 9, 20, 18, 0, tzinfo=timezone.utc)
+    airstamps = {2: datetime(2026, 9, 21, 1, 0, tzinfo=timezone.utc)}
+
+    assert aired_episode_numbers(episodes, now=now, buffer_hours=15, airstamps=airstamps) == [1, 3]
+
+
+def test_season_is_complete_uses_airstamps_too():
+    """Otherwise a season whose finale is still inside its buffer would
+    read as finished and get requested as a pack."""
+    episodes = [
+        {"episode_number": 1, "air_date": "2026-09-13"},
+        {"episode_number": 2, "air_date": "2026-09-20"},
+    ]
+    now = datetime(2026, 9, 20, 18, 0, tzinfo=timezone.utc)
+    airstamps = {2: datetime(2026, 9, 21, 1, 0, tzinfo=timezone.utc)}
+
+    assert season_is_complete(episodes, now=now, buffer_hours=15, airstamps=airstamps) is False
+    assert season_is_complete(episodes, now=now, buffer_hours=15) is True  # date rule alone: wrongly "done"

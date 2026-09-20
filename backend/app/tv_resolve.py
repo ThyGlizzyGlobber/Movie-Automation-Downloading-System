@@ -42,6 +42,11 @@ class ShowIdentity:
     # idea, carried through to every episode/pack request row this show
     # identity backs.
     poster_path: str | None = None
+    # The ids TVmaze can be reached through, for episode release *times*
+    # (tvmaze.py) — TMDB only carries a date. None when TMDB has no
+    # external_ids for the show, which is the fallback path.
+    tvdb_id: int | None = None
+    imdb_id: str | None = None
 
 
 def episode_query(title_variant: str, season: int, episode: int) -> str:
@@ -112,7 +117,7 @@ def season_range_pack_queries(title_variant: str, start: int, end: int) -> list[
     ]
 
 
-def _cutoff_date(now: datetime | None, buffer_hours: float) -> str:
+def aired_cutoff_date(now: datetime | None = None, buffer_hours: float = 0.0) -> str:
     """The latest air_date treated as "already aired" — `buffer_hours`
     shifted back from `now` (default: the actual current UTC time, same
     convention as every other timestamp in this app — db.py/worker.py/
@@ -140,28 +145,68 @@ def _cutoff_date(now: datetime | None, buffer_hours: float) -> str:
     return (now - timedelta(hours=buffer_hours)).date().isoformat()
 
 
-def aired_episode_numbers(episodes: list[dict], now: datetime | None = None, buffer_hours: float = 0.0) -> list[int]:
-    """Episode numbers from a TMDB season's episode list that have already
-    aired (a known air_date at or before `_cutoff_date`) — shared by
-    worker.py's check_show() (Stage 12) and pipeline.py's download_pack()
-    (Stage 13), which both need to turn a raw TMDB season listing into
-    "which episodes should actually exist by now". See `_cutoff_date` for
-    what `buffer_hours` does and why it exists."""
-    cutoff = _cutoff_date(now, buffer_hours)
+def episode_is_released(
+    air_date: str | None,
+    airstamp: datetime | None,
+    now: datetime | None = None,
+    buffer_hours: float = 0.0,
+) -> bool:
+    """Whether an episode is far enough past its release to search for.
+
+    Two rules, because there are two qualities of input:
+
+    - With an `airstamp` (TVmaze's exact UTC release moment) the buffer
+      means what it says: released_at + buffer_hours. No anchor guessing,
+      correct for a 21:00 ET broadcast and a 00:00 streaming drop alike.
+    - Without one, the old date rule: TMDB gives only a date, so the
+      buffer can only run from midnight UTC on it. That anchor is up to a
+      day early for a US prime-time show, which is exactly why the
+      airstamp path exists — but it is still better than nothing, and it
+      is what every show TVmaze doesn't know falls back to.
+    """
+    now = now or datetime.now(timezone.utc)
+    if airstamp is not None:
+        return now >= airstamp + timedelta(hours=buffer_hours)
+    return bool(air_date) and air_date <= aired_cutoff_date(now, buffer_hours)
+
+
+def aired_episode_numbers(
+    episodes: list[dict],
+    now: datetime | None = None,
+    buffer_hours: float = 0.0,
+    airstamps: dict[int, datetime] | None = None,
+) -> list[int]:
+    """Episode numbers from a TMDB season's episode list that are out and
+    past their buffer — shared by worker.py's check_show() (Stage 12) and
+    pipeline.py's download_pack() (Stage 13), which both need to turn a
+    raw TMDB season listing into "which episodes should actually exist by
+    now".
+
+    `airstamps` is `{episode_number: released_at_utc}` from TVmaze when
+    it has the show; see `episode_is_released` for how the two rules
+    differ and why the exact one is worth a second source."""
+    now = now or datetime.now(timezone.utc)
+    airstamps = airstamps or {}
     return [
         ep["episode_number"]
         for ep in episodes
-        if ep.get("episode_number") is not None and ep.get("air_date") and ep["air_date"] <= cutoff
+        if ep.get("episode_number") is not None
+        and episode_is_released(ep.get("air_date"), airstamps.get(ep["episode_number"]), now, buffer_hours)
     ]
 
 
-def season_is_complete(episodes: list[dict], now: datetime | None = None, buffer_hours: float = 0.0) -> bool:
+def season_is_complete(
+    episodes: list[dict],
+    now: datetime | None = None,
+    buffer_hours: float = 0.0,
+    airstamps: dict[int, datetime] | None = None,
+) -> bool:
     """True once every episode TMDB knows about for this season already
-    has an air_date at or before `_cutoff_date` — i.e. the season has
+    has an air_date at or before `aired_cutoff_date` — i.e. the season has
     finished its run, not just "some episodes have aired so far". False
     for a season still actively releasing new episodes (an unaired or
     entirely unscheduled entry still remains), or one with no episodes
-    listed at all (nothing to judge either way). See `_cutoff_date` for
+    listed at all (nothing to judge either way). See `aired_cutoff_date` for
     what `buffer_hours` does and why it exists.
 
     Used by worker.py's check_show() (Stage 14.x) to decide whether a
@@ -172,8 +217,12 @@ def season_is_complete(episodes: list[dict], now: datetime | None = None, buffer
     releases, which tend to go cold once a show has moved on."""
     if not episodes:
         return False
-    cutoff = _cutoff_date(now, buffer_hours)
-    return all(ep.get("air_date") and ep["air_date"] <= cutoff for ep in episodes)
+    now = now or datetime.now(timezone.utc)
+    airstamps = airstamps or {}
+    return all(
+        episode_is_released(ep.get("air_date"), airstamps.get(ep.get("episode_number")), now, buffer_hours)
+        for ep in episodes
+    )
 
 
 def _finished_seasons(show: dict, today: str | None = None) -> int | None:
@@ -212,4 +261,6 @@ def resolve_show(tmdb_id: int, client: TMDBClient) -> ShowIdentity:
         ended=show.get("status") in ("Ended", "Canceled"),
         first_air_year=first_air_year,
         poster_path=show.get("poster_path"),
+        tvdb_id=(show.get("external_ids") or {}).get("tvdb_id"),
+        imdb_id=(show.get("external_ids") or {}).get("imdb_id"),
     )
