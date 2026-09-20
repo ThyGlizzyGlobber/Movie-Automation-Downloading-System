@@ -1,4 +1,5 @@
 import asyncio
+import itertools
 
 import pytest
 
@@ -562,17 +563,19 @@ def test_login_session_persists_result_once_signed_in_with_server_access(monkeyp
         PlexClient, "get_account_identity", lambda self, token: {"id": 99, "username": "friend"}
     )
     login = LoginSession(store)
+    attempt: list[str] = []
 
     async def run():
-        await login.start()
+        attempt_id, _ = await login.start()
+        attempt.append(attempt_id)
         for _ in range(50):
-            if login.status()["result"]:
+            if login.status(attempt_id)["result"]:
                 break
             await asyncio.sleep(0.02)
 
     asyncio.run(run())
 
-    status = login.status()
+    status = login.status(attempt[0])
     assert status["result"] == {"plex_user_id": "99", "username": "friend", "is_admin": False, "thumb": None}
     assert status["error"] is None
 
@@ -584,18 +587,20 @@ def test_login_session_records_error_when_account_has_no_server_access(monkeypat
     monkeypatch.setattr(PlexClient, "check_pin", lambda self, pin_id: "user-token")
     monkeypatch.setattr(PlexClient, "check_server_access", lambda self, token, machine_id: None)
     login = LoginSession(store)
+    attempt: list[str] = []
 
     async def run():
-        await login.start()
+        attempt_id, _ = await login.start()
+        attempt.append(attempt_id)
         for _ in range(50):
-            if login.status()["error"]:
+            if login.status(attempt_id)["error"]:
                 break
             await asyncio.sleep(0.02)
 
     asyncio.run(run())
 
-    assert login.status()["result"] is None
-    assert "doesn't have access" in login.status()["error"]
+    assert login.status(attempt[0])["result"] is None
+    assert "doesn't have access" in login.status(attempt[0])["error"]
 
 
 def test_login_session_records_error_when_no_server_linked_yet(monkeypatch):
@@ -603,14 +608,144 @@ def test_login_session_records_error_when_no_server_linked_yet(monkeypatch):
     monkeypatch.setattr(PlexClient, "create_pin", lambda self: {"id": 1, "code": "ABCD"})
     monkeypatch.setattr(PlexClient, "check_pin", lambda self, pin_id: "user-token")
     login = LoginSession(store)
+    attempt: list[str] = []
 
     async def run():
-        await login.start()
+        attempt_id, _ = await login.start()
+        attempt.append(attempt_id)
         for _ in range(50):
-            if login.status()["error"]:
+            if login.status(attempt_id)["error"]:
                 break
             await asyncio.sleep(0.02)
 
     asyncio.run(run())
 
-    assert "hasn't linked a Plex account" in login.status()["error"]
+    assert "hasn't linked a Plex account" in login.status(attempt[0])["error"]
+
+
+def _resolving_client(monkeypatch, pins, resolves_pin_id=1):
+    """PlexClient patched so create_pin hands out `pins` in order and
+    only `resolves_pin_id` ever comes back signed in. Keyed on the pin
+    id rather than on call order because the poll tasks start running at
+    an await point the test doesn't control — swapping check_pin between
+    two `start()` calls races them."""
+    monkeypatch.setattr(PlexClient, "create_pin", lambda self: next(pins))
+    monkeypatch.setattr(
+        PlexClient, "check_pin", lambda self, pin_id: "user-token" if pin_id == resolves_pin_id else None
+    )
+    monkeypatch.setattr(PlexClient, "check_server_access", lambda self, token, machine_id: {"owned": False})
+    monkeypatch.setattr(
+        PlexClient, "get_account_identity", lambda self, token: {"id": 99, "username": "friend"}
+    )
+
+
+def test_login_session_status_is_blank_for_an_unknown_attempt():
+    login = LoginSession(RequestStore(":memory:"))
+
+    assert login.status(None) == {"pending": False, "result": None, "error": None}
+    assert login.status("never-issued") == {"pending": False, "result": None, "error": None}
+
+
+def test_login_session_keeps_concurrent_attempts_apart(monkeypatch):
+    """Two people signing in at once must not see each other's result.
+    The single-`_result` version had no way to tell them apart, so
+    whoever polled next collected whichever sign-in had just landed."""
+    store = RequestStore(":memory:")
+    store.update_settings({"plex_server_machine_id": "our-machine"})
+    _resolving_client(monkeypatch, iter([{"id": 1, "code": "A"}, {"id": 2, "code": "B"}]), resolves_pin_id=1)
+    login = LoginSession(store)
+    seen = {}
+
+    async def run():
+        signed_in, _ = await login.start()
+        bystander, _ = await login.start()
+        for _ in range(50):
+            if login.status(signed_in)["result"]:
+                break
+            await asyncio.sleep(0.02)
+        seen["signed_in"] = login.status(signed_in)
+        seen["bystander"] = login.status(bystander)
+
+    asyncio.run(run())
+
+    assert seen["signed_in"]["result"]["plex_user_id"] == "99"
+    assert seen["bystander"]["result"] is None
+    assert seen["bystander"]["error"] is None
+
+
+def test_login_session_finish_spends_the_attempt(monkeypatch):
+    store = RequestStore(":memory:")
+    store.update_settings({"plex_server_machine_id": "our-machine"})
+    _resolving_client(monkeypatch, iter([{"id": 1, "code": "A"}]))
+    login = LoginSession(store)
+    claimed = {}
+
+    async def run():
+        attempt_id, _ = await login.start()
+        for _ in range(50):
+            if login.status(attempt_id)["result"]:
+                break
+            await asyncio.sleep(0.02)
+        claimed["id"] = attempt_id
+        claimed["before"] = login.status(attempt_id)["result"]
+        login.finish(attempt_id)
+
+    asyncio.run(run())
+
+    assert claimed["before"] is not None
+    assert login.status(claimed["id"])["result"] is None
+    assert claimed["id"] not in login._attempts
+
+
+def test_login_session_bounds_how_many_attempts_it_keeps(monkeypatch):
+    """Abandoned sign-ins each hold a task polling plex.tv until their
+    PIN expires, so they can't be allowed to pile up unboundedly."""
+    store = RequestStore(":memory:")
+    _resolving_client(monkeypatch, itertools.cycle([{"id": 7, "code": "A"}]), resolves_pin_id=-1)
+    login = LoginSession(store)
+
+    async def run():
+        for _ in range(LoginSession.MAX_LIVE_ATTEMPTS + 10):
+            await login.start()
+
+    asyncio.run(run())
+
+    assert len(login._attempts) <= LoginSession.MAX_LIVE_ATTEMPTS
+
+
+def test_login_session_evicts_attempts_once_their_pin_has_expired(monkeypatch):
+    store = RequestStore(":memory:")
+    _resolving_client(monkeypatch, itertools.cycle([{"id": 7, "code": "A"}]), resolves_pin_id=-1)
+    login = LoginSession(store)
+    stale = {}
+
+    async def run():
+        attempt_id, _ = await login.start()
+        login._attempts[attempt_id].created_at -= LoginSession.ATTEMPT_TTL_SECONDS + 1
+        stale["id"] = attempt_id
+        await login.start()  # any new attempt sweeps the expired ones
+
+    asyncio.run(run())
+
+    assert stale["id"] not in login._attempts
+    assert login.status(stale["id"]) == {"pending": False, "result": None, "error": None}
+
+
+def test_login_session_reports_a_live_attempt_as_pending(monkeypatch):
+    """The login page treats "not pending, no result, no error" as "the
+    backend has no live attempt for me" and stops polling, so a live
+    attempt must never look like that — otherwise a perfectly good
+    sign-in gets abandoned mid-flight."""
+    store = RequestStore(":memory:")
+    _resolving_client(monkeypatch, itertools.cycle([{"id": 7, "code": "A"}]), resolves_pin_id=-1)
+    login = LoginSession(store)
+    seen = {}
+
+    async def run():
+        attempt_id, _ = await login.start()
+        await asyncio.sleep(0.05)
+        seen["status"] = login.status(attempt_id)
+
+    asyncio.run(run())
+
+    assert seen["status"] == {"pending": True, "result": None, "error": None}

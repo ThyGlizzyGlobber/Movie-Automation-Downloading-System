@@ -46,6 +46,7 @@ from app.pipeline_settings import (
     settings_from_raw,
 )
 from app.plex import (
+    PIN_TIMEOUT_SECONDS,
     LoginSession,
     PlexClient,
     PlexError,
@@ -72,6 +73,11 @@ configure_logging()
 logger = logging.getLogger("app.api")
 
 SESSION_COOKIE_NAME = "session_id"
+# Names the one browser allowed to claim a given in-flight Plex sign-in.
+# Not a credential for anything else and never readable by JS: it only
+# identifies *which* pending attempt the poller is asking after, and it
+# is spent the moment that attempt is traded for a real session.
+LOGIN_ATTEMPT_COOKIE_NAME = "login_attempt"
 # Sliding expiry, not absolute — every successful `require_session` check
 # could in principle refresh it, but isn't wired up (yet) to do so; a
 # session simply needs re-establishing via login after this long regardless
@@ -172,10 +178,21 @@ app = FastAPI(title="Meridian", lifespan=lifespan)
 # (the bootstrap race Part G1's LAN restriction already narrows, this is
 # the second layer). In-memory, per-process — genuinely fine at household
 # scale (one backend process, no multi-worker deployment), not meant to
-# survive a restart. 20/minute is generous enough that no normal user
-# interaction (including a slow multi-attempt login) ever brushes it,
+# survive a restart. 20/minute is generous enough that no normal *user
+# interaction* (including a slow multi-attempt login) ever brushes it,
 # while still bounding a scripted attacker to a rate that isn't useful.
+#
+# The exception is /api/auth/login/status, which isn't a user
+# interaction at all — it's the login page's own progress poll, one
+# request every POLL_INTERVAL_MS for as long as the PIN is unresolved.
+# At the original 20/minute it outran its own limit (24 polls/minute)
+# and 429'd itself ~50s in, which read to the user as a login that
+# silently hung. It gets STATUS_POLL_RATE_LIMIT instead: enough headroom
+# for the poll, a couple of open tabs, and the retries that ride on top
+# of it. Cheap to serve and nothing to guess at, so the looser bound
+# costs us nothing an attacker can use.
 limiter = Limiter(key_func=get_remote_address)
+STATUS_POLL_RATE_LIMIT = "60/minute"
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
@@ -1588,26 +1605,52 @@ def select_plex_server(
 
 @app.post("/api/auth/login/start")
 @limiter.limit("20/minute")
-async def start_login(request: Request, login: LoginSession = Depends(get_login_session)) -> dict:
+async def start_login(
+    request: Request,
+    response: Response,
+    login: LoginSession = Depends(get_login_session),
+    store: RequestStore = Depends(get_store),
+) -> dict:
     try:
-        auth_url = await login.start()
+        attempt_id, auth_url = await login.start()
     except PlexError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
+    # The attempt id goes back to this browser and nowhere else — it is
+    # what /status checks before trading a resolved PIN for a session,
+    # so it travels as an HttpOnly cookie rather than in the body where
+    # page scripts (or anything that can read them) could pick it up.
+    response.set_cookie(
+        key=LOGIN_ATTEMPT_COOKIE_NAME,
+        value=attempt_id,
+        httponly=True,
+        samesite="strict",
+        secure=_cookie_secure(store),
+        max_age=PIN_TIMEOUT_SECONDS,
+        path="/",
+    )
     return {"auth_url": auth_url}
 
 
 @app.get("/api/auth/login/status")
-@limiter.limit("20/minute")
+@limiter.limit(STATUS_POLL_RATE_LIMIT)
 def login_status(
     request: Request,
     response: Response,
     login: LoginSession = Depends(get_login_session),
     store: RequestStore = Depends(get_store),
 ) -> dict:
-    status = login.status()
+    # Only the browser holding this attempt's id gets an answer about
+    # it. Everyone else — including an attacker polling this deliberately
+    # unauthenticated route in the hope of catching someone else's
+    # sign-in as it lands — is told there is simply nothing pending.
+    attempt_id = request.cookies.get(LOGIN_ATTEMPT_COOKIE_NAME)
+    status = login.status(attempt_id)
     result = status["result"]
     user = None
     if result:
+        # Spend the attempt before minting anything: one resolved PIN is
+        # one session, and a replayed poll finds nothing left to claim.
+        login.finish(attempt_id)
         user = store.upsert_user(result["plex_user_id"], result["username"], result["is_admin"], result.get("thumb"))
         session_id = secrets.token_urlsafe(32)
         store.create_session(session_id, user.plex_user_id, user.username, user.is_admin, _new_session_expiry())
@@ -1620,6 +1663,9 @@ def login_status(
             max_age=SESSION_TTL_DAYS * 24 * 3600,
             path="/",
         )
+        # Spent server-side above; clear the browser's copy too rather
+        # than leave a dead id sitting in the jar for its full 15 minutes.
+        response.delete_cookie(LOGIN_ATTEMPT_COOKIE_NAME, path="/")
         store.record_auth_event(
             "login_success",
             plex_user_id=user.plex_user_id,

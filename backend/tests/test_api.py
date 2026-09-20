@@ -284,21 +284,49 @@ class FakePlexLinker:
 
 class FakeLoginSession:
     """Stands in for app.plex.LoginSession: API tests exercise route
-    wiring, not the real PIN polling flow (see test_plex.py for that)."""
+    wiring, not the real PIN polling flow (see test_plex.py for that).
+
+    Models the per-attempt keying for real, rather than ignoring the
+    attempt id and always answering `_status` — the whole point of that
+    id is that an unknown one gets nothing, so a fake that waved it
+    through would make the routes look correct no matter what they did
+    with it."""
 
     def __init__(self):
         self.started = 0
         self._status = {"pending": False, "result": None, "error": None}
         self.raise_on_start: Exception | None = None
+        self.live_attempts: set[str] = set()
 
-    async def start(self) -> str:
+    async def start(self) -> tuple[str, str]:
         self.started += 1
         if self.raise_on_start:
             raise self.raise_on_start
-        return "https://app.plex.tv/auth#?clientID=test&code=ABCD"
+        attempt_id = f"test-attempt-{self.started}"
+        self.live_attempts.add(attempt_id)
+        return attempt_id, "https://app.plex.tv/auth#?clientID=test&code=ABCD"
 
-    def status(self) -> dict:
+    def status(self, attempt_id: str | None) -> dict:
+        if attempt_id not in self.live_attempts:
+            return {"pending": False, "result": None, "error": None}
         return self._status
+
+    def finish(self, attempt_id: str) -> None:
+        self.live_attempts.discard(attempt_id)
+
+
+@pytest.fixture(autouse=True)
+def _reset_rate_limiter():
+    """slowapi's limiter is in-memory and keyed by client IP, and every
+    test here reaches the app as the same TestClient IP — so without a
+    reset, budget spent by one test 429s a later one and the file turns
+    order-dependent (which it quietly already was: adding a handful of
+    tests that call /api/auth/login/start was enough to start knocking
+    over unrelated ones). Autouse rather than folded into
+    `client_and_deps`, since tests that take no client still share the
+    process-wide limiter."""
+    api.limiter.reset()
+    yield
 
 
 @pytest.fixture
@@ -2247,6 +2275,7 @@ def test_login_status_sets_session_cookie_once_resolved(client_and_deps):
         "error": None,
     }
 
+    client.post("/api/auth/login/start")
     response = client.get("/api/auth/login/status")
 
     assert response.status_code == 200
@@ -2264,6 +2293,7 @@ def test_login_status_reports_pending_error_without_a_cookie(client_and_deps):
     login_session = api_state_login_session(client)
     login_session._status = {"pending": False, "result": None, "error": "Your Plex account doesn't have access."}
 
+    client.post("/api/auth/login/start")
     response = client.get("/api/auth/login/status")
 
     assert response.status_code == 200
@@ -2467,6 +2497,7 @@ def test_session_cookie_is_not_secure_by_default(client_and_deps):
         "error": None,
     }
 
+    client.post("/api/auth/login/start")
     response = client.get("/api/auth/login/status")
 
     set_cookie = response.headers.get("set-cookie", "")
@@ -2484,7 +2515,12 @@ def test_session_cookie_is_secure_once_remote_access_is_enabled(client_and_deps)
         "error": None,
     }
 
-    response = client.get("/api/auth/login/status")
+    # Over https, because that's what remote_access_enabled asserts is in
+    # front of the app — and because the login attempt cookie is itself
+    # Secure here, so a plain-http client would drop it before the status
+    # poll and never reach the branch this test is about.
+    client.post("https://testserver/api/auth/login/start")
+    response = client.get("https://testserver/api/auth/login/status")
 
     assert "Secure" in response.headers.get("set-cookie", "")
 
@@ -2531,9 +2567,13 @@ def test_audit_log_records_login_success_and_failure(client_and_deps):
         "result": {"plex_user_id": "audit-user", "username": "audit-user", "is_admin": False},
         "error": None,
     }
+    client.post("/api/auth/login/start")
     client.get("/api/auth/login/status")
 
+    # A second attempt, because the first was spent claiming the session
+    # above — a failure is only ever reported against a live attempt.
     login_session._status = {"pending": False, "result": None, "error": "no access"}
+    client.post("/api/auth/login/start")
     client.get("/api/auth/login/status")
 
     # The login flow above replaced the client's cookie with the (non-admin)
@@ -2636,6 +2676,97 @@ def test_login_start_is_rate_limited(client_and_deps):
     statuses = [r.status_code for r in responses]
     assert statuses.count(200) <= 20
     assert 429 in statuses
+
+
+def test_login_status_limit_outpaces_the_frontend_poll():
+    """The login page polls this endpoint on a fixed interval for as long
+    as the PIN is unresolved, so its limit has to sit above that rate
+    with room to spare — at 20/minute against a 2.5s poll it 429'd itself
+    ~50s in and the login silently died (the poll then stopped for good).
+    Asserted as arithmetic against the poll interval rather than a bare
+    number, so changing POLL_INTERVAL_MS in useEndUserLogin.ts without
+    revisiting this lights up here instead of in someone's first
+    sign-in."""
+    frontend_poll_interval_seconds = 2.5
+    polls_per_minute = 60 / frontend_poll_interval_seconds
+
+    allowed, _, per_minute = api.STATUS_POLL_RATE_LIMIT.partition("/")
+
+    assert per_minute == "minute"
+    # 2x, not 1x: two open login tabs, plus the retries that ride on top
+    # of the poll, all land in the same per-IP bucket.
+    assert int(allowed) >= polls_per_minute * 2
+
+
+def _finished_login(client, plex_user_id: str) -> "FakeLoginSession":
+    """A login session whose PIN has resolved to `plex_user_id` — the
+    state every one of the claim tests below starts from."""
+    login_session = api_state_login_session(client)
+    login_session._status = {
+        "pending": False,
+        "result": {"plex_user_id": plex_user_id, "username": plex_user_id, "is_admin": False},
+        "error": None,
+    }
+    return login_session
+
+
+def test_login_start_issues_an_attempt_cookie(client_and_deps):
+    client, _, _, _, _, _ = client_and_deps
+
+    response = client.post("/api/auth/login/start")
+
+    assert response.status_code == 200
+    assert api.LOGIN_ATTEMPT_COOKIE_NAME in response.cookies
+
+
+def test_login_status_does_not_hand_a_session_to_a_bystander(client_and_deps):
+    """The endpoint is unauthenticated by design, so "is a login
+    finished?" must be answerable only by the browser that *started*
+    that login. Otherwise any unauthenticated caller who happens to poll
+    while someone else's PIN is resolved walks away with a session
+    cookie for that person's account."""
+    client, _, _, _, _, _ = client_and_deps
+    _finished_login(client, "victim")
+
+    client.post("/api/auth/login/start")
+    claimed = client.get("/api/auth/login/status")
+    assert claimed.json()["authenticated"] is True
+
+    # A different browser: never called /start, carries no cookies.
+    client.cookies.clear()
+    bystander = client.get("/api/auth/login/status")
+
+    assert bystander.json()["authenticated"] is False
+    assert api.SESSION_COOKIE_NAME not in bystander.cookies
+
+
+def test_login_status_with_an_unknown_attempt_id_mints_nothing(client_and_deps):
+    client, _, _, _, _, _ = client_and_deps
+    _finished_login(client, "victim")
+    client.post("/api/auth/login/start")
+
+    client.cookies.clear()
+    client.cookies.set(api.LOGIN_ATTEMPT_COOKIE_NAME, "not-a-real-attempt-id")
+    guessed = client.get("/api/auth/login/status")
+
+    assert guessed.json()["authenticated"] is False
+    assert api.SESSION_COOKIE_NAME not in guessed.cookies
+
+
+def test_a_completed_login_is_claimable_only_once(client_and_deps):
+    """One finished sign-in is one session. Left claimable, a single
+    resolved PIN keeps minting fresh sessions on every later poll."""
+    client, _, _, _, _, _ = client_and_deps
+    _finished_login(client, "claim-once")
+
+    client.post("/api/auth/login/start")
+    first = client.get("/api/auth/login/status")
+    assert first.json()["authenticated"] is True
+
+    second = client.get("/api/auth/login/status")
+
+    assert second.json()["authenticated"] is False
+    assert api.SESSION_COOKIE_NAME not in second.cookies
 
 
 def api_state_login_session(client) -> "FakeLoginSession":

@@ -3,6 +3,20 @@ import { useQueryClient } from '@tanstack/react-query'
 import { getLoginStatus, startLogin } from '../../api/auth'
 
 const POLL_INTERVAL_MS = 2500
+// A poll that gives up on its first failed request strands the user on
+// "Waiting for Plex…" while the backend behind it goes right on
+// resolving the PIN — the failure everyone hits is the slow first
+// sign-in (typing credentials, fetching a 2FA code) outlasting whatever
+// blip happens to land. So a transport failure (429, proxy hiccup, wifi
+// dropping mid-sign-in) is retried rather than surfaced, and only the
+// backend's own verdict in `status.error` stops the loop. The cap is
+// what keeps "retry" from meaning "forever" when the backend is simply
+// gone; the backend's PIN timeout supplies the terminal error in the
+// ordinary case, so this only has to catch the unreachable one.
+const MAX_CONSECUTIVE_FAILURES = 8
+// Ease off while failures are consecutive, so a limit that *is* being
+// hit gets a chance to drain instead of being hammered flat.
+const MAX_BACKOFF_MULTIPLIER = 4
 
 // Drives the end-user Plex PIN sign-in flow: click "Sign in with Plex" ->
 // open app.plex.tv in a new tab -> poll until Plex resolves the PIN and
@@ -16,11 +30,16 @@ export function useEndUserLogin() {
   const [error, setError] = useState<string | null>(null)
   const [authenticated, setAuthenticated] = useState(false)
   const timerRef = useRef<number | null>(null)
+  // Bumped on every stop, so a tick whose request was already in flight
+  // when we stopped can tell it's stale and bail instead of scheduling
+  // itself again past an unmount or a restarted attempt.
+  const runRef = useRef(0)
   const queryClient = useQueryClient()
 
   const stopPolling = useCallback(() => {
+    runRef.current += 1
     if (timerRef.current !== null) {
-      window.clearInterval(timerRef.current)
+      window.clearTimeout(timerRef.current)
       timerRef.current = null
     }
   }, [])
@@ -36,26 +55,57 @@ export function useEndUserLogin() {
       setAuthUrl(auth_url)
       window.open(auth_url, '_blank', 'noopener,noreferrer')
       stopPolling()
-      timerRef.current = window.setInterval(async () => {
+      const run = runRef.current
+
+      let failures = 0
+      const tick = async () => {
         try {
           const status = await getLoginStatus()
+          if (runRef.current !== run) return
+          failures = 0
           if (status.error) {
+            // The backend has an actual verdict (no access to this
+            // server, PIN expired, account unverifiable) — terminal,
+            // and retrying it would only repeat the same answer.
             setError(status.error)
-            stopPolling()
             return
           }
           if (status.authenticated) {
             setAuthenticated(true)
-            stopPolling()
             // The session cookie is now set — every other query that
             // depends on being signed in should refetch.
             queryClient.invalidateQueries({ queryKey: ['session'] })
+            return
+          }
+          if (!status.pending) {
+            // Not finished, not failed, and the backend isn't working on
+            // it either — which it only ever says when it can't match
+            // this browser to a live attempt: the attempt cookie didn't
+            // come back, or the backend forgot the attempt (restarted,
+            // expired, evicted). A live attempt always reports pending,
+            // so this can't be a lull between polls. Stopping here beats
+            // spinning on "Waiting for Plex…" for a sign-in that nothing
+            // is going to finish.
+            setError('That sign-in attempt expired. Please try again.')
+            return
           }
         } catch (err) {
-          setError(err instanceof Error ? err.message : String(err))
-          stopPolling()
+          if (runRef.current !== run) return
+          failures += 1
+          if (failures >= MAX_CONSECUTIVE_FAILURES) {
+            setError(err instanceof Error ? err.message : String(err))
+            return
+          }
+          // Otherwise swallow it: the user stays on "Waiting for Plex…"
+          // rather than being shown a scary transient we're about to
+          // recover from anyway.
         }
-      }, POLL_INTERVAL_MS)
+        timerRef.current = window.setTimeout(
+          tick,
+          POLL_INTERVAL_MS * Math.min(failures + 1, MAX_BACKOFF_MULTIPLIER),
+        )
+      }
+      timerRef.current = window.setTimeout(tick, POLL_INTERVAL_MS)
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
     } finally {

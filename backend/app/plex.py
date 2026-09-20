@@ -11,8 +11,10 @@ the TMDB key and qBittorrent credentials. It's persisted server-side in
 the settings table (db.py) alongside the per-server access token."""
 
 import asyncio
+import secrets
 import time
 import uuid
+from dataclasses import dataclass, field
 from typing import Callable
 from urllib.parse import urlencode
 
@@ -595,6 +597,18 @@ class PlexLinker:
         self.store.delete_non_admin_sessions()
 
 
+@dataclass
+class _LoginAttempt:
+    """One browser's in-flight PIN sign-in. Separate objects per attempt,
+    not fields on LoginSession, because the result of an attempt is what
+    mints a session — see LoginSession's docstring."""
+
+    task: asyncio.Task | None = None
+    result: dict | None = None
+    error: str | None = None
+    created_at: float = field(default_factory=time.monotonic)
+
+
 class LoginSession:
     """The end-user equivalent of PlexLinker's PIN sign-in flow (frontend
     migration Part C3) — same plex.tv PIN mechanism, different purpose:
@@ -603,13 +617,34 @@ class LoginSession:
     already-linked server (a signed-in app session, not app-wide state).
     Deliberately in-memory only, unlike PlexLinker — an interrupted login
     attempt has nothing worth surviving a restart for, the user just
-    starts over."""
+    starts over.
+
+    Keyed by attempt, not global. This used to hold a single
+    `_result` for the whole process, which meant `/api/auth/login/status`
+    — unauthenticated by design, since there is nobody to authenticate
+    as until it succeeds — handed a session cookie for the resolved
+    account to *whoever* polled it next, and kept doing so on every
+    later poll because the result was never cleared. An attempt id is
+    now minted per `start()` and returned to exactly one browser (as an
+    HttpOnly cookie), so only that browser can ask after its own
+    sign-in, and `finish()` makes the answer single-use."""
+
+    # An unguessable id is the entire access control here, so it wants to
+    # be as wide as the session id it can be traded for.
+    ATTEMPT_ID_BYTES = 32
+    # An attempt is worthless once its PIN has expired; the grace is just
+    # so a poll racing the deadline still gets the real "timed out"
+    # error rather than a blank "no such attempt".
+    ATTEMPT_TTL_SECONDS = PIN_TIMEOUT_SECONDS + 60
+    # Abandoned attempts (opened the tab, never finished) each hold a
+    # task polling plex.tv until their PIN expires, so the count is
+    # bounded rather than left to the route's rate limit alone. Far above
+    # anything a household generates at once; the oldest goes first.
+    MAX_LIVE_ATTEMPTS = 25
 
     def __init__(self, store):
         self.store = store
-        self._task: asyncio.Task | None = None
-        self._result: dict | None = None
-        self._error: str | None = None
+        self._attempts: dict[str, _LoginAttempt] = {}
 
     def _client(self) -> PlexClient:
         settings = self.store.get_settings()
@@ -619,17 +654,34 @@ class LoginSession:
             self.store.update_settings({"plex_client_id": client_id})
         return PlexClient(client_id)
 
-    async def start(self) -> str:
-        client = self._client()
-        self._error = None
-        self._result = None
-        pin = await asyncio.to_thread(client.create_pin)
-        if self._task and not self._task.done():
-            self._task.cancel()
-        self._task = asyncio.create_task(self._poll(client, pin["id"]))
-        return client.auth_url(pin["code"])
+    def _discard(self, attempt_id: str) -> None:
+        attempt = self._attempts.pop(attempt_id, None)
+        if attempt and attempt.task and not attempt.task.done():
+            attempt.task.cancel()
 
-    async def _poll(self, client: PlexClient, pin_id: int) -> None:
+    def _evict(self) -> None:
+        cutoff = time.monotonic() - self.ATTEMPT_TTL_SECONDS
+        for attempt_id in [k for k, a in self._attempts.items() if a.created_at < cutoff]:
+            self._discard(attempt_id)
+        # Oldest-first, so a flood of fresh attempts can't push out the
+        # one the person in front of you is part-way through.
+        while len(self._attempts) >= self.MAX_LIVE_ATTEMPTS:
+            oldest = min(self._attempts, key=lambda k: self._attempts[k].created_at)
+            self._discard(oldest)
+
+    async def start(self) -> tuple[str, str]:
+        """(attempt_id, auth_url). The caller is responsible for handing
+        the attempt id back to precisely one browser and no further."""
+        self._evict()
+        client = self._client()
+        pin = await asyncio.to_thread(client.create_pin)
+        attempt_id = secrets.token_urlsafe(self.ATTEMPT_ID_BYTES)
+        attempt = _LoginAttempt()
+        self._attempts[attempt_id] = attempt
+        attempt.task = asyncio.create_task(self._poll(client, pin["id"], attempt))
+        return attempt_id, client.auth_url(pin["code"])
+
+    async def _poll(self, client: PlexClient, pin_id: int, attempt: _LoginAttempt) -> None:
         deadline = time.monotonic() + PIN_TIMEOUT_SECONDS
         try:
             while time.monotonic() < deadline:
@@ -637,17 +689,17 @@ class LoginSession:
                 if token:
                     machine_id = self.store.get_settings().get("plex_server_machine_id")
                     if not machine_id:
-                        self._error = "This server hasn't linked a Plex account yet."
+                        attempt.error = "This server hasn't linked a Plex account yet."
                         return
                     access = await asyncio.to_thread(client.check_server_access, token, machine_id)
                     if access is None:
-                        self._error = "Your Plex account doesn't have access to this server."
+                        attempt.error = "Your Plex account doesn't have access to this server."
                         return
                     identity = await asyncio.to_thread(client.get_account_identity, token)
                     if not identity or not identity.get("id"):
-                        self._error = "Couldn't verify the signed-in Plex account."
+                        attempt.error = "Couldn't verify the signed-in Plex account."
                         return
-                    self._result = {
+                    attempt.result = {
                         "plex_user_id": str(identity["id"]),
                         "username": identity.get("username"),
                         "is_admin": access["owned"],
@@ -655,16 +707,30 @@ class LoginSession:
                     }
                     return
                 await asyncio.sleep(PIN_POLL_INTERVAL_SECONDS)
-            self._error = "Plex sign-in timed out — try again."
+            attempt.error = "Plex sign-in timed out — try again."
         except Exception as exc:  # fail safe — never leave the frontend polling forever
-            self._error = str(exc)
+            attempt.error = str(exc)
 
-    def status(self) -> dict:
+    def status(self, attempt_id: str | None) -> dict:
+        """Deliberately indistinguishable between "no attempt id",
+        "expired", "already claimed" and "never existed" — a caller
+        without a live attempt of their own learns only that there is
+        nothing here for them, never that someone else's sign-in is in
+        progress or has just landed."""
+        attempt = self._attempts.get(attempt_id) if attempt_id else None
+        if attempt is None:
+            return {"pending": False, "result": None, "error": None}
         return {
-            "pending": bool(self._task and not self._task.done()),
-            "result": self._result,
-            "error": self._error,
+            "pending": bool(attempt.task and not attempt.task.done()),
+            "result": attempt.result,
+            "error": attempt.error,
         }
+
+    def finish(self, attempt_id: str) -> None:
+        """Spend the attempt. Called once its result has been traded for
+        a session, so one finished sign-in is one session and a replayed
+        poll gets nothing."""
+        self._discard(attempt_id)
 
 
 def refresh_after_import(store, media_type: str, organized_path: str | None) -> bool:
