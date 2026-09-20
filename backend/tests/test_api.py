@@ -2467,13 +2467,13 @@ def test_set_remote_access_persists_and_reads_back(client_and_deps):
 
     response = client.put(
         "/api/settings/remote-access",
-        json={"remote_access_enabled": True, "public_domain": "meridian.example.com"},
+        json={"remote_access_enabled": True, "public_domain": "obsidian.example.com"},
     )
 
     assert response.status_code == 200
-    assert response.json() == {"remote_access_enabled": True, "public_domain": "meridian.example.com"}
+    assert response.json() == {"remote_access_enabled": True, "public_domain": "obsidian.example.com"}
     assert store.get_settings()["remote_access_enabled"] is True
-    assert store.get_settings()["public_domain"] == "meridian.example.com"
+    assert store.get_settings()["public_domain"] == "obsidian.example.com"
 
 
 def test_set_remote_access_blanks_a_whitespace_only_domain_to_none(client_and_deps):
@@ -2890,7 +2890,7 @@ def test_library_settings_round_trip_and_floor(client_and_deps):
 def test_about_reports_the_basics(client_and_deps):
     client, _, _, _, _, _ = client_and_deps
     body = client.get("/api/about").json()
-    assert body["name"] == "Meridian"
+    assert body["name"] == "Obsidian"
     assert "requests" in body and "users" in body
 
 
@@ -2936,7 +2936,7 @@ def test_plex_locate_degrades_when_unlinked_and_rejects_bad_type(client_and_deps
 
 
 def test_reject_current_copy_uses_the_library_ledger_when_this_app_filed_it(client_and_deps, tmp_path):
-    """Meridian's own copy, request history long cleared: the ledger still
+    """Obsidian's own copy, request history long cleared: the ledger still
     knows the torrent hash and release, so both are blacklisted and the
     file removed."""
     client, store, _, _, _, _ = client_and_deps
@@ -2960,7 +2960,7 @@ def test_reject_current_copy_uses_the_library_ledger_when_this_app_filed_it(clie
 
 def test_reject_current_copy_for_a_file_this_app_never_added(client_and_deps, monkeypatch, tmp_path):
     """The End of Oak Street (live 2026-09-17): on Plex, but not added by
-    Meridian, so "This copy is broken" was greyed out. Plex points at the
+    Obsidian, so "This copy is broken" was greyed out. Plex points at the
     file; it's deleted and its release name blacklisted."""
     from app import api
 

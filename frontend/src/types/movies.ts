@@ -70,7 +70,7 @@ export interface MovieDetail extends Omit<TmdbListItem, 'genre_ids'> {
   recommendations?: { results?: TmdbListItem[] }
   // Annotated server-side — see api.py's get_movie_detail.
   is_coming_soon: boolean
-  // On Plex but not added by Meridian, and Plex can point at the file from
+  // On Plex but not added by Obsidian, and Plex can point at the file from
   // the server: enough to offer Replace / This copy is broken for it.
   plex_file_available?: boolean
   // Part K2 — true only when this app has a confirmed record of having

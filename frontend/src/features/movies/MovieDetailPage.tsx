@@ -235,7 +235,7 @@ export default function MovieDetailPage() {
           if (mode === 'reject') {
             // Bin the copy (blacklisting its release), then ask afresh. A copy
             // still downloading is rejected by its request; a filed one through
-            // the library ledger (or, for a file Meridian never added, the file
+            // the library ledger (or, for a file Obsidian never added, the file
             // Plex points at).
             const downloading = requests.find((r) => r.status === 'downloading')
             try {

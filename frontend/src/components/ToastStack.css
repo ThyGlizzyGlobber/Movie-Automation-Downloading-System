@@ -57,7 +57,7 @@
   color: var(--status-failed);
 }
 .toast.info .toast-circ {
-  color: var(--meridian-ice);
+  color: var(--obsidian-ice);
 }
 .toast-text {
   min-width: 0;

@@ -169,7 +169,7 @@ async def lifespan(app: FastAPI):
         store.close()
 
 
-app = FastAPI(title="Meridian", lifespan=lifespan)
+app = FastAPI(title="Obsidian", lifespan=lifespan)
 
 # Frontend migration Part G4 — rate limiting on the routes an internet
 # attacker would actually script against once remote access is enabled:
@@ -2537,7 +2537,7 @@ def about(request: Request, store: RequestStore = Depends(get_store)) -> dict:
     except OSError:
         db_bytes = None
     return {
-        "name": "Meridian",
+        "name": "Obsidian",
         "version": _app_version(),
         "python": platform.python_version(),
         "started_at": started.isoformat() if started else None,

@@ -34,7 +34,7 @@ export function getMovie(tmdbId: number) {
 }
 
 // "This copy is broken" for the filed copy of a movie: the library ledger
-// (or, for a file Meridian never added, Plex) points at it; it's deleted
+// (or, for a file Obsidian never added, Plex) points at it; it's deleted
 // and its release blacklisted for the title.
 export function rejectCurrentMovieCopy(tmdbId: number) {
   return request<{ removed: string[] }>(`/api/movies/${tmdbId}/reject-current`, { method: 'POST' })

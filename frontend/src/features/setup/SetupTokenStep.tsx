@@ -7,7 +7,7 @@ export default function SetupTokenStep({ onContinue }: { onContinue: (token: str
     <>
       <h1 className="setup-step-title">Let's set this up</h1>
       <p className="setup-step-copy">
-        Paste the setup code from Meridian's server log. It's printed when the server starts, and proves it's you
+        Paste the setup code from Obsidian's server log. It's printed when the server starts, and proves it's you
         setting this up.
       </p>
       <div className="setup-field">

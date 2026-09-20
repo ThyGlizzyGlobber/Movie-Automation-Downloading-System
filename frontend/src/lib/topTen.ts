@@ -16,7 +16,7 @@ interface Snapshot {
 }
 
 function key(mediaType: 'movie' | 'tv'): string {
-  return `meridian.top10.${mediaType}`
+  return `obsidian.top10.${mediaType}`
 }
 
 function readSnapshot(mediaType: 'movie' | 'tv'): Snapshot | null {

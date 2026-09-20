@@ -12,7 +12,7 @@ import './RemoteAccessPanel.css'
 type SaveState = 'idle' | 'saving' | 'saved' | 'error'
 
 const REMOTE_SUB =
-  'Turn this on once Meridian is reachable over HTTPS from outside your home, for example through a reverse proxy or a Cloudflare Tunnel. It keeps sign-ins secure.'
+  'Turn this on once Obsidian is reachable over HTTPS from outside your home, for example through a reverse proxy or a Cloudflare Tunnel. It keeps sign-ins secure.'
 const HISTORY_SUB = 'Recent sign-ins and changes to access.'
 
 function RemoteAccessSettingsSection() {
@@ -56,8 +56,8 @@ function RemoteAccessSettingsSection() {
     <div className="settings-panel-card" style={{ marginBottom: 16 }}>
       <h2>Remote access</h2>
       <p className="settings-sub">{REMOTE_SUB}</p>
-      <SettingRow label="Meridian is reachable from outside the house" hint="Keeps sign-ins secure once HTTPS is in front of it.">
-        <Toggle checked={enabled} onChange={setEnabled} label="Meridian is reachable from outside the house" />
+      <SettingRow label="Obsidian is reachable from outside the house" hint="Keeps sign-ins secure once HTTPS is in front of it.">
+        <Toggle checked={enabled} onChange={setEnabled} label="Obsidian is reachable from outside the house" />
       </SettingRow>
       <SettingRow label="Web address" hint="A note of where you've pointed it. Nothing else uses this." htmlFor="raPublicDomain">
         <input
@@ -69,7 +69,7 @@ function RemoteAccessSettingsSection() {
           spellCheck={false}
           value={domain}
           onChange={(e) => setDomain(e.target.value)}
-          placeholder="meridian.example.com"
+          placeholder="obsidian.example.com"
           style={{ width: 240 }}
         />
       </SettingRow>

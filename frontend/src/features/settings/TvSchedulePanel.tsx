@@ -9,7 +9,7 @@ import Toggle from '../../components/Toggle'
 
 type SaveState = 'idle' | 'saving' | 'saved' | 'error'
 
-const TV_SUB = 'How Meridian watches for new episodes of the shows you follow.'
+const TV_SUB = 'How Obsidian watches for new episodes of the shows you follow.'
 
 export default function TvSchedulePanel() {
   const query = useQuery({ queryKey: ['settings', 'tv'], queryFn: getTvSettings })
@@ -59,7 +59,7 @@ export default function TvSchedulePanel() {
     <div className="settings-panel-card">
       <h2>TV shows</h2>
       <p className="settings-sub">{TV_SUB}</p>
-      <SettingRow label="Check for new episodes every" hint="How often Meridian looks at the shows you follow." htmlFor="tvCheckInterval">
+      <SettingRow label="Check for new episodes every" hint="How often Obsidian looks at the shows you follow." htmlFor="tvCheckInterval">
         <input
           id="tvCheckInterval"
           type="number"

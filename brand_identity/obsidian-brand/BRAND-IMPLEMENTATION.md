@@ -1,48 +1,86 @@
-# Meridian — Brand Implementation Guide
+# Obsidian — Brand Implementation Guide
 
-This folder is the brand kit for Meridian, the Smith household's Plex
-request app (`frontend/`, a React + Vite app; formerly "Smithflix", and
-before that "The Family Downloader"). This doc describes what is
-**actually live in the app today** and is kept in sync each time the
-brand is touched, so a future session doesn't rebuild something already
-done differently or reintroduce something deliberately removed. If you
-change how any of this works in the app, update this file in the same
-pass.
+> **Obsidian: Automated Media Downloading Made Simple**
+
+This folder is the brand kit for Obsidian, the Smith household's Plex
+request app (`frontend/`, a React + Vite app; formerly "Meridian",
+before that "Smithflix", and before that "The Family Downloader"). This
+doc describes what is **actually live in the app today** and is kept in
+sync each time the brand is touched, so a future session doesn't rebuild
+something already done differently or reintroduce something deliberately
+removed. If you change how any of this works in the app, update this
+file in the same pass.
+
+**One name, two meanings — worth knowing before you read on.** "Obsidian"
+was the name of the *visual direction* months before it was the name of
+the product: it beat Marquee and Folio in the 2026-09-15 exploration, and
+the app was still called Meridian at the time. The 2026-09-20 rename
+simply named the product after its own design language, so the two now
+coincide. Where this guide says "the Obsidian direction" or "the Obsidian
+reference" it means the design exploration; where it says "Obsidian" on
+its own it means the app.
 
 The visual reference for everything below is `design-exploration/
-obsidian.html` (the chosen "Obsidian" direction, expanded to eleven
-screens) and, for the record of how it was chosen, `design-exploration/
-redesign-directions.html` (Obsidian against two rejected directions,
-Marquee and Folio). The reference files are standalone HTML and are not
-built into the app.
+obsidian.html` (that direction, expanded to eleven screens) and, for the
+record of how it was chosen, `design-exploration/redesign-directions.html`
+(Obsidian against the two rejected directions, Marquee and Folio). The
+reference files are standalone HTML, keep their original filenames, and
+are not built into the app.
 
 ## 1. Name
 
-**Meridian.** Renamed from Smithflix on 2026-09-15 at the owner's request,
-in the same pass that adopted the Obsidian design direction. The name
-appears as a single word in the display face, never split or two-toned
-the way the old "smith"/"flix" wordmark was. Where it appears:
+**Obsidian.** The tagline is **"Obsidian: Automated Media Downloading
+Made Simple"** — used as a strapline for the README and anywhere the app
+introduces itself, not as part of the wordmark, which stays the bare
+word.
+
+Lineage: The Family Downloader → Smithflix → **Meridian** (2026-09-15,
+the same pass that adopted the Obsidian design direction) → **Obsidian**
+(2026-09-20), each at the owner's request. The name appears as a single
+word in the display face, never split or two-toned the way the old
+"smith"/"flix" wordmark was. Where it appears:
 
 - `frontend/index.html` `<title>` and `apple-mobile-web-app-title`
 - `frontend/public/manifest.json` `name` / `short_name`
-- `frontend/src/lib/chrome.tsx` — `document.title` (`"<page> — Meridian"`)
+- `frontend/src/lib/chrome.tsx` — `document.title` (`"<page> — Obsidian"`)
 - `Topbar.tsx`, `MovieDetailPage.tsx`, `ShowDetailPage.tsx` — the wordmark
 - `LoginPage.tsx`, `TutorialOverlay.tsx`, `UpdatesPanel.tsx` — plain text
 - `backend/app/api.py` FastAPI title and `backend/app/plex.py`
   `PRODUCT_NAME` (the label Plex shows for this app on sign-in; the client
   identifier is unchanged, so existing sign-ins are unaffected)
 
-The frontend package is `meridian-frontend`. Storage paths, env vars,
+The frontend package is `obsidian-frontend`. Storage paths, env vars,
 cookies, the TrueNAS app name (`movie-downloader`) and container names
-never carried the old name and were not touched.
+have never carried any product name and were not touched by either
+rename.
+
+The design tokens renamed with the app: the primitive palette is
+`--obsidian-*` (was `--meridian-*`), 51 references across 10 files. The
+semantic aliases components actually consume (`--bg`, `--text`,
+`--accent`, `--status-*`) were already name-neutral and did not move.
 
 ## 2. Mark
+
+> ⚠️ **The mark below is the outgoing one and describes what exists, not
+> what is wanted.** The letterform is an **"M", drawn for Meridian**. It
+> was deliberately left alone in the 2026-09-20 rename: the owner plans
+> to replace the mark outright rather than transliterate it to an "O",
+> so a stopgap letter swap would have been thrown away. It stays
+> consistent across SVG and PNG in the meantime, which is the one thing
+> worth protecting until the replacement lands.
+>
+> **When the new mark arrives**, it has to land in one pass across four
+> SVGs — `icons/icon-mark-only.svg` (source of truth), `icons/icon-512.svg`,
+> `icons/favicon.svg`, and `frontend/public/brand-icon.svg` (currently
+> byte-identical to the first) — plus a re-rasterise of every PNG in
+> `icons/` and `frontend/public/`. Then rewrite this section.
 
 A rounded square (radius 28% of its side) filled with a diagonal
 gradient from `#7f8bff` (periwinkle) to `#3fd6c8` (teal), carrying a
 geometric "M" drawn as a single round-capped stroke in the page black
-`#050508`. It is the same shape language as the app's glass pills and
-cards. Source of truth: `icons/icon-mark-only.svg` (identical to
+`#050508` (`M18 46V18l14 16 14-16v28`). It is the same shape language as
+the app's glass pills and cards. Source of truth:
+`icons/icon-mark-only.svg` (identical to
 `frontend/public/brand-icon.svg`). PNGs in `icons/` are rasterised from
 it; regenerate them from the SVG rather than editing them.
 
@@ -60,16 +98,16 @@ blue is what lets the ambient glows and glass surfaces read as depth.
 
 | Token                    | Value                      | Role |
 |--------------------------|----------------------------|------|
-| `--meridian-black`       | `#050508`                  | page ground; hero and detail fades blend into it |
-| `--meridian-ink`         | `#f5f7fa`                  | text |
-| `--meridian-ink-muted`   | `rgba(245,247,250,.55)`    | secondary text, labels |
-| `--meridian-ice`         | `#9cc0ff`                  | interactive accent; downloading |
-| `--meridian-mint`        | `#6fe3c1`                  | complete / in Plex |
-| `--meridian-violet`      | `#c39cff`                  | searching |
-| `--meridian-coral`       | `#ff8a80`                  | failed |
-| `--meridian-amber`       | `#ffcf7a`                  | no match; storage |
-| `--meridian-orange`      | `#ffb086`                  | no space |
-| `--meridian-star`        | `#ffd166`                  | rating star only |
+| `--obsidian-black`       | `#050508`                  | page ground; hero and detail fades blend into it |
+| `--obsidian-ink`         | `#f5f7fa`                  | text |
+| `--obsidian-ink-muted`   | `rgba(245,247,250,.55)`    | secondary text, labels |
+| `--obsidian-ice`         | `#9cc0ff`                  | interactive accent; downloading |
+| `--obsidian-mint`        | `#6fe3c1`                  | complete / in Plex |
+| `--obsidian-violet`      | `#c39cff`                  | searching |
+| `--obsidian-coral`       | `#ff8a80`                  | failed |
+| `--obsidian-amber`       | `#ffcf7a`                  | no match; storage |
+| `--obsidian-orange`      | `#ffb086`                  | no space |
+| `--obsidian-star`        | `#ffd166`                  | rating star only |
 
 Only ice is decorative. Every other color is a status and always means
 that status, so a colored chip is never just ornament.
@@ -128,14 +166,18 @@ bar, except the thin "continue watching" line under landscape cards.
 
 - **Done (2026-09-15):** tokens, fonts, name, mark, wordmark, PWA
   manifest, theme color, this guide.
-- **Not yet:** component restyle to the reference (glass nav pill, white
+- **Done (2026-09-20):** rename to Obsidian — every user-facing and
+  code-facing string, the `--obsidian-*` token prefix, the npm package,
+  this kit's folder name, and this guide.
+- **Not yet:** **the mark still reads "M"** (see §2 — the open item from
+  the rename); component restyle to the reference (glass nav pill, white
   primary buttons, ring progress, Top 10 row, search palette, request
   modal, settings layout), icon set migration, poster-derived glows.
 
 ## 7. Files
 
 ```
-meridian-brand/
+obsidian-brand/
 ├── BRAND-IMPLEMENTATION.md   this file
 ├── manifest.json             copy of frontend/public/manifest.json
 └── icons/

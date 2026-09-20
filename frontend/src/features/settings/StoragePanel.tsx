@@ -24,7 +24,7 @@ export default function StoragePanel() {
   if (!d) return <div className="settings-panel-card">Couldn't read storage.</div>
   const total = d.available ? d.total_bytes : null
   const bars = [
-    ...d.libraries.map((lib) => ({ label: lib.label, bytes: lib.bytes, tone: lib.key === 'movies' ? 'var(--meridian-ice)' : 'var(--meridian-violet)' })),
+    ...d.libraries.map((lib) => ({ label: lib.label, bytes: lib.bytes, tone: lib.key === 'movies' ? 'var(--obsidian-ice)' : 'var(--obsidian-violet)' })),
     { label: 'Free', bytes: d.available ? d.free_bytes : null, tone: 'rgba(255,255,255,.35)' },
   ]
   return (
@@ -34,7 +34,7 @@ export default function StoragePanel() {
         <p className="settings-sub">
           {d.available
             ? `${formatBytes(d.used_bytes)} of ${formatBytes(d.total_bytes)} used.`
-            : "Meridian can't see the library drive from here."}
+            : "Obsidian can't see the library drive from here."}
         </p>
         <div className="storage-layout">
           <div className="storage-ring">

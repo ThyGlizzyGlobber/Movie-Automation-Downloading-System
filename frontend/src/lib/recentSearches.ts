@@ -1,6 +1,6 @@
 // Last few search queries, kept locally per device for the search
 // palette's "Recent" chips. Best effort — storage can be unavailable.
-const KEY = 'meridian.recentSearches'
+const KEY = 'obsidian.recentSearches'
 const MAX = 5
 
 export function readRecentSearches(): string[] {

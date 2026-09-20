@@ -1,18 +1,19 @@
-/* Meridian design tokens — the "Obsidian" direction, chosen from the
-   three-way exploration in design-exploration/redesign-directions.html
-   and expanded in design-exploration/obsidian.html. Those two files are
+/* Obsidian design tokens. The app takes its name from this visual
+   direction, chosen from the three-way exploration in
+   design-exploration/redesign-directions.html and expanded in
+   design-exploration/obsidian.html. Those two files are
    the visual reference for every value here; when a token changes, the
    obsidian.html System tab should be updated in the same pass so the
    reference and the live app don't drift.
 
    The language in one line: cinema in a dark room. A blue-black ground
-   (not pure black — see --meridian-black), ambient blurred light behind
+   (not pure black — see --obsidian-black), ambient blurred light behind
    hero art, translucent "glass" surfaces with real backdrop blur, pills
    and large radii, Outfit at light weights for display, Manrope for UI.
    Dark is the only theme; there is no light mode and no toggle.
 
    Two layers:
-   1. Primitives (--meridian-*, --glass-*, --glow-*, --radius-*, --font-*):
+   1. Primitives (--obsidian-*, --glass-*, --glow-*, --radius-*, --font-*):
       the raw palette and scale, named after what they are.
    2. Semantic aliases (--bg, --text, --accent, --border, --status-*):
       what the components actually consume. Their names predate this
@@ -24,22 +25,22 @@
   /* Not #000. A hair of blue in the black is what makes the ambient
      glows and glass read as depth rather than as grey boxes on a void.
      The hero/detail fades use var(--bg) so they blend into this exactly. */
-  --meridian-black: #050508;
-  --meridian-ink: #f5f7fa;
-  --meridian-ink-muted: rgba(245, 247, 250, 0.55);
-  --meridian-ink-faint: rgba(245, 247, 250, 0.3);
+  --obsidian-black: #050508;
+  --obsidian-ink: #f5f7fa;
+  --obsidian-ink-muted: rgba(245, 247, 250, 0.55);
+  --obsidian-ink-faint: rgba(245, 247, 250, 0.3);
 
   /* ---- Primitives: color ----
      One cool accent (ice) carries interactive/downloading; the others
      are reserved for status and never used decoratively, so a colored
      chip always means something. */
-  --meridian-ice: #9cc0ff;
-  --meridian-mint: #6fe3c1;
-  --meridian-violet: #c39cff;
-  --meridian-coral: #ff8a80;
-  --meridian-amber: #ffcf7a;
-  --meridian-orange: #ffb086;
-  --meridian-star: #ffd166;
+  --obsidian-ice: #9cc0ff;
+  --obsidian-mint: #6fe3c1;
+  --obsidian-violet: #c39cff;
+  --obsidian-coral: #ff8a80;
+  --obsidian-amber: #ffcf7a;
+  --obsidian-orange: #ffb086;
+  --obsidian-star: #ffd166;
 
   /* ---- Primitives: glass ----
      A surface is white at low alpha over the ground, a 1px lighter
@@ -101,50 +102,50 @@
   --leading-body: 1.65;
 
   /* ---- Semantic aliases (consumed by components) ---- */
-  --bg: var(--meridian-black);
+  --bg: var(--obsidian-black);
   /* Opaque equivalents of the glass tints over the ground, for the
      places that stack surfaces or can't afford a transparent
      background (modals, the tab bar). Prefer --glass on anything that
      sits directly over art. */
   --bg-card: #101016;
   --bg-elevated: #17171f;
-  --text: var(--meridian-ink);
-  --text-dim: var(--meridian-ink-muted);
+  --text: var(--obsidian-ink);
+  --text-dim: var(--obsidian-ink-muted);
   /* Ink for anything drawn on a white/light surface (a white primary
      button, a white active pill, the hover state of a glass row). */
-  --on-light: var(--meridian-black);
+  --on-light: var(--obsidian-black);
 
   /* Ice is the interactive accent: links, active nav, score rings,
      focus outlines, and (for now) filled primary buttons — the
      reference draws primary buttons white; that move belongs to the
      button/component pass rather than the token pass, and --accent
      stays a single value until then. */
-  --accent: var(--meridian-ice);
-  --accent-text: var(--meridian-black);
+  --accent: var(--obsidian-ice);
+  --accent-text: var(--obsidian-black);
   --accent-soft: rgba(156, 192, 255, 0.12);
   /* Primary buttons are white ink on the black ground (the reference's
      signature); secondary buttons are glass. */
   --btn-primary-bg: #ffffff;
-  --btn-primary-text: var(--meridian-black);
+  --btn-primary-text: var(--obsidian-black);
   /* Side inset of the floating nav pill: the page edge inset, or centred
      at 1180px wide once the viewport is wider than that. */
   --nav-side: max(var(--edge-inset), calc(50% - 590px));
   /* Storage-used fill and the one detail chip that must read as
      distinct from --accent. Amber is what the reference uses for
      storage. */
-  --accent-secondary: var(--meridian-amber);
+  --accent-secondary: var(--obsidian-amber);
   --border: var(--glass-border);
 
   /* Status colors — one per real request state, matching the pills and
      rings on the obsidian.html Components tab. Queued is deliberately
      neutral so only the states that need attention carry color. */
   --status-queued: #8a8f9a;
-  --status-searching: var(--meridian-violet);
-  --status-downloading: var(--meridian-ice);
-  --status-complete: var(--meridian-mint);
-  --status-nomatch: var(--meridian-amber);
-  --status-nospace: var(--meridian-orange);
-  --status-failed: var(--meridian-coral);
+  --status-searching: var(--obsidian-violet);
+  --status-downloading: var(--obsidian-ice);
+  --status-complete: var(--obsidian-mint);
+  --status-nomatch: var(--obsidian-amber);
+  --status-nospace: var(--obsidian-orange);
+  --status-failed: var(--obsidian-coral);
 
   /* ---- Layout (unchanged by the repaint) ---- */
   --safe-top: env(safe-area-inset-top, 0px);

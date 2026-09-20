@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Meridian — Redesign Directions</title>
+<title>Obsidian — Redesign Directions</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Archivo:ital,wdth,wght@0,62..125,100..900;1,62..125,100..900&family=IBM+Plex+Mono:wght@400;500&family=Fraunces:ital,opsz,wght@0,9..144,300..700;1,9..144,300..700&family=Instrument+Sans:ital,wght@0,400..700;1,400..700&family=Outfit:wght@300..700&family=Manrope:wght@400..800&family=Inter:wght@400..600&display=swap" rel="stylesheet">
@@ -119,7 +119,7 @@ svg.ico{width:1em;height:1em;fill:none;stroke:currentColor;flex:none;display:inl
 </svg>
 
 <header class="shell-top">
-  <div class="shell-brand">Meridian <small>Redesign directions · Sept 2026</small></div>
+  <div class="shell-brand">Obsidian <small>Redesign directions · Sept 2026</small></div>
   <div class="dir-tabs" role="tablist">
     <button class="dir-tab on" data-dir="mq" style="--sw:#f2c300"><b>01</b><i></i>Marquee</button>
     <button class="dir-tab" data-dir="fo" style="--sw:#c9a467"><b>02</b><i></i>Folio</button>
@@ -418,7 +418,7 @@ svg.ico{width:1em;height:1em;fill:none;stroke:currentColor;flex:none;display:inl
       <div class="phone-stage">
         <div class="phone"><div class="mq-m">
           <div class="mq-m-nav">
-            <div class="mq-logo"><i></i>Meridian</div>
+            <div class="mq-logo"><i></i>Obsidian</div>
             <div class="r"><button class="mq-ib"><svg class="ico"><use href="#i-search"/></svg></button><button class="mq-ib"><svg class="ico"><use href="#i-bell"/></svg><span class="dot"></span></button></div>
           </div>
           <div class="mq-m-hero">
@@ -748,7 +748,7 @@ svg.ico{width:1em;height:1em;fill:none;stroke:currentColor;flex:none;display:inl
       <div class="phone-stage">
         <div class="phone"><div class="fo-m">
           <div class="fo-m-nav">
-            <div class="fo-logo">Meridian</div>
+            <div class="fo-logo">Obsidian</div>
             <div class="r"><button class="fo-ib"><svg class="ico"><use href="#i-search"/></svg></button><button class="fo-ib"><svg class="ico"><use href="#i-bell"/></svg><span class="dot"></span></button><div class="fo-avatar" style="width:30px;height:30px;font-size:14px">B</div></div>
           </div>
           <div class="fo-m-hero">
@@ -1122,7 +1122,7 @@ svg.ico{width:1em;height:1em;fill:none;stroke:currentColor;flex:none;display:inl
       <div class="phone-stage">
         <div class="phone"><div class="ob-m">
           <div class="ob-nav-wrap"><div class="ob-nav">
-            <div class="ob-logo"><span class="ob-mark"><svg class="ico" style="stroke-width:2.2"><use href="#i-plex"/></svg></span>Meridian</div>
+            <div class="ob-logo"><span class="ob-mark"><svg class="ico" style="stroke-width:2.2"><use href="#i-plex"/></svg></span>Obsidian</div>
             <span></span>
             <div class="ob-nav-r"><button class="ob-circ"><svg class="ico"><use href="#i-search"/></svg></button><div class="ob-avatar" style="width:36px;height:36px">B</div></div>
           </div></div>
@@ -1240,13 +1240,13 @@ const items=el=>{const s=SETS[el.dataset.set]||SETS.a;const n=+el.dataset.n||99;
 
 /* ---- navs ---- */
 const NAV={
-  mq:a=>`<nav class="mq-nav"><div class="mq-logo"><i></i>Meridian</div>
+  mq:a=>`<nav class="mq-nav"><div class="mq-logo"><i></i>Obsidian</div>
     <div class="mq-links">${[['home','Home'],['movies','Movies'],['tv','TV Shows'],['requests','Requests']].map(([k,l])=>`<a class="${k===a?'on':''}">${l}</a>`).join('')}</div>
     <div class="mq-nav-r"><div class="mq-search">${ico('search')}Search titles<kbd>/</kbd></div><button class="mq-ib">${ico('bell')}<span class="dot"></span></button><button class="mq-ib">${ico('gear')}</button><div class="mq-avatar">BJ</div></div></nav>`,
-  fo:a=>`<nav class="fo-nav"><div class="fo-logo">Meridian<small>Library</small></div>
+  fo:a=>`<nav class="fo-nav"><div class="fo-logo">Obsidian<small>Library</small></div>
     <div class="fo-links">${[['home','Home'],['movies','Movies'],['tv','TV Shows'],['requests','Requests']].map(([k,l])=>`<a class="${k===a?'on':''}">${l}</a>`).join('')}</div>
     <div class="fo-nav-r"><div class="fo-search">${ico('search')}Search the library</div><button class="fo-ib">${ico('bell')}<span class="dot"></span></button><button class="fo-ib">${ico('gear')}</button><div class="fo-avatar">B</div></div></nav>`,
-  ob:a=>`<div class="ob-nav-wrap"><nav class="ob-nav"><div class="ob-logo"><span class="ob-mark"><svg class="ico" style="stroke-width:2.2"><use href="#i-plex"/></svg></span>Meridian</div>
+  ob:a=>`<div class="ob-nav-wrap"><nav class="ob-nav"><div class="ob-logo"><span class="ob-mark"><svg class="ico" style="stroke-width:2.2"><use href="#i-plex"/></svg></span>Obsidian</div>
     <div class="ob-links">${[['home','Home'],['movies','Movies'],['tv','TV Shows'],['requests','Requests']].map(([k,l])=>`<a class="${k===a?'on':''}">${l}</a>`).join('')}</div>
     <div class="ob-nav-r"><div class="ob-search">${ico('search')}Search<kbd>⌘K</kbd></div><button class="ob-circ">${ico('bell')}<span class="dot"></span></button><button class="ob-circ">${ico('gear')}</button><div class="ob-avatar">BJ</div></div></nav></div>`
 };

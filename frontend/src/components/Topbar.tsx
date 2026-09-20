@@ -31,8 +31,8 @@ export default function Topbar({ onOpenSearch }: { onOpenSearch: () => void }) {
 
   return (
     <div id="topbar" ref={topbarRef}>
-      <NavLink id="topbarLogo" to="/home" aria-label="Meridian home">
-        <span className="brand-wordmark">Meridian</span>
+      <NavLink id="topbarLogo" to="/home" aria-label="Obsidian home">
+        <span className="brand-wordmark">Obsidian</span>
       </NavLink>
       <nav className="top-nav-links">
         {SECTIONS.map((s) => (

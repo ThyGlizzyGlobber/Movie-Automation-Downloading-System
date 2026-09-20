@@ -69,13 +69,13 @@
   pointer-events: none;
 }
 .top10-move.up {
-  color: var(--meridian-mint);
+  color: var(--obsidian-mint);
 }
 .top10-move.down {
-  color: var(--meridian-coral);
+  color: var(--obsidian-coral);
 }
 .top10-move.new {
-  color: var(--meridian-ice);
+  color: var(--obsidian-ice);
 }
 @media (hover: hover) {
   .top10-card:hover .top10-num {

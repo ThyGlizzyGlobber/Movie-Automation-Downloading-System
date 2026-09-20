@@ -6,7 +6,7 @@ import ErrorState from '../../components/ErrorState'
 import { ApiError } from '../../api/client'
 
 const TMDB_SUB = 'Titles, posters and details come from TMDB.'
-const QBT_SUB = 'Where downloads run. Meridian talks to qBittorrent.'
+const QBT_SUB = 'Where downloads run. Obsidian talks to qBittorrent.'
 
 function TmdbSection({ envConfigured }: { envConfigured: boolean }) {
   const [apiKey, setApiKey] = useState('')
@@ -18,7 +18,7 @@ function TmdbSection({ envConfigured }: { envConfigured: boolean }) {
     setResult(null)
     try {
       await updateTmdbSettings(apiKey.trim())
-      setResult({ ok: true, message: 'Saved. Restart Meridian to start using it.' })
+      setResult({ ok: true, message: 'Saved. Restart Obsidian to start using it.' })
       setApiKey('')
     } catch (err) {
       setResult({ ok: false, message: err instanceof ApiError ? err.message : 'Something went wrong.' })
@@ -91,7 +91,7 @@ function QbittorrentSection({ envConfigured }: { envConfigured: boolean }) {
     setSaveResult(null)
     try {
       await updateQbtSettings(body)
-      setSaveResult({ ok: true, message: 'Saved. Restart Meridian to start using it.' })
+      setSaveResult({ ok: true, message: 'Saved. Restart Obsidian to start using it.' })
     } catch (err) {
       setSaveResult({ ok: false, message: err instanceof ApiError ? err.message : 'Something went wrong.' })
     } finally {

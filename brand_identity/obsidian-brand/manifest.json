@@ -1,6 +1,6 @@
 {
-  "name": "Meridian",
-  "short_name": "Meridian",
+  "name": "Obsidian",
+  "short_name": "Obsidian",
   "description": "The Smith family's home streaming server",
   "start_url": "/",
   "display": "standalone",

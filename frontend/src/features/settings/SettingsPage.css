@@ -367,7 +367,7 @@
   margin: 8px 0 18px;
 }
 .storage-ring .progress-ring circle.fill {
-  stroke: var(--meridian-amber);
+  stroke: var(--obsidian-amber);
   filter: drop-shadow(0 0 8px rgba(255, 207, 122, 0.6));
 }
 .storage-ring .progress-ring span {
@@ -721,7 +721,7 @@
   font-weight: 800;
   letter-spacing: 0.06em;
   text-transform: uppercase;
-  color: var(--meridian-ice);
+  color: var(--obsidian-ice);
 }
 .profile-tile small {
   font-size: 11px;
@@ -778,7 +778,7 @@
   padding: 2px 8px;
   border-radius: var(--radius-pill);
   background: rgba(156, 192, 255, 0.12);
-  color: var(--meridian-ice);
+  color: var(--obsidian-ice);
   font-size: 10px;
   font-weight: 800;
   letter-spacing: 0.06em;

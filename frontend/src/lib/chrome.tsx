@@ -40,9 +40,9 @@ export function useSetHasHero(value: boolean) {
 // Ports setChrome({title})'s document.title job.
 export function usePageTitle(title: string | null) {
   useEffect(() => {
-    document.title = title ? `${title} — Meridian` : 'Meridian'
+    document.title = title ? `${title} — Obsidian` : 'Obsidian'
     return () => {
-      document.title = 'Meridian'
+      document.title = 'Obsidian'
     }
   }, [title])
 }

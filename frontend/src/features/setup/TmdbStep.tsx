@@ -30,7 +30,7 @@ export default function TmdbStep({
     <>
       <h1 className="setup-step-title">Movie &amp; TV info</h1>
       <p className="setup-step-copy">
-        Meridian gets titles, posters and details from TMDB. A free key takes a minute at{' '}
+        Obsidian gets titles, posters and details from TMDB. A free key takes a minute at{' '}
         <a href="https://www.themoviedb.org/settings/api" target="_blank" rel="noreferrer">
           themoviedb.org
         </a>

@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Meridian — Obsidian</title>
+<title>Obsidian — Obsidian</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Archivo:ital,wdth,wght@0,62..125,100..900;1,62..125,100..900&family=IBM+Plex+Mono:wght@400;500&family=Fraunces:ital,opsz,wght@0,9..144,300..700;1,9..144,300..700&family=Instrument+Sans:ital,wght@0,400..700;1,400..700&family=Outfit:wght@300..700&family=Manrope:wght@400..800&family=Inter:wght@400..600&display=swap" rel="stylesheet">
@@ -523,7 +523,7 @@ svg.ico{width:1em;height:1em;fill:none;stroke:currentColor;flex:none;display:inl
 </style>
 
 <header class="shell-top">
-  <div class="shell-brand">Meridian <small>Obsidian · expanded direction · Sept 2026</small></div>
+  <div class="shell-brand">Obsidian <small>Obsidian · expanded direction · Sept 2026</small></div>
   <div class="scr-tabs" id="tabs">
     <button class="scr-tab on" data-scr="home">Home</button>
     <button class="scr-tab" data-scr="movie">Movie</button>
@@ -793,7 +793,7 @@ svg.ico{width:1em;height:1em;fill:none;stroke:currentColor;flex:none;display:inl
             <p class="lead">Plex connection, storage and who can ask for what</p>
             <div class="ob-scard glass">
               <h3>Plex <span class="ob-live" style="margin-left:auto"><b></b>Connected</span></h3>
-              <p class="sub">The server Meridian adds files to and reads the library from</p>
+              <p class="sub">The server Obsidian adds files to and reads the library from</p>
               <div class="ob-plex"><span class="ob-mark"><svg class="ico" style="stroke-width:2.2"><use href="#i-plex"/></svg></span><div><b>Smith House · plex.local</b><small>Signed in as bejay · 2 libraries · last scan 4 min ago</small></div><button class="ob-btn sec sm" style="margin-left:auto">Rescan</button><button class="ob-btn ghost sm">Sign out</button></div>
               <div class="ob-krow" style="margin-top:14px"><div><b>Movies library</b><small>/mnt/media/movies · 1,284 titles</small></div><span class="ob-input mono" style="min-width:200px">/mnt/media/movies</span></div>
               <div class="ob-krow"><div><b>TV library</b><small>/mnt/media/tv · 212 shows</small></div><span class="ob-input mono" style="min-width:200px">/mnt/media/tv</span></div>
@@ -825,7 +825,7 @@ svg.ico{width:1em;height:1em;fill:none;stroke:currentColor;flex:none;display:inl
             <div class="ob-scard glass">
               <h3>Remote access</h3>
               <p class="sub">Setup is LAN-only. Outside the house, everything goes through the tunnel</p>
-              <div class="ob-krow"><div><b>Tunnel</b><small>meridian.example.net · rate limit 60 req/min</small></div><span class="ob-live"><b></b>Up · 3 days</span></div>
+              <div class="ob-krow"><div><b>Tunnel</b><small>obsidian.example.net · rate limit 60 req/min</small></div><span class="ob-live"><b></b>Up · 3 days</span></div>
               <div class="ob-krow"><div><b>Require Plex sign-in outside LAN</b><small>Household members only</small></div><span class="ob-tog on"></span></div>
               <div class="ob-krow"><div><b>Audit log</b><small>412 events · last: request from bejay, 2 min ago</small></div><button class="ob-btn sec sm">View log</button></div>
             </div>
@@ -893,7 +893,7 @@ svg.ico{width:1em;height:1em;fill:none;stroke:currentColor;flex:none;display:inl
       <div class="phone-stage" style="gap:36px">
         <div class="phone"><div class="ob-m">
           <div class="ob-nav-wrap"><div class="ob-nav">
-            <div class="ob-logo"><span class="ob-mark"><svg class="ico" style="stroke-width:2.2"><use href="#i-plex"/></svg></span>Meridian</div><span></span>
+            <div class="ob-logo"><span class="ob-mark"><svg class="ico" style="stroke-width:2.2"><use href="#i-plex"/></svg></span>Obsidian</div><span></span>
             <div class="ob-nav-r"><button class="ob-circ"><svg class="ico"><use href="#i-search"/></svg></button><div class="ob-avatar" style="width:36px;height:36px">B</div></div>
           </div></div>
           <div class="ob-m-hero" style="height:470px">
@@ -914,7 +914,7 @@ svg.ico{width:1em;height:1em;fill:none;stroke:currentColor;flex:none;display:inl
 
         <div class="phone"><div class="ob-m">
           <div class="ob-nav-wrap"><div class="ob-nav">
-            <div class="ob-logo"><span class="ob-mark"><svg class="ico" style="stroke-width:2.2"><use href="#i-plex"/></svg></span>Meridian</div><span></span>
+            <div class="ob-logo"><span class="ob-mark"><svg class="ico" style="stroke-width:2.2"><use href="#i-plex"/></svg></span>Obsidian</div><span></span>
             <div class="ob-nav-r"><button class="ob-circ"><svg class="ico"><use href="#i-search"/></svg></button><div class="ob-avatar" style="width:36px;height:36px">B</div></div>
           </div></div>
           <div class="ob-glow"><i></i><i></i><i></i></div>
@@ -1054,7 +1054,7 @@ const ring=(st,pct,size=56)=>{const r=size*24/56,C=2*Math.PI*r,off=st==='s'?0:C*
   return `<div class="ob-ring ${st}"><svg viewBox="0 0 ${size} ${size}"><circle class="bg" cx="${size/2}" cy="${size/2}" r="${r}"/><circle class="fg" cx="${size/2}" cy="${size/2}" r="${r}" stroke-dasharray="${st==='s'?'':C}" stroke-dashoffset="${off}"/></svg><span>${inner}</span></div>`;};
 const statusPill=(st,extra='')=>`<span class="ob-status ${st}">${ico(ST[st].ic)}${ST[st].l}${extra}</span>`;
 
-document.querySelectorAll('[data-nav]').forEach(el=>{const a=el.dataset.active;el.outerHTML=`<div class="ob-nav-wrap"><nav class="ob-nav"><div class="ob-logo"><span class="ob-mark"><svg class="ico" style="stroke-width:2.2"><use href="#i-plex"/></svg></span>Meridian</div>
+document.querySelectorAll('[data-nav]').forEach(el=>{const a=el.dataset.active;el.outerHTML=`<div class="ob-nav-wrap"><nav class="ob-nav"><div class="ob-logo"><span class="ob-mark"><svg class="ico" style="stroke-width:2.2"><use href="#i-plex"/></svg></span>Obsidian</div>
   <div class="ob-links">${[['home','Home'],['movies','Movies'],['tv','TV Shows'],['requests','Requests']].map(([k,l])=>`<a class="${k===a?'on':''}">${l}</a>`).join('')}</div>
   <div class="ob-nav-r"><div class="ob-search">${ico('search')}Search<kbd>⌘K</kbd></div><button class="ob-circ" ${a===''?'style="background:rgba(255,255,255,.14)"':''}>${ico('gear')}</button><div class="ob-avatar">BJ</div></div></nav></div>`;});
 

@@ -1,7 +1,7 @@
 import type { SVGProps } from 'react'
 import './Icon.css'
 
-// The Meridian icon set: one family of 24-unit glyphs drawn as 1.75px
+// The Obsidian icon set: one family of 24-unit glyphs drawn as 1.75px
 // round-capped strokes (play and the rating star are filled), matching
 // the reference's icon sheet in design-exploration/obsidian.html. Sized
 // by font-size like the icon font it replaces (1em square), so the

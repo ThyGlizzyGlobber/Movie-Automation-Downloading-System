@@ -678,9 +678,9 @@ def test_rejected_releases_round_trip():
 
 
 def test_filing_records_a_library_item_that_survives_clearing_history(tmp_path):
-    """The End of Oak Street (live 2026-09-17): downloaded by Meridian, but
+    """The End of Oak Street (live 2026-09-17): downloaded by Obsidian, but
     "Clear finished" had wiped the request row, and with it the only
-    record that the file was Meridian's. The ledger outlives history."""
+    record that the file was Obsidian's. The ledger outlives history."""
     store = RequestStore(":memory:")
     filed = tmp_path / "The End of Oak Street (2025).mkv"
     filed.write_bytes(b"x" * 10)

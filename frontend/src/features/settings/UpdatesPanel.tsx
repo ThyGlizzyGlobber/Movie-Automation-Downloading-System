@@ -8,7 +8,7 @@ export default function UpdatesPanel() {
   const { toast } = useToast()
 
   async function checkForUpdates() {
-    if (!confirm('Install the latest version of Meridian now?')) return
+    if (!confirm('Install the latest version of Obsidian now?')) return
     setDeploying(true)
     try {
       const result = await postDeploy()
@@ -23,11 +23,11 @@ export default function UpdatesPanel() {
   return (
     <div className="settings-panel-card">
       <h2>Updates</h2>
-      <p className="settings-sub">Install the latest version of Meridian.</p>
+      <p className="settings-sub">Install the latest version of Obsidian.</p>
       <button className="settings-btn" disabled={deploying} onClick={checkForUpdates}>
         {deploying ? 'Updating…' : 'Check for updates'}
       </button>
-      <div className="about-footer">Meridian</div>
+      <div className="about-footer">Obsidian</div>
     </div>
   )
 }

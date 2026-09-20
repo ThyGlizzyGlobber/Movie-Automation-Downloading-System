@@ -14,7 +14,7 @@ function uptime(seconds: number | null): string {
   return `${m}m`
 }
 
-const ABOUT_SUB = 'What this Meridian is running.'
+const ABOUT_SUB = 'Version, uptime, and what this install is connected to.'
 
 export default function AboutPanel() {
   const query = useQuery({ queryKey: ['about'], queryFn: getAbout, refetchInterval: 60_000 })

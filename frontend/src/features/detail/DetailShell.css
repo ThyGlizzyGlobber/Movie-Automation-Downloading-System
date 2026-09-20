@@ -348,7 +348,7 @@
   overflow-wrap: anywhere;
 }
 .detail-fact dd a:hover {
-  color: var(--meridian-ice);
+  color: var(--obsidian-ice);
 }
 .detail-tiles.four {
   grid-template-columns: repeat(4, 1fr);
@@ -391,7 +391,7 @@
   color: var(--status-complete);
 }
 .detail-tile.ice b .icon {
-  color: var(--meridian-ice);
+  color: var(--obsidian-ice);
 }
 .detail-tile.dim b {
   color: var(--text-dim);
@@ -507,7 +507,7 @@
   color: #fff;
 }
 .detail-pill .detail-star {
-  color: var(--meridian-star);
+  color: var(--obsidian-star);
   font-size: 14px;
 }
 .detail-pill small {
@@ -524,7 +524,7 @@
 /* Genres are links into browse with that genre selected. */
 .detail-pill a:hover,
 .detail-fact dd a:hover {
-  color: var(--meridian-ice);
+  color: var(--obsidian-ice);
 }
 .detail-syn {
   font-size: var(--text-body);
@@ -608,7 +608,7 @@
   text-overflow: ellipsis;
 }
 .detail-cast a:hover b {
-  color: var(--meridian-ice);
+  color: var(--obsidian-ice);
 }
 /* Trailer inside the card. */
 .detail-trailer {
@@ -640,7 +640,7 @@
   font-weight: 600;
 }
 .detail-krow a:hover {
-  color: var(--meridian-ice);
+  color: var(--obsidian-ice);
 }
 /* Seasons: the picker and progress line above the episode list. */
 .detail-seasons {

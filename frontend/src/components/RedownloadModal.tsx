@@ -79,24 +79,24 @@ export default function RedownloadModal({
           <button
             className="redownload-option"
             disabled={!trackedAvailable}
-            title={trackedAvailable ? undefined : "Meridian didn't add this file, so it won't delete it."}
+            title={trackedAvailable ? undefined : "Obsidian didn't add this file, so it won't delete it."}
             onClick={() => setConfirming('overwrite')}
           >
             Replace it
             <span className="redownload-option-sub">
-              {trackedAvailable ? 'Delete the current copy when the new one is ready.' : "Not available. Meridian didn't add this file."}
+              {trackedAvailable ? 'Delete the current copy when the new one is ready.' : "Not available. Obsidian didn't add this file."}
             </span>
           </button>
           {canReject && (
           <button
             className="redownload-option"
             disabled={!trackedAvailable}
-            title={trackedAvailable ? undefined : "Meridian didn't add this file, so it can't rule it out."}
+            title={trackedAvailable ? undefined : "Obsidian didn't add this file, so it can't rule it out."}
             onClick={() => setConfirming('reject')}
           >
             This copy is broken
             <span className="redownload-option-sub">
-              {trackedAvailable ? 'Bad audio, wrong cut, won\'t play: bin it and never pick this release again.' : "Not available. Meridian didn't add this file."}
+              {trackedAvailable ? 'Bad audio, wrong cut, won\'t play: bin it and never pick this release again.' : "Not available. Obsidian didn't add this file."}
             </span>
           </button>
           )}

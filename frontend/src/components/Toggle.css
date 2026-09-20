@@ -22,10 +22,10 @@
   transition: left 0.2s ease, background 0.2s ease;
 }
 .toggle.on {
-  background: var(--meridian-ice);
+  background: var(--obsidian-ice);
   box-shadow: 0 0 16px rgba(156, 192, 255, 0.5);
 }
 .toggle.on::after {
   left: 21px;
-  background: var(--meridian-black);
+  background: var(--obsidian-black);
 }

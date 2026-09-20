@@ -39,7 +39,7 @@ function Stat({ icon, tone, value, label, loading = false }: { icon: Parameters<
 function ActiveRow({ r, hasAvatar }: { r: RequestOut; hasAvatar: boolean }) {
   const { href } = requestLabelAndHref(r)
   const pct = r.status === 'downloading' && r.download_progress != null ? Math.round(r.download_progress * 100) : null
-  const who = r.requested_by_username || 'Meridian'
+  const who = r.requested_by_username || 'Obsidian'
   return (
     <a className="dash-active" href={href}>
       <span className="dash-active-who" title={who}>
@@ -278,7 +278,7 @@ export default function DashboardPanel({ onOpen }: { onOpen: (key: string) => vo
               </ul>
             </>
           ) : (
-            <p className="dash-empty">Meridian can't see the library drive from here.</p>
+            <p className="dash-empty">Obsidian can't see the library drive from here.</p>
           )}
         </div>
 

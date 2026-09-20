@@ -38,7 +38,7 @@ function BootFrame() {
     <>
       <div id="topbar" ref={topbarRef} aria-busy="true">
         <span id="topbarLogo">
-          <span className="brand-wordmark">Meridian</span>
+          <span className="brand-wordmark">Obsidian</span>
         </span>
         <nav className="top-nav-links">
           {SECTIONS.map((s) => (

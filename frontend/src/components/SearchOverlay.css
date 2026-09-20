@@ -211,7 +211,7 @@
   color: var(--text-dim);
 }
 .search-result-rating .icon {
-  color: var(--meridian-star);
+  color: var(--obsidian-star);
   font-size: 12px;
 }
 .search-result-action,

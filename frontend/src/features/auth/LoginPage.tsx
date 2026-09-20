@@ -10,7 +10,7 @@ export default function LoginPage() {
       <AmbientGlow posterPath={null} />
       <div className="login-card">
         <img className="login-brand" src="/brand-icon.svg" alt="" />
-        <h1 className="login-title">Meridian</h1>
+        <h1 className="login-title">Obsidian</h1>
         <p className="login-copy">
           Sign in with your Plex account.
         </p>

@@ -271,10 +271,10 @@
   font-size: 16px;
 }
 .rq-stat-icon.ice {
-  color: var(--meridian-ice);
+  color: var(--obsidian-ice);
 }
 .rq-stat-icon.mint {
-  color: var(--meridian-mint);
+  color: var(--obsidian-mint);
 }
 .rq-toolbar {
   display: flex;

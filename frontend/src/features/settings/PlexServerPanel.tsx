@@ -16,7 +16,7 @@ type Phase = 'status' | 'signing-in' | 'picking-server' | 'linking'
 // — same PIN sign-in flow, but starting from "already linked, show
 // status" rather than a blank first-run, and adding the switch-server
 // capability an admin with more than one Plex server needs (Part C1).
-const PLEX_SUB = 'The server Meridian adds to and reads from.'
+const PLEX_SUB = 'The server Obsidian adds to and reads from.'
 
 export default function PlexServerPanel() {
   const queryClient = useQueryClient()
@@ -103,7 +103,7 @@ export default function PlexServerPanel() {
   }
 
   async function disconnect() {
-    if (!confirm('Disconnect Plex? Meridian stops working for everyone until an admin connects it again.')) return
+    if (!confirm('Disconnect Plex? Obsidian stops working for everyone until an admin connects it again.')) return
     setBusy(true)
     try {
       await unlinkPlex()

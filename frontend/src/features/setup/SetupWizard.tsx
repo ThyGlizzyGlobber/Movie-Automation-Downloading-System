@@ -89,7 +89,7 @@ export default function SetupWizard() {
 
         {restartNeeded && (
           <p className="setup-skip-note">
-            Saved. Restart Meridian once you've finished so it picks this up.
+            Saved. Restart Obsidian once you've finished so it picks this up.
           </p>
         )}
       </div>
