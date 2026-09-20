@@ -1028,7 +1028,48 @@ def test_get_movie_detail_returns_full_movie(client_and_deps):
     # regardless of no release_dates data being present on the fixture.
     # on_plex_tracked is False — no completed, organized request exists
     # for this tmdb_id in a fresh store.
-    assert response.json() == dict(MOVIE, on_plex=False, plex_file_available=False, is_coming_soon=False, on_plex_tracked=False, logo_path=None)
+    assert response.json() == dict(
+        MOVIE,
+        on_plex=False,
+        plex_file_available=False,
+        is_coming_soon=False,
+        on_plex_tracked=False,
+        logo_path=None,
+        # Nothing filed for this movie, so the "On disk" tiles have
+        # nothing to render.
+        library={"files": 0, "total_bytes": 0, "added_at": None, "releases": []},
+    )
+
+
+def test_get_movie_detail_still_reports_the_file_after_history_is_cleared(client_and_deps, tmp_path):
+    """The reason these tiles moved off the completed request row: both
+    "Clear My Requests" and retention delete it, and the page then lost
+    its "On disk" row while the file was still very much on disk."""
+    client, store, _, _, _, _ = client_and_deps
+    filed = tmp_path / "Dune Part Two (2024).mkv"
+    filed.write_bytes(b"x" * 1234)
+    row = store.create_request(tmdb_id=693134, title="Dune: Part Two", release_year=2024, query=None)
+    store.update_status(
+        row.id,
+        "downloading",
+        result={"torrent_hash": "abcd", "winner": {"fileName": "Dune.Part.Two.2024.2160p.WEB-DL.mkv"}},
+    )
+    store.mark_organized(row.id, [str(filed)], ["abcd"], "2000-01-01T00:00:00+00:00")
+    # What "Clear My Requests" runs, but with a cutoff in the future so
+    # the row is certainly gone: at days=0 the cutoff is `now`, and on a
+    # coarse clock a row created microseconds earlier can fail
+    # `created_at < cutoff` — the flake behind test_db's own
+    # purge-at-zero test. Not what this test is about.
+    store.purge_requests_older_than(days=-1)
+    assert store.get_request(row.id) is None
+
+    library = client.get("/api/movies/693134").json()["library"]
+
+    assert library["files"] == 1
+    # The real on-disk size, not the size the torrent advertised.
+    assert library["total_bytes"] == 1234
+    assert library["releases"] == ["Dune.Part.Two.2024.2160p.WEB-DL.mkv"]
+    assert library["added_at"] is not None
 
 
 def test_get_movie_detail_on_plex_tracked_true_after_a_completed_organized_request(client_and_deps):
@@ -1311,7 +1352,7 @@ def test_get_tv_detail_returns_full_show(client_and_deps):
         logo_path=None,
         # Nothing filed for this show, so the show-level "On disk" tiles
         # have nothing to render.
-        library={"files": 0, "total_bytes": 0, "releases": []},
+        library={"files": 0, "total_bytes": 0, "added_at": None, "releases": []},
     )
 
 

@@ -77,6 +77,19 @@ export interface MovieDetail extends Omit<TmdbListItem, 'genre_ids'> {
   // organized a file for this title itself; drives whether "Overwrite
   // existing" is offered in the redownload confirmation modal.
   on_plex_tracked: boolean
+  library?: LibrarySummary
+}
+
+/** What this app has actually filed for a title, from the library
+ *  ledger. Shared by the movie and show detail pages: both render the
+ *  same "On disk" tiles, and both need it to outlive the request rows
+ *  that "Clear My Requests" and retention delete. `releases` is left
+ *  unparsed so one helper derives the quality label for both. */
+export interface LibrarySummary {
+  files: number
+  total_bytes: number
+  added_at: string | null
+  releases: string[]
 }
 
 export interface CastMember {

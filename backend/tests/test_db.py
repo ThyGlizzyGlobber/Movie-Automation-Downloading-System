@@ -761,7 +761,31 @@ def test_library_summary_reports_every_distinct_release_when_mixed(tmp_path):
 def test_library_summary_is_empty_for_a_show_with_nothing_filed():
     store = RequestStore(":memory:")
 
-    assert store.library_summary(77, ("episode", "pack")) == {"files": 0, "total_bytes": 0, "releases": []}
+    assert store.library_summary(77, ("episode", "pack")) == {
+        "files": 0,
+        "total_bytes": 0,
+        "added_at": None,
+        "releases": [],
+    }
+
+
+def test_library_summary_added_at_is_when_the_newest_file_landed(tmp_path):
+    """Newest, not oldest: a re-download or an upgraded season should
+    read as added when it actually landed. This is also what lets the
+    detail pages date a file without the request row, which "Clear My
+    Requests" and retention both delete."""
+    store = RequestStore(":memory:")
+    _file_episode(store, tmp_path, season=1, episode=1, release="Show.S01.1080p.WEB-DL.x265", size=10)
+    first = store.library_summary(77, ("episode", "pack"))["added_at"]
+    _file_episode(store, tmp_path, season=2, episode=1, release="Show.S02.1080p.WEB-DL.x265", size=10)
+
+    latest = store.library_summary(77, ("episode", "pack"))["added_at"]
+
+    assert first is not None
+    assert latest >= first
+    # And it outlives the request rows it used to be read from.
+    store.purge_requests_older_than(days=0)
+    assert store.library_summary(77, ("episode", "pack"))["added_at"] == latest
 
 
 def test_library_summary_ignores_other_titles_and_media_types(tmp_path):

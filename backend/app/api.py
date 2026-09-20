@@ -744,6 +744,13 @@ def get_movie_detail(
         # match above. Drives whether "Overwrite existing" is even
         # offered in the redownload confirmation modal.
         "on_plex_tracked": tracked,
+        # The "On disk" tiles. Read from the library ledger rather than a
+        # completed request's recorded winner, which is what the page used
+        # to do: a request row is deleted by "Clear My Requests" and by
+        # retention, so the tiles vanished while the file was still very
+        # much on disk. The ledger outlives history, and its size is the
+        # real on-disk one rather than the torrent's advertised size.
+        "library": store.library_summary(tmdb_id, ("movie",)),
     }
 
 

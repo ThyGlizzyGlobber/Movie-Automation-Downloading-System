@@ -9,7 +9,7 @@ import RequestModal from '../../components/RequestModal'
 import ErrorState from '../../components/ErrorState'
 import Icon from '../../components/Icon'
 import DetailShell, { DetailShellSkeleton, type DetailPill, type DetailRow, type DetailTile } from '../detail/DetailShell'
-import { DetailCast, DetailCastSkeleton, DetailTrailer, DetailTrailerSkeleton, FactTiles, genreLinks, peopleLinks, qualityFromName, serviceTile, sourceFromName, usePlexHref, useTitleRequests } from '../detail/DetailBits'
+import { acrossReleases, DetailCast, DetailCastSkeleton, DetailTrailer, DetailTrailerSkeleton, FactTiles, filedOnLabel, genreLinks, peopleLinks, qualityFromName, serviceTile, sourceFromName, usePlexHref, useTitleRequests } from '../detail/DetailBits'
 import { usePageTitle, useSetHasHero } from '../../lib/chrome'
 import { certificationOf, languageNameOf, yearOf } from '../../lib/detailHelpers'
 import { moviePill } from '../../lib/homeHero'
@@ -88,8 +88,6 @@ export default function MovieDetailPage() {
   }
 
   const active = requests.find((r) => NON_TERMINAL.has(r.status)) ?? null
-  const latestDone = requests.find((r) => r.status === 'complete') ?? null
-  const winner = (latestDone?.result as { winner?: { fileName?: string; fileSize?: number } } | null)?.winner
   const certification = certificationOf(movie)
   const genres = (movie.genres ?? []).slice(0, 3)
 
@@ -120,14 +118,22 @@ export default function MovieDetailPage() {
   )
   if (requests[0]?.requested_by_username) sideTiles.push({ label: 'Requested by', value: requests[0].requested_by_username, fit: true })
 
-  const fileTiles: DetailTile[] | null = winner
-    ? [
-        { label: 'Quality', value: qualityFromName(winner.fileName) || '—', tone: 'mint' },
-        { label: 'Size', value: winner.fileSize ? formatBytes(winner.fileSize) : '—' },
-        { label: 'Source', value: sourceFromName(winner.fileName) || '—' },
-        { label: 'Added', value: latestDone ? new Date(latestDone.updated_at).toLocaleDateString([], { day: 'numeric', month: 'short' }) : '—' },
-      ]
-    : null
+  // From the library ledger, not a completed request's recorded winner.
+  // A request row is deleted by "Clear My Requests" and by retention, so
+  // these tiles used to disappear while the file was still on disk; the
+  // ledger outlives history. Its size is also the real on-disk one
+  // rather than the size the torrent advertised, which differ whenever a
+  // release bundled a sample or subtitles.
+  const library = movie.library
+  const fileTiles: DetailTile[] | null =
+    library && library.files > 0
+      ? [
+          { label: 'Quality', value: acrossReleases(library.releases, qualityFromName), tone: 'mint' },
+          { label: 'Size', value: library.total_bytes ? formatBytes(library.total_bytes) : '—' },
+          { label: 'Source', value: acrossReleases(library.releases, sourceFromName) },
+          { label: 'Added', value: filedOnLabel(library.added_at) },
+        ]
+      : null
 
   const crew = movie.credits?.crew ?? []
   const directors = crew.filter((c) => c.job === 'Director')

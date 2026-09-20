@@ -1055,7 +1055,8 @@ class RequestStore:
         placeholders = ",".join("?" for _ in media_types)
         params = (tmdb_id, *media_types)
         totals = self._conn.execute(
-            f"SELECT COUNT(*) AS files, COALESCE(SUM(size_bytes), 0) AS total_bytes "
+            f"SELECT COUNT(*) AS files, COALESCE(SUM(size_bytes), 0) AS total_bytes, "
+            f"MAX(created_at) AS added_at "
             f"FROM library_items WHERE tmdb_id = ? AND media_type IN ({placeholders})",
             params,
         ).fetchone()
@@ -1068,6 +1069,11 @@ class RequestStore:
         return {
             "files": totals["files"],
             "total_bytes": totals["total_bytes"],
+            # When the newest file was filed. Newest rather than oldest so
+            # a re-download or an upgraded season reads as "added" when it
+            # actually landed, and so this survives the request row the
+            # movie page used to date itself from.
+            "added_at": totals["added_at"],
             "releases": [r["release_name"] for r in releases],
         }
 

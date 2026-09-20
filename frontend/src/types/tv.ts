@@ -1,4 +1,4 @@
-import type { CastMember, CrewMember, Genre, ProductionCompany, TmdbListItem } from './movies'
+import type { CastMember, CrewMember, Genre, LibrarySummary, ProductionCompany, TmdbListItem } from './movies'
 
 export interface Network {
   id: number
@@ -55,9 +55,8 @@ export interface TvDetail extends Omit<TmdbListItem, 'genre_ids'> {
   on_plex_tracked: boolean
   // Every aired episode is already on Plex (by Plex's own episode count).
   plex_complete?: boolean
-  // What this app has filed for the show across every season — the
-  // show-level counterpart to the movie page's single recorded winner.
-  // `releases` is the distinct release names, left unparsed so the page
-  // derives its quality label with the same helper the movie page uses.
-  library?: { files: number; total_bytes: number; releases: string[] }
+  // What this app has filed for the show across every season. Same
+  // shape the movie detail carries — both pages render it as the same
+  // "On disk" tiles.
+  library?: LibrarySummary
 }

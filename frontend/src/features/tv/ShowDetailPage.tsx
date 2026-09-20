@@ -9,7 +9,7 @@ import RedownloadModal from '../../components/RedownloadModal'
 import ErrorState from '../../components/ErrorState'
 import Icon from '../../components/Icon'
 import DetailShell, { DetailShellSkeleton, type DetailPill, type DetailRow, type DetailTile } from '../detail/DetailShell'
-import { DetailCast, DetailCastSkeleton, DetailTrailer, DetailTrailerSkeleton, FactTiles, genreLinks, peopleLinks, qualityFromName, sourceFromName, usePlexHref } from '../detail/DetailBits'
+import { acrossReleases, DetailCast, DetailCastSkeleton, DetailTrailer, DetailTrailerSkeleton, FactTiles, genreLinks, peopleLinks, qualityFromName, sourceFromName, usePlexHref } from '../detail/DetailBits'
 import { formatBytes } from '../../lib/format'
 import { usePageTitle, useSetHasHero } from '../../lib/chrome'
 import { errorText, useToast } from '../../lib/toast'
@@ -23,18 +23,6 @@ interface PendingBulk {
   scope: 'season' | 'series'
   seasonNumber: number | null
   label: string
-}
-
-/** One label for a whole show: the shared value when every release
- *  agrees, "Various" when they don't, an em dash when nothing parsed.
- *  Releases a parser can't read (an unusual name with no resolution
- *  token) are dropped rather than counted as a difference — one
- *  unreadable name among ten 1080p ones shouldn't turn the tile into
- *  "Various" when the show plainly isn't mixed. */
-function acrossReleases(releases: string[], read: (name: string) => string): string {
-  const distinct = [...new Set(releases.map(read).filter(Boolean))]
-  if (distinct.length === 0) return '—'
-  return distinct.length === 1 ? distinct[0] : 'Various'
 }
 
 // A show page's usual shape: Following, Seasons and a full-width Next

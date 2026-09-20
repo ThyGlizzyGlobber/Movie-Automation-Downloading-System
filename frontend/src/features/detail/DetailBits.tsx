@@ -154,6 +154,29 @@ export function qualityFromName(name: string | null | undefined): string {
   return [label, hdr].filter(Boolean).join(' ')
 }
 
+/** One label for a title that may span several releases: the shared
+ *  value when they all agree, "Various" when they don't, an em dash
+ *  when nothing parsed. A movie is normally one release and so reads
+ *  as itself; a show acquired over time genuinely can be a 1080p
+ *  season and a 2160p one, and naming either would be a lie.
+ *
+ *  Releases a parser can't read (an odd name with no resolution token)
+ *  are dropped rather than counted as a difference — one unreadable
+ *  name among ten 1080p ones shouldn't turn the tile into "Various"
+ *  when the title plainly isn't mixed. */
+export function acrossReleases(releases: string[], read: (name: string) => string): string {
+  const distinct = [...new Set(releases.map(read).filter(Boolean))]
+  if (distinct.length === 0) return '—'
+  return distinct.length === 1 ? distinct[0] : 'Various'
+}
+
+/** The short "12 Sep" form both detail pages date their files with. */
+export function filedOnLabel(addedAt: string | null | undefined): string {
+  if (!addedAt) return '—'
+  const when = new Date(addedAt)
+  return Number.isNaN(when.getTime()) ? '—' : when.toLocaleDateString([], { day: 'numeric', month: 'short' })
+}
+
 export function sourceFromName(name: string | null | undefined): string {
   if (!name) return ''
   const m = name.replace(/[._]/g, ' ').match(SRC_RE)?.[1]?.toLowerCase()
