@@ -7,8 +7,7 @@ import time
 
 import qbittorrentapi
 
-SEARCH_POLL_INTERVAL_SECONDS = 2
-SEARCH_CEILING_SECONDS = 55
+from app import config
 
 
 class QBTError(RuntimeError):
@@ -34,12 +33,12 @@ class QBTClient:
         job = self._client.search.start(pattern=pattern, plugins=plugins, category=category)
         try:
             elapsed = 0.0
-            while elapsed < SEARCH_CEILING_SECONDS:
+            while elapsed < config.SEARCH_CEILING_SECONDS:
                 status = job.status()[0]
                 if status["status"] == "Stopped":
                     break
-                time.sleep(SEARCH_POLL_INTERVAL_SECONDS)
-                elapsed += SEARCH_POLL_INTERVAL_SECONDS
+                time.sleep(config.SEARCH_POLL_INTERVAL_SECONDS)
+                elapsed += config.SEARCH_POLL_INTERVAL_SECONDS
             return list(job.results().get("results", []))
         finally:
             job.delete()

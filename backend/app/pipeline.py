@@ -2,6 +2,7 @@
 dependency — the API (Stage 3) is a thin wrapper around `download()`, which
 is what makes this CLI-testable."""
 
+import threading
 import time
 from dataclasses import dataclass
 
@@ -29,6 +30,12 @@ from app.tv_resolve import (
     series_pack_queries,
 )
 from app.tv_score import passes_episode_relevance_gate
+
+# One add at a time, process-wide — see _rank_and_add. A module-level
+# lock rather than one passed in: there is a single backend process (no
+# multi-worker deployment), the same premise the in-memory rate limiter
+# and job queue already rest on.
+_ADD_LOCK = threading.Lock()
 
 
 @dataclass
@@ -307,15 +314,28 @@ def _rank_and_add(
     last_attempt: _AddAttempt | None = None
     stragglers: list[dict] = []  # candidates whose add never showed up in time — may still land late
     for winner, winner_score in fitting:
-        qbt.ensure_category(category)
-        try:
-            qbt.add_torrent(winner["fileUrl"], category=category)
-            new_hashes = _capture_new_hashes(qbt, existing_hashes)
-        except QBTError as exc:
-            last_attempt = _AddAttempt(winner=winner, score=winner_score, error=str(exc))
-            stragglers.append(winner)
-            continue
-        torrent_hash = _claim_ours(qbt, new_hashes, winner, stragglers)
+        # One add at a time, process-wide. Searching runs concurrently
+        # now (config.SEARCH_CONCURRENCY), but this block identifies the
+        # torrent it just added by diffing qBittorrent's hash list around
+        # the add — so two overlapping adds would each see the other's
+        # torrent appear and could claim it. Held per attempt rather than
+        # for the whole loop, so a candidate that never materialises
+        # doesn't keep every other request's add waiting behind it.
+        with _ADD_LOCK:
+            qbt.ensure_category(category)
+            # Re-read inside the lock: the caller's snapshot was taken
+            # before a search that may have run for minutes alongside
+            # other requests' adds, and a baseline that stale would make
+            # their torrents look like this one's.
+            baseline = qbt.existing_torrent_hashes() | existing_hashes
+            try:
+                qbt.add_torrent(winner["fileUrl"], category=category)
+                new_hashes = _capture_new_hashes(qbt, baseline)
+            except QBTError as exc:
+                last_attempt = _AddAttempt(winner=winner, score=winner_score, error=str(exc))
+                stragglers.append(winner)
+                continue
+            torrent_hash = _claim_ours(qbt, new_hashes, winner, stragglers)
         return fitting, _AddAttempt(winner=winner, score=winner_score, succeeded=True, torrent_hash=torrent_hash)
 
     return fitting, last_attempt

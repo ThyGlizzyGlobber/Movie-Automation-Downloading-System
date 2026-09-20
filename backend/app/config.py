@@ -110,6 +110,35 @@ DOWNLOAD_POLL_INTERVAL_SECONDS = int(os.environ.get("DOWNLOAD_POLL_INTERVAL_SECO
 HASH_CAPTURE_ATTEMPTS = 40
 HASH_CAPTURE_INTERVAL_SECONDS = 1.0
 
+# How many requests may be searched at once.
+#
+# Searching used to be strictly serial: one asyncio.Lock wrapped a whole
+# request, and a request is not one search — it runs one search per
+# title variant, each polling qBittorrent for up to
+# SEARCH_CEILING_SECONDS. Queue a handful of things and the last one
+# waits minutes in "queued" while an earlier one, already added, sits at
+# the top of the requests list marked "downloading" — which reads as the
+# download blocking the queue, though it isn't: _run_one returns the
+# moment a torrent is added and never waits for the transfer.
+#
+# What the lock genuinely protected is the *add*, which identifies "the
+# torrent I just added" by diffing qBittorrent's hash list before and
+# after; two concurrent adds would each see the other's torrent appear.
+# That section is still exclusive (pipeline._ADD_LOCK), so only the
+# searching runs in parallel. 3 keeps well clear of qBittorrent's own
+# concurrent-search-job limit while a request may itself fire several
+# searches in sequence.
+SEARCH_CONCURRENCY = int(os.environ.get("SEARCH_CONCURRENCY", "3"))
+
+# How long one qBittorrent search job may run before its results are
+# taken as-is, and how often it's polled for completion. The wait ends
+# early the moment the job reports "Stopped", so this ceiling is only
+# ever reached when a plugin never answers — dead time, not work. The
+# results collected so far are returned either way, so lowering it drops
+# stragglers rather than losing what already arrived.
+SEARCH_CEILING_SECONDS = float(os.environ.get("SEARCH_CEILING_SECONDS", "30"))
+SEARCH_POLL_INTERVAL_SECONDS = float(os.environ.get("SEARCH_POLL_INTERVAL_SECONDS", "2"))
+
 # How often the worker checks whether an automatic request-history
 # retention policy is set (a Settings-panel dropdown) and, if so, purges
 # terminal requests older than it. Retention is day-granularity, so an

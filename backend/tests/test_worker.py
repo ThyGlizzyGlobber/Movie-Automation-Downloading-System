@@ -1,4 +1,6 @@
 import asyncio
+import itertools
+import threading
 import time
 import re
 from datetime import datetime, timedelta, timezone
@@ -2771,3 +2773,63 @@ def test_check_downloading_fails_the_request_once_attempts_are_exhausted():
     assert "stalled with no seeds" in refreshed.error_message
     # Still blacklisted on the way out, so a manual retry can't re-pick it.
     assert "dead-last" in store.get_rejected_torrent_hashes(693134)
+
+
+def test_start_runs_one_queue_consumer_per_search_slot():
+    """Searching used to be strictly serial, so a queue of requests drained
+    one at a time while an already-added download sat at the top of the
+    list looking like the cause. SEARCH_CONCURRENCY consumers now share
+    the queue."""
+    store = RequestStore(":memory:")
+    worker = Worker(store, FakeTMDBClient(), FakeQBTClient())
+
+    async def run():
+        await worker.start()
+        names = sorted(t.get_name() for t in worker._tasks if t.get_name().startswith("worker-queue"))
+        await worker.stop()
+        return names
+
+    names = asyncio.run(run())
+
+    assert len(names) == config.SEARCH_CONCURRENCY
+    assert names == [f"worker-queue-{n}" for n in range(config.SEARCH_CONCURRENCY)]
+
+
+def test_queued_requests_drain_together_rather_than_one_at_a_time():
+    """Three requests queued at once are all searched concurrently. The
+    fake's search blocks until every caller has arrived, so this can only
+    pass if more than one consumer is running — it would deadlock to the
+    timeout under the old single-lock design."""
+    store = RequestStore(":memory:")
+    rows = [
+        store.create_request(tmdb_id=693134, title="Dune: Part Two", release_year=2024, query=None)
+        for _ in range(3)
+    ]
+    everyone_arrived = threading.Barrier(3, timeout=10)
+    qbt = FakeQBTClient()
+    counter = itertools.count()
+
+    def gated_search(pattern, category="movies", plugins="enabled"):
+        # Every caller waits here until all three have arrived, so this
+        # can only return under real concurrency. Each gets its own
+        # release, or the second and third would correctly fail as
+        # duplicates of the first rather than proving anything.
+        everyone_arrived.wait()
+        n = next(counter)
+        return [_result(fileUrl=f"magnet:?xt=urn:btih:AAA{n}")]
+
+    qbt.search = gated_search
+    worker = Worker(store, FakeTMDBClient(), qbt)
+
+    async def run():
+        await worker.start()
+        for _ in range(100):
+            if all(store.get_request(r.id).status not in ("queued", "searching") for r in rows):
+                break
+            await asyncio.sleep(0.05)
+        await worker.stop()
+
+    asyncio.run(run())
+
+    # All three got past the barrier, so all three were searching at once.
+    assert [store.get_request(r.id).status for r in rows] == ["downloading"] * 3

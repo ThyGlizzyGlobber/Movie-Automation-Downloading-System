@@ -1,4 +1,6 @@
 import dataclasses
+import threading
+import time
 import re
 
 import pytest
@@ -1228,3 +1230,82 @@ def test_download_excludes_a_rejected_release_listed_as_a_direct_torrent_link(_f
     with_name = download(693134, FakeTMDBClient(), qbt2, excluded_hashes={"aaaa"}, excluded_releases=[{"name": "Dune.Part.Two.2024.2160p.REMUX.mkv", "size_bytes": 51_000_000_000}])
     assert with_name.winner["fileName"] == "Dune.Part.Two.2024.2160p.WEB-DL.mkv"
     assert [url for url, _ in qbt2.added] == ["magnet:?xt=urn:btih:BBBB"]
+
+
+# ---------------------------------------------------------------------------
+# Concurrency: searches overlap, adds don't.
+# ---------------------------------------------------------------------------
+
+
+class ConcurrencyProbeQBT(FakeQBTClient):
+    """Counts how many callers are inside `search` and inside the
+    add/capture section at the same time, so a test can assert one
+    overlaps and the other never does."""
+
+    def __init__(self, results_by_variant=None, hold_seconds=0.05):
+        super().__init__(results_by_variant=results_by_variant)
+        self.hold_seconds = hold_seconds
+        self._lock = threading.Lock()
+        self.searching_now = 0
+        self.max_concurrent_searches = 0
+        self.adding_now = 0
+        self.max_concurrent_adds = 0
+        self._added_hashes = 0
+
+    def _enter(self, attr, peak):
+        with self._lock:
+            setattr(self, attr, getattr(self, attr) + 1)
+            setattr(self, peak, max(getattr(self, peak), getattr(self, attr)))
+
+    def _leave(self, attr):
+        with self._lock:
+            setattr(self, attr, getattr(self, attr) - 1)
+
+    def search(self, pattern, category="movies", plugins="enabled"):
+        self._enter("searching_now", "max_concurrent_searches")
+        try:
+            time.sleep(self.hold_seconds)
+            return super().search(pattern, category, plugins)
+        finally:
+            self._leave("searching_now")
+
+    def add_torrent(self, file_url, category):
+        self._enter("adding_now", "max_concurrent_adds")
+        try:
+            time.sleep(self.hold_seconds)
+            with self._lock:
+                self._added_hashes += 1
+                self._existing_hashes.add(f"hash{self._added_hashes}")
+            return super().add_torrent(file_url, category) if hasattr(super(), "add_torrent") else None
+        finally:
+            self._leave("adding_now")
+
+
+def test_adds_never_overlap_even_when_searches_do():
+    """The add identifies its torrent by diffing qBittorrent's hash list
+    around it, so two at once would each see the other's torrent appear.
+    Searching in parallel is the point; adding in parallel is the bug it
+    must not introduce."""
+    results = {
+        "Dune: Part Two": [
+            _result(fileName="Dune.Part.Two.2024.2160p.WEB-DL.mkv", fileUrl="magnet:?xt=urn:btih:AAAA", nbSeeders=200),
+        ]
+    }
+    qbt = ConcurrencyProbeQBT(results_by_variant=results)
+    errors: list[BaseException] = []
+
+    def run():
+        try:
+            download(693134, FakeTMDBClient(), qbt)
+        except BaseException as exc:  # noqa: BLE001 - surfaced below
+            errors.append(exc)
+
+    threads = [threading.Thread(target=run) for _ in range(3)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join(timeout=30)
+
+    assert errors == []
+    assert qbt.max_concurrent_searches > 1, "searches should run in parallel"
+    assert qbt.max_concurrent_adds == 1, "adds must stay one at a time"

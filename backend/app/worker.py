@@ -231,7 +231,13 @@ class Worker:
         # lookups are best effort and fall back to TMDB's date.
         self.tvmaze = tvmaze or TVMazeClient()
         self.queue: asyncio.Queue[int] = asyncio.Queue()
-        self._pipeline_lock = asyncio.Lock()
+        # Bounds how many requests are being searched at once, shared by
+        # the queue consumers and the recheck loop so the two together
+        # can't exceed it. Replaces the single lock that used to wrap a
+        # whole request — see config.SEARCH_CONCURRENCY for why that was
+        # the wrong thing to serialise, and pipeline._ADD_LOCK for the
+        # part that genuinely still is.
+        self._search_slots = asyncio.Semaphore(config.SEARCH_CONCURRENCY)
         self._tasks: list[asyncio.Task] = []
 
     def enqueue(self, request_id: int) -> None:
@@ -244,7 +250,10 @@ class Worker:
         for request_id in await asyncio.to_thread(self.store.queued_request_ids):
             self.enqueue(request_id)
         self._tasks = [
-            asyncio.create_task(self._process_queue(), name="worker-queue"),
+            *(
+                asyncio.create_task(self._process_queue(), name=f"worker-queue-{n}")
+                for n in range(config.SEARCH_CONCURRENCY)
+            ),
             asyncio.create_task(self._watch_downloads(), name="worker-download-watch"),
             asyncio.create_task(self._watch_retention(), name="worker-retention"),
             asyncio.create_task(self._watch_shows(), name="worker-shows"),
@@ -263,9 +272,13 @@ class Worker:
         self._tasks = []
 
     async def _process_queue(self) -> None:
+        """One consumer. `start()` runs SEARCH_CONCURRENCY of these, so
+        several requests are searched at once; the semaphore is what
+        actually bounds it, since the recheck loop draws on the same
+        slots."""
         while True:
             request_id = await self.queue.get()
-            async with self._pipeline_lock:
+            async with self._search_slots:
                 await self._run_one(request_id)
 
     async def _run_one(self, request_id: int) -> None:
@@ -1519,8 +1532,10 @@ class Worker:
         (`pipeline.find_best_episode_candidate`, no `add_torrent` call) if
         it has — only actually replacing a `"complete"` episode when
         something genuinely scores higher than what's already in place.
-        Holds the same `_pipeline_lock` every other search/add operation
-        does, so a recheck never races a queued request's own search/add."""
+        Draws on the same search slots the queue consumers do, so
+        rechecks and queued requests together stay within
+        SEARCH_CONCURRENCY; the add itself is serialised further down by
+        pipeline._ADD_LOCK."""
         current = await asyncio.to_thread(self.store.get_request, episode_row.request_id)
         if current is not None and current.status != "complete" and current.status not in self._RECHECK_RETRY_STATUSES:
             return  # actively in progress, or a deliberate cancel — don't burn an attempt on it
@@ -1529,7 +1544,7 @@ class Worker:
         pipeline_settings = await asyncio.to_thread(resolve_pipeline_settings, self.store)
         label = f"{show.title} S{episode_row.season_number:02d}E{episode_row.episode_number:02d}"
 
-        async with self._pipeline_lock:
+        async with self._search_slots:
             if current is None or current.status != "complete":
                 await self._recheck_retry(show, episode_row, identity, pipeline_settings, label)
             else:
