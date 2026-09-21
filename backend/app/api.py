@@ -26,6 +26,7 @@ import time
 from contextlib import asynccontextmanager
 from dataclasses import asdict
 from datetime import datetime, timedelta, timezone
+from urllib.parse import urlparse
 
 from fastapi import APIRouter, Depends, FastAPI, HTTPException, Request, Response
 from fastapi.responses import FileResponse, Response as RawResponse
@@ -101,6 +102,35 @@ def _cookie_secure(store: RequestStore) -> bool:
 
 def _client_ip(request: Request) -> str | None:
     return request.client.host if request.client else None
+
+
+def _return_url(request: Request) -> str | None:
+    """Where plex.tv sends the browser back to once a sign-in is
+    authorised — the equivalent of an OAuth redirect URI, and the whole
+    reason the user no longer has to find their way back by hand.
+
+    Taken from the browser's own `Origin` header rather than from
+    anything the page put in the request: a page cannot forge the Origin
+    the browser stamps on its own request, so there is no redirect
+    parameter here for an attacker to aim somewhere else, and no
+    allowlist to keep in sync with however this deployment is reached
+    (LAN IP, hostname, tunnel domain — whichever the browser actually
+    used is by definition the right one to come back to). Only the
+    origin survives: any path, query or fragment is dropped rather than
+    trusted, so the worst a bad Origin can do is send its own browser
+    back to itself. `None` (no forwarding, plex.tv tells the user to
+    return by hand) whenever that can't be established — every browser
+    sends Origin on a POST, but a probe or a proxy that strips it
+    shouldn't take sign-in down with it."""
+    origin = request.headers.get("origin")
+    if not origin:
+        return None
+    parsed = urlparse(origin)
+    if parsed.scheme not in ("http", "https") or not parsed.netloc:
+        return None
+    if parsed.path or parsed.params or parsed.query or parsed.fragment:
+        return None
+    return f"{parsed.scheme}://{parsed.netloc}/"
 
 
 @asynccontextmanager
@@ -1641,7 +1671,7 @@ async def start_login(
     store: RequestStore = Depends(get_store),
 ) -> dict:
     try:
-        attempt_id, auth_url = await login.start()
+        attempt_id, auth_url = await login.start(_return_url(request))
     except PlexError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
     # The attempt id goes back to this browser and nowhere else — it is

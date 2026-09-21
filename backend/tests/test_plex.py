@@ -64,6 +64,20 @@ def test_auth_url_includes_client_id_and_code():
     assert url.startswith("https://app.plex.tv/auth#?")
 
 
+def test_auth_url_forwards_back_to_the_app_when_given_somewhere_to_go():
+    client = PlexClient("client-1", session=FakeSession())
+
+    url = client.auth_url("ABCD", "https://obsidian.example/")
+
+    assert "forwardUrl=https%3A%2F%2Fobsidian.example%2F" in url
+
+
+def test_auth_url_omits_forward_url_when_there_isnt_one():
+    client = PlexClient("client-1", session=FakeSession())
+
+    assert "forwardUrl" not in client.auth_url("ABCD")
+
+
 def test_check_pin_returns_token_once_present():
     session = FakeSession(get_responses=[FakeResponse(json_data={"authToken": "tok-123"})])
     client = PlexClient("client-1", session=session)

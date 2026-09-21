@@ -297,9 +297,14 @@ class FakeLoginSession:
         self._status = {"pending": False, "result": None, "error": None}
         self.raise_on_start: Exception | None = None
         self.live_attempts: set[str] = set()
+        # What the route worked out plex.tv should send the browser back
+        # to — recorded rather than ignored, since getting that wrong is
+        # what strands a sign-in.
+        self.forward_urls: list[str | None] = []
 
-    async def start(self) -> tuple[str, str]:
+    async def start(self, forward_url: str | None = None) -> tuple[str, str]:
         self.started += 1
+        self.forward_urls.append(forward_url)
         if self.raise_on_start:
             raise self.raise_on_start
         attempt_id = f"test-attempt-{self.started}"
@@ -2318,6 +2323,34 @@ def test_login_start_returns_auth_url(client_and_deps):
 
     assert response.status_code == 200
     assert "code=ABCD" in response.json()["auth_url"]
+
+
+def test_login_start_forwards_back_to_the_browsers_own_origin(client_and_deps):
+    """plex.tv returns the browser here once the PIN is authorised, so
+    the sign-in completes on a page load instead of depending on the tab
+    that started it surviving the trip."""
+    client, _, _, _, _, _ = client_and_deps
+    login_session = api_state_login_session(client)
+
+    response = client.post("/api/auth/login/start", headers={"Origin": "https://obsidian.example"})
+
+    assert response.status_code == 200
+    assert login_session.forward_urls == ["https://obsidian.example/"]
+
+
+def test_login_start_ignores_a_forward_origin_it_cant_trust(client_and_deps):
+    """The return trip is only ever the browser's own origin. A header
+    carrying a path, or a scheme that isn't the web, is dropped rather
+    than handed to plex.tv as somewhere to send people — and dropping it
+    costs nothing but the automatic return."""
+    client, _, _, _, _, _ = client_and_deps
+    login_session = api_state_login_session(client)
+
+    client.post("/api/auth/login/start", headers={"Origin": "https://obsidian.example/evil"})
+    client.post("/api/auth/login/start", headers={"Origin": "javascript:alert(1)"})
+    client.post("/api/auth/login/start", headers={"Origin": "null"})
+
+    assert login_session.forward_urls == [None, None, None]
 
 
 def test_login_status_sets_session_cookie_once_resolved(client_and_deps):

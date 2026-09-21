@@ -122,12 +122,21 @@ class PlexClient:
         data = response.json()
         return {"id": data["id"], "code": data["code"]}
 
-    def auth_url(self, code: str) -> str:
+    def auth_url(self, code: str, forward_url: str | None = None) -> str:
+        """`forward_url` is plex.tv's own return trip: once the PIN is
+        authorised it sends the browser straight back there, the way any
+        OAuth provider returns to its redirect URI. Without it plex.tv
+        just tells the user to "return to the app" by hand, which is the
+        step that used to lose people — see LoginSession for what that
+        cost. Optional because the caller can only supply it when it
+        knows the browser's own origin (api.py's `_return_url`)."""
         params = {
             "clientID": self.client_id,
             "code": code,
             "context[device][product]": PRODUCT_NAME,
         }
+        if forward_url:
+            params["forwardUrl"] = forward_url
         return f"https://app.plex.tv/auth#?{urlencode(params)}"
 
     def check_pin(self, pin_id: int) -> str | None:
@@ -669,9 +678,11 @@ class LoginSession:
             oldest = min(self._attempts, key=lambda k: self._attempts[k].created_at)
             self._discard(oldest)
 
-    async def start(self) -> tuple[str, str]:
+    async def start(self, forward_url: str | None = None) -> tuple[str, str]:
         """(attempt_id, auth_url). The caller is responsible for handing
-        the attempt id back to precisely one browser and no further."""
+        the attempt id back to precisely one browser and no further, and
+        for vouching for `forward_url` — plex.tv will send the browser
+        wherever it says once the PIN is authorised."""
         self._evict()
         client = self._client()
         pin = await asyncio.to_thread(client.create_pin)
@@ -679,7 +690,7 @@ class LoginSession:
         attempt = _LoginAttempt()
         self._attempts[attempt_id] = attempt
         attempt.task = asyncio.create_task(self._poll(client, pin["id"], attempt))
-        return attempt_id, client.auth_url(pin["code"])
+        return attempt_id, client.auth_url(pin["code"], forward_url)
 
     async def _poll(self, client: PlexClient, pin_id: int, attempt: _LoginAttempt) -> None:
         deadline = time.monotonic() + PIN_TIMEOUT_SECONDS

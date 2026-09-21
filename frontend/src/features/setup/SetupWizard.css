@@ -148,6 +148,20 @@
   margin-bottom: 14px;
 }
 
+/* The "no tab opened?" escape hatch on the Plex step — a quiet inline
+   link, not a second button competing with the primary action. */
+.setup-link {
+  color: var(--accent);
+  font-weight: 600;
+  text-decoration: none;
+  border-bottom: 1px solid color-mix(in srgb, var(--accent) 40%, transparent);
+  transition: border-color 120ms ease;
+}
+
+.setup-link:hover {
+  border-bottom-color: var(--accent);
+}
+
 .setup-error {
   color: var(--status-failed);
   font-size: 13.5px;
