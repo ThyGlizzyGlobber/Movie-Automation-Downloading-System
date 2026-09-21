@@ -16,6 +16,11 @@ const HERO_AUTOPLAY_MS = 7000 // flat dwell time for a poster-only slide
 // How long a trailer slide's poster shows on its own — both before the
 // trailer starts and again after it finishes, before actually advancing.
 const HERO_POSTER_LEAD_MS = 3000
+// How close to the synopsis counts as reaching for it, in px on every
+// side. Generous enough that it opens before the cursor is literally on
+// the text — which matters while it is hidden and there is nothing to
+// aim at but the gap where it goes.
+const CURSOR_NEAR_PAD_PX = 96
 
 // The primary button's label rolls from what the title *is* ("On Plex")
 // to what tapping it *does* ("Watch now") a moment after the slide
@@ -360,11 +365,25 @@ export default function HeroCarousel({ items, loading = false }: { items: HeroSl
     setCursorNear(false)
   }
   function handleMouseMove(e: ReactMouseEvent) {
-    const body = heroRef.current?.querySelector<HTMLElement>('.home-hero-slide.active .home-hero-body')
-    if (!body) return
-    const r = body.getBoundingClientRect()
-    const pad = 96
-    setCursorNear(e.clientX > r.left - pad && e.clientX < r.right + pad && e.clientY > r.top - pad && e.clientY < r.bottom + pad)
+    // Measured against the synopsis itself, not the whole text column it
+    // sits in: reaching towards the blurb is what should bring the blurb
+    // back, where the column's bounds meant the title, the meta line and
+    // both buttons all counted as "near it" too.
+    //
+    // While it is hidden the paragraph is still in flow at max-height 0,
+    // so this rect collapses to a line exactly where the text is about
+    // to appear — which is the right thing to aim at, and makes the zone
+    // a band across that position. Revealing it only grows the rect, so
+    // the cursor that opened it stays inside: no flicker at the edge.
+    const syn = heroRef.current?.querySelector<HTMLElement>('.home-hero-slide.active .hero-syn')
+    if (!syn) return
+    const r = syn.getBoundingClientRect()
+    setCursorNear(
+      e.clientX > r.left - CURSOR_NEAR_PAD_PX &&
+        e.clientX < r.right + CURSOR_NEAR_PAD_PX &&
+        e.clientY > r.top - CURSOR_NEAR_PAD_PX &&
+        e.clientY < r.bottom + CURSOR_NEAR_PAD_PX,
+    )
   }
 
   if (loading) return <HeroSkeleton />
