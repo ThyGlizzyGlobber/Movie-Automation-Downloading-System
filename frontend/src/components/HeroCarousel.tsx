@@ -377,24 +377,41 @@ export default function HeroCarousel({ items, loading = false }: { items: HeroSl
     setCursorNear(false)
   }
   function handleMouseMove(e: ReactMouseEvent) {
-    // Measured against the synopsis itself, not the whole text column it
-    // sits in: reaching towards the blurb is what should bring the blurb
-    // back, where the column's bounds meant the title, the meta line and
-    // both buttons all counted as "near it" too.
+    // Measured against the logo and the synopsis, not the whole text
+    // column they sit in: the column's bounds meant both buttons and all
+    // the slack around them counted as "near it" too.
     //
     // While it is hidden the paragraph is still in flow at max-height 0,
     // so this rect collapses to a line exactly where the text is about
     // to appear — which is the right thing to aim at, and makes the zone
     // a band across that position. Revealing it only grows the rect, so
     // the cursor that opened it stays inside: no flicker at the edge.
-    const syn = heroRef.current?.querySelector<HTMLElement>('.home-hero-slide.active .hero-syn')
-    if (!syn) return
-    const r = syn.getBoundingClientRect()
+    const slide = heroRef.current?.querySelector<HTMLElement>('.home-hero-slide.active')
+    if (!slide) return
+    // The logo and the blurb together, as one region: the meta line
+    // between them is swept up with it, which is what makes this an area
+    // to reach into rather than two separate targets with a dead gap.
+    //
+    // The logo is measured by its own image box, not the h1 wrapping it
+    // — that h1 is a block spanning the full column, and using it would
+    // quietly hand back all the width this is trying not to claim. When
+    // there is no logo the h1 *is* the title, so it stands in.
+    const boxes = [
+      slide.querySelector<HTMLElement>('.hero-logo') ?? slide.querySelector<HTMLElement>('h1'),
+      slide.querySelector<HTMLElement>('.hero-syn'),
+    ]
+      .filter((el): el is HTMLElement => el !== null)
+      .map((el) => el.getBoundingClientRect())
+    if (!boxes.length) return
+    const left = Math.min(...boxes.map((b) => b.left))
+    const right = Math.max(...boxes.map((b) => b.right))
+    const top = Math.min(...boxes.map((b) => b.top))
+    const bottom = Math.max(...boxes.map((b) => b.bottom))
     setCursorNear(
-      e.clientX > r.left - CURSOR_NEAR_PAD_PX &&
-        e.clientX < r.right + CURSOR_NEAR_PAD_PX &&
-        e.clientY > r.top - CURSOR_NEAR_PAD_PX &&
-        e.clientY < r.bottom + CURSOR_NEAR_PAD_PX,
+      e.clientX > left - CURSOR_NEAR_PAD_PX &&
+        e.clientX < right + CURSOR_NEAR_PAD_PX &&
+        e.clientY > top - CURSOR_NEAR_PAD_PX &&
+        e.clientY < bottom + CURSOR_NEAR_PAD_PX,
     )
   }
 

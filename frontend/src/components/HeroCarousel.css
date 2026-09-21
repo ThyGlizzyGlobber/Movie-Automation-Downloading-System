@@ -274,7 +274,18 @@
 .hero-logo {
   display: block;
   width: auto;
-  max-width: min(720px, 44%);
+  /* These two caps decide how big a logo looks, and only one of them
+     ever binds — whichever the shape reaches first. A tall or square
+     mark runs out of height, and being square that leaves it only 240px
+     across. A wide wordmark never gets near the height cap, so it ran to
+     whatever width it could: 500px, its full w500 source, spanning twice
+     the width of the square one beside it. That is the asymmetry — not
+     area, which the tall mark wins easily, but horizontal reach, which
+     is what registers as size.
+     Measured at a 1400px column: wide marks were 500px across against a
+     square mark's 240. Holding width to 360 brings the spread to
+     360-vs-240, close enough that neither shape dominates the other. */
+  max-width: min(360px, 34%);
   max-height: 240px;
   object-fit: contain;
   object-position: left bottom;
