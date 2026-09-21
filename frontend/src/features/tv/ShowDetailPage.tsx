@@ -238,7 +238,6 @@ export default function ShowDetailPage() {
           wide: true,
         },
   )
-  if (requestedBy) sideTiles.push({ label: 'Requested by', value: requestedBy, wide: true })
   if (ended) {
     sideTiles.push({
       label: limited ? 'Limited series' : show.status === 'Canceled' ? 'Cancelled' : 'Ended',
@@ -255,6 +254,10 @@ export default function ShowDetailPage() {
   if (limited) sideTiles.push({ label: 'Episodes', value: String(show.number_of_episodes || '—') })
   else sideTiles.push({ label: 'Seasons', value: String(seasons.length || '—') })
   sideTiles.push({ label: 'Next episode', value: nextLabel, tone: next ? 'ice' : 'dim', wide: true })
+  // Last of the side tiles, directly above the files block — where the
+  // movie page already puts it, the run of facts about the show itself
+  // finishing before the one fact about who asked for it.
+  if (requestedBy) sideTiles.push({ label: 'Requested by', value: requestedBy, wide: true })
 
   // The movie page reads one request's recorded winner; a show has as
   // many as it has episodes and packs, so this is the whole run rolled
