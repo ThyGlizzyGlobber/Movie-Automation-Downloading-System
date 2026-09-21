@@ -205,10 +205,22 @@ export default function HeroCarousel({ items, loading = false }: { items: HeroSl
   // Same idea as the scroll pause, for the window itself rather than the
   // page position: a hero nobody is looking at should not be playing.
   const pausedByHiddenRef = useRef(false)
+  // Bumped whenever a trailer is paused, and part of the <video> key, so
+  // resuming mounts a new element rather than restarting the one that
+  // was stopped. Reviving a paused element is what has been unreliable:
+  // its buffer may have been evicted, its readyState is whatever the
+  // pause left behind, and play() on it can hang without ever settling.
+  // A new element starts from a known state every time. It costs a
+  // re-fetch, which the day-long cache on these files makes nearly free
+  // after the first play.
+  const [pauseEpoch, setPauseEpoch] = useState(0)
   const prevIndexRef = useRef(0)
   // The "move on regardless" timer for a trailer slide, held so it is
   // cleared alongside the others when the effect tears down.
   const ceilingRef = useRef<number | null>(null)
+  // Removes the `ended` listener the scheduler attached, so re-running
+  // it (every scroll away and back does) doesn't stack one per run.
+  const endedCleanupRef = useRef<(() => void) | null>(null)
 
   // Trailer fetch for every slide — self-hosted, chromeless <video>,
   // never autoplaying on its own; playback is entirely driven by the
@@ -328,6 +340,8 @@ export default function HeroCarousel({ items, loading = false }: { items: HeroSl
         window.clearTimeout(ceilingRef.current)
         ceilingRef.current = null
       }
+      endedCleanupRef.current?.()
+      endedCleanupRef.current = null
     }
     function advance() {
       if (tokenRef.current !== myToken) return
@@ -358,28 +372,39 @@ export default function HeroCarousel({ items, loading = false }: { items: HeroSl
           timerRef.current = window.setTimeout(advance, HERO_POSTER_LEAD_MS)
         }
         video.addEventListener('ended', onEnded)
+        // Armed on the attempt, never on the outcome. play() resolves
+        // when playback begins and rejects when it is refused, but an
+        // element that simply cannot get data does neither — it leaves
+        // the promise pending for good. Arming this inside .then() put
+        // the carousel's only backstop behind the very condition it
+        // exists to survive.
+        const armCeiling = (ms: number) => {
+          if (ceilingRef.current !== null) window.clearTimeout(ceilingRef.current)
+          ceilingRef.current = window.setTimeout(() => {
+            video.removeEventListener('ended', onEnded)
+            if (tokenRef.current !== myToken) return
+            advance()
+          }, ms)
+        }
+        armCeiling(HERO_TRAILER_UNKNOWN_MS)
         video
           .play()
           .then(() => {
             if (tokenRef.current !== myToken) return
-            // Armed once it is actually playing, so it measures what is
-            // left rather than the whole clip — a slide resumed halfway
-            // waits for its second half, not for another full length.
+            // Now that it is playing, the wait can be what is actually
+            // left rather than a guess.
             const left = Number.isFinite(video.duration) ? Math.max(0, video.duration - video.currentTime) * 1000 : 0
-            ceilingRef.current = window.setTimeout(() => {
-              video.removeEventListener('ended', onEnded)
-              if (tokenRef.current !== myToken) return
-              advance()
-            }, (left || HERO_TRAILER_UNKNOWN_MS) + HERO_TRAILER_SLACK_MS)
+            armCeiling((left || HERO_TRAILER_UNKNOWN_MS) + HERO_TRAILER_SLACK_MS)
           })
           .catch(() => {
-            // It refused to play at all. Nothing is coming, so treat the
-            // slide as the poster-only one it has effectively become
-            // rather than leaving the carousel waiting on it.
+            // Refused outright. Nothing is coming, so move on at the
+            // pace a poster-only slide would.
             video.removeEventListener('ended', onEnded)
             if (tokenRef.current !== myToken) return
+            if (ceilingRef.current !== null) window.clearTimeout(ceilingRef.current)
             timerRef.current = window.setTimeout(advance, HERO_AUTOPLAY_MS)
           })
+        endedCleanupRef.current = () => video.removeEventListener('ended', onEnded)
       }, HERO_POSTER_LEAD_MS)
     }
 
@@ -415,10 +440,9 @@ export default function HeroCarousel({ items, loading = false }: { items: HeroSl
       if (away === pausedByHiddenRef.current) return
       pausedByHiddenRef.current = away
       if (away) {
-        // Paused where it is, not rewound. Resuming from the buffer it
-        // already has needs no seek, and a seek on a video whose buffer
-        // was dropped is the thing that would not come back.
         videoRefs.current[activeIndex]?.pause()
+        // The element that was playing is spent; the next one is new.
+        setPauseEpoch((e) => e + 1)
       }
       // Re-runs the scheduler, which on the way back gives the slide the
       // same poster lead-in a freshly activated one gets.
@@ -443,8 +467,10 @@ export default function HeroCarousel({ items, loading = false }: { items: HeroSl
       const away = window.scrollY > 4
       if (away === pausedByScrollRef.current) return
       pausedByScrollRef.current = away
-      // Held rather than rewound, same as the window pause above.
-      if (away) videoRefs.current[activeIndex]?.pause()
+      if (away) {
+        videoRefs.current[activeIndex]?.pause()
+        setPauseEpoch((e) => e + 1)
+      }
       setScheduleTick((t) => t + 1)
     }
     window.addEventListener('scroll', onScroll, { passive: true })
@@ -556,6 +582,7 @@ export default function HeroCarousel({ items, loading = false }: { items: HeroSl
                 {i === activeIndex && videoUrls[i] && (
                   <div className="home-hero-video-wrap">
                     <video
+                      key={pauseEpoch}
                       ref={(el) => {
                         videoRefs.current[i] = el
                       }}
