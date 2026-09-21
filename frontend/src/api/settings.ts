@@ -96,3 +96,15 @@ export function setLibrarySettings(body: {
 }) {
   return putJson<LibrarySettings>('/api/settings/library', body)
 }
+
+export interface RegionSettings {
+  certification_region: string
+}
+
+export function getRegionSettings() {
+  return request<RegionSettings>('/api/settings/region')
+}
+
+export function setRegionSettings(body: RegionSettings) {
+  return putJson<RegionSettings>('/api/settings/region', body)
+}

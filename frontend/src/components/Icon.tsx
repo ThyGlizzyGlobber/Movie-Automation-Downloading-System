@@ -29,6 +29,7 @@ const GLYPHS = {
   download: <path d="M12 3v12M6.5 10.5 12 16l5.5-5.5M4 20h16" />,
   play: <path d="M7 4.5v15l12-7.5z" fill="currentColor" stroke="none" />,
   pause: <path d="M8 5v14M16 5v14" />,
+  globe: <><circle cx="12" cy="12" r="9" /><path d="M3 12h18M12 3c2.5 2.6 3.8 5.6 3.8 9s-1.3 6.4-3.8 9c-2.5-2.6-3.8-5.6-3.8-9S9.5 5.6 12 3z" /></>,
   home: <path d="M3.5 11 12 3.5l8.5 7.5v9.5h-6v-6h-5v6h-6z" />,
   film: <><rect x="3" y="3.5" width="18" height="17" rx="1.5" /><path d="M7 3.5v17M17 3.5v17M3 8h4M3 12h4M3 16h4M17 8h4M17 12h4M17 16h4" /></>,
   tv: <><rect x="2.5" y="6.5" width="19" height="12.5" rx="2" /><path d="M8.5 2.5 12 6l3.5-3.5M9 22h6" /></>,

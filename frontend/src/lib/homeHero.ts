@@ -1,5 +1,6 @@
+import { FALLBACK_REGION } from './regions'
 import type { MovieDetail, ReleaseDatesResult, TmdbListItem } from '../types/movies'
-import type { ContentRatingEntry, EpisodeToAir, TvDetail } from '../types/tv'
+import type { EpisodeToAir, TvDetail } from '../types/tv'
 
 // The hero's wording is derived from these few fields and nothing more,
 // so they are typed structurally rather than as whole detail objects: a
@@ -13,16 +14,11 @@ type MovieBadgeSource = {
   release_date?: string | null
   release_dates?: { results?: ReleaseDatesResult[] }
 }
-type MovieCertSource = { release_dates?: { results?: ReleaseDatesResult[] } }
 type TvBadgeSource = {
   plex_complete?: boolean
   next_episode_to_air?: EpisodeToAir | null
   last_episode_to_air?: EpisodeToAir | null
 }
-type TvCertSource = { content_ratings?: { results?: ContentRatingEntry[] } }
-
-// Same region as the old app's own hero cert pill.
-const HERO_CERT_REGION = 'AU'
 
 export interface TaggedItem extends TmdbListItem {
   mediaType: 'movie' | 'tv'
@@ -80,10 +76,10 @@ function tvAiringBadge(show: TvBadgeSource): string | null {
 
 // When a movie reached digital: the region's digital release, else any
 // region's, else the theatrical date as a last resort.
-export function digitalReleaseDate(movie: MovieBadgeSource): string | null {
+export function digitalReleaseDate(movie: MovieBadgeSource, region: string = FALLBACK_REGION): string | null {
   const results = movie.release_dates?.results ?? []
   const pick = (r: typeof results[number]) => r.release_dates.find((d) => d.type === 4 && d.release_date)?.release_date?.slice(0, 10) ?? null
-  const local = results.find((r) => r.iso_3166_1 === HERO_CERT_REGION)
+  const local = results.find((r) => r.iso_3166_1 === region)
   return (local && pick(local)) ?? results.map(pick).find(Boolean) ?? movie.release_date ?? null
 }
 
@@ -92,9 +88,9 @@ function daysSince(date: string | null | undefined): number | null {
   return (Date.now() - new Date(`${date}T00:00:00`).getTime()) / 86400000
 }
 
-export function movieHeroBadge(movie: MovieBadgeSource): string | null {
+export function movieHeroBadge(movie: MovieBadgeSource, region: string = FALLBACK_REGION): string | null {
   if (movie.is_coming_soon) return 'Coming soon'
-  const age = daysSince(digitalReleaseDate(movie))
+  const age = daysSince(digitalReleaseDate(movie, region))
   if (age != null && age >= 0 && age <= 30) return 'Just dropped'
   return null
 }
@@ -125,12 +121,9 @@ export function showPill(show: TvDetail): BannerPill | null {
   return null
 }
 
-export function tvCertOf(show: TvCertSource): string {
-  return show.content_ratings?.results?.find((r) => r.iso_3166_1 === HERO_CERT_REGION)?.rating ?? ''
-}
-
-export function movieCertOf(movie: MovieCertSource): string {
-  const entry = movie.release_dates?.results?.find((r) => r.iso_3166_1 === HERO_CERT_REGION)
-  const withCert = entry?.release_dates.find((rd) => rd.certification)
-  return withCert?.certification ?? ''
-}
+// The hero's certification lookups used to live here, reading a
+// hardcoded 'AU' while detailHelpers read a hardcoded 'US' — the same
+// title rated two ways on two pages of the same app. There is one
+// lookup now, in detailHelpers, and it takes the household's region.
+// Re-exported so the carousel's imports stay in one place.
+export { certificationOf as movieCertOf, tvCertificationOf as tvCertOf } from './detailHelpers'

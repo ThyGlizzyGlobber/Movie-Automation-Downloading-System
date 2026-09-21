@@ -17,6 +17,7 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
   { key: 'tv', label: 'TV shows', icon: 'clock', group: 'Server' },
   { key: 'storage', label: 'Storage', icon: 'drive', group: 'Server' },
   { key: 'retention', label: 'History', icon: 'trash', group: 'Server' },
+  { key: 'region', label: 'Region', icon: 'globe', group: 'Server' },
   { key: 'household', label: 'Household', icon: 'user', group: 'Access' },
   { key: 'remote-access', label: 'Remote access', icon: 'lock', group: 'Access' },
   { key: 'activity', label: 'Activity', icon: 'chart', group: 'System' },

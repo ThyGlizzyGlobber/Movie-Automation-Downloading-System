@@ -6,6 +6,8 @@ export interface SessionInfo {
   has_seen_tutorial: boolean
   // Whether /api/me/avatar has a picture (the Plex account's avatar).
   avatar?: boolean
+  // Household-wide: which country's age ratings the UI shows.
+  certification_region?: string
 }
 
 export interface LoginStartResponse {

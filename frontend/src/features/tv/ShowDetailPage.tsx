@@ -17,6 +17,7 @@ import { languageNameOf, tvCertificationOf, yearOf } from '../../lib/detailHelpe
 import { showPill, startOfToday } from '../../lib/homeHero'
 import { originalServiceMatch } from '../../lib/providers'
 import { useMediaQuery } from '../../lib/hooks'
+import { useCertificationRegion } from '../auth/useSession'
 import type { ShowOut } from '../../types/shows'
 import type { RedownloadMode } from '../../types/requests'
 import '../detail/DetailPage.css'
@@ -54,6 +55,7 @@ export default function ShowDetailPage() {
   const { toast } = useToast()
   // Above every early return below — see MovieDetailPage's own note.
   const bannerShown = useMediaQuery('(min-width: 640px)')
+  const region = useCertificationRegion()
 
   const showQuery = useQuery({ queryKey: ['tv', tmdbId], queryFn: () => getTvShow(tmdbId) })
   const showsQuery = useQuery({ queryKey: ['shows'], queryFn: () => listShows() })
@@ -154,7 +156,7 @@ export default function ShowDetailPage() {
   const limited = show.type === 'Miniseries' || (show.status === 'Ended' && seasons.length === 1)
   const currentSeason = activeSeason ?? (seasons.length ? seasons[seasons.length - 1].season_number : null)
   const currentSeasonLabel = limited ? 'Limited series' : seasons.find((x) => x.season_number === currentSeason)?.name || `Season ${currentSeason}`
-  const certification = tvCertificationOf(show)
+  const certification = tvCertificationOf(show, region)
   const genres = (show.genres ?? []).slice(0, 3)
   const network = show.networks?.[0]?.name
   const serviceMark = originalServiceMatch(show, true)

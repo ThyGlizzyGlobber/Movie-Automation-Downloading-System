@@ -75,6 +75,14 @@ _TRAILER_FILENAME_RE = re.compile(r"^[a-z]+-\d+-[\w-]+\.mp4$")
 configure_logging()
 logger = logging.getLogger("app.api")
 
+# Which country's age ratings to show. TMDB carries certifications per
+# region and they are not interchangeable — the same show is TV-MA in the
+# US and MA15+ in Australia — so this decides which one the UI reads.
+# Household-wide rather than per-person: it describes where this server
+# is, not who is looking. "US" because TMDB's US data is the most
+# complete, so it is the safest thing to fall back to.
+DEFAULT_CERTIFICATION_REGION = "US"
+
 SESSION_COOKIE_NAME = "session_id"
 # Names the one browser allowed to claim a given in-flight Plex sign-in.
 # Not a credential for anything else and never readable by JS: it only
@@ -1852,6 +1860,11 @@ def get_current_session(store: RequestStore = Depends(get_store), session: Sessi
         "has_seen_tutorial": user.has_seen_tutorial if user else False,
         # The avatar itself is served by /api/me/avatar (same origin).
         "avatar": bool(user and user.avatar_url),
+        # Not really session state, but every page needs it before it can
+        # render an age rating and this is already the first call each
+        # client makes — a second boot request for one string would be a
+        # round trip in front of the first thing anyone sees.
+        "certification_region": store.get_settings().get("certification_region") or DEFAULT_CERTIFICATION_REGION,
     }
 
 
@@ -2675,6 +2688,25 @@ def _library_settings_out(store: RequestStore) -> dict:
         "plex_refresh_after_import": settings.get("plex_refresh_after_import", True) is not False,
         "free_space_floor_gb": float(settings.get("free_space_floor_gb") or 0),
     }
+
+
+class RegionSettingsIn(BaseModel):
+    # Shape only, not an allowlist: which regions are worth offering is a
+    # UI question, and TMDB adds certification bodies without asking. A
+    # region it has nothing for simply falls back — see the frontend's
+    # certificationOf.
+    certification_region: str = Field(pattern=r"^[A-Z]{2}$")
+
+
+@admin_router.get("/api/settings/region")
+def get_region_settings(store: RequestStore = Depends(get_store)) -> dict:
+    return {"certification_region": store.get_settings().get("certification_region") or DEFAULT_CERTIFICATION_REGION}
+
+
+@admin_router.put("/api/settings/region")
+def set_region_settings(body: RegionSettingsIn, store: RequestStore = Depends(get_store)) -> dict:
+    store.update_settings({"certification_region": body.certification_region})
+    return {"certification_region": body.certification_region}
 
 
 @admin_router.get("/api/settings/library")

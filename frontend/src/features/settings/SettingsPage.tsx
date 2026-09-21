@@ -9,6 +9,7 @@ import RetentionPanel from './RetentionPanel'
 import ConnectionsPanel from './ConnectionsPanel'
 import PlexServerPanel from './PlexServerPanel'
 import RemoteAccessPanel from './RemoteAccessPanel'
+import RegionPanel from './RegionPanel'
 import ActivityDashboardPanel from './ActivityDashboardPanel'
 import UpdatesPanel from './UpdatesPanel'
 import StoragePanel from './StoragePanel'
@@ -25,6 +26,8 @@ function renderPanel(key: string, jump: (key: string) => void) {
       return <PipelinePanel />
     case 'tv':
       return <TvSchedulePanel />
+    case 'region':
+      return <RegionPanel />
     case 'retention':
       return <RetentionPanel />
     case 'storage':

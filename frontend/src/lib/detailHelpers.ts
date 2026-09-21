@@ -1,21 +1,27 @@
-import type { Genre, MovieDetail } from '../types/movies'
-import type { TvDetail } from '../types/tv'
+import { FALLBACK_REGION } from './regions'
+import type { Genre, ReleaseDatesResult } from '../types/movies'
+import type { ContentRatingEntry } from '../types/tv'
 
 export function yearOf(dateStr?: string | null): string {
   return dateStr && dateStr.length >= 4 ? dateStr.slice(0, 4) : ''
 }
 
-export function certificationOf(movie: MovieDetail): string {
-  const usEntry = movie.release_dates?.results?.find((r) => r.iso_3166_1 === 'US')
-  if (!usEntry) return ''
-  const withCert = usEntry.release_dates.find((rd) => rd.certification)
-  return withCert?.certification ?? ''
+// The household's region first, then US, then nothing. The fallback is
+// what keeps a rating on screen at all: TMDB's coverage outside the US
+// is patchy, and a region with no entry for a title would otherwise show
+// a blank where every other title has a chip.
+export function certificationOf(movie: { release_dates?: { results?: ReleaseDatesResult[] } }, region: string = FALLBACK_REGION): string {
+  const results = movie.release_dates?.results ?? []
+  const pick = (code: string) =>
+    results.find((r) => r.iso_3166_1 === code)?.release_dates.find((rd) => rd.certification)?.certification || ''
+  return pick(region) || pick(FALLBACK_REGION)
 }
 
 // TV's own shape for the same idea (content_ratings, not release_dates).
-export function tvCertificationOf(show: TvDetail): string {
-  const usEntry = show.content_ratings?.results?.find((r) => r.iso_3166_1 === 'US')
-  return usEntry?.rating ?? ''
+export function tvCertificationOf(show: { content_ratings?: { results?: ContentRatingEntry[] } }, region: string = FALLBACK_REGION): string {
+  const results = show.content_ratings?.results ?? []
+  const pick = (code: string) => results.find((r) => r.iso_3166_1 === code)?.rating || ''
+  return pick(region) || pick(FALLBACK_REGION)
 }
 
 // ISO-639-1 -> readable name (TMDB's original_language is just the code,

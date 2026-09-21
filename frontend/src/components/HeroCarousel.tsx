@@ -10,6 +10,7 @@ import './HeroCarousel.css'
 import Icon from './Icon'
 import { SAMPLE_SYNOPSIS, Skel, SkelText, SkelWords } from './Skeleton'
 import { useMediaQuery } from '../lib/hooks'
+import { useCertificationRegion } from '../features/auth/useSession'
 
 const HERO_AUTOPLAY_MS = 7000 // flat dwell time for a poster-only slide
 // How long a trailer slide's poster shows on its own — both before the
@@ -164,6 +165,7 @@ export default function HeroCarousel({ items, loading = false }: { items: HeroSl
   // key art in a card, with the meta line, synopsis and two stacked
   // buttons below it rather than overlaid on a scope frame.
   const isPhone = useMediaQuery('(max-width: 639px)')
+  const region = useCertificationRegion()
   // And no trailers there. The card's art is a portrait poster, which a
   // landscape trailer can't fill without cropping it to a strip, and it
   // would cost a mobile connection a video fetch per slide. Gates the
@@ -241,15 +243,15 @@ export default function HeroCarousel({ items, loading = false }: { items: HeroSl
         const seasons = (item.seasons ?? []).filter((se) => se.season_number > 0).length
         out[i] = {
           badge: tvHeroBadge(item),
-          cert: tvCertOf(item),
+          cert: tvCertOf(item, region),
           length: seasons ? `${seasons} season${seasons === 1 ? '' : 's'}` : '',
           genres,
           logo,
         }
       } else {
         out[i] = {
-          badge: movieHeroBadge(item),
-          cert: movieCertOf(item),
+          badge: movieHeroBadge(item, region),
+          cert: movieCertOf(item, region),
           length: movieLength(item.runtime ?? null),
           genres,
           logo,
@@ -257,7 +259,7 @@ export default function HeroCarousel({ items, loading = false }: { items: HeroSl
       }
     })
     return out
-  }, [items])
+  }, [items, region])
 
   // Reset mute to "on" every time the active slide changes — never
   // carried over between titles.

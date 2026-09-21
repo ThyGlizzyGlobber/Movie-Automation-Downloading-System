@@ -14,6 +14,7 @@ import { usePageTitle } from '../../lib/chrome'
 import { certificationOf, languageNameOf, yearOf } from '../../lib/detailHelpers'
 import { originalServiceMatch } from '../../lib/providers'
 import { useMediaQuery } from '../../lib/hooks'
+import { useCertificationRegion } from '../auth/useSession'
 import { moviePill } from '../../lib/homeHero'
 import { formatBytes } from '../../lib/format'
 import { NON_TERMINAL, statusMeta } from '../../lib/status'
@@ -57,6 +58,7 @@ export default function MovieDetailPage() {
   // rules-of-hooks lint is for. The banner carries the service mark and
   // the rating from 640px up; below that there is no banner.
   const bannerShown = useMediaQuery('(min-width: 640px)')
+  const region = useCertificationRegion()
 
   const movieQuery = useQuery({ queryKey: ['movie', tmdbId], queryFn: () => getMovie(tmdbId) })
   const movie = movieQuery.data
@@ -94,7 +96,7 @@ export default function MovieDetailPage() {
   }
 
   const active = requests.find((r) => NON_TERMINAL.has(r.status)) ?? null
-  const certification = certificationOf(movie)
+  const certification = certificationOf(movie, region)
   const genres = (movie.genres ?? []).slice(0, 3)
 
   const pills: DetailPill[] = []

@@ -2336,6 +2336,37 @@ def test_login_start_returns_auth_url(client_and_deps):
     assert "code=ABCD" in response.json()["auth_url"]
 
 
+# -- Age-rating region ----------------------------------------------------
+
+
+def test_region_defaults_to_us_until_it_is_set(client_and_deps):
+    client, _, _, _, _, _ = client_and_deps
+
+    assert client.get("/api/settings/region").json() == {"certification_region": "US"}
+
+
+def test_region_round_trips_and_reaches_the_session(client_and_deps):
+    """Every page reads the region off the session call rather than one
+    of its own — nothing can draw a rating without it, so a request of
+    its own would sit in front of the first paint."""
+    client, _, _, _, _, _ = client_and_deps
+
+    put = client.put("/api/settings/region", json={"certification_region": "AU"})
+
+    assert put.status_code == 200
+    assert client.get("/api/settings/region").json()["certification_region"] == "AU"
+    assert client.get("/api/auth/session").json()["certification_region"] == "AU"
+
+
+def test_region_rejects_anything_that_isnt_a_country_code(client_and_deps):
+    """Shape only, deliberately: which regions are worth offering is a UI
+    question, and TMDB gains certification bodies without asking."""
+    client, _, _, _, _, _ = client_and_deps
+
+    for bad in ["Australia", "au", "AUS", "", "A1"]:
+        assert client.put("/api/settings/region", json={"certification_region": bad}).status_code == 422
+
+
 # -- Landing-page hero slides --------------------------------------------
 
 
