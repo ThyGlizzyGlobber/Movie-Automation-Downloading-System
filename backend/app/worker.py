@@ -118,7 +118,7 @@ from app.pipeline_settings import resolve_pipeline_settings
 from app.qbt import QBTClient, QBTError
 from app.resolve import resolve
 from app.tmdb import TMDBClient, TMDBError
-from app.tv_resolve import ShowIdentity, aired_episode_numbers, resolve_show, season_is_complete
+from app.tv_resolve import ShowIdentity, aired_episode_numbers, episode_title_lookup, resolve_show, season_is_complete
 from app.tvmaze import TVMazeClient, season_airstamps
 from app.tv_settings import TVScheduleSettings, resolve_tv_settings
 
@@ -672,8 +672,11 @@ class Worker:
             source_path = await asyncio.to_thread(
                 select_video_file, self.qbt, torrent_hash, config.QBIT_TV_SAVE_PATH, config.TV_LIBRARY_ROOT
             )
+            title = await asyncio.to_thread(
+                episode_title_lookup(row.tmdb_id, self.tmdb), row.season_number, row.episode_number
+            )
             target_path = await asyncio.to_thread(
-                organize_episode, identity, row.season_number, row.episode_number, source_path
+                organize_episode, identity, row.season_number, row.episode_number, source_path, title
             )
         except NoVideoFileError:
             message = await self._purge_no_video_torrent(torrent_hash, label)
@@ -787,7 +790,14 @@ class Worker:
         label = _request_label(row)
         try:
             identity = await asyncio.to_thread(resolve_show, row.tmdb_id, self.tmdb)
-            placed = await asyncio.to_thread(organize_pack, identity, torrent_hash, self.qbt, release_name)
+            # One lookup for the whole pack: it caches per season, so a
+            # season pack costs one TMDB call and a complete-series pack
+            # one per season it turns out to contain — none for a season
+            # it doesn't.
+            title_for = episode_title_lookup(row.tmdb_id, self.tmdb)
+            placed = await asyncio.to_thread(
+                organize_pack, identity, torrent_hash, self.qbt, release_name, title_for
+            )
         except NoVideoFileError:
             message = await self._purge_no_video_torrent(torrent_hash, label)
             logger.warning("pack request %d (%s) downloading -> cancelled (%s)", row.id, label, message)

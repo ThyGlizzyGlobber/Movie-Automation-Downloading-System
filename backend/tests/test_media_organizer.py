@@ -836,3 +836,69 @@ def test_organize_pack_handles_subfolder_relative_names(tmp_path, monkeypatch):
     placed = organize_pack(LANTERNS, "abc123", qbt)
 
     assert placed == [(1, 3, config.TV_LIBRARY_ROOT / "Lanterns (2026) {tmdb-95350}" / "Season 01" / "Lanterns - s01e03.mkv")]
+
+
+# ---------------------------------------------------------------------------
+# Episode titles in the filename — the second of Plex's two recognised
+# shapes, closing Stage 11's open decision. sNNeNN is what Plex matches
+# on, so the title is for whoever reads the folder.
+# ---------------------------------------------------------------------------
+
+
+def test_build_episode_path_appends_the_episode_title(tmp_path, monkeypatch):
+    monkeypatch.setattr(config, "TV_LIBRARY_ROOT", tmp_path)
+    path = build_episode_path(LANTERNS, 1, 4, ".mkv", "The Witness")
+    assert path.name == "Lanterns - s01e04 - The Witness.mkv"
+
+
+def test_build_episode_path_without_a_title_is_unchanged(tmp_path, monkeypatch):
+    """The bare shape is still what an untitled episode gets, so nothing
+    already filed changes meaning."""
+    monkeypatch.setattr(config, "TV_LIBRARY_ROOT", tmp_path)
+    assert build_episode_path(LANTERNS, 1, 4, ".mkv").name == "Lanterns - s01e04.mkv"
+    assert build_episode_path(LANTERNS, 1, 4, ".mkv", None).name == "Lanterns - s01e04.mkv"
+    assert build_episode_path(LANTERNS, 1, 4, ".mkv", "   ").name == "Lanterns - s01e04.mkv"
+
+
+def test_build_episode_path_skips_tmdb_placeholder_titles(tmp_path, monkeypatch):
+    """TMDB calls an untitled episode "Episode 7" — spelling out the
+    number the filename already carries."""
+    monkeypatch.setattr(config, "TV_LIBRARY_ROOT", tmp_path)
+    for placeholder in ("Episode 7", "episode 7", "Episodio 7", "Folge 7"):
+        assert build_episode_path(LANTERNS, 1, 7, ".mkv", placeholder).name == "Lanterns - s01e07.mkv"
+
+
+def test_build_episode_path_sanitises_a_title_for_the_filesystem(tmp_path, monkeypatch):
+    """Same treatment the show name gets: a colon is fine on the NAS and
+    breaks the moment the share is mapped on Windows."""
+    monkeypatch.setattr(config, "TV_LIBRARY_ROOT", tmp_path)
+    path = build_episode_path(LANTERNS, 3, 1, ".mkv", "Three Robots: Exit Strategies")
+    assert path.name == "Lanterns - s03e01 - Three Robots Exit Strategies.mkv"
+
+
+def test_build_episode_path_caps_a_very_long_title(tmp_path, monkeypatch):
+    monkeypatch.setattr(config, "TV_LIBRARY_ROOT", tmp_path)
+    path = build_episode_path(LANTERNS, 1, 1, ".mkv", "Word " * 100)
+    assert len(path.name.encode()) < 255
+
+
+def test_organize_pack_names_each_file_from_the_lookup(tmp_path, monkeypatch):
+    monkeypatch.setattr(config, "TV_LIBRARY_ROOT", tmp_path / "library")
+    downloads = tmp_path / "downloads"
+    downloads.mkdir(parents=True)
+    (downloads / "Lanterns.S01E01.mkv").write_bytes(b"ep1")
+    (downloads / "Lanterns.S01E02.mkv").write_bytes(b"ep2")
+    qbt = FakeQBTClient(
+        str(downloads),
+        [{"name": "Lanterns.S01E01.mkv", "size": 3}, {"name": "Lanterns.S01E02.mkv", "size": 3}],
+    )
+    titles = {(1, 1): "Sonnie's Edge", (1, 2): None}
+
+    placed = organize_pack(LANTERNS, "abc123", qbt, None, lambda s, e: titles.get((s, e)))
+
+    names = sorted(p.name for _, _, p in placed)
+    # The one TMDB has no name for keeps the bare shape rather than
+    # holding up the rest of the pack.
+    # The apostrophe survives — _sanitize only strips what a filesystem
+    # or an SMB client actually objects to.
+    assert names == ["Lanterns - s01e01 - Sonnie's Edge.mkv", "Lanterns - s01e02.mkv"]

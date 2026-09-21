@@ -3,11 +3,15 @@ search queries — the Stage 1 equivalent for TV. Family disambiguates
 *which* show by tapping a poster; episode-level matching (Stage 10) is a
 separate problem, same split as movies' resolve.py/score.py."""
 
+import logging
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta, timezone
 
 from app.normalize import generate_variants
 from app.tmdb import TMDBClient
+
+logger = logging.getLogger("app.tv_resolve")
 
 # S01E04-style, the dominant modern scene/indexer convention. Alternate
 # formats (1x04, "Season 1 Episode 4") are a named, documented gap for v1 —
@@ -264,3 +268,39 @@ def resolve_show(tmdb_id: int, client: TMDBClient) -> ShowIdentity:
         tvdb_id=(show.get("external_ids") or {}).get("tvdb_id"),
         imdb_id=(show.get("external_ids") or {}).get("imdb_id"),
     )
+
+
+def episode_title_lookup(tmdb_id: int, tmdb: TMDBClient) -> Callable[[int, int], str | None]:
+    """A `(season, episode) -> title` lookup for one show, fetching each
+    season from TMDB at most once.
+
+    The titles come from TMDB rather than the release's own filenames,
+    which is a deliberate choice and not just the easier one. A release
+    often has no title in the name at all (AOC's Secret Level pack names
+    its files "S01E15.mkv"), and when it does have one it is the
+    uploader's, in the uploader's language — PHDTeam's Love, Death &
+    Robots names episode 1 "Tri roboti_ Strategie uniku". TMDB gives the
+    same canonical name for every release of the same episode, so the
+    library reads consistently no matter where a file came from.
+
+    Returns None for anything TMDB can't answer for — an unnamed
+    episode, a season it doesn't have, or the API being down — and
+    build_episode_path then keeps the bare SxxEyy filename. A missing
+    title is cosmetic; failing an organize over one would not be."""
+    cache: dict[int, dict[int, str]] = {}
+
+    def title_for(season: int, episode: int) -> str | None:
+        if season not in cache:
+            try:
+                episodes = tmdb.get_tv_season(tmdb_id, season)
+            except Exception:
+                logger.info("episode titles unavailable for tmdb_id=%s season=%s", tmdb_id, season)
+                episodes = []
+            cache[season] = {
+                e["episode_number"]: e.get("name") or ""
+                for e in episodes
+                if e.get("episode_number") is not None
+            }
+        return cache[season].get(episode) or None
+
+    return title_for

@@ -23,6 +23,7 @@ import os
 import re
 import shutil
 import subprocess
+from collections.abc import Callable
 from pathlib import Path, PurePosixPath
 
 from app import config
@@ -186,18 +187,49 @@ def find_existing_episode_files(show_identity: ShowIdentity, season: int, episod
     return found
 
 
-def build_episode_path(show_identity: ShowIdentity, season: int, episode: int, ext: str) -> Path:
+# TMDB names an episode it has no real title for "Episode 7" (and, in
+# some locales, its translation of that). Appending it would spell out
+# the number the filename already carries, so an unnamed episode keeps
+# the bare SxxEyy shape instead.
+_PLACEHOLDER_EPISODE_NAME_RE = re.compile(r"^(episode|épisode|episodio|folge)\s*\d+$", re.IGNORECASE)
+
+# Long enough for a real title, short enough that the whole filename
+# clears the 255-byte limit ext4 and SMB both impose once the show name,
+# the SxxEyy and the extension are already spent.
+_MAX_EPISODE_TITLE = 120
+
+
+def episode_title_suffix(title: str | None) -> str:
+    """The ` - <Title>` part of an episode filename, or "" when there is
+    no title worth adding. Filesystem-sanitised and length-capped, and
+    empty for TMDB's "Episode 7" placeholders."""
+    if not title:
+        return ""
+    cleaned = _sanitize(title)
+    if not cleaned or _PLACEHOLDER_EPISODE_NAME_RE.match(cleaned):
+        return ""
+    return f" - {cleaned[:_MAX_EPISODE_TITLE].strip()}"
+
+
+def build_episode_path(
+    show_identity: ShowIdentity, season: int, episode: int, ext: str, title: str | None = None
+) -> Path:
     """`<TV_LIBRARY_ROOT>/<Show Title> ({year}) {tmdb-<id>}/Season <NN>/
-    <Show Title> - sNNeNN.ext` — Plex's own documented `{tmdb-<id>}`
-    folder-naming hint, so Plex is never left to guess which show a folder
-    belongs to. Filename is `SxxEyy`-only for v1 (no episode title) — the
-    simpler of two equally-valid Plex-recognized shapes; see project.md's
-    Stage 11 open decisions."""
+    <Show Title> - sNNeNN[ - <Episode Title>].ext` — Plex's own
+    documented `{tmdb-<id>}` folder-naming hint, so Plex is never left to
+    guess which show a folder belongs to.
+
+    The episode title is the second of the two Plex-recognised shapes,
+    and closes Stage 11's open decision in favour of it: sNNeNN is what
+    Plex actually matches on, so the title is for whoever is reading the
+    folder. Optional, because it is worth having only when it is real —
+    an unnamed episode, or a title this app could not look up, keeps the
+    bare shape rather than gaining a placeholder."""
     show_title = _sanitize(show_identity.title)
     show_folder = f"{show_title} ({show_identity.first_air_year})" if show_identity.first_air_year else show_title
     show_folder += f" {{tmdb-{show_identity.tmdb_id}}}"
     season_folder = f"Season {season:02d}"
-    filename = f"{show_title} - s{season:02d}e{episode:02d}{ext}"
+    filename = f"{show_title} - s{season:02d}e{episode:02d}{episode_title_suffix(title)}{ext}"
     return config.TV_LIBRARY_ROOT / show_folder / season_folder / filename
 
 
@@ -344,14 +376,19 @@ def _link_or_copy(source: Path, target: Path) -> None:
         shutil.copy2(source, target)
 
 
-def organize_episode(show_identity: ShowIdentity, season: int, episode: int, source_path: Path) -> Path:
+def organize_episode(
+    show_identity: ShowIdentity, season: int, episode: int, source_path: Path, title: str | None = None
+) -> Path:
     """Places one episode's already-selected video file (see
     `select_video_file`) into Plex's library layout. Rename/place only
     happens here, after the torrent is fully complete — never mid-download,
     so qBittorrent's own resume data and incomplete-file naming are never
-    touched."""
+    touched.
+
+    `title` goes into the filename when given; the caller looks it up,
+    keeping this module's only inputs the filesystem and qBittorrent."""
     source_path = Path(source_path)
-    target = build_episode_path(show_identity, season, episode, source_path.suffix)
+    target = build_episode_path(show_identity, season, episode, source_path.suffix, title)
     target.parent.mkdir(parents=True, exist_ok=True)
     _link_or_copy(source_path, target)
     return target
@@ -442,6 +479,7 @@ def organize_pack(
     torrent_hash: str | None,
     qbt: QBTClient,
     release_name: str | None = None,
+    title_for: Callable[[int, int], str | None] | None = None,
 ) -> list[tuple[int, int, Path]]:
     """Stage 13: places every individually SxxEyy-identifiable file out of a
     completed season/complete-series pack torrent — an extension of
@@ -483,7 +521,12 @@ def organize_pack(
             logger.info("organize_pack: skipping %r — no recognizable episode token", name)
             continue
         season, episode = identity_pair
-        target = build_episode_path(show_identity, season, episode, source_path.suffix)
+        # A callable rather than a dict of titles: which seasons a pack
+        # actually carries is only known here, file by file — a complete-
+        # series pack would otherwise have to be pre-fetched season by
+        # season on the chance it needed them. The caller memoises.
+        title = title_for(season, episode) if title_for else None
+        target = build_episode_path(show_identity, season, episode, source_path.suffix, title)
         target.parent.mkdir(parents=True, exist_ok=True)
         _link_or_copy(source_path, target)
         placed.append((season, episode, target))
