@@ -45,6 +45,13 @@
 /* Desktop (860px and up): the landscape banner that replaces the poster. */
 .detail-banner {
   display: none;
+  /* What everything in the banner's corners is held off its edges — the
+     logo block at the foot and the two marks at the top all read these,
+     so they agree by construction rather than by copies of the same
+     number staying in step. Stepped down with the banner itself in the
+     narrow block below. */
+  --banner-inset: 48px;
+  --banner-inset-block: 40px;
   position: relative;
   width: 100%;
   aspect-ratio: 21 / 8;
@@ -73,9 +80,9 @@
 }
 .detail-banner-text {
   position: absolute;
-  left: 48px;
-  right: 48px;
-  bottom: 40px;
+  left: var(--banner-inset);
+  right: var(--banner-inset);
+  bottom: var(--banner-inset-block);
   display: flex;
   flex-direction: column;
   align-items: flex-start;
@@ -102,6 +109,35 @@
 }
 /* The On Plex pill sits in the text stack under the logo, not pinned
    to a corner. */
+/* Top left: which service the title came from. Opposite the rating
+   rather than beside it, so the top edge is bookended and the bottom
+   right stays clear — on the home hero that corner belongs to the
+   carousel arrows, and it is worth the two banners agreeing about what
+   lives where. */
+.detail-banner-service {
+  position: absolute;
+  left: var(--banner-inset);
+  top: var(--banner-inset-block);
+  z-index: 2;
+  display: block;
+  height: 30px;
+  width: auto;
+  border-radius: 7px;
+}
+/* Top right: the age rating, the same chip the home hero's carries. */
+.detail-banner-cert {
+  position: absolute;
+  right: var(--banner-inset);
+  top: var(--banner-inset-block);
+  z-index: 2;
+  padding: 4px 9px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-dim);
+  background: color-mix(in srgb, var(--bg) 55%, transparent);
+  border: 1px solid var(--glass-border);
+  border-radius: 6px;
+}
 .detail-banner-plex {
   position: static;
 }
@@ -715,12 +751,14 @@
     max-height: none;
     border-radius: 22px;
     margin-bottom: 18px;
+    --banner-inset: 22px;
+    --banner-inset-block: 20px;
   }
   .detail-banner-text {
-    left: 22px;
-    right: 22px;
-    bottom: 20px;
     gap: 10px;
+  }
+  .detail-banner-service {
+    height: 24px;
   }
   .detail-banner-text .detail-logo {
     max-width: 70%;

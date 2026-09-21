@@ -15,6 +15,8 @@ import { usePageTitle } from '../../lib/chrome'
 import { errorText, useToast } from '../../lib/toast'
 import { languageNameOf, tvCertificationOf, yearOf } from '../../lib/detailHelpers'
 import { showPill, startOfToday } from '../../lib/homeHero'
+import { originalServiceMatch } from '../../lib/providers'
+import { useMediaQuery } from '../../lib/hooks'
 import type { ShowOut } from '../../types/shows'
 import type { RedownloadMode } from '../../types/requests'
 import '../detail/DetailPage.css'
@@ -50,6 +52,8 @@ export default function ShowDetailPage() {
   const tmdbId = Number(id)
   const queryClient = useQueryClient()
   const { toast } = useToast()
+  // Above every early return below — see MovieDetailPage's own note.
+  const bannerShown = useMediaQuery('(min-width: 640px)')
 
   const showQuery = useQuery({ queryKey: ['tv', tmdbId], queryFn: () => getTvShow(tmdbId) })
   const showsQuery = useQuery({ queryKey: ['shows'], queryFn: () => listShows() })
@@ -153,6 +157,7 @@ export default function ShowDetailPage() {
   const certification = tvCertificationOf(show)
   const genres = (show.genres ?? []).slice(0, 3)
   const network = show.networks?.[0]?.name
+  const serviceMark = originalServiceMatch(show, true)
 
 
   const pills: DetailPill[] = []
@@ -234,6 +239,10 @@ export default function ShowDetailPage() {
   const details: DetailRow[] = []
   if (certification) details.push({ label: 'Rated', value: certification })
   if (show.first_air_date) details.push({ label: 'First aired', value: new Date(`${show.first_air_date}T00:00:00`).toLocaleDateString([], { day: 'numeric', month: 'short', year: 'numeric' }) })
+  // Always, icon in the corner or not: only the eight curated services
+  // have one, and an icon names nothing to anyone who doesn't already
+  // recognise it. The rating can live in the corner alone because the
+  // chip is its own label; this can't.
   if (network) details.push({ label: 'Network', value: network })
   if (show.status) details.push({ label: 'Status', value: limited ? 'Limited series' : show.status })
   const lang = languageNameOf(show.original_language)
@@ -283,6 +292,8 @@ export default function ShowDetailPage() {
   return (
     <>
       <DetailShell
+        service={bannerShown ? serviceMark : null}
+        certification={bannerShown ? certification : null}
         backdropPath={show.backdrop_path}
         posterPath={show.poster_path}
         logoPath={show.logo_path}

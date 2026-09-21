@@ -118,6 +118,8 @@ export default function DetailShell({
   actions,
   tiles,
   details = [],
+  service,
+  certification,
   aside,
   children,
 }: {
@@ -134,6 +136,16 @@ export default function DetailShell({
   tiles: DetailTile[]
   /* Key / value facts under the tiles (rated, language, network…). */
   details?: DetailRow[]
+  /* The banner's two corner marks: which service originated the title,
+     and its age rating. They live up there rather than among the facts
+     below because a fact that is only sometimes present moves everything
+     under it — the same title type would show the service one week and
+     not the next, and the column rearranged itself around that. A fixed
+     corner is either occupied or empty and nothing else shifts.
+     Callers pass these only where the banner is actually on screen; the
+     phone layout has no banner and keeps them as tiles. */
+  service?: { icon: string; label: string } | null
+  certification?: string | null
   /* Sits beside the synopsis and actions on wide desktops (the cast),
      and between them and the children everywhere else. */
   aside?: ReactNode
@@ -150,6 +162,10 @@ export default function DetailShell({
           <div className="detail-banner">
             <Img className="detail-banner-img" src={backdropUrl(backdropPath, 'original')} alt="" />
             <div className="detail-banner-fade" />
+            {service && (
+              <img className="detail-banner-service" src={`/icons/${service.icon}`} alt={service.label} title={service.label} />
+            )}
+            {certification && <div className="detail-banner-cert">{certification}</div>}
             <div className="detail-banner-text">
               <div className={`detail-title${logo ? ' has-logo' : ''}`}>{logo ? <Img className="detail-logo" src={logoUrl(logoPath, 'original') ?? logo} alt={title} plain /> : title}</div>
               {pill && <span className={`on-plex-badge detail-banner-plex ${pill.tone}`}>{pill.text}</span>}

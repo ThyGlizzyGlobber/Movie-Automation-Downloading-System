@@ -9,9 +9,11 @@ import RequestModal from '../../components/RequestModal'
 import ErrorState from '../../components/ErrorState'
 import Icon from '../../components/Icon'
 import DetailShell, { DetailShellSkeleton, type DetailPill, type DetailRow, type DetailTile } from '../detail/DetailShell'
-import { acrossReleases, DetailCast, DetailCastSkeleton, DetailTrailer, DetailTrailerSkeleton, FactTiles, filedOnLabel, genreLinks, peopleLinks, qualityFromName, serviceTile, sourceFromName, usePlexHref, useTitleRequests } from '../detail/DetailBits'
+import { acrossReleases, DetailCast, DetailCastSkeleton, DetailTrailer, DetailTrailerSkeleton, FactTiles, filedOnLabel, genreLinks, peopleLinks, qualityFromName, sourceFromName, usePlexHref, useTitleRequests } from '../detail/DetailBits'
 import { usePageTitle } from '../../lib/chrome'
 import { certificationOf, languageNameOf, yearOf } from '../../lib/detailHelpers'
+import { originalServiceMatch } from '../../lib/providers'
+import { useMediaQuery } from '../../lib/hooks'
 import { moviePill } from '../../lib/homeHero'
 import { formatBytes } from '../../lib/format'
 import { NON_TERMINAL, statusMeta } from '../../lib/status'
@@ -50,6 +52,11 @@ export default function MovieDetailPage() {
   const tmdbId = Number(id)
   const queryClient = useQueryClient()
   const { toast } = useToast()
+  // Above every early return below — a hook called after one runs in a
+  // different order on the renders that take it, which is what the
+  // rules-of-hooks lint is for. The banner carries the service mark and
+  // the rating from 640px up; below that there is no banner.
+  const bannerShown = useMediaQuery('(min-width: 640px)')
 
   const movieQuery = useQuery({ queryKey: ['movie', tmdbId], queryFn: () => getMovie(tmdbId) })
   const movie = movieQuery.data
@@ -108,8 +115,11 @@ export default function MovieDetailPage() {
   if (genres.length) pills.push({ text: genreLinks(genres, 'movie'), mute: true })
 
   const sideTiles: DetailTile[] = []
-  const service = serviceTile(movie, false)
-  if (service) sideTiles.push(service)
+  // The corner mark; the name it stands for goes in the facts below,
+  // the same as a show's. It used to be a tile in this column — an icon
+  // and a label that came and went among the others, which is what made
+  // the layout jump between one title and the next.
+  const serviceMark = originalServiceMatch(movie, false)
   sideTiles.push(
     movie.on_plex
       ? { label: 'Status', value: (<><Icon name="check-circle" />Available on Plex</>), tone: 'mint' }
@@ -139,6 +149,10 @@ export default function MovieDetailPage() {
   const writers = crew.filter((c) => c.job === 'Screenplay' || c.job === 'Writer').slice(0, 3)
   const details: DetailRow[] = []
   if (certification) details.push({ label: 'Rated', value: certification })
+  // A movie has no `networks` field, so the service this matched is the
+  // closest thing to one — and it keeps the fact list reading the same
+  // on both kinds of page, which is the point of it being here.
+  if (serviceMark) details.push({ label: 'Network', value: serviceMark.label.replace(' Original', '') })
   if (movie.release_date) details.push({ label: 'Released', value: new Date(`${movie.release_date}T00:00:00`).toLocaleDateString([], { day: 'numeric', month: 'short', year: 'numeric' }) })
   const lang = languageNameOf(movie.original_language)
   if (lang) details.push({ label: 'Language', value: lang })
@@ -192,6 +206,8 @@ export default function MovieDetailPage() {
   return (
     <>
       <DetailShell
+        service={bannerShown ? serviceMark : null}
+        certification={bannerShown ? certification : null}
         backdropPath={movie.backdrop_path}
         posterPath={movie.poster_path}
         logoPath={movie.logo_path}
