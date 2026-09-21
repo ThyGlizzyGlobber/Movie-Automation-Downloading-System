@@ -20,6 +20,15 @@ const HERO_AUTOPLAY_MS = 7000 // flat dwell time for a poster-only slide
 // It was 3000, which with the ~750ms the page genuinely takes to have
 // its hero read as a four-second load rather than as deliberate pacing.
 const HERO_POSTER_LEAD_MS = 1200
+// The longest a trailer slide may hold the carousel before it moves on
+// regardless. `ended` used to be the only thing that advanced one, which
+// meant anything that stopped a video short — a stall, a decode error, a
+// file that never finishes arriving — stranded the hero on that slide
+// for good: poster showing, nothing rotating, no way out but a reload.
+// Comfortably longer than any trailer worth playing, so it never cuts a
+// healthy one short; it exists purely so a broken one cannot wedge the
+// whole carousel.
+const HERO_TRAILER_MAX_MS = 150_000
 // How close to the synopsis counts as reaching for it, in px on every
 // side. Generous enough that it opens before the cursor is literally on
 // the text — which matters while it is hidden and there is nothing to
@@ -190,7 +199,13 @@ export default function HeroCarousel({ items, loading = false }: { items: HeroSl
   const tokenRef = useRef(0)
   const stallTimersRef = useRef<Record<number, number>>({})
   const pausedByScrollRef = useRef(false)
+  // Same idea as the scroll pause, for the window itself rather than the
+  // page position: a hero nobody is looking at should not be playing.
+  const pausedByHiddenRef = useRef(false)
   const prevIndexRef = useRef(0)
+  // The "move on regardless" timer for a trailer slide, held so it is
+  // cleared alongside the others when the effect tears down.
+  const ceilingRef = useRef<number | null>(null)
 
   // Trailer fetch for every slide — self-hosted, chromeless <video>,
   // never autoplaying on its own; playback is entirely driven by the
@@ -298,13 +313,17 @@ export default function HeroCarousel({ items, loading = false }: { items: HeroSl
   // with a trailer shows its poster for a lead-in, plays the trailer
   // through once, then holds the poster again before actually advancing.
   useEffect(() => {
-    if (items.length <= 1 || pausedByScrollRef.current) return
+    if (items.length <= 1 || pausedByScrollRef.current || pausedByHiddenRef.current) return
     const myToken = ++tokenRef.current
 
     function clear() {
       if (timerRef.current !== null) {
         window.clearTimeout(timerRef.current)
         timerRef.current = null
+      }
+      if (ceilingRef.current !== null) {
+        window.clearTimeout(ceilingRef.current)
+        ceilingRef.current = null
       }
     }
     function advance() {
@@ -326,11 +345,21 @@ export default function HeroCarousel({ items, loading = false }: { items: HeroSl
         video.currentTime = 0
         video.play().catch(() => {})
         const onEnded = () => {
+          window.clearTimeout(ceiling)
           video.removeEventListener('ended', onEnded)
           if (tokenRef.current !== myToken) return
           timerRef.current = window.setTimeout(advance, HERO_POSTER_LEAD_MS)
         }
         video.addEventListener('ended', onEnded)
+        // Whatever happens to the video, the carousel keeps moving.
+        // Cleared the moment `ended` arrives, so a trailer that plays
+        // through is unaffected by it.
+        const ceiling = window.setTimeout(() => {
+          video.removeEventListener('ended', onEnded)
+          if (tokenRef.current !== myToken) return
+          advance()
+        }, HERO_TRAILER_MAX_MS)
+        ceilingRef.current = ceiling
       }, HERO_POSTER_LEAD_MS)
     }
 
@@ -345,6 +374,49 @@ export default function HeroCarousel({ items, loading = false }: { items: HeroSl
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeIndex, videoUrls[activeIndex], items.length, scheduleTick])
+
+  // Leaving the window stops the hero, coming back starts it again.
+  //
+  // Without this, a backgrounded tab kept the whole schedule running on
+  // throttled timers: the trailer played on for a few seconds unheard,
+  // the slide advanced, the next one rewound and started, and only then
+  // did the browser get around to suspending it. All of it downloading
+  // video for a window nobody was looking at.
+  //
+  // Both signals are needed and they are not the same: switching tabs
+  // fires visibilitychange, while switching to another application
+  // usually does not — the tab is still "visible", it simply is not
+  // focused. Watching blur/focus as well catches that, at the cost of
+  // pausing when you click away to another window, which for a muted
+  // background clip is the behaviour you want anyway.
+  useEffect(() => {
+    function sync() {
+      const away = document.visibilityState !== 'visible' || !document.hasFocus()
+      if (away === pausedByHiddenRef.current) return
+      pausedByHiddenRef.current = away
+      if (away) {
+        const video = videoRefs.current[activeIndex]
+        if (video) {
+          video.pause()
+          // Rewound rather than held, matching the scroll pause below:
+          // coming back to a trailer thirty seconds in, with no idea
+          // what came before, is worse than seeing it from the top.
+          video.currentTime = 0
+        }
+      }
+      // Re-runs the scheduler, which on the way back gives the slide the
+      // same poster lead-in a freshly activated one gets.
+      setScheduleTick((t) => t + 1)
+    }
+    document.addEventListener('visibilitychange', sync)
+    window.addEventListener('blur', sync)
+    window.addEventListener('focus', sync)
+    return () => {
+      document.removeEventListener('visibilitychange', sync)
+      window.removeEventListener('blur', sync)
+      window.removeEventListener('focus', sync)
+    }
+  }, [activeIndex])
 
   // Scrolling away from the top pauses whatever trailer is playing
   // (wasted bandwidth on a hero nobody's looking at); scrolling back
@@ -454,7 +526,21 @@ export default function HeroCarousel({ items, loading = false }: { items: HeroSl
                   alt=""
                   loading={i === 0 ? 'eager' : 'lazy'}
                 />
-                {videoUrls[i] && (
+                {/* Only the active slide has a <video> at all, not
+                    merely a quiet one. Each element takes a decoder, and
+                    on a Mac that is VideoToolbox — a hardware decoder
+                    with a finite number of concurrent sessions. Five
+                    1080p H.264 players asked for five of them, Chrome
+                    spent its time suspending and resuming them, and the
+                    one being watched died with PIPELINE_ERROR_DECODE
+                    part way through. The same file plays start to
+                    finish on the content page, where it is the only
+                    player on the page.
+                    This never showed while trailers were VP9: that
+                    decodes in software, so five of them never contended
+                    for anything. Moving to H.264 for Apple devices put
+                    them all on the hardware path at once. */}
+                {i === activeIndex && videoUrls[i] && (
                   <div className="home-hero-video-wrap">
                     <video
                       ref={(el) => {
