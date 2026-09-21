@@ -547,12 +547,18 @@ export default function HeroCarousel({ items, loading = false }: { items: HeroSl
 
         {items.length > 1 && (
           <>
-            <button className="home-hero-arrow home-hero-arrow-left" aria-label="Previous slide" onClick={() => goToSlide(activeIndex - 1)}>
-              <Icon name="back" />
-            </button>
-            <button className="home-hero-arrow home-hero-arrow-right" aria-label="Next slide" onClick={() => goToSlide(activeIndex + 1)}>
-              <Icon name="next" />
-            </button>
+            {/* Grouped rather than positioned apart: they sit together in
+                the bottom-right corner now, so the pair is placed once and
+                the gap between them is the flex gap, instead of each
+                carrying its own edge offset and a width to subtract. */}
+            <div className="home-hero-nav">
+              <button className="home-hero-arrow" aria-label="Previous slide" onClick={() => goToSlide(activeIndex - 1)}>
+                <Icon name="back" />
+              </button>
+              <button className="home-hero-arrow" aria-label="Next slide" onClick={() => goToSlide(activeIndex + 1)}>
+                <Icon name="next" />
+              </button>
+            </div>
             <div className="home-hero-dots">
               {items.map((item, i) => (
                 <button

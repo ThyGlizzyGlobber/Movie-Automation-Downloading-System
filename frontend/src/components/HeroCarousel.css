@@ -392,7 +392,9 @@
 .home-hero-cert {
   position: absolute;
   right: 48px;
-  bottom: 40px;
+  /* Top right, out of the bottom edge entirely: that corner is the slide
+     controls' now, and the rating has nothing to do with them. */
+  top: 40px;
   z-index: 3;
   padding: 4px 9px;
   font-size: 12px;
@@ -556,18 +558,27 @@
   }
   /* Prev/next belong to a pointer. On the card they sit on top of the
      key art, and a phone has the dots instead.
-     Two classes deliberately: the base .home-hero-arrow rule is further
+     Two classes deliberately: the base .home-hero-nav rule is further
      down this file, so an equally specific selector here would lose to
      it on order. */
-  .home-hero .home-hero-arrow {
+  .home-hero .home-hero-nav {
     display: none;
   }
 }
-.home-hero-arrow {
+/* Both slide controls live along the bottom now: dots centred, arrows to
+   their right. The group is centred on the dot row rather than sharing
+   its edge inset — the dots are 6px tall sitting 28px up, so their centre
+   line is at 31px, and centring a 44px button on it puts this group's
+   bottom edge at 31 - 22 = 9px. */
+.home-hero-nav {
   position: absolute;
-  top: 50%;
-  transform: translateY(-50%);
+  right: 14px;
+  bottom: 9px;
   z-index: 3;
+  display: flex;
+  gap: 10px;
+}
+.home-hero-arrow {
   width: 44px;
   height: 44px;
   border-radius: 50%;
@@ -582,12 +593,6 @@
 .home-hero-arrow:hover {
   opacity: 1;
   background: var(--bg-card);
-}
-.home-hero-arrow-left {
-  left: 14px;
-}
-.home-hero-arrow-right {
-  right: 14px;
 }
 .home-hero-dots {
   position: absolute;
