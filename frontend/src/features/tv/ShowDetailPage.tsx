@@ -9,12 +9,13 @@ import RedownloadModal from '../../components/RedownloadModal'
 import ErrorState from '../../components/ErrorState'
 import Icon from '../../components/Icon'
 import DetailShell, { DetailShellSkeleton, type DetailPill, type DetailRow, type DetailTile } from '../detail/DetailShell'
-import { acrossReleases, DetailCast, DetailCastSkeleton, DetailTrailer, DetailTrailerSkeleton, FactTiles, genreLinks, peopleLinks, qualityFromName, sourceFromName, usePlexHref } from '../detail/DetailBits'
+import { acrossReleases, DetailCast, DetailCastSkeleton, DetailTrailer, DetailTrailerSkeleton, FactTiles, genreLinks, peopleLinks, qualityFromName, sourceFromName, usePlexHref, useTitleRequests } from '../detail/DetailBits'
 import { formatBytes } from '../../lib/format'
 import { usePageTitle } from '../../lib/chrome'
 import { errorText, useToast } from '../../lib/toast'
 import { languageNameOf, tvCertificationOf, yearOf } from '../../lib/detailHelpers'
 import { showPill, startOfToday } from '../../lib/homeHero'
+import { NON_TERMINAL } from '../../lib/status'
 import { originalServiceMatch } from '../../lib/providers'
 import { useMediaQuery } from '../../lib/hooks'
 import { useCertificationRegion } from '../auth/useSession'
@@ -77,6 +78,9 @@ export default function ShowDetailPage() {
   const title = show?.name || show?.original_name || ''
   const year = yearOf(show?.first_air_date)
   const plexHref = usePlexHref('show', tmdbId, title, year, !!show?.on_plex)
+  // A show's requests are episode and pack rows rather than the single
+  // movie row, so the newest of those is who asked for it.
+  const showRequests = useTitleRequests(tmdbId, ['episode', 'pack'])
 
   if (showQuery.isLoading) return <ShowDetailSkeleton />
   if (showQuery.isError || !show) {
@@ -203,6 +207,38 @@ export default function ShowDetailPage() {
   const firstYear = show.first_air_date?.slice(0, 4)
   const lastYear = show.last_air_date?.slice(0, 4)
   const sideTiles: DetailTile[] = []
+  // Leading with the same two tiles the movie page leads with, and for
+  // the same reason: what you came to find out is whether you can watch
+  // it. A show answers that with a third state a film never has —
+  // some of it is here — so `plex_complete` is the difference between
+  // having the series and having part of it.
+  const requestedBy = showRequests[0]?.requested_by_username
+  const activeRequest = showRequests.some((r) => NON_TERMINAL.has(r.status))
+  sideTiles.push(
+    show.on_plex
+      ? {
+          label: 'Status',
+          value: (
+            <>
+              <Icon name="check-circle" />
+              {/* "available" is the third thing saying the same
+                  thing, after the Status label and the tick beside it.
+                  Without it the two states differ by one word, which is
+                  what makes the difference register at a glance. */}
+              {show.plex_complete ? 'All episodes on Plex' : 'Some episodes on Plex'}
+            </>
+          ),
+          tone: 'mint',
+          wide: true,
+        }
+      : {
+          label: 'Status',
+          value: show.is_coming_soon ? 'Coming soon' : activeRequest ? 'On the way' : 'Not on Plex yet',
+          tone: activeRequest ? 'ice' : 'dim',
+          wide: true,
+        },
+  )
+  if (requestedBy) sideTiles.push({ label: 'Requested by', value: requestedBy, wide: true })
   if (ended) {
     sideTiles.push({
       label: limited ? 'Limited series' : show.status === 'Canceled' ? 'Cancelled' : 'Ended',

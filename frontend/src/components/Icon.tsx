@@ -34,7 +34,11 @@ const GLYPHS = {
   film: <><rect x="3" y="3.5" width="18" height="17" rx="1.5" /><path d="M7 3.5v17M17 3.5v17M3 8h4M3 12h4M3 16h4M17 8h4M17 12h4M17 16h4" /></>,
   tv: <><rect x="2.5" y="6.5" width="19" height="12.5" rx="2" /><path d="M8.5 2.5 12 6l3.5-3.5M9 22h6" /></>,
   star: <path d="M12 3.2l2.7 5.7 6.2.8-4.6 4.3 1.2 6.2L12 17.2l-5.5 3 1.2-6.2L3.1 9.7l6.2-.8z" fill="currentColor" stroke="none" />,
-  megaphone: <><path d="M3 10.5v3a1 1 0 0 0 1 1h2.5l5 3.5V6L6.5 9.5H4a1 1 0 0 0-1 1z" /><path d="M15 9.5a3.5 3.5 0 0 1 0 5M17.8 7a7 7 0 0 1 0 10" /></>,
+  // A horn with a handle, not the speaker-and-sound-waves this used to
+  // be drawn as — the name has always said megaphone and the shape said
+  // volume control, which on the hero's announcement line read as an
+  // audio setting rather than as news about the title.
+  megaphone: <><path d="m3 11 18-5v12L3 14v-3z" /><path d="M11.6 16.8a3 3 0 1 1-5.8-1.6" /></>,
   'volume-on': <><path d="M4 10v4h3l4 3.5v-11L7 10z" /><path d="M15 9.5a3.5 3.5 0 0 1 0 5M17.8 7a7 7 0 0 1 0 10" /></>,
   'volume-off': <><path d="M4 10v4h3l4 3.5v-11L7 10z" /><path d="M16 9.5l5 5M21 9.5l-5 5" /></>,
   drive: <><rect x="3" y="5" width="18" height="14" rx="2" /><path d="M3 13h18M7 16.3h.3M11 16.3h.3" /></>,

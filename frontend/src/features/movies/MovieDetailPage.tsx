@@ -122,12 +122,16 @@ export default function MovieDetailPage() {
   // and a label that came and went among the others, which is what made
   // the layout jump between one title and the next.
   const serviceMark = originalServiceMatch(movie, false)
+  // Both full width, one under the other. Sharing a row made the pair
+  // read as one fact split in two, and it moved: "Requested by" is only
+  // there when somebody asked for the title, so the Status tile beside
+  // it changed width depending on the title you happened to open.
   sideTiles.push(
     movie.on_plex
-      ? { label: 'Status', value: (<><Icon name="check-circle" />Available on Plex</>), tone: 'mint' }
-      : { label: 'Status', value: movie.is_coming_soon ? 'Coming soon' : active ? 'On the way' : 'Not on Plex yet', tone: active ? 'ice' : 'dim' },
+      ? { label: 'Status', value: (<><Icon name="check-circle" />Available on Plex</>), tone: 'mint', wide: true }
+      : { label: 'Status', value: movie.is_coming_soon ? 'Coming soon' : active ? 'On the way' : 'Not on Plex yet', tone: active ? 'ice' : 'dim', wide: true },
   )
-  if (requests[0]?.requested_by_username) sideTiles.push({ label: 'Requested by', value: requests[0].requested_by_username, fit: true })
+  if (requests[0]?.requested_by_username) sideTiles.push({ label: 'Requested by', value: requests[0].requested_by_username, wide: true })
 
   // From the library ledger, not a completed request's recorded winner.
   // A request row is deleted by "Clear My Requests" and by retention, so

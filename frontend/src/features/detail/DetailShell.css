@@ -120,9 +120,12 @@
   top: var(--banner-inset-block);
   z-index: 2;
   display: block;
-  height: 30px;
+  /* Bigger than it was: at 30px it read as a stray favicon in a corner
+     of a 500px-tall banner rather than as a mark belonging to the
+     title. */
+  height: 44px;
   width: auto;
-  border-radius: 7px;
+  border-radius: 10px;
 }
 /* Top right: the age rating, the same chip the home hero's carries. */
 .detail-banner-cert {
@@ -758,7 +761,7 @@
     gap: 10px;
   }
   .detail-banner-service {
-    height: 24px;
+    height: 32px;
   }
   .detail-banner-text .detail-logo {
     max-width: 70%;
