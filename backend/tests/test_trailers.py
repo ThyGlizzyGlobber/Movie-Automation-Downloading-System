@@ -3,6 +3,8 @@ performs a real download: yt_dlp.YoutubeDL is monkeypatched out in every
 test, either simulating a successful download (by writing the expected
 dest file) or a failure."""
 
+import os
+
 import pytest
 
 from app import config, trailers
@@ -130,6 +132,41 @@ def test_ensure_downloaded_returns_none_when_download_silently_produces_no_file(
     result = trailers.ensure_downloaded("movie", 693134, "abc123")
 
     assert result is None
+
+
+def test_a_cache_hit_counts_as_use(_cache_dir):
+    """Retention reads mtime, so a hit has to move it or the cache is a
+    queue rather than an LRU."""
+    _cache_dir.mkdir(parents=True)
+    path = _cache_dir / "movie-1-key.mp4"
+    path.write_bytes(b"x")
+    os.utime(path, (1, 1))
+
+    returned = trailers.ensure_downloaded("movie", 1, "key")
+
+    assert returned == path
+    assert path.stat().st_mtime > 1
+
+
+def test_retention_keeps_what_is_watched_over_what_is_new(_cache_dir, monkeypatch):
+    """The point of the whole thing: a trailer downloaded long ago but
+    watched a minute ago outlives one downloaded today and never opened.
+    Under the old behaviour the old one went, and the content page paid
+    for the download a second time."""
+    monkeypatch.setattr(config, "TRAILER_CACHE_MAX_FILES", 1)
+    _cache_dir.mkdir(parents=True)
+    watched = _cache_dir / "movie-1-old-but-loved.mp4"
+    ignored = _cache_dir / "movie-2-new-but-unloved.mp4"
+    watched.write_bytes(b"x")
+    ignored.write_bytes(b"x")
+    os.utime(watched, (1_000, 1_000))      # downloaded long ago
+    os.utime(ignored, (2_000, 2_000))      # downloaded recently
+
+    trailers.resolve("movie", 1, [{"key": "old-but-loved"}])  # watched now
+    trailers.enforce_cache_retention()
+
+    assert watched.exists()
+    assert not ignored.exists()
 
 
 def test_enforce_cache_retention_evicts_oldest_beyond_max(_cache_dir, monkeypatch):

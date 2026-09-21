@@ -496,13 +496,17 @@ TRAILER_CACHE_DIR = Path(os.environ.get("TRAILER_CACHE_DIR", Path(__file__).reso
 # server does, having no nginx in front of it at all.
 TRAILER_X_ACCEL_PREFIX = os.environ.get("TRAILER_X_ACCEL_PREFIX", "").strip()
 
-# Most-recently-used trailer files to keep on disk; enforce_downloaded()
-# evicts the oldest beyond this on every new download.
+# Most-recently-used trailer files to keep on disk; the least recently
+# used beyond this are evicted on every new download. Measured at ~21MB
+# for a minute of 1080p, so 150 is roughly 3GB — the point of the number
+# being high is that re-downloading a trailer costs a visible wait on
+# the content page, and falling out of this cache is the only way that
+# wait happens twice for the same title.
 # Every hero slide carries a trailer now, not just the front two, and
 # three pages have a hero (home, movies, tv), so a single pass over the
 # app can touch fifteen distinct titles. At 20 the cache evicted titles
 # that were still on screen and re-downloaded them on the next loop.
-TRAILER_CACHE_MAX_FILES = int(os.environ.get("TRAILER_CACHE_MAX_FILES", "60"))
+TRAILER_CACHE_MAX_FILES = int(os.environ.get("TRAILER_CACHE_MAX_FILES", "150"))
 
 TRAILER_DOWNLOAD_TIMEOUT_SECONDS = int(os.environ.get("TRAILER_DOWNLOAD_TIMEOUT_SECONDS", "45"))
 

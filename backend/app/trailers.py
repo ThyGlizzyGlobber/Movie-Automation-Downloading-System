@@ -10,6 +10,7 @@ sandbox.
 
 import concurrent.futures
 import logging
+import os
 from pathlib import Path
 
 import yt_dlp
@@ -17,6 +18,26 @@ import yt_dlp
 from app import config
 
 logger = logging.getLogger("app.trailers")
+
+
+def _mark_used(path: Path) -> Path:
+    """Stamp a cache hit onto the file's mtime.
+
+    Retention sorts by mtime, so what that timestamp records decides
+    what the cache actually is. Set once at download and never touched,
+    it made this a queue: a trailer rewatched every week was evicted on
+    the same schedule as one seen once and forgotten, and then cost the
+    content page another download to get back. Touched on every hit, the
+    same sort becomes least-recently-used and the ones being watched
+    stay.
+
+    Best effort — a cache that cannot be reordered is still a cache, and
+    a read-only moment here should never turn into a failed request."""
+    try:
+        os.utime(path, None)
+    except OSError:
+        logger.debug("couldn't mark trailer as used: %s", path, exc_info=True)
+    return path
 
 
 def cached_trailer_path(media_type: str, tmdb_id: int, key: str) -> Path:
@@ -38,7 +59,7 @@ def ensure_downloaded(media_type: str, tmdb_id: int, key: str) -> Path | None:
     """
     dest = cached_trailer_path(media_type, tmdb_id, key)
     if dest.exists():
-        return dest
+        return _mark_used(dest)
 
     config.TRAILER_CACHE_DIR.mkdir(parents=True, exist_ok=True)
     ydl_opts = {
@@ -82,6 +103,10 @@ def ensure_downloaded(media_type: str, tmdb_id: int, key: str) -> Path | None:
 
 
 def enforce_cache_retention() -> None:
+    """Drop the least recently used files beyond the cap.
+
+    Least recently *used*, not oldest downloaded — see _mark_used for why
+    the distinction matters and what keeps the mtimes honest."""
     if not config.TRAILER_CACHE_DIR.is_dir():
         return
     files = sorted(config.TRAILER_CACHE_DIR.glob("*.mp4"), key=lambda p: p.stat().st_mtime)
@@ -150,7 +175,7 @@ def resolve(media_type: str, tmdb_id: int, candidates: list[dict]) -> Path | Non
     for video in candidates:
         cached = cached_trailer_path(media_type, tmdb_id, video["key"])
         if cached.exists():
-            return cached
+            return _mark_used(cached)
     key = pick_shortest_suitable(candidates)
     if key is None:
         return None
