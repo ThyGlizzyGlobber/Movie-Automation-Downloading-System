@@ -118,7 +118,14 @@ from app.pipeline_settings import resolve_pipeline_settings
 from app.qbt import QBTClient, QBTError
 from app.resolve import resolve
 from app.tmdb import TMDBClient, TMDBError
-from app.tv_resolve import ShowIdentity, aired_episode_numbers, episode_title_lookup, resolve_show, season_is_complete
+from app.tv_resolve import (
+    ShowIdentity,
+    aired_episode_numbers,
+    episode_placement_lookup,
+    episode_title_lookup,
+    resolve_show,
+    season_is_complete,
+)
 from app.tvmaze import TVMazeClient, season_airstamps
 from app.tv_settings import TVScheduleSettings, resolve_tv_settings
 
@@ -793,10 +800,11 @@ class Worker:
             # One lookup for the whole pack: it caches per season, so a
             # season pack costs one TMDB call and a complete-series pack
             # one per season it turns out to contain — none for a season
-            # it doesn't.
-            title_for = episode_title_lookup(row.tmdb_id, self.tmdb)
+            # it doesn't. It also decides where a file goes, not just
+            # what it is called; see episode_placement_lookup.
+            place = episode_placement_lookup(row.tmdb_id, self.tmdb, identity.title)
             placed = await asyncio.to_thread(
-                organize_pack, identity, torrent_hash, self.qbt, release_name, title_for
+                organize_pack, identity, torrent_hash, self.qbt, release_name, place
             )
         except NoVideoFileError:
             message = await self._purge_no_video_torrent(torrent_hash, label)

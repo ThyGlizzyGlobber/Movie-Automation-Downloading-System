@@ -8,7 +8,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta, timezone
 
-from app.normalize import generate_variants
+from app.normalize import generate_variants, token_overlap, tokenize
 from app.tmdb import TMDBClient
 
 logger = logging.getLogger("app.tv_resolve")
@@ -270,9 +270,136 @@ def resolve_show(tmdb_id: int, client: TMDBClient) -> ShowIdentity:
     )
 
 
+# Words that say nothing about *which* special a file is — they turn up
+# in half of TMDB's special names and in most release filenames, so
+# counting them as evidence would make everything match everything.
+_UNINFORMATIVE = frozenset(
+    {"the", "a", "an", "of", "and", "part", "special", "specials", "episode", "extra", "extras", "bonus"}
+)
+
+# A release's runtime never matches TMDB's exactly — ad breaks removed,
+# a different cut, PAL speedup — so this only ever ranks candidates, and
+# anything outside it simply stops being a tiebreak rather than being
+# rejected.
+_RUNTIME_TOLERANCE = 0.25
+
+
+def _first_air_date(episodes: list[dict]) -> str | None:
+    dates = sorted(e["air_date"] for e in episodes if e.get("air_date"))
+    return dates[0] if dates else None
+
+
+def _specials_in_window(cache: "_SeasonCache", season: int) -> list[dict]:
+    """The specials that belong to this season's stretch of the show:
+    everything in season 0 that aired after this season started and
+    before the next one did.
+
+    This is the step that makes the rest tractable. Doctor Who has 199
+    specials; three of them aired in the year season 4 did. Without it,
+    every later signal is picking out of a list nobody could pick out
+    of, and position is meaningless.
+
+    Season 1 has no lower bound, so a special that aired before the show
+    premiered still belongs to it. A season with no next season has no
+    upper bound. When air dates are missing on both sides the window
+    cannot be drawn and every special stays a candidate — narrowing on
+    absent data would be inventing it."""
+    specials = [e for e in cache.raw(0) if e.get("episode_number") is not None]
+    if not specials:
+        return []
+    start = _first_air_date(cache.raw(season)) if season > 1 else None
+    nxt = _first_air_date(cache.raw(season + 1))
+    if start is None and nxt is None:
+        return specials
+    windowed = [
+        e
+        for e in specials
+        if e.get("air_date")
+        and (start is None or e["air_date"] >= start)
+        and (nxt is None or e["air_date"] < nxt)
+    ]
+    return windowed or specials
+
+
+def _name_score(stem: str, special: dict, ignore: frozenset[str] = _UNINFORMATIVE) -> int:
+    """How many informative words the filename and the special's title
+    share. `Invincible.S01E09.Atom.Eve.1080p` against "PRESENTING ATOM
+    EVE SPECIAL EPISODE" scores 2 — atom, eve — while "special" and
+    "episode" are ignored on both sides.
+
+    `ignore` carries the show's own name as well, and it has to. Every
+    release filename leads with the show's title and plenty of specials
+    repeat it, so counting those words scored
+    "Doctor.Who.S04E14.The.Next.Doctor" equally against "The Next
+    Doctor", "Doctor Who at the Proms" and "Doctor Who at Comic-Con
+    2009" — a three-way tie on the word "doctor", which then fell
+    through to position and picked the wrong one. Discounted, only
+    "next" is left, and it points at exactly one of them."""
+    name = special.get("name") or ""
+    if not name or not stem:
+        return 0
+    shared = token_overlap(stem, name) - ignore
+    return len(shared)
+
+
+def _runtime_score(minutes: float | None, special: dict) -> float | None:
+    """How close the file's own runtime is to TMDB's, as a fraction —
+    lower is better. None when either side has no runtime, or when they
+    are too far apart to mean anything."""
+    listed = special.get("runtime")
+    if not minutes or not listed:
+        return None
+    drift = abs(minutes - listed) / listed
+    return drift if drift <= _RUNTIME_TOLERANCE else None
+
+
+def _sole_best(scored: list[tuple[float, dict]]) -> dict | None:
+    """The single best candidate, or None if the top two tie. A tie is
+    not a decision, and pretending otherwise is how the wrong special
+    gets picked confidently."""
+    if not scored:
+        return None
+    ordered = sorted(scored, key=lambda pair: pair[0])
+    if len(ordered) > 1 and ordered[0][0] == ordered[1][0]:
+        return None
+    return ordered[0][1]
+
+
+class _SeasonCache:
+    """One show's seasons, fetched from TMDB at most once each.
+
+    A season TMDB cannot answer for caches as empty rather than raising.
+    That distinction matters downstream: "this season has no episodes we
+    know of" must never be read as "every episode in it is out of
+    range", or an API outage would sweep a whole pack into Specials."""
+
+    def __init__(self, tmdb_id: int, tmdb: TMDBClient):
+        self._tmdb_id = tmdb_id
+        self._tmdb = tmdb
+        self._seasons: dict[int, list[dict]] = {}
+
+    def raw(self, season: int) -> list[dict]:
+        if season not in self._seasons:
+            try:
+                self._seasons[season] = self._tmdb.get_tv_season(self._tmdb_id, season)
+            except Exception:
+                logger.info("episode data unavailable for tmdb_id=%s season=%s", self._tmdb_id, season)
+                self._seasons[season] = []
+        return self._seasons[season]
+
+    def episodes(self, season: int) -> dict[int, str]:
+        return {
+            e["episode_number"]: e.get("name") or ""
+            for e in self.raw(season)
+            if e.get("episode_number") is not None
+        }
+
+    def title(self, season: int, episode: int) -> str | None:
+        return self.episodes(season).get(episode) or None
+
+
 def episode_title_lookup(tmdb_id: int, tmdb: TMDBClient) -> Callable[[int, int], str | None]:
-    """A `(season, episode) -> title` lookup for one show, fetching each
-    season from TMDB at most once.
+    """A `(season, episode) -> title` lookup for one show.
 
     The titles come from TMDB rather than the release's own filenames,
     which is a deliberate choice and not just the easier one. A release
@@ -287,20 +414,159 @@ def episode_title_lookup(tmdb_id: int, tmdb: TMDBClient) -> Callable[[int, int],
     episode, a season it doesn't have, or the API being down — and
     build_episode_path then keeps the bare SxxEyy filename. A missing
     title is cosmetic; failing an organize over one would not be."""
-    cache: dict[int, dict[int, str]] = {}
+    cache = _SeasonCache(tmdb_id, tmdb)
+    return cache.title
 
-    def title_for(season: int, episode: int) -> str | None:
-        if season not in cache:
-            try:
-                episodes = tmdb.get_tv_season(tmdb_id, season)
-            except Exception:
-                logger.info("episode titles unavailable for tmdb_id=%s season=%s", tmdb_id, season)
-                episodes = []
-            cache[season] = {
-                e["episode_number"]: e.get("name") or ""
-                for e in episodes
-                if e.get("episode_number") is not None
-            }
-        return cache[season].get(episode) or None
 
-    return title_for
+def _pick_special(
+    candidates: list[dict],
+    stem: str,
+    get_duration: "Callable[[], float | None] | None",
+    offset: int,
+    ignore: frozenset[str] = _UNINFORMATIVE,
+) -> tuple[dict | None, str]:
+    """Which special a file is, out of the ones that could belong to
+    this season — by name if the filename says, by runtime if it
+    doesn't, by position if nothing else can tell them apart.
+
+    Ordered by how much each signal actually knows. A filename carrying
+    the title is direct evidence and beats everything. Runtime is
+    circumstantial but often decisive, since specials in one window tend
+    to differ wildly (Doctor Who's season-4 window holds a 7-minute
+    Proms segment and a 61-minute Christmas episode). Position knows
+    nothing except the order TMDB happens to list them in, so it goes
+    last and only because something has to.
+
+    A tie at any level is not a decision and falls through to the next
+    signal rather than picking the first of the tied — Rick and Morty's
+    thirty-seven specials are all listed at one minute, and several
+    share a name."""
+    if not candidates:
+        return None, "nothing"
+    if len(candidates) == 1:
+        return candidates[0], "being the only special in this season's window"
+
+    named = [(-_name_score(stem, c, ignore), c) for c in candidates if _name_score(stem, c, ignore)]
+    best = _sole_best(named)
+    if best is not None:
+        return best, "the title in its filename"
+
+    minutes = None
+    if get_duration is not None:
+        try:
+            minutes = get_duration()
+        except Exception:
+            logger.info("could not read a runtime for %r; falling back to position", stem)
+    if minutes:
+        timed = [(d, c) for c in candidates if (d := _runtime_score(minutes, c)) is not None]
+        best = _sole_best(timed)
+        if best is not None:
+            return best, f"runtime ({minutes:.0f}m)"
+
+    if 1 <= offset <= len(candidates):
+        return candidates[offset - 1], "position, nothing else being able to tell them apart"
+    return None, "nothing"
+
+
+def episode_placement_lookup(
+    tmdb_id: int, tmdb: TMDBClient, show_title: str = ""
+) -> Callable[..., tuple[int, int, str | None]]:
+    """`(season, episode) -> (season, episode, title)` for a pack, where
+    the season and episode coming back may not be the ones going in.
+
+    Packs carry whatever the uploader numbered them, and a common scene
+    habit is to append a special to the end of a season: Invincible's
+    Atom Eve special ships inside season-1 packs as S01E09, where TMDB
+    has it as S00E01 and season 1 stops at 8. Filed literally it lands
+    in Season 01 as an episode Plex's agent has never heard of — no
+    title, no artwork, no summary.
+
+    So an episode numbered past the end of its season is read as the
+    nth special: offset k = episode - (episodes TMDB lists for that
+    season), placed at season 0 episode k.
+
+    A pack holding more files than the season has episodes is holding
+    extras, whatever it numbered them — so every one past the end is
+    treated as a special, including offsets TMDB has no entry for. Those
+    are placed in Season 00 untitled rather than left in the season as a
+    phantom episode: unmatched either way, but sitting where a person
+    would look for it.
+
+    This is a positional guess and it is wrong on some shows. It is
+    right whenever the extras were appended in the same order TMDB lists
+    them, which is the usual case and is certain when there is only one.
+    It is wrong for a pack carrying, say, the third special alone — that
+    would be filed as the first. Chosen deliberately, with that
+    understood.
+
+    Two guards, because they cost nothing and one of them matters a lot:
+      - only for seasons 1 and up, so a special already numbered s00 is
+        left exactly as it is;
+      - only for a season that has finished airing, and only when TMDB
+        listed episodes for it at all. This is the important one. On a
+        season still going out, TMDB's episode count is a moving target
+        — a same-day release of episode 9 can easily arrive before TMDB
+        has episode 9 — and remapping on a stale count would file a
+        brand-new episode into Specials. An outage, which caches as an
+        empty season, is refused by the same check.
+    Every remap and every refusal is logged."""
+    cache = _SeasonCache(tmdb_id, tmdb)
+    ignore = _UNINFORMATIVE | set(tokenize(show_title))
+    # Season-0 numbers already handed out by this lookup. One lookup
+    # serves one pack, and two files in it must never be told they are
+    # the same special: they would build the same path, and the second
+    # would replace the first — a file silently lost out of a pack that
+    # organized "successfully". A pack carrying two extras where TMDB
+    # lists one special is exactly that case.
+    assigned: set[int] = set()
+
+    def place(
+        season: int,
+        episode: int,
+        stem: str = "",
+        get_duration: Callable[[], float | None] | None = None,
+    ) -> tuple[int, int, str | None]:
+        known = cache.episodes(season)
+        if season < 1 or not known or episode in known:
+            return season, episode, cache.title(season, episode)
+
+        if not season_is_complete(cache.raw(season)):
+            logger.warning(
+                "tmdb_id=%s: s%02de%02d is past the %d episodes TMDB lists for season %d, but that season is "
+                "still airing — leaving it alone rather than risking filing a new episode as a special",
+                tmdb_id, season, episode, max(known), season,
+            )
+            return season, episode, None
+
+        offset = episode - max(known)
+        candidates = [
+            c for c in _specials_in_window(cache, season) if c["episode_number"] not in assigned
+        ]
+        special, how = _pick_special(candidates, stem, get_duration, offset, frozenset(ignore))
+        if special is None:
+            # Still out of the season — an extra is an extra whether or
+            # not TMDB lists one to pin it to — but at the first season-0
+            # number nothing else has claimed, so two unpinnable extras
+            # cannot land on one path.
+            number = offset
+            while number in assigned or number in cache.episodes(0):
+                number += 1
+            assigned.add(number)
+            logger.info(
+                "tmdb_id=%s: s%02de%02d is past the end of season %d — no unclaimed special on TMDB to pin "
+                "it to, filing it as s00e%02d untitled",
+                tmdb_id, season, episode, season, number,
+            )
+            return 0, number, None
+
+        assigned.add(special["episode_number"])
+
+        logger.info(
+            "tmdb_id=%s: s%02de%02d is past the end of season %d (%d episodes) — filing it as s00e%02d %r, "
+            "matched by %s out of %d special(s) in this season's window",
+            tmdb_id, season, episode, season, max(known),
+            special["episode_number"], special.get("name"), how, len(candidates),
+        )
+        return 0, special["episode_number"], special.get("name") or None
+
+    return place

@@ -894,7 +894,7 @@ def test_organize_pack_names_each_file_from_the_lookup(tmp_path, monkeypatch):
     )
     titles = {(1, 1): "Sonnie's Edge", (1, 2): None}
 
-    placed = organize_pack(LANTERNS, "abc123", qbt, None, lambda s, e: titles.get((s, e)))
+    placed = organize_pack(LANTERNS, "abc123", qbt, None, lambda s, e, *_: (s, e, titles.get((s, e))))
 
     names = sorted(p.name for _, _, p in placed)
     # The one TMDB has no name for keeps the bare shape rather than
@@ -902,3 +902,31 @@ def test_organize_pack_names_each_file_from_the_lookup(tmp_path, monkeypatch):
     # The apostrophe survives — _sanitize only strips what a filesystem
     # or an SMB client actually objects to.
     assert names == ["Lanterns - s01e01 - Sonnie's Edge.mkv", "Lanterns - s01e02.mkv"]
+
+
+def test_organize_pack_files_an_appended_special_into_season_00(tmp_path, monkeypatch):
+    """The Invincible shape: a season-1 pack carrying the Atom Eve
+    special as S01E09, where TMDB has season 1 stopping at 8 and the
+    special at S00E01. Filed literally it is an episode Plex has never
+    heard of; the placement lookup moves it."""
+    monkeypatch.setattr(config, "TV_LIBRARY_ROOT", tmp_path / "library")
+    downloads = tmp_path / "downloads"
+    downloads.mkdir(parents=True)
+    for n in (8, 9):
+        (downloads / f"Lanterns.S01E{n:02d}.mkv").write_bytes(b"x")
+    qbt = FakeQBTClient(
+        str(downloads),
+        [{"name": f"Lanterns.S01E{n:02d}.mkv", "size": 1} for n in (8, 9)],
+    )
+    placement = {(1, 8): (1, 8, "The Last One"), (1, 9): (0, 1, "The Special")}
+
+    placed = organize_pack(LANTERNS, "abc123", qbt, None, lambda s, e, *_: placement[(s, e)])
+
+    by_key = {(s, e): p for s, e, p in placed}
+    assert by_key[(1, 8)].parent.name == "Season 01"
+    special = by_key[(0, 1)]
+    assert special.parent.name == "Season 00"
+    assert special.name == "Lanterns - s00e01 - The Special.mkv"
+    # The tuple reports where the file went, not what the release called
+    # it — the caller's ledger has to record the real place.
+    assert (1, 9) not in by_key

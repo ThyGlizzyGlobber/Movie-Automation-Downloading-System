@@ -211,6 +211,34 @@ def episode_title_suffix(title: str | None) -> str:
     return f" - {cleaned[:_MAX_EPISODE_TITLE].strip()}"
 
 
+def probe_duration_minutes(path: Path) -> float | None:
+    """The file's own runtime in minutes, or None if ffprobe can't say.
+
+    Used only to tell two candidate specials apart, so a failure here
+    costs a tiebreak and nothing else — never an organize. Deliberately
+    a second, narrower ffprobe than the artwork check: that one runs on
+    every file at link time, this one only on the handful an episode
+    number could not place on its own."""
+    try:
+        result = subprocess.run(
+            [
+                "ffprobe",
+                "-v", "error",
+                "-show_entries", "format=duration",
+                "-of", "default=noprint_wrappers=1:nokey=1",
+                str(path),
+            ],
+            capture_output=True,
+            text=True,
+            timeout=30,
+            check=True,
+        )
+        return float(result.stdout.strip()) / 60
+    except (OSError, ValueError, subprocess.SubprocessError) as exc:
+        logger.info("ffprobe gave no duration for %r (%s)", str(path), exc)
+        return None
+
+
 def build_episode_path(
     show_identity: ShowIdentity, season: int, episode: int, ext: str, title: str | None = None
 ) -> Path:
@@ -479,7 +507,7 @@ def organize_pack(
     torrent_hash: str | None,
     qbt: QBTClient,
     release_name: str | None = None,
-    title_for: Callable[[int, int], str | None] | None = None,
+    place: Callable[[int, int], tuple[int, int, str | None]] | None = None,
 ) -> list[tuple[int, int, Path]]:
     """Stage 13: places every individually SxxEyy-identifiable file out of a
     completed season/complete-series pack torrent — an extension of
@@ -505,7 +533,10 @@ def organize_pack(
     same as `select_video_file`'s own single-episode equivalent.
 
     Returns one `(season, episode, target_path)` tuple per file actually
-    placed; the caller (worker.py) is what maps this back onto per-episode
+    placed — the season and episode being where the file *went*, which
+    `place` may have moved (a special appended to a season lands in
+    Season 00), so the caller's ledger records where it is rather than
+    what the release called it; the caller (worker.py) is what maps this back onto per-episode
     `requests` rows and Stage 12's `show_episodes` dedup ledger — this
     function only ever touches the filesystem, never the database."""
     entries, source_desc = _pack_entries(torrent_hash, qbt, release_name)
@@ -521,11 +552,25 @@ def organize_pack(
             logger.info("organize_pack: skipping %r — no recognizable episode token", name)
             continue
         season, episode = identity_pair
-        # A callable rather than a dict of titles: which seasons a pack
+        # A callable rather than prepared data: which seasons a pack
         # actually carries is only known here, file by file — a complete-
         # series pack would otherwise have to be pre-fetched season by
         # season on the chance it needed them. The caller memoises.
-        title = title_for(season, episode) if title_for else None
+        #
+        # It can move a file as well as name one. A pack that appends a
+        # special to the end of a season (Invincible's Atom Eve ships as
+        # S01E09, where TMDB has S00E01 and season 1 stops at 8) is
+        # re-placed into Season 00 — see tv_resolve.episode_placement_lookup,
+        # which owns that judgement and the TMDB data behind it.
+        title: str | None = None
+        if place:
+            # The stem and a *lazy* duration: place() only reaches for
+            # the runtime when the filename couldn't settle which
+            # special a file is, so the extra ffprobe is paid on the odd
+            # out-of-range file rather than on all twenty in a pack.
+            season, episode, title = place(
+                season, episode, path.stem, lambda p=source_path: probe_duration_minutes(p)
+            )
         target = build_episode_path(show_identity, season, episode, source_path.suffix, title)
         target.parent.mkdir(parents=True, exist_ok=True)
         _link_or_copy(source_path, target)

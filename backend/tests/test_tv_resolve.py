@@ -5,6 +5,7 @@ from app.tv_resolve import (
     aired_cutoff_date,
     episode_is_released,
     aired_episode_numbers,
+    episode_placement_lookup,
     episode_query,
     resolve_show,
     season_is_complete,
@@ -410,3 +411,175 @@ def test_season_is_complete_uses_airstamps_too():
 
     assert season_is_complete(episodes, now=now, buffer_hours=15, airstamps=airstamps) is False
     assert season_is_complete(episodes, now=now, buffer_hours=15) is True  # date rule alone: wrongly "done"
+
+
+# ---------------------------------------------------------------------------
+# episode_placement_lookup — packs number specials as extra episodes at
+# the end of a season; TMDB keeps them in season 0.
+# ---------------------------------------------------------------------------
+
+
+class _FakeSeasons:
+    """Only get_tv_season is used. Aired dates are in the past unless a
+    season is given an unaired episode explicitly."""
+
+    def __init__(self, seasons, fail_on=()):
+        self._seasons = seasons
+        self._fail_on = set(fail_on)
+        self.calls: list[int] = []
+
+    def get_tv_season(self, tmdb_id, season_number):
+        self.calls.append(season_number)
+        if season_number in self._fail_on:
+            raise RuntimeError("tmdb down")
+        return self._seasons.get(season_number, [])
+
+
+def _eps(names, air_date="2020-01-01"):
+    return [
+        {"episode_number": i, "name": n, "air_date": air_date}
+        for i, n in enumerate(names, start=1)
+    ]
+
+
+def test_placement_leaves_a_real_episode_alone():
+    tmdb = _FakeSeasons({1: _eps(["One", "Two"])})
+    assert episode_placement_lookup(7, tmdb)(1, 2) == (1, 2, "Two")
+
+
+def test_placement_moves_an_appended_special_into_season_zero():
+    tmdb = _FakeSeasons({0: _eps(["The Special"]), 1: _eps(["One", "Two"])})
+    assert episode_placement_lookup(7, tmdb)(1, 3) == (0, 1, "The Special")
+
+
+def test_placement_treats_every_extra_as_a_special_even_untitled():
+    """A pack with more files than the season has episodes is carrying
+    extras whatever TMDB lists, so the second one goes to Season 00 too
+    — untitled rather than left as a phantom episode."""
+    tmdb = _FakeSeasons({0: _eps(["The Special"]), 1: _eps(["One", "Two"])})
+    place = episode_placement_lookup(7, tmdb)
+    place(1, 3)  # claims the one special TMDB lists
+    assert place(1, 4) == (0, 2, None)
+
+
+def test_placement_never_gives_two_files_the_same_special():
+    """Two extras against one listed special must not build one path —
+    the second file would replace the first and vanish out of a pack
+    that organized "successfully"."""
+    tmdb = _FakeSeasons({0: _eps(["The Special"]), 1: _eps(["One", "Two"])})
+    place = episode_placement_lookup(7, tmdb)
+    first = place(1, 3, "Show.S01E03")
+    second = place(1, 4, "Show.S01E04")
+    assert first[:2] != second[:2]
+
+
+def test_placement_picks_the_special_named_in_the_filename():
+    tmdb = _FakeSeasons(
+        {
+            0: [
+                {"episode_number": 1, "name": "Behind the Scenes", "air_date": "2020-06-01", "runtime": 10},
+                {"episode_number": 2, "name": "The Winter Ball", "air_date": "2020-06-02", "runtime": 60},
+            ],
+            1: _eps(["One", "Two"]),
+        }
+    )
+    place = episode_placement_lookup(7, tmdb, "Show")
+    assert place(1, 3, "Show.S01E03.The.Winter.Ball.1080p") == (0, 2, "The Winter Ball")
+
+
+def test_placement_ignores_the_shows_own_name_when_matching():
+    """Every filename leads with the show's title and plenty of specials
+    repeat it, so counting those words ties everything against
+    everything — the real Doctor Who case."""
+    tmdb = _FakeSeasons(
+        {
+            0: [
+                {"episode_number": 1, "name": "Doctor Who at the Proms", "air_date": "2020-06-01", "runtime": 7},
+                {"episode_number": 2, "name": "The Next Doctor", "air_date": "2020-06-02", "runtime": 60},
+            ],
+            1: _eps(["One", "Two"]),
+        }
+    )
+    place = episode_placement_lookup(7, tmdb, "Doctor Who")
+    assert place(1, 3, "Doctor.Who.S01E03.The.Next.Doctor.1080p") == (0, 2, "The Next Doctor")
+
+
+def test_placement_falls_back_to_runtime_when_the_filename_says_nothing():
+    tmdb = _FakeSeasons(
+        {
+            0: [
+                {"episode_number": 1, "name": "Short One", "air_date": "2020-06-01", "runtime": 7},
+                {"episode_number": 2, "name": "Long One", "air_date": "2020-06-02", "runtime": 60},
+            ],
+            1: _eps(["One", "Two"]),
+        }
+    )
+    place = episode_placement_lookup(7, tmdb, "Show")
+    assert place(1, 3, "Show.S01E03.1080p", lambda: 58.0) == (0, 2, "Long One")
+    assert place(1, 4, "Show.S01E04.1080p", lambda: 7.5) == (0, 1, "Short One")
+
+
+def test_placement_ignores_a_runtime_nowhere_near_either_candidate():
+    """Out of tolerance stops being a tiebreak rather than rejecting a
+    candidate, so this falls through to position."""
+    tmdb = _FakeSeasons(
+        {
+            0: [
+                {"episode_number": 1, "name": "Short One", "air_date": "2020-06-01", "runtime": 7},
+                {"episode_number": 2, "name": "Long One", "air_date": "2020-06-02", "runtime": 60},
+            ],
+            1: _eps(["One", "Two"]),
+        }
+    )
+    place = episode_placement_lookup(7, tmdb, "Show")
+    assert place(1, 3, "Show.S01E03.1080p", lambda: 200.0) == (0, 1, "Short One")
+
+
+def test_placement_windows_specials_to_the_season_they_belong_to():
+    """A special that aired during season 2 is not a candidate for a
+    season 1 pack — the narrowing that makes everything after it
+    tractable."""
+    tmdb = _FakeSeasons(
+        {
+            0: [
+                {"episode_number": 1, "name": "S1 Extra", "air_date": "2020-03-01", "runtime": 30},
+                {"episode_number": 2, "name": "S2 Extra", "air_date": "2022-03-01", "runtime": 30},
+            ],
+            1: _eps(["One", "Two"], air_date="2020-01-01"),
+            2: _eps(["One", "Two"], air_date="2022-01-01"),
+        }
+    )
+    place = episode_placement_lookup(7, tmdb, "Show")
+    assert place(1, 3, "Show.S01E03.1080p") == (0, 1, "S1 Extra")
+
+
+def test_placement_leaves_season_zero_numbering_untouched():
+    tmdb = _FakeSeasons({0: _eps(["The Special"])})
+    assert episode_placement_lookup(7, tmdb)(0, 1) == (0, 1, "The Special")
+
+
+def test_placement_refuses_while_the_season_is_still_airing():
+    """The guard that matters: on an airing season TMDB's count is a
+    moving target, and a same-day release of the next episode would
+    otherwise be filed as a special."""
+    airing = _eps(["One", "Two"]) + [{"episode_number": 3, "name": "Three", "air_date": None}]
+    tmdb = _FakeSeasons({0: _eps(["The Special"]), 1: airing})
+    assert episode_placement_lookup(7, tmdb)(1, 4) == (1, 4, None)
+
+
+def test_placement_refuses_when_tmdb_cannot_answer():
+    """An outage caches as an empty season; that must not read as
+    "every episode is out of range"."""
+    tmdb = _FakeSeasons({0: _eps(["The Special"])}, fail_on=(1,))
+    assert episode_placement_lookup(7, tmdb)(1, 9) == (1, 9, None)
+
+
+def test_placement_fetches_each_season_at_most_once():
+    tmdb = _FakeSeasons({0: _eps(["The Special"]), 1: _eps(["One", "Two"])})
+    place = episode_placement_lookup(7, tmdb)
+    for episode in (1, 2, 3, 4):
+        place(1, episode)
+    # Season 2 as well now: the window needs to know where season 1
+    # stops and the next one starts.
+    assert sorted(set(tmdb.calls)) == [0, 1, 2]
+    assert tmdb.calls.count(1) == 1
