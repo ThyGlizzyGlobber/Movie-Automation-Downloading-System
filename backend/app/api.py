@@ -36,6 +36,7 @@ from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
 
 from app import config, trailers
+from app.cache import ttl_cache
 from app.db import RequestRow, RequestStore, SessionRow, ShowRow
 from app.deploy import DeployError, run_git_pull
 from app.logging_config import configure_logging
@@ -697,6 +698,107 @@ def discover_trending(
         raise HTTPException(status_code=502, detail=str(exc)) from exc
     data["results"] = _annotate_on_plex(data.get("results", []), "movie", store, title_key="title", date_key="release_date")
     return data
+
+
+# ---------------------------------------------------------------------------
+# Landing-page hero slides.
+#
+# The carousel used to build these itself: fetch trending, then fire a
+# detail call *per slide* purely to learn the title logo, badge, cert,
+# length and genres, because TMDB's list endpoints carry none of those.
+# That put two round trips in front of the logo before its <img> could
+# even be created — the trending list, then the detail call — so the
+# artwork arrived about a second after everything around it, and the
+# whole thing repeated for every person on every page load. Folding it
+# into one cached call is what takes the logo off the critical path.
+#
+# Nothing here recomputes what the detail routes already work out: it
+# calls them, in parallel, and keeps the handful of fields a hero slide
+# actually shows. The badge/cert/length wording stays in the frontend's
+# homeHero.ts, the one place it has ever lived.
+# ---------------------------------------------------------------------------
+
+HERO_SLIDE_COUNT = 5
+# Matches the trending lists these are drawn from (POPULAR_DISCOVER_TTL_
+# SECONDS in tmdb.py) — no point holding slides longer than the list that
+# chose them. `on_plex` rides along inside each slide and is therefore up
+# to this stale, which is already true of the ~2-minute library snapshot
+# underneath it and is of no consequence to a hero.
+HERO_TTL_SECONDS = 300
+
+# Only what a slide renders. The detail payloads these come from carry
+# credits, recommendations and watch providers too — a hero showing five
+# of those would be megabytes for the sake of a logo and two lines.
+_HERO_COMMON = ("id", "overview", "backdrop_path", "poster_path", "logo_path", "genres", "is_coming_soon", "on_plex")
+_HERO_MOVIE_ONLY = ("title", "runtime", "release_date", "release_dates")
+_HERO_TV_ONLY = ("name", "content_ratings", "next_episode_to_air", "last_episode_to_air", "plex_complete")
+
+
+def _hero_slide(detail: dict, media_type: str) -> dict:
+    keys = _HERO_COMMON + (_HERO_MOVIE_ONLY if media_type == "movie" else _HERO_TV_ONLY)
+    slide = {k: detail.get(k) for k in keys}
+    slide["media_type"] = media_type
+    if media_type == "tv":
+        # Season numbers are all the "N seasons" line needs; the full
+        # objects carry an overview and poster art apiece.
+        slide["seasons"] = [{"season_number": se.get("season_number")} for se in detail.get("seasons") or []]
+    return slide
+
+
+def _hero_picks(kind: str, tmdb: TMDBClient) -> list[tuple[str, dict]]:
+    """(media_type, list item) for the slides, most popular first. A title
+    with no backdrop art can't be a hero, so that filter runs before the
+    count is taken rather than after."""
+    candidates: list[tuple[str, dict]] = []
+    if kind in ("home", "movies"):
+        candidates += [("movie", it) for it in tmdb.get_available_trending().get("results", [])]
+    if kind in ("home", "tv"):
+        candidates += [("tv", it) for it in tmdb.get_available_tv_trending().get("results", [])]
+    usable = [c for c in candidates if c[1].get("backdrop_path")]
+    usable.sort(key=lambda c: c[1].get("popularity") or 0, reverse=True)
+    return usable[:HERO_SLIDE_COUNT]
+
+
+@ttl_cache(HERO_TTL_SECONDS)
+def _hero_slides_cached(kind: str, store: RequestStore, tmdb: TMDBClient) -> list[dict]:
+    """Keyed on the kind plus the two singletons on app.state, so this
+    holds three entries rather than one per title — which matters,
+    because app.cache's TTLCache has no size bound and only drops an
+    entry when it is next read. A per-title cache here would grow
+    without end."""
+    picks = _hero_picks(kind, tmdb)
+    if not picks:
+        return []
+
+    def build(media_type: str, item: dict) -> dict | None:
+        try:
+            detail = (
+                get_movie_detail(item["id"], store, tmdb)
+                if media_type == "movie"
+                else get_tv_detail(item["id"], store, tmdb)
+            )
+        except Exception:
+            # One title TMDB won't answer for shouldn't cost the carousel
+            # its other four slides.
+            logger.warning("hero slide failed for %s %s", media_type, item.get("id"), exc_info=True)
+            return None
+        return _hero_slide(detail, media_type)
+
+    # In parallel: five sequential TMDB round trips is the very latency
+    # this endpoint exists to remove, and doing them one after another
+    # server-side would simply move it rather than fix it.
+    with concurrent.futures.ThreadPoolExecutor(max_workers=HERO_SLIDE_COUNT) as pool:
+        built = list(pool.map(lambda p: build(*p), picks))
+    return [s for s in built if s]
+
+
+@router.get("/api/hero")
+def hero_slides(kind: str = "home", store: RequestStore = Depends(get_store), tmdb: TMDBClient = Depends(get_tmdb)) -> list[dict]:
+    """`kind` picks which landing page's carousel this is: mixed
+    movies+TV for home, one or the other for the movies and TV pages."""
+    if kind not in ("home", "movies", "tv"):
+        raise HTTPException(status_code=422, detail="kind must be home, movies or tv")
+    return _hero_slides_cached(kind, store, tmdb)
 
 
 @router.get("/api/discover/providers")

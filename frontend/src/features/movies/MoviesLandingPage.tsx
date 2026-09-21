@@ -1,16 +1,14 @@
-import { useMemo } from 'react'
 import { useQueries, useQuery } from '@tanstack/react-query'
 import { getDiscoverByGenre, getDiscoverByProvider, getDiscoverPopular, getDiscoverTrending, getComingSoon } from '../../api/movies'
 import HeroCarousel from '../../components/HeroCarousel'
+import { getHeroSlides } from '../../api/hero'
 import MediaRow from '../../components/MediaRow'
 import ProviderChips from '../../components/ProviderChips'
 import ErrorState from '../../components/ErrorState'
 import { usePageTitle } from '../../lib/chrome'
 import { ROW_PROVIDERS } from '../../lib/providers'
-import { tagMediaType } from '../../lib/homeHero'
 import { browseHref } from '../../api/browse'
 
-const HERO_SLIDE_COUNT = 5
 
 // Curated, row-based — no Popular/Trending/Coming Soon tabs; each row's
 // title is the way to reach that one category's own full list
@@ -45,10 +43,8 @@ export default function MoviesLandingPage() {
     })),
   })
 
-  const heroItems = useMemo(
-    () => tagMediaType(trending.data?.results ?? [], 'movie').filter((it) => it.backdrop_path).slice(0, HERO_SLIDE_COUNT),
-    [trending.data],
-  )
+  // Enriched server-side in one call — see HomePage's own note.
+  const hero = useQuery({ queryKey: ['hero', 'movies'], queryFn: () => getHeroSlides('movies') })
 
   // Each section shows its own skeleton until its data arrives; the page
   // only gives way to an error once the main lists have all failed.
@@ -59,7 +55,7 @@ export default function MoviesLandingPage() {
 
   return (
     <>
-      <HeroCarousel items={heroItems} loading={trending.isLoading} />
+      <HeroCarousel items={hero.data ?? []} loading={hero.isLoading} />
       <MediaRow title="Trending" qualifier="movies" items={trending.data?.results ?? []} mediaType="movie" loading={trending.isLoading} expandHref={browseHref({ type: 'movie', sort: 'trending' })} />
       <MediaRow title="Popular" items={popular.data?.results ?? []} mediaType="movie" loading={popular.isLoading} expandHref={browseHref({ type: 'movie' })} />
       <MediaRow title="Coming" qualifier="soon" items={comingSoon.data?.results ?? []} mediaType="movie" loading={comingSoon.isLoading} expandHref={browseHref({ type: 'movie', list: 'coming-soon' })} />

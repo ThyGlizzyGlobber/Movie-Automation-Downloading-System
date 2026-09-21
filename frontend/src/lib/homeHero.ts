@@ -1,5 +1,25 @@
-import type { MovieDetail, TmdbListItem } from '../types/movies'
-import type { TvDetail } from '../types/tv'
+import type { MovieDetail, ReleaseDatesResult, TmdbListItem } from '../types/movies'
+import type { ContentRatingEntry, EpisodeToAir, TvDetail } from '../types/tv'
+
+// The hero's wording is derived from these few fields and nothing more,
+// so they are typed structurally rather than as whole detail objects: a
+// /api/hero slide carries exactly this much and no more (see
+// types/hero.ts), while a full MovieDetail/TvDetail still satisfies it,
+// so the detail pages keep calling these unchanged. This is what lets
+// the carousel stop fetching a detail per slide without any of the
+// wording below being duplicated server-side.
+type MovieBadgeSource = {
+  is_coming_soon?: boolean
+  release_date?: string | null
+  release_dates?: { results?: ReleaseDatesResult[] }
+}
+type MovieCertSource = { release_dates?: { results?: ReleaseDatesResult[] } }
+type TvBadgeSource = {
+  plex_complete?: boolean
+  next_episode_to_air?: EpisodeToAir | null
+  last_episode_to_air?: EpisodeToAir | null
+}
+type TvCertSource = { content_ratings?: { results?: ContentRatingEntry[] } }
 
 // Same region as the old app's own hero cert pill.
 const HERO_CERT_REGION = 'AU'
@@ -32,13 +52,13 @@ export function startOfToday(): Date {
 // says which day the next episode lands; one that dropped a whole
 // season at once (TMDB's "next" episode shares the last one's air date,
 // or has already aired) says every episode is out.
-export function tvHeroBadge(show: TvDetail): string | null {
+export function tvHeroBadge(show: TvBadgeSource): string | null {
   const badge = tvAiringBadge(show)
   // Every aired episode already on Plex: say so.
   return badge === 'All episodes available' && show.plex_complete ? 'All episodes available on Plex' : badge
 }
 
-function tvAiringBadge(show: TvDetail): string | null {
+function tvAiringBadge(show: TvBadgeSource): string | null {
   const next = show.next_episode_to_air
   const last = show.last_episode_to_air
   if (next?.air_date) {
@@ -60,7 +80,7 @@ function tvAiringBadge(show: TvDetail): string | null {
 
 // When a movie reached digital: the region's digital release, else any
 // region's, else the theatrical date as a last resort.
-export function digitalReleaseDate(movie: MovieDetail): string | null {
+export function digitalReleaseDate(movie: MovieBadgeSource): string | null {
   const results = movie.release_dates?.results ?? []
   const pick = (r: typeof results[number]) => r.release_dates.find((d) => d.type === 4 && d.release_date)?.release_date?.slice(0, 10) ?? null
   const local = results.find((r) => r.iso_3166_1 === HERO_CERT_REGION)
@@ -72,7 +92,7 @@ function daysSince(date: string | null | undefined): number | null {
   return (Date.now() - new Date(`${date}T00:00:00`).getTime()) / 86400000
 }
 
-export function movieHeroBadge(movie: MovieDetail): string | null {
+export function movieHeroBadge(movie: MovieBadgeSource): string | null {
   if (movie.is_coming_soon) return 'Coming soon'
   const age = daysSince(digitalReleaseDate(movie))
   if (age != null && age >= 0 && age <= 30) return 'Just dropped'
@@ -105,11 +125,11 @@ export function showPill(show: TvDetail): BannerPill | null {
   return null
 }
 
-export function tvCertOf(show: TvDetail): string {
+export function tvCertOf(show: TvCertSource): string {
   return show.content_ratings?.results?.find((r) => r.iso_3166_1 === HERO_CERT_REGION)?.rating ?? ''
 }
 
-export function movieCertOf(movie: MovieDetail): string {
+export function movieCertOf(movie: MovieCertSource): string {
   const entry = movie.release_dates?.results?.find((r) => r.iso_3166_1 === HERO_CERT_REGION)
   const withCert = entry?.release_dates.find((rd) => rd.certification)
   return withCert?.certification ?? ''

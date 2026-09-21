@@ -8,6 +8,7 @@ import {
 } from '../../api/movies'
 import { getTvDiscoverByGenre, getTvDiscoverPopular, getTvDiscoverTrending, listShows } from '../../api/tv'
 import HeroCarousel from '../../components/HeroCarousel'
+import { getHeroSlides } from '../../api/hero'
 import MediaRow from '../../components/MediaRow'
 import TopTenRow from '../../components/TopTenRow'
 import ContinueWatchingRow, { ContinueWatchingSkeleton } from '../../components/ContinueWatchingRow'
@@ -20,7 +21,6 @@ import { usePageTitle } from '../../lib/chrome'
 import { mixTrending, tagMediaType } from '../../lib/homeHero'
 import { browseHref } from '../../api/browse'
 
-const HERO_SLIDE_COUNT = 5
 
 // Same 5 named genres as the old app's own HOME_GENRES — each pairs a
 // label with both a movie and a TV genre id (they diverge, e.g. Sci-Fi
@@ -74,10 +74,12 @@ export default function HomePage() {
     () => mixTrending(movieTrending.data?.results ?? [], tvTrending.data?.results ?? []),
     [movieTrending.data, tvTrending.data],
   )
-  // A title with no backdrop art isn't usable as a hero slide — that
-  // filter runs first, then the top HERO_SLIDE_COUNT off the front of
-  // the same already-popularity-sorted list the row below uses.
-  const heroItems = useMemo(() => mixedTrending.filter((it) => it.backdrop_path).slice(0, HERO_SLIDE_COUNT), [mixedTrending])
+  // The hero's slides come from the server already carrying their logo,
+  // badge, certification, length and genres — see api.py's hero_slides.
+  // Picking them here from the trending list instead would mean the
+  // carousel fetching a detail per slide to learn any of that, which is
+  // what used to keep the title logos a round trip behind the page.
+  const hero = useQuery({ queryKey: ['hero', 'home'], queryFn: () => getHeroSlides('home') })
 
   // Sorted by most recently subscribed — see TvLandingPage's own note on
   // why the old app's richer "New In Watching" (sorted by most recently
@@ -151,7 +153,7 @@ export default function HomePage() {
 
   return (
     <>
-      <HeroCarousel items={heroItems} loading={trendingLoading} />
+      <HeroCarousel items={hero.data ?? []} loading={hero.isLoading} />
       {contentRows}
       <section className="row">
         <h2>

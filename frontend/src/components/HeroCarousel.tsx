@@ -1,9 +1,10 @@
-import { useEffect, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react'
-import { getMovie, getMovieTrailer } from '../api/movies'
-import { getTvShow, getTvTrailer } from '../api/tv'
+import { useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react'
+import { getMovieTrailer } from '../api/movies'
+import { getTvTrailer } from '../api/tv'
 import { backdropUrl, logoUrl, posterUrl } from '../lib/tmdbImage'
 import { yearOf } from '../lib/detailHelpers'
-import { movieHeroBadge, movieCertOf, tvHeroBadge, tvCertOf, type TaggedItem } from '../lib/homeHero'
+import { movieHeroBadge, movieCertOf, tvHeroBadge, tvCertOf } from '../lib/homeHero'
+import type { HeroSlide } from '../types/hero'
 import AmbientGlow from './AmbientGlow'
 import './HeroCarousel.css'
 import Icon from './Icon'
@@ -70,7 +71,7 @@ const HERO_SKELETON_DOTS = 5
 // here than on its own content page, where that layer lifts the ground
 // by around a fifth before the blobs contribute anything. The pane has
 // already loaded this exact URL, so it costs no fetch.
-function HeroGlow({ items, activeIndex }: { items: TaggedItem[]; activeIndex: number }) {
+function HeroGlow({ items, activeIndex }: { items: HeroSlide[]; activeIndex: number }) {
   const backdrops = items.map((item) => backdropUrl(item.backdrop_path))
   return (
     <div className="home-hero-glow" aria-hidden="true">
@@ -154,7 +155,7 @@ function HeroSkeleton() {
   )
 }
 
-export default function HeroCarousel({ items, loading = false }: { items: TaggedItem[]; loading?: boolean }) {
+export default function HeroCarousel({ items, loading = false }: { items: HeroSlide[]; loading?: boolean }) {
   // Phones get a different hero entirely (see HeroCarousel.css): portrait
   // key art in a card, with the meta line, synopsis and two stacked
   // buttons below it rather than overlaid on a scope frame.
@@ -168,7 +169,6 @@ export default function HeroCarousel({ items, loading = false }: { items: Tagged
   const [muted, setMuted] = useState(true)
   const [videoUrls, setVideoUrls] = useState<Record<number, string | null>>({})
   const [videoVisible, setVideoVisible] = useState<Record<number, boolean>>({})
-  const [enrichment, setEnrichment] = useState<Record<number, Enrichment>>({})
   const [scheduleTick, setScheduleTick] = useState(0)
   // While a trailer plays the blurb steps aside; it comes back when the
   // cursor is near the hero's text (Prime's behaviour).
@@ -208,42 +208,38 @@ export default function HeroCarousel({ items, loading = false }: { items: Tagged
     }
   }, [items, trailersEnabled])
 
-  // Per-slide status badge + age-rating pill — needs the full detail
-  // call (TMDB's list/trending items carry neither).
-  useEffect(() => {
-    let cancelled = false
-    items.forEach(async (item, i) => {
-      try {
-        let badge: string | null
-        let cert: string
-        let length: string
-        let genres: string
-        let logo: string | null
-        if (item.mediaType === 'tv') {
-          const detail = await getTvShow(item.id)
-          badge = tvHeroBadge(detail)
-          cert = tvCertOf(detail)
-          const seasons = (detail.seasons ?? []).filter((se) => se.season_number > 0).length
-          length = seasons ? `${seasons} season${seasons === 1 ? '' : 's'}` : ''
-          genres = (detail.genres ?? []).slice(0, 2).map((g) => g.name).join(' · ')
-          logo = logoUrl(detail.logo_path)
-        } else {
-          const detail = await getMovie(item.id)
-          badge = movieHeroBadge(detail)
-          cert = movieCertOf(detail)
-          length = movieLength(detail.runtime)
-          genres = (detail.genres ?? []).slice(0, 2).map((g) => g.name).join(' · ')
-          logo = logoUrl(detail.logo_path)
+  // Badge, certification, length and genre line for each slide. These
+  // used to arrive from a detail call per slide, fired here — which put
+  // two sequential round trips in front of the title logo, because its
+  // path only came back with that call and the <img> could not exist
+  // until it did. /api/hero now carries those fields with the slides
+  // themselves, so this is derivation rather than fetching, and the
+  // logo starts loading the moment the carousel has anything to show.
+  const enrichment = useMemo<Record<number, Enrichment>>(() => {
+    const out: Record<number, Enrichment> = {}
+    items.forEach((item, i) => {
+      const genres = (item.genres ?? []).slice(0, 2).map((g) => g.name).join(' · ')
+      const logo = logoUrl(item.logo_path)
+      if (item.mediaType === 'tv') {
+        const seasons = (item.seasons ?? []).filter((se) => se.season_number > 0).length
+        out[i] = {
+          badge: tvHeroBadge(item),
+          cert: tvCertOf(item),
+          length: seasons ? `${seasons} season${seasons === 1 ? '' : 's'}` : '',
+          genres,
+          logo,
         }
-        if (cancelled) return
-        setEnrichment((prev) => ({ ...prev, [i]: { badge, cert, length, genres, logo } }))
-      } catch {
-        // badge/cert just stay empty
+      } else {
+        out[i] = {
+          badge: movieHeroBadge(item),
+          cert: movieCertOf(item),
+          length: movieLength(item.runtime ?? null),
+          genres,
+          logo,
+        }
       }
     })
-    return () => {
-      cancelled = true
-    }
+    return out
   }, [items])
 
   // Reset mute to "on" every time the active slide changes — never

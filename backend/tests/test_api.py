@@ -2325,6 +2325,118 @@ def test_login_start_returns_auth_url(client_and_deps):
     assert "code=ABCD" in response.json()["auth_url"]
 
 
+# -- Landing-page hero slides --------------------------------------------
+
+
+def _hero_trending(tmdb, movie_pop=99, tv_pop=1):
+    """The shared MOVIE/SHOW fixtures carry no backdrop, and a title with
+    no backdrop can't be a hero — so give these ones one."""
+    api._hero_slides_cached.cache.clear()
+    tmdb.get_available_trending = lambda **kw: {"results": [dict(MOVIE, backdrop_path="/b.jpg", popularity=movie_pop)]}
+    tmdb.get_available_tv_trending = lambda **kw: {"results": [dict(SHOW, backdrop_path="/s.jpg", popularity=tv_pop)]}
+
+
+def test_hero_returns_slides_carrying_what_the_carousel_shows(client_and_deps):
+    """The point of this endpoint: the logo path and the fields the badge,
+    certification and length are built from arrive *with* the slides, so
+    the carousel doesn't have to fetch a detail per slide to learn them."""
+    client, _, tmdb, _, _, _ = client_and_deps
+    _hero_trending(tmdb)
+
+    response = client.get("/api/hero?kind=home")
+
+    assert response.status_code == 200
+    slides = response.json()
+    assert [s["media_type"] for s in slides] == ["movie", "tv"]
+    movie, show = slides
+    assert "logo_path" in movie and "logo_path" in show
+    assert {"runtime", "release_dates"} <= movie.keys()
+    assert {"content_ratings", "next_episode_to_air", "plex_complete"} <= show.keys()
+
+
+def test_hero_keeps_only_what_a_slide_renders(client_and_deps):
+    """Five full detail payloads would be megabytes of credits,
+    recommendations and watch providers for the sake of a logo."""
+    client, _, tmdb, _, _, _ = client_and_deps
+    _hero_trending(tmdb)
+
+    slides = client.get("/api/hero?kind=home").json()
+
+    for slide in slides:
+        assert not {"credits", "recommendations", "watch/providers"} & slide.keys()
+    # Season objects are trimmed to the number the length line counts.
+    for season in next(s for s in slides if s["media_type"] == "tv")["seasons"]:
+        assert list(season) == ["season_number"]
+
+
+def test_hero_kind_picks_one_medium_or_both(client_and_deps):
+    client, _, tmdb, _, _, _ = client_and_deps
+
+    _hero_trending(tmdb)
+    assert [s["media_type"] for s in client.get("/api/hero?kind=movies").json()] == ["movie"]
+    _hero_trending(tmdb)
+    assert [s["media_type"] for s in client.get("/api/hero?kind=tv").json()] == ["tv"]
+
+
+def test_hero_orders_by_popularity_not_by_medium(client_and_deps):
+    """Home mixes both into one list — a show more popular than the
+    film leads, rather than every movie preceding every show."""
+    client, _, tmdb, _, _, _ = client_and_deps
+    _hero_trending(tmdb, movie_pop=1, tv_pop=99)
+
+    assert [s["media_type"] for s in client.get("/api/hero?kind=home").json()] == ["tv", "movie"]
+
+
+def test_hero_is_cached_rather_than_rebuilt_per_viewer(client_and_deps):
+    """The whole endpoint is one cache entry per kind. Without that, every
+    person loading the home page would set off a detail call per slide —
+    the cost this endpoint exists to stop paying."""
+    client, _, tmdb, _, _, _ = client_and_deps
+    _hero_trending(tmdb)
+    calls = {"n": 0}
+    original = tmdb.get_movie
+
+    def counted(tmdb_id):
+        calls["n"] += 1
+        return original(tmdb_id)
+
+    tmdb.get_movie = counted
+
+    client.get("/api/hero?kind=home")
+    after_first = calls["n"]
+    client.get("/api/hero?kind=home")
+
+    assert after_first >= 1
+    assert calls["n"] == after_first
+
+
+def test_hero_rejects_an_unknown_kind(client_and_deps):
+    client, _, _, _, _, _ = client_and_deps
+
+    assert client.get("/api/hero?kind=everything").status_code == 422
+
+
+def test_hero_survives_a_title_tmdb_wont_answer_for(client_and_deps):
+    """One bad slide shouldn't cost the carousel the others."""
+    client, _, tmdb, _, _, _ = client_and_deps
+    _hero_trending(tmdb)
+
+    def unanswerable(tmdb_id):
+        from app.tmdb import TMDBError
+
+        raise TMDBError("not found")
+
+    # Overridden directly rather than via _raise_on_get_movie, which the
+    # fake also honours in get_tv — that would break both slides and
+    # prove nothing about one bad one among good ones.
+    tmdb.get_movie = unanswerable
+
+    response = client.get("/api/hero?kind=home")
+
+    assert response.status_code == 200
+    assert [s["media_type"] for s in response.json()] == ["tv"]
+
+
 def test_login_start_forwards_back_to_the_browsers_own_origin(client_and_deps):
     """plex.tv returns the browser here once the PIN is authorised, so
     the sign-in completes on a page load instead of depending on the tab

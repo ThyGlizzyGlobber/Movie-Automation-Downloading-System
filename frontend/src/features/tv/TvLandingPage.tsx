@@ -1,17 +1,15 @@
-import { useMemo } from 'react'
 import { useQueries, useQuery } from '@tanstack/react-query'
 import { getTvDiscoverByGenre, getTvDiscoverByProvider, getTvDiscoverPopular, getTvDiscoverTrending, getTvComingSoon, listShows } from '../../api/tv'
 import HeroCarousel from '../../components/HeroCarousel'
+import { getHeroSlides } from '../../api/hero'
 import MediaRow from '../../components/MediaRow'
 import ProviderChips from '../../components/ProviderChips'
 import { PosterCardSkeleton } from '../../components/Skeleton'
 import ErrorState from '../../components/ErrorState'
 import { usePageTitle } from '../../lib/chrome'
 import { ROW_PROVIDERS } from '../../lib/providers'
-import { tagMediaType } from '../../lib/homeHero'
 import { browseHref } from '../../api/browse'
 
-const HERO_SLIDE_COUNT = 5
 
 // Same curated, row-based treatment as MoviesLandingPage, TV-only —
 // including the same HeroCarousel Home uses (see HomePage.tsx).
@@ -55,10 +53,8 @@ export default function TvLandingPage() {
     })),
   })
 
-  const heroItems = useMemo(
-    () => tagMediaType(trending.data?.results ?? [], 'tv').filter((it) => it.backdrop_path).slice(0, HERO_SLIDE_COUNT),
-    [trending.data],
-  )
+  // Enriched server-side in one call — see HomePage's own note.
+  const hero = useQuery({ queryKey: ['hero', 'tv'], queryFn: () => getHeroSlides('tv') })
 
   // Each section shows its own skeleton until its data arrives; the page
   // only gives way to an error once the main lists have all failed.
@@ -79,7 +75,7 @@ export default function TvLandingPage() {
 
   return (
     <>
-      <HeroCarousel items={heroItems} loading={trending.isLoading} />
+      <HeroCarousel items={hero.data ?? []} loading={hero.isLoading} />
       <MediaRow title="Shows" qualifier="you follow" items={subscribedShows} mediaType="tv" loading={shows.isLoading} renderSkeleton={followedSkeleton} expandHref="/tv/watching" />
       <MediaRow title="Trending" qualifier="shows" items={trending.data?.results ?? []} mediaType="tv" loading={trending.isLoading} expandHref={browseHref({ type: 'tv', sort: 'trending' })} />
       <MediaRow title="Popular" items={popular.data?.results ?? []} mediaType="tv" loading={popular.isLoading} expandHref={browseHref({ type: 'tv' })} />
