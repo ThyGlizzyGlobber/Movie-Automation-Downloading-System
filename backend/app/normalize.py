@@ -8,13 +8,21 @@ language, source, codec, container matching against release filenames
 import re
 import unicodedata
 
-_PUNCT_RE = re.compile(r"[^\w]+", re.UNICODE)
+# [\W_], not [^\w]: \w counts the underscore as a word character, so
+# "[^\w]+" left it in place and glued whole tokens together. A real
+# release does not agree — PHDTeam's packs name episodes
+# "Love, Death & Robots_S03E01_Tri roboti.mkv", which normalized to the
+# single token "robots_s03e01_tri" and matched nothing: not the episode
+# patterns, and not "1080p" or "x264" either when they are separated the
+# same way. Underscore is a separator wherever a release name uses one.
+_PUNCT_RE = re.compile(r"[\W_]+", re.UNICODE)
 _WS_RE = re.compile(r"\s+")
 
 
 def normalize_text(text: str) -> str:
-    """Lowercase, strip diacritics/accents, replace punctuation/symbols with
-    spaces, collapse whitespace. 'Dune: Part Two' -> 'dune part two'."""
+    """Lowercase, strip diacritics/accents, replace punctuation/symbols
+    and underscores with spaces, collapse whitespace. 'Dune: Part Two'
+    -> 'dune part two'."""
     if not text:
         return ""
     decomposed = unicodedata.normalize("NFKD", text)

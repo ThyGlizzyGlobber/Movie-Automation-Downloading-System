@@ -1,4 +1,4 @@
-from app.normalize import has_token, normalize_text, titles_match, token_overlap, tokenize
+from app.normalize import extract_episode_identity, has_token, normalize_text, titles_match, token_overlap, tokenize
 
 
 def test_normalize_text_lowercases_and_strips_punctuation():
@@ -66,3 +66,37 @@ def test_titles_match_rejects_partial_middle_overlap():
     """Shared words in the middle, not at a whole prefix/suffix boundary,
     must not match — this is containment, not fuzzy overlap."""
     assert titles_match("the mandalorian returns and grogu", "the mandalorian and grogu") is False
+
+
+# ---------------------------------------------------------------------------
+# Underscores. \w counts "_" as a word character, so the original
+# "[^\w]+" never split on one and glued whole tokens together — which
+# broke episode identity and quality matching alike on any release that
+# separates with underscores.
+# ---------------------------------------------------------------------------
+
+
+def test_normalize_text_treats_underscores_as_separators():
+    assert normalize_text("Love, Death & Robots_S03E01_Tri roboti") == "love death robots s03e01 tri roboti"
+
+
+def test_tokenize_splits_an_underscore_run():
+    assert tokenize("a__b___c") == ["a", "b", "c"]
+
+
+def test_has_token_sees_through_underscores():
+    """The quiet half of this bug: quality, codec and language matching
+    all go through has_token, so an underscore-separated release scored
+    as though it had none of the tags it plainly carries."""
+    assert has_token("Movie_1080p_x264", "1080p")
+    assert has_token("Movie_1080p_x264", "x264")
+
+
+def test_has_token_still_refuses_a_substring():
+    assert not has_token("Movie_11080p", "1080p")
+
+
+def test_extract_episode_identity_reads_an_underscored_filename():
+    # The real file that stranded Love, Death & Robots S03.
+    name = "Love, Death & Robots_S03E01_Tři roboti_ Strategie úniku"
+    assert extract_episode_identity(tokenize(name)) == (3, 1)
