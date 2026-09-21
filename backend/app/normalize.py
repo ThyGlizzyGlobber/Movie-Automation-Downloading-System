@@ -39,9 +39,20 @@ def has_token(text: str, token: str) -> bool:
 _SEASON_EPISODE_RE = re.compile(r"^s(\d{1,2})e(\d{1,3})$")
 _SEASON_ONLY_RE = re.compile(r"^s(\d{1,2})$")
 _EPISODE_ONLY_RE = re.compile(r"^e(\d{1,3})$")
+# "14x01" — the convention Italian and other European groups use instead
+# of "S14E01" (confirmed live: every one of the 20 files in
+# Supernatural.S14.ITA.ENG.1080p.AMZN.WEBRip.AAC.x265-Pir8 is named
+# Supernatural.14xNN.<titolo>..., and not one of them matched the three
+# patterns above). Opt-in per caller, and deliberately narrower than the
+# others: the episode half must be at least two digits, which is what
+# keeps an aspect-ratio token out of it — "16x9" and "4x3" do not match,
+# and a resolution like "1920x1080" fails on the season half's own
+# two-digit cap. "16x10" would still read as S16E10, which is the reason
+# this is opt-in rather than always on; see extract_episode_identity.
+_SEASON_X_EPISODE_RE = re.compile(r"^(\d{1,2})x(\d{2,3})$")
 
 
-def extract_episode_identity(tokens: list[str]) -> tuple[int, int] | None:
+def extract_episode_identity(tokens: list[str], *, allow_x_form: bool = False) -> tuple[int, int] | None:
     """Pulls a concrete (season, episode) pair out of a filename's own
     already-tokenized tokens, if one is present — a contiguous "s01e04"
     token, or adjacent "s01"/"e04" tokens, first match wins; `None` if
@@ -55,11 +66,27 @@ def extract_episode_identity(tokens: list[str]) -> tuple[int, int] | None:
     here rather than in tv_score.py so score.py (movies) can reuse it
     without importing from tv_score.py, which itself imports from
     score.py — this module sits below both, with no dependency on
-    either."""
+    either.
+
+    `allow_x_form` adds the "14x01" shape (_SEASON_X_EPISODE_RE), and
+    only organize_pack passes it. The two callers want different things
+    from an ambiguous token: inside a pack this app downloaded for a
+    known show, "14x01" is an episode number and nothing else, so
+    reading it is pure gain. On score.py's side a false positive is
+    silent and costly in the other direction — that filter *rejects* a
+    candidate it believes is a TV episode, so teaching it one more
+    pattern risks dropping a legitimate movie whose release name happens
+    to carry an "NNxNN" token, a failure nobody would see. Off by
+    default, so the movie gate stays exactly as strict as it was."""
     for token in tokens:
         match = _SEASON_EPISODE_RE.match(token)
         if match:
             return int(match.group(1)), int(match.group(2))
+    if allow_x_form:
+        for token in tokens:
+            match = _SEASON_X_EPISODE_RE.match(token)
+            if match:
+                return int(match.group(1)), int(match.group(2))
     for i in range(len(tokens) - 1):
         season_match = _SEASON_ONLY_RE.match(tokens[i])
         episode_match = _EPISODE_ONLY_RE.match(tokens[i + 1])

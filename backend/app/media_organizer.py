@@ -400,7 +400,7 @@ def organize_pack(show_identity: ShowIdentity, torrent_hash: str, qbt: QBTClient
         if path.suffix.lower() not in config.VIDEO_EXTENSIONS or has_token(path.stem, "sample"):
             continue
         any_video_file = True
-        identity_pair = extract_episode_identity(tokenize(path.stem))
+        identity_pair = extract_episode_identity(tokenize(path.stem), allow_x_form=True)
         if identity_pair is None:
             logger.info("organize_pack: skipping %r — no recognizable episode token", name)
             continue

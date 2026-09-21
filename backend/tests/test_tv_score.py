@@ -162,6 +162,44 @@ def test_extract_episode_identity_none_for_season_only():
     assert extract_episode_identity(tokenize("Lanterns.S01.COMPLETE.2160p.mkv")) is None
 
 
+# The "14x01" shape Italian/European groups use. Opt-in per caller
+# (organize_pack passes allow_x_form, score.py's movie gate does not),
+# so every case here is asserted both ways round.
+
+
+def test_extract_episode_identity_x_form_needs_opting_in():
+    # The real file that stranded Supernatural S14: 20 of these, and the
+    # pack organizer could not read one of them.
+    tokens = tokenize("Supernatural.14x01.Straniero.In.Terra.Straniera.ITA.ENG.1080p.AMZN.WEBRip.AAC.x265-Pir8.mkv")
+    assert extract_episode_identity(tokens) is None
+    assert extract_episode_identity(tokens, allow_x_form=True) == (14, 1)
+
+
+def test_extract_episode_identity_x_form_single_digit_season():
+    assert extract_episode_identity(tokenize("Show.1x05.Titolo.mkv"), allow_x_form=True) == (1, 5)
+
+
+def test_extract_episode_identity_x_form_three_digit_episode():
+    assert extract_episode_identity(tokenize("Show.2x101.Titolo.mkv"), allow_x_form=True) == (2, 101)
+
+
+def test_extract_episode_identity_x_form_ignores_aspect_ratios():
+    # Why the episode half needs two digits: these are the tokens a
+    # looser pattern would misread, and on score.py's path a false
+    # positive silently rejects a legitimate movie.
+    for name in ("Some.Movie.2019.16x9.1080p.mkv", "Some.Movie.1998.4x3.DVDRip.mkv"):
+        assert extract_episode_identity(tokenize(name), allow_x_form=True) is None
+
+
+def test_extract_episode_identity_x_form_ignores_resolution_token():
+    assert extract_episode_identity(tokenize("Some.Movie.2019.1920x1080.mkv"), allow_x_form=True) is None
+
+
+def test_extract_episode_identity_prefers_sxxexx_over_x_form():
+    tokens = tokenize("Show.S03E07.3x09.mkv")
+    assert extract_episode_identity(tokens, allow_x_form=True) == (3, 7)
+
+
 def test_extract_episode_identity_none_when_absent():
     assert extract_episode_identity(tokenize("Lanterns.NFO")) is None
 
