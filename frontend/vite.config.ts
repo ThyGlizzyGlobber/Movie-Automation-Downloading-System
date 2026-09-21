@@ -7,6 +7,16 @@ export default defineConfig({
   server: {
     proxy: {
       '/api': 'http://127.0.0.1:8000',
+      // The same mapping nginx.conf does in front of the built app: /img/
+      // is TMDB's image CDN, cached there. Without this the dev server
+      // has no such route, so every poster, backdrop and logo falls
+      // through to the SPA fallback and comes back as index.html with a
+      // 200 — images that silently render as nothing, in dev only.
+      '/img': {
+        target: 'https://image.tmdb.org',
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/img/, '/t/p'),
+      },
     },
   },
   build: {
