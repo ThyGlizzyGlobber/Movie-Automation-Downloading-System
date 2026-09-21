@@ -4,8 +4,123 @@
    hero, but its own class since the layout (poster+meta vs. this one's
    title+actions) differs. Only the first couple of slides ever carry a
    background video — every other slide is a plain backdrop image. */
+
+/* The hero's wrapper, and the only reason it exists: .home-hero clips
+   its overflow, so the ambient glow the content page's banner sits in
+   has to be a layer outside the pane rather than inside it. See
+   HeroGlow in HeroCarousel.tsx. */
+.home-hero-wrap {
+  position: relative;
+  /* Keeps the glow behind the pane without lifting either of them over
+     the fixed top bar (z-index 10) the way a raw z-index would. */
+  isolation: isolate;
+}
+.home-hero-glow {
+  position: absolute;
+  z-index: 0;
+  pointer-events: none;
+  /* Contains the backdrop layer's scale(1.1) and its blur, the way
+     .detail's own overflow does for .detail-bd — without this the
+     scaled image pushed the page 19px wide at phone widths. clip, not
+     hidden: nothing in here scrolls. */
+  overflow: clip;
+  /* Bleeds past the pane on every side, the way .detail's does: up to
+     the top of the viewport behind the top bar, out to the viewport
+     edges (the wrapper's box is main's content box, so -14px undoes
+     main's padding), and --hero-glow-reach past its foot.
+     The wrapper's box *is* the pane's — the hero's own top margin
+     collapses through it — so the top offset is the top bar plus that
+     margin's gap. */
+  /* Two knobs, because AmbientGlow's blobs are percentages of this box
+     and the content page's box is the whole page. Measured against a
+     content page at 1440: the glow runs 1289px below a 500px banner,
+     so its blobs are tall enough that the strongest of them (the .55
+     one) is still at full width well beneath the artwork. Sized to the
+     hero alone that blob ended level with the pane's foot, which is
+     what made this read dimmer than the content page — so --reach
+     gives the blobs a box in the same proportion, and --drop, below,
+     crops what of it actually shows. */
+  --hero-glow-reach: 900px;
+  --hero-glow-drop: 260px;
+  top: calc(-1 * (var(--topbar-h, 64px) + var(--hero-top-gap)));
+  left: -14px;
+  right: -14px;
+  bottom: calc(-1 * var(--hero-glow-reach));
+}
+/* Takes the glow to the page ground. The flat wash is the one the
+   content page carries (.detail-fade's top stop), so the colour over
+   the pane matches it; the gradient over it is where the two part
+   company — the content page's own fade is a third of a container
+   several screens tall, so its colour is still going a long way below
+   the banner, while here it has to be gone before the first row's
+   posters start. The ramp runs from the pane's foot (--reach above the
+   bottom of this box, by construction) to solid --drop beneath it. */
+.home-hero-glow::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(
+      0deg,
+      var(--bg) calc(var(--hero-glow-reach) - var(--hero-glow-drop)),
+      transparent var(--hero-glow-reach)
+    ),
+    color-mix(in srgb, var(--bg) 30%, transparent);
+}
+/* The content page's .detail-bd: the backdrop blurred flat and
+   screen-blended over the blobs, lifting the page ground in proportion
+   to how bright the key art is. Without it a title with bright art —
+   The Scandal's backdrop is mean luma 142/255, against Reacher's 10 —
+   falls straight into black here while its own content page sits in a
+   warm field. It goes between the blobs and the fade below, as there.
+
+   0.22, not .detail-bd's 0.35. That layer is tuned for a destination
+   page where the artwork is the point and a glass card sits over it;
+   the same strength here washes the ground milky under the first rows,
+   whose posters and Top 10 numerals need a near-black field to read
+   against. 0.22 keeps most of the lift — ~31/255 on The Scandal, so
+   bright art still colours the ground rather than vanishing — and dark
+   art is unaffected either way (10 luma contributes ~2/255 at any of
+   these values). Raise toward 0.35 for exact parity with the content
+   page, lower toward 0.15 to have the ground go black sooner. */
+.home-hero-glow-bd {
+  position: absolute;
+  inset: 0;
+  opacity: 0.22;
+  mix-blend-mode: screen;
+  /* One blur across the whole stack rather than one per image: the
+     crossfade needs two frames alive at once and blur(40px) is the
+     expensive half of this layer. */
+  filter: blur(40px) saturate(140%);
+}
+.home-hero-glow-bd img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transform: scale(1.1);
+  opacity: 0;
+  /* The slide's own 0.6s, so the ground travels with the artwork. */
+  transition: opacity 0.6s ease;
+}
+.home-hero-glow-bd img.active {
+  opacity: 1;
+}
+/* And the rows paint over it. The wrapper is positioned, so it paints
+   in a later pass than the in-flow sections that follow it — the glow's
+   spill was washing the first row's heading the way it washes the page
+   ground. Every sibling here is a MediaRow's section.row, and each of
+   their absolutely-positioned parts already has a nearer positioned
+   ancestor, so relative costs them nothing. */
+.home-hero-wrap ~ section.row {
+  position: relative;
+  z-index: 1;
+}
 .home-hero {
   position: relative;
+  /* Over the glow. */
+  z-index: 1;
   /* auto, not 100% — the margins below inset it, and 100% would ignore
      them and push it past the right edge. */
   width: auto;

@@ -55,58 +55,97 @@ function movieLength(runtime: number | null): string {
 
 const HERO_SKELETON_DOTS = 5
 
+// The colour wash the content page's banner sits in (DetailShell.css),
+// brought to the landing heroes. It can't live inside .home-hero — that
+// pane clips its own overflow to keep the artwork's rounded edge, and a
+// glow inside it is hidden behind the backdrop anyway — so the hero sits
+// in a wrapper and this is a layer behind it, bleeding out past the pane
+// on every side and washing down onto the page ground beneath it.
+//
+// Both of the content page's layers, in its order: the poster-tinted
+// blobs, then the backdrop screen-blended over them (.detail-bd's twin,
+// see .home-hero-glow-bd). Without the second one the blobs sit on pure
+// black, and a title with bright key art — measured: The Scandal's
+// backdrop is mean luma 142/255 against Reacher's 10 — reads far darker
+// here than on its own content page, where that layer lifts the ground
+// by around a fifth before the blobs contribute anything. The pane has
+// already loaded this exact URL, so it costs no fetch.
+function HeroGlow({ items, activeIndex }: { items: TaggedItem[]; activeIndex: number }) {
+  const backdrops = items.map((item) => backdropUrl(item.backdrop_path))
+  return (
+    <div className="home-hero-glow" aria-hidden="true">
+      <AmbientGlow posterPath={items[activeIndex]?.poster_path} />
+      {backdrops.some(Boolean) && (
+        /* Every slide's backdrop, stacked, so the ground can crossfade
+           with the artwork instead of stepping under it. They are the
+           URLs the slides themselves load, and every slide sits in the
+           viewport, so the browser has all of these already. */
+        <div className="home-hero-glow-bd">
+          {items.map((item, i) =>
+            backdrops[i] ? <img key={item.id} className={i === activeIndex ? 'active' : undefined} src={backdrops[i]} alt="" /> : null,
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+
 // The hero while its titles load: one slide of the real markup, so the
 // same CSS shapes it — a scope frame with the art, logo, status line,
 // blurb and buttons over it on desktop, and the same elements as a
 // portrait card with the facts line and two stacked buttons on a phone.
 function HeroSkeleton() {
   return (
-    <div className="home-hero" aria-busy="true">
-      <div className="home-hero-slide active" aria-hidden="true">
-        <AmbientGlow posterPath={null} />
-        <div className="home-hero-media">
-          <Skel className="home-hero-art-skel" />
-        </div>
-        <div className="home-hero-fade" />
-        <div className="home-hero-content">
-          <div className="home-hero-body">
-            <h1 className="has-logo">
-              <Skel className="hero-logo hero-logo-skel" />
-            </h1>
-            <div className="hero-line">
-              <Skel className="hero-line-skel">
-                <Icon name="chart" />
-                #1 trending this week
-              </Skel>
-            </div>
-            {/* Phone-only, like the real one: the wrapper's own rule
-                hides it above 640px, taking the bar with it. */}
-            <div className="home-hero-meta">
-              <SkelText width="68%" />
-            </div>
-            <p className="hero-syn">
-              <SkelWords text={SAMPLE_SYNOPSIS} />
-            </p>
-            <div className="home-hero-actions">
-              <Skel className="btn pri">
-                <Icon name="plus" />
-                Not on Plex yet
-              </Skel>
-              {/* Carries home-hero-info and the label, so on a phone it
-                  widens into the second full-width button rather than
-                  staying a 54px circle the loaded card doesn't have. */}
-              <Skel className="btn sec circ home-hero-info">
-                <Icon name="info" />
-                <span className="home-hero-info-label">More info</span>
-              </Skel>
+    <div className="home-hero-wrap">
+      <HeroGlow items={[]} activeIndex={0} />
+      <div className="home-hero" aria-busy="true">
+        <div className="home-hero-slide active" aria-hidden="true">
+          <AmbientGlow posterPath={null} />
+          <div className="home-hero-media">
+            <Skel className="home-hero-art-skel" />
+          </div>
+          <div className="home-hero-fade" />
+          <div className="home-hero-content">
+            <div className="home-hero-body">
+              <h1 className="has-logo">
+                <Skel className="hero-logo hero-logo-skel" />
+              </h1>
+              <div className="hero-line">
+                <Skel className="hero-line-skel">
+                  <Icon name="chart" />
+                  #1 trending this week
+                </Skel>
+              </div>
+              {/* Phone-only, like the real one: the wrapper's own rule
+                  hides it above 640px, taking the bar with it. */}
+              <div className="home-hero-meta">
+                <SkelText width="68%" />
+              </div>
+              <p className="hero-syn">
+                <SkelWords text={SAMPLE_SYNOPSIS} />
+              </p>
+              <div className="home-hero-actions">
+                <Skel className="btn pri">
+                  <Icon name="plus" />
+                  Not on Plex yet
+                </Skel>
+                {/* Carries home-hero-info and the label, so on a phone it
+                    widens into the second full-width button rather than
+                    staying a 54px circle the loaded card doesn't have. */}
+                <Skel className="btn sec circ home-hero-info">
+                  <Icon name="info" />
+                  <span className="home-hero-info-label">More info</span>
+                </Skel>
+              </div>
             </div>
           </div>
         </div>
-      </div>
-      <div className="home-hero-dots" aria-hidden="true">
-        {Array.from({ length: HERO_SKELETON_DOTS }, (_, i) => (
-          <span key={i} className={`home-hero-dot${i === 0 ? ' active' : ''}`} />
-        ))}
+        <div className="home-hero-dots" aria-hidden="true">
+          {Array.from({ length: HERO_SKELETON_DOTS }, (_, i) => (
+            <span key={i} className={`home-hero-dot${i === 0 ? ' active' : ''}`} />
+          ))}
+        </div>
       </div>
     </div>
   )
@@ -333,146 +372,153 @@ export default function HeroCarousel({ items, loading = false }: { items: Tagged
   if (!items.length) return null
 
   return (
-    <div className="home-hero" ref={heroRef} onMouseEnter={handleMouseEnter} onMouseLeave={handleMouseLeave} onMouseMove={handleMouseMove}>
-      {items.map((item, i) => {
-        const isTv = item.mediaType === 'tv'
-        const title = item.title || item.name || item.original_title || item.original_name || ''
-        const href = isTv ? `#/tv/${item.id}` : `#/movies/${item.id}`
-        const onPlex = !!item.on_plex
-        const info = enrichment[i]
-        const hasVideo = i < HERO_TRAILER_COUNT && !!videoUrls[i]
+    <div className="home-hero-wrap">
+      {/* One glow for the carousel, not one per slide: it is tinted from
+          whichever slide is showing and crossfades with it. It holds its
+          strength while a trailer plays — it is the page's ground now,
+          not a layer inside the pane, and dimming it pulsed the whole
+          page dark every time a trailer started. */}
+      <HeroGlow items={items} activeIndex={activeIndex} />
+      <div className="home-hero" ref={heroRef} onMouseEnter={handleMouseEnter} onMouseLeave={handleMouseLeave} onMouseMove={handleMouseMove}>
+        {items.map((item, i) => {
+          const isTv = item.mediaType === 'tv'
+          const title = item.title || item.name || item.original_title || item.original_name || ''
+          const href = isTv ? `#/tv/${item.id}` : `#/movies/${item.id}`
+          const onPlex = !!item.on_plex
+          const info = enrichment[i]
+          const hasVideo = i < HERO_TRAILER_COUNT && !!videoUrls[i]
 
-        return (
-          <div className={`home-hero-slide${i === activeIndex ? ' active' : ''}`} key={item.id}>
-            <AmbientGlow posterPath={item.poster_path} dimmed={!!videoVisible[i]} />
-            <a className="home-hero-media" href={href} aria-label={title}>
-              {/* Portrait key art on a phone, the landscape backdrop
-                  everywhere else: the phone card's art well is taller
-                  than it is wide, and a 16:9 backdrop cropped into it
-                  loses almost everything either side of centre. */}
-              <img
-                className={videoVisible[i] ? 'home-hero-poster-hidden' : ''}
-                src={isPhone ? posterUrl(item.poster_path) : backdropUrl(item.backdrop_path)}
-                alt=""
-                loading={i === 0 ? 'eager' : 'lazy'}
-              />
-              {i < HERO_TRAILER_COUNT && videoUrls[i] && (
-                <div className="home-hero-video-wrap">
-                  <video
-                    ref={(el) => {
-                      videoRefs.current[i] = el
-                    }}
-                    src={videoUrls[i] ?? undefined}
-                    muted={i === activeIndex ? muted : true}
-                    loop={false}
-                    playsInline
-                    preload="auto"
-                    aria-hidden="true"
-                    className={videoVisible[i] ? 'home-hero-video-visible' : ''}
-                    onPlaying={() => {
-                      clearStall(i)
-                      setVideoVisible((v) => ({ ...v, [i]: true }))
-                    }}
-                    onPause={() => {
-                      clearStall(i)
-                      setVideoVisible((v) => ({ ...v, [i]: false }))
-                    }}
-                    onError={() => {
-                      clearStall(i)
-                      setVideoVisible((v) => ({ ...v, [i]: false }))
-                    }}
-                    onWaiting={() => {
-                      if (stallTimersRef.current[i]) return
-                      stallTimersRef.current[i] = window.setTimeout(() => {
-                        delete stallTimersRef.current[i]
+          return (
+            <div className={`home-hero-slide${i === activeIndex ? ' active' : ''}`} key={item.id}>
+                <a className="home-hero-media" href={href} aria-label={title}>
+                {/* Portrait key art on a phone, the landscape backdrop
+                    everywhere else: the phone card's art well is taller
+                    than it is wide, and a 16:9 backdrop cropped into it
+                    loses almost everything either side of centre. */}
+                <img
+                  className={videoVisible[i] ? 'home-hero-poster-hidden' : ''}
+                  src={isPhone ? posterUrl(item.poster_path) : backdropUrl(item.backdrop_path)}
+                  alt=""
+                  loading={i === 0 ? 'eager' : 'lazy'}
+                />
+                {i < HERO_TRAILER_COUNT && videoUrls[i] && (
+                  <div className="home-hero-video-wrap">
+                    <video
+                      ref={(el) => {
+                        videoRefs.current[i] = el
+                      }}
+                      src={videoUrls[i] ?? undefined}
+                      muted={i === activeIndex ? muted : true}
+                      loop={false}
+                      playsInline
+                      preload="auto"
+                      aria-hidden="true"
+                      className={videoVisible[i] ? 'home-hero-video-visible' : ''}
+                      onPlaying={() => {
+                        clearStall(i)
+                        setVideoVisible((v) => ({ ...v, [i]: true }))
+                      }}
+                      onPause={() => {
+                        clearStall(i)
                         setVideoVisible((v) => ({ ...v, [i]: false }))
-                      }, 500)
-                    }}
-                  />
-                </div>
-              )}
-            </a>
-            <div className="home-hero-fade" />
-            <div className="home-hero-content">
-              <div className="home-hero-body">
-                {/* The title logo when TMDB has one, the text title
-                    otherwise; the h1 keeps the name for screen readers
-                    either way. */}
-                <h1 className={info?.logo ? 'has-logo' : undefined}>
-                  {info?.logo ? <img className="hero-logo" src={info.logo} alt={title} /> : title}
-                </h1>
-                <div className="hero-line">
-                  <Icon name={info?.badge ? 'megaphone' : 'chart'} />
-                  {info?.badge ?? `#${i + 1} trending this week`}
-                </div>
-                {/* The phone card's dot-separated facts line. Rendered
-                    always, shown only under 640px (the desktop frame
-                    says the same things through its pills and the cert
-                    badge in the corner). */}
-                <div className="home-hero-meta">
-                  {[
-                    isTv ? 'Show' : 'Movie',
-                    info?.genres,
-                    yearOf(item.release_date ?? item.first_air_date),
-                    info?.length,
-                    info?.cert,
-                  ]
-                    .filter(Boolean)
-                    .join(' · ')}
-                </div>
-                {item.overview && (
-                  <p className={`hero-syn${videoVisible[i] && !cursorNear ? ' hidden-for-video' : ''}`}>{item.overview}</p>
+                      }}
+                      onError={() => {
+                        clearStall(i)
+                        setVideoVisible((v) => ({ ...v, [i]: false }))
+                      }}
+                      onWaiting={() => {
+                        if (stallTimersRef.current[i]) return
+                        stallTimersRef.current[i] = window.setTimeout(() => {
+                          delete stallTimersRef.current[i]
+                          setVideoVisible((v) => ({ ...v, [i]: false }))
+                        }, 500)
+                      }}
+                    />
+                  </div>
                 )}
-                <div className="home-hero-actions">
-                  <a className="btn pri" href={href}>
-                    <Icon name={onPlex ? 'play' : 'plus'} />
-                    <FlipLabel first={onPlex ? 'On Plex' : 'Not on Plex yet'} second={onPlex ? 'Watch now' : 'Add to Plex'} active={i === activeIndex} />
-                  </a>
-                  {/* Icon-only on desktop, a full-width labelled button
-                      on the phone card — same link either way, so the
-                      label is markup the CSS reveals rather than a
-                      second control. */}
-                  <a className="btn sec circ home-hero-info" href={href} aria-label="More info">
-                    <Icon name="info" />
-                    <span className="home-hero-info-label">More info</span>
-                  </a>
-                  {i === activeIndex && hasVideo && (
-                    <button
-                      className="btn sec circ"
-                      aria-label={muted ? 'Unmute trailer' : 'Mute trailer'}
-                      onClick={() => setMuted((m) => !m)}
-                    >
-                      <Icon name={muted ? 'volume-off' : 'volume-on'} />
-                    </button>
+              </a>
+              <div className="home-hero-fade" />
+              <div className="home-hero-content">
+                <div className="home-hero-body">
+                  {/* The title logo when TMDB has one, the text title
+                      otherwise; the h1 keeps the name for screen readers
+                      either way. */}
+                  <h1 className={info?.logo ? 'has-logo' : undefined}>
+                    {info?.logo ? <img className="hero-logo" src={info.logo} alt={title} /> : title}
+                  </h1>
+                  <div className="hero-line">
+                    <Icon name={info?.badge ? 'megaphone' : 'chart'} />
+                    {info?.badge ?? `#${i + 1} trending this week`}
+                  </div>
+                  {/* The phone card's dot-separated facts line. Rendered
+                      always, shown only under 640px (the desktop frame
+                      says the same things through its pills and the cert
+                      badge in the corner). */}
+                  <div className="home-hero-meta">
+                    {[
+                      isTv ? 'Show' : 'Movie',
+                      info?.genres,
+                      yearOf(item.release_date ?? item.first_air_date),
+                      info?.length,
+                      info?.cert,
+                    ]
+                      .filter(Boolean)
+                      .join(' · ')}
+                  </div>
+                  {item.overview && (
+                    <p className={`hero-syn${videoVisible[i] && !cursorNear ? ' hidden-for-video' : ''}`}>{item.overview}</p>
                   )}
+                  <div className="home-hero-actions">
+                    <a className="btn pri" href={href}>
+                      <Icon name={onPlex ? 'play' : 'plus'} />
+                      <FlipLabel first={onPlex ? 'On Plex' : 'Not on Plex yet'} second={onPlex ? 'Watch now' : 'Add to Plex'} active={i === activeIndex} />
+                    </a>
+                    {/* Icon-only on desktop, a full-width labelled button
+                        on the phone card — same link either way, so the
+                        label is markup the CSS reveals rather than a
+                        second control. */}
+                    <a className="btn sec circ home-hero-info" href={href} aria-label="More info">
+                      <Icon name="info" />
+                      <span className="home-hero-info-label">More info</span>
+                    </a>
+                    {i === activeIndex && hasVideo && (
+                      <button
+                        className="btn sec circ"
+                        aria-label={muted ? 'Unmute trailer' : 'Mute trailer'}
+                        onClick={() => setMuted((m) => !m)}
+                      >
+                        <Icon name={muted ? 'volume-off' : 'volume-on'} />
+                      </button>
+                    )}
+                  </div>
                 </div>
               </div>
+              {info?.cert && <div className="home-hero-cert">{info.cert}</div>}
             </div>
-            {info?.cert && <div className="home-hero-cert">{info.cert}</div>}
-          </div>
-        )
-      })}
+          )
+        })}
 
-      {items.length > 1 && (
-        <>
-          <button className="home-hero-arrow home-hero-arrow-left" aria-label="Previous slide" onClick={() => goToSlide(activeIndex - 1)}>
-            <Icon name="back" />
-          </button>
-          <button className="home-hero-arrow home-hero-arrow-right" aria-label="Next slide" onClick={() => goToSlide(activeIndex + 1)}>
-            <Icon name="next" />
-          </button>
-          <div className="home-hero-dots">
-            {items.map((item, i) => (
-              <button
-                key={item.id}
-                className={`home-hero-dot${i === activeIndex ? ' active' : ''}`}
-                aria-label={`Slide ${i + 1}`}
-                onClick={() => goToSlide(i)}
-              />
-            ))}
-          </div>
-        </>
-      )}
+        {items.length > 1 && (
+          <>
+            <button className="home-hero-arrow home-hero-arrow-left" aria-label="Previous slide" onClick={() => goToSlide(activeIndex - 1)}>
+              <Icon name="back" />
+            </button>
+            <button className="home-hero-arrow home-hero-arrow-right" aria-label="Next slide" onClick={() => goToSlide(activeIndex + 1)}>
+              <Icon name="next" />
+            </button>
+            <div className="home-hero-dots">
+              {items.map((item, i) => (
+                <button
+                  key={item.id}
+                  className={`home-hero-dot${i === activeIndex ? ' active' : ''}`}
+                  aria-label={`Slide ${i + 1}`}
+                  onClick={() => goToSlide(i)}
+                />
+              ))}
+            </div>
+          </>
+        )}
+      </div>
     </div>
   )
 }
