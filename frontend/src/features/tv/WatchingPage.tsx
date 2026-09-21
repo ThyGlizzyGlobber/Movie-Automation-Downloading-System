@@ -1,3 +1,4 @@
+import { Link } from 'react-router-dom'
 import { useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { listShows, deleteShow } from '../../api/tv'
@@ -59,9 +60,9 @@ function WatchingRow({ show, onChanged }: { show: ShowOut; onChanged: () => void
     <div className="req-row">
       <Img className="req-poster" src={posterUrl(show.poster_path)} alt="" />
       <div className="req-main">
-        <a className="req-title" href={`#/tv/${show.tmdb_id}`}>
+        <Link className="req-title" to={`/tv/${show.tmdb_id}`}>
           {show.title}
-        </a>
+        </Link>
         <div className="req-sub">Last checked {relativeTime(show.last_checked_at)}</div>
         <div className="watch-pills">
           <LatestRequestPill req={req} />

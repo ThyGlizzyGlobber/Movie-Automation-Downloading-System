@@ -1,3 +1,4 @@
+import { Link } from 'react-router-dom'
 import type { ReactNode } from 'react'
 import { posterUrl } from '../lib/tmdbImage'
 import Img from './Img'
@@ -55,9 +56,20 @@ export default function PosterCard({
   const isTv = mediaType === 'tv'
   const title = cardTitle(item)
   const to = href ?? (isTv ? `#/tv/${item.id}` : `#/movies/${item.id}`)
+  // A route of this app's own, or somewhere else entirely — a library
+  // item with no TMDB id links straight out to Plex (see
+  // RecentlyAddedRow), and that has to stay an anchor.
+  const internal = to.startsWith('#/')
   const meta = caption ? cardMeta(item, mediaType, mixed) : ''
-  return (
-    <a className="poster-card" href={to}>
+  // <Link> rather than <a href="#/…"> for the app's own routes. Setting
+  // location.hash by hand means the router never initiates the
+  // navigation, only notices it afterwards, and it classifies that as a
+  // POP — the same thing a Back press produces. ScrollRestoration tops
+  // out a PUSH and restores a POP, so every poster click was asking to
+  // be put back where the last page left you: open a title from halfway
+  // down a row and the new page opened halfway down itself.
+  const body = (
+    <>
       <div className="poster-art">
         <Img src={posterSrc ?? posterUrl(item.poster_path)} alt={caption ? '' : title} loading="lazy" />
         {chip ?? (item.on_plex && <div className="on-plex-badge">On Plex</div>)}
@@ -68,6 +80,18 @@ export default function PosterCard({
           {meta && <small>{meta}</small>}
         </div>
       )}
+    </>
+  )
+  return internal ? (
+    // to.slice(1) turns "#/movies/12" into the "/movies/12" the router
+    // wants, so every caller can keep handing this component the hash
+    // form it always has.
+    <Link className="poster-card" to={to.slice(1)}>
+      {body}
+    </Link>
+  ) : (
+    <a className="poster-card" href={to}>
+      {body}
     </a>
   )
 }

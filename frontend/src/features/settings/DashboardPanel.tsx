@@ -1,3 +1,4 @@
+import { Link } from 'react-router-dom'
 import { useEffect, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { getPipelineSettings, getStorageDetails, setPipelineSettings } from '../../api/settings'
@@ -41,7 +42,7 @@ function ActiveRow({ r, hasAvatar }: { r: RequestOut; hasAvatar: boolean }) {
   const pct = r.status === 'downloading' && r.download_progress != null ? Math.round(r.download_progress * 100) : null
   const who = r.requested_by_username || 'Obsidian'
   return (
-    <a className="dash-active" href={href}>
+    <Link className="dash-active" to={href.replace(/^#/, '')}>
       <span className="dash-active-who" title={who}>
         {r.requested_by_plex_id ? (
           <Avatar src={`/api/admin/users/${encodeURIComponent(r.requested_by_plex_id)}/avatar`} name={who} hasPicture={hasAvatar} />
@@ -64,7 +65,7 @@ function ActiveRow({ r, hasAvatar }: { r: RequestOut; hasAvatar: boolean }) {
         </i>
       </span>
       <StatusPill status={r.status} />
-    </a>
+    </Link>
   )
 }
 
@@ -287,10 +288,10 @@ export default function DashboardPanel({ onOpen }: { onOpen: (key: string) => vo
         <div className="dash-card dash-wide">
           <div className="dash-card-head">
             <h3>Downloading now</h3>
-            <a className="dash-link" href="#/requests">
+            <Link className="dash-link" to="/requests">
               All requests
               <Icon name="next" />
-            </a>
+            </Link>
           </div>
           {requests.isLoading ? (
             <div className="dash-active-list">

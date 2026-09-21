@@ -1,3 +1,4 @@
+import { Link } from 'react-router-dom'
 import { useState, type ReactNode } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { listRequests, cancelRequest, clearRequests } from '../../api/requests'
@@ -88,9 +89,11 @@ function Row({
           <Img src={posterUrl(poster ?? null)} alt="" />
         </div>
         <div className="rq-t">
-          <a className="rq-title" href={href} onClick={(e) => e.stopPropagation()}>
+          {/* Link, not an anchor to "#/…" — see PosterCard for why the
+              difference decides where the next page starts scrolled. */}
+          <Link className="rq-title" to={href.replace(/^#/, '')} onClick={(e) => e.stopPropagation()}>
             {title}
-          </a>
+          </Link>
           <small>{meta}</small>
           <span className="rq-pill-m">
             <StatusPill status={status} />
@@ -483,10 +486,10 @@ export default function RequestsPage() {
             message={rows.length ? 'Nothing matches that filter.' : 'Find a movie or show and tap Request. It shows up here while it downloads.'}
             action={
               rows.length ? undefined : (
-                <a className="retry" href="#/browse?type=movie">
+                <Link className="retry" to="/browse?type=movie">
                   <Icon name="search" />
                   Browse
-                </a>
+                </Link>
               )
             }
           />

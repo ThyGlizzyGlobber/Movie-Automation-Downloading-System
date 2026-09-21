@@ -11,6 +11,7 @@ import Icon from './Icon'
 import { SAMPLE_SYNOPSIS, Skel, SkelText, SkelWords } from './Skeleton'
 import { useMediaQuery } from '../lib/hooks'
 import { useCertificationRegion } from '../features/auth/useSession'
+import { Link } from 'react-router-dom'
 
 const HERO_AUTOPLAY_MS = 7000 // flat dwell time for a poster-only slide
 // How long a trailer slide's poster shows on its own — both before the
@@ -508,14 +509,16 @@ export default function HeroCarousel({ items, loading = false }: { items: HeroSl
         {items.map((item, i) => {
           const isTv = item.mediaType === 'tv'
           const title = item.title || item.name || item.original_title || item.original_name || ''
-          const href = isTv ? `#/tv/${item.id}` : `#/movies/${item.id}`
+          // Router paths, not "#/…" anchors — see PosterCard for what
+          // hand-setting location.hash does to scroll position.
+          const href = isTv ? `/tv/${item.id}` : `/movies/${item.id}`
           const onPlex = !!item.on_plex
           const info = enrichment[i]
           const hasVideo = !!videoUrls[i]
 
           return (
             <div className={`home-hero-slide${i === activeIndex ? ' active' : ''}`} key={item.id}>
-                <a className="home-hero-media" href={href} aria-label={title}>
+                <Link className="home-hero-media" to={href} aria-label={title}>
                 {/* Portrait key art on a phone, the landscape backdrop
                     everywhere else: the phone card's art well is taller
                     than it is wide, and a 16:9 backdrop cropped into it
@@ -596,7 +599,7 @@ export default function HeroCarousel({ items, loading = false }: { items: HeroSl
                     />
                   </div>
                 )}
-              </a>
+              </Link>
               <div className="home-hero-fade" />
               <div className="home-hero-content">
                 <div className="home-hero-body">
@@ -629,18 +632,18 @@ export default function HeroCarousel({ items, loading = false }: { items: HeroSl
                     <p className={`hero-syn${videoVisible[i] && !cursorNear ? ' hidden-for-video' : ''}`}>{item.overview}</p>
                   )}
                   <div className="home-hero-actions">
-                    <a className="btn pri" href={href}>
+                    <Link className="btn pri" to={href}>
                       <Icon name={onPlex ? 'play' : 'plus'} />
                       <FlipLabel first={onPlex ? 'On Plex' : 'Not on Plex yet'} second={onPlex ? 'Watch now' : 'Add to Plex'} active={i === activeIndex} />
-                    </a>
+                    </Link>
                     {/* Icon-only on desktop, a full-width labelled button
                         on the phone card — same link either way, so the
                         label is markup the CSS reveals rather than a
                         second control. */}
-                    <a className="btn sec circ home-hero-info" href={href} aria-label="More info">
+                    <Link className="btn sec circ home-hero-info" to={href} aria-label="More info">
                       <Icon name="info" />
                       <span className="home-hero-info-label">More info</span>
-                    </a>
+                    </Link>
                     {i === activeIndex && hasVideo && (
                       <button
                         className="btn sec circ"
