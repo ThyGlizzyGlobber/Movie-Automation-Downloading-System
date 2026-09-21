@@ -1,5 +1,6 @@
 import asyncio
 import itertools
+import os
 import threading
 import time
 import re
@@ -2857,3 +2858,73 @@ def test_queued_requests_drain_together_rather_than_one_at_a_time():
 
     # All three got past the barrier, so all three were searching at once.
     assert [store.get_request(r.id).status for r in rows] == ["downloading"] * 3
+
+
+# ---------------------------------------------------------------------------
+# _sweep_orphaned_downloads — the backstop for folders the per-request
+# cleanup cannot reach, because it only ever deletes through qBittorrent
+# and the torrent is routinely gone by then.
+# ---------------------------------------------------------------------------
+
+
+def _organized_download(tmp_path, monkeypatch, store, *, extra_video=None):
+    """A finished download folder beside the library copy that was
+    hardlinked out of it — the shape the sweep is meant to recognise."""
+    library = tmp_path / "tv"
+    downloads = library / "Some.Show.S01.1080p-GRP"
+    (library / "Some Show {tmdb-1}" / "Season 01").mkdir(parents=True)
+    downloads.mkdir(parents=True)
+    monkeypatch.setattr(config, "TV_LIBRARY_ROOT", library)
+    monkeypatch.setattr(config, "MOVIE_LIBRARY_ROOT", tmp_path / "movies")
+
+    source = downloads / "Some.Show.S01E01.1080p-GRP.mkv"
+    source.write_bytes(b"episode one")
+    filed = library / "Some Show {tmdb-1}" / "Season 01" / "Some Show - s01e01.mkv"
+    os.link(source, filed)
+    if extra_video:
+        (downloads / extra_video).write_bytes(b"something nobody filed")
+
+    row = store.create_request(tmdb_id=1, title="Some Show", release_year=2024, query=None)
+    store.update_status(row.id, "downloading", result={"torrent_hash": "h1", "winner": {"fileName": "x"}})
+    store.mark_organized(row.id, [str(filed)], ["h1"], "2000-01-01T00:00:00+00:00")
+    return downloads, filed
+
+
+def test_orphan_sweep_removes_a_download_folder_already_filed(tmp_path, monkeypatch):
+    """The case the per-request cleanup leaves behind: qBittorrent has
+    no torrent left to delete through, so nothing ever collects this."""
+    store = RequestStore(":memory:")
+    downloads, filed = _organized_download(tmp_path, monkeypatch, store)
+    worker = Worker(store, FakeTMDBClient(), FakeQBTClient())
+
+    asyncio.run(worker._sweep_orphaned_downloads())
+
+    assert not downloads.exists()
+    assert filed.exists(), "the library copy must survive its download being removed"
+    assert filed.read_bytes() == b"episode one"
+
+
+def test_orphan_sweep_leaves_a_folder_holding_anything_unfiled(tmp_path, monkeypatch):
+    """One unrecognised video and the whole folder stays — the non-video
+    files beside it would go with it, so the bar is that nothing
+    irreplaceable is in there."""
+    store = RequestStore(":memory:")
+    downloads, _ = _organized_download(tmp_path, monkeypatch, store, extra_video="Extra.Feature.mkv")
+    worker = Worker(store, FakeTMDBClient(), FakeQBTClient())
+
+    asyncio.run(worker._sweep_orphaned_downloads())
+
+    assert downloads.exists()
+
+
+def test_orphan_sweep_leaves_the_library_alone(tmp_path, monkeypatch):
+    """The organized folder is itself under the library root, so the
+    sweep walks past it every cycle; a filed path is never redundant."""
+    store = RequestStore(":memory:")
+    _, filed = _organized_download(tmp_path, monkeypatch, store)
+    worker = Worker(store, FakeTMDBClient(), FakeQBTClient())
+
+    asyncio.run(worker._sweep_orphaned_downloads())
+
+    assert filed.exists()
+    assert filed.parent.parent.exists()

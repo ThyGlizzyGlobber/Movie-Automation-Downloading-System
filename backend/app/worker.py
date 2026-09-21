@@ -102,7 +102,7 @@ import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from app import config, plex
+from app import config, plex, reconcile
 from app.db import NON_TERMINAL_STATUSES, RequestStore, ShowEpisodeRow, ShowRow
 from app.media_organizer import (
     MediaOrganizerError,
@@ -259,6 +259,7 @@ class Worker:
             asyncio.create_task(self._watch_shows(), name="worker-shows"),
             asyncio.create_task(self._watch_episode_rechecks(), name="worker-episode-rechecks"),
             asyncio.create_task(self._watch_source_cleanup(), name="worker-source-cleanup"),
+            asyncio.create_task(self._watch_orphaned_downloads(), name="worker-orphan-sweep"),
         ]
 
     async def stop(self) -> None:
@@ -856,6 +857,52 @@ class Worker:
     def _next_cleanup_attempt_at(self) -> str:
         return (datetime.now(timezone.utc) + timedelta(seconds=config.SOURCE_CLEANUP_DELAY_SECONDS)).isoformat()
 
+    async def _watch_orphaned_downloads(self) -> None:
+        """The backstop for every download folder the per-request cleanup
+        above cannot reach.
+
+        That cleanup only ever deletes *through* qBittorrent, so its
+        "torrent already gone" branch has nothing to act on and marks the
+        row done — permanently, since list_due_source_cleanups never
+        surfaces it again. The folder then sits in the library root for
+        good. That branch is not an edge case here: a share-limit rule
+        that drops a torrent minutes after it finishes seeding will
+        routinely beat the cleanup to it, and a pack re-filed by
+        `retry-parked-packs` has no torrent left by definition — so the
+        disk fallback that makes those recoverable would otherwise strand
+        a folder every single time it worked.
+
+        reconcile.remove_orphaned_download_dirs already solves this and
+        was already correct; it was simply only reachable by hand, via
+        `app.cli cleanup-orphans`. Automating what the app was supposed
+        to do on its own is the whole point of the feature.
+
+        Safe because of what it matches on, not how carefully it is
+        scheduled: organize places a library copy with os.link, so a
+        filed file and its download are the same inode, and a folder
+        qualifies only when it holds at least one video and *every*
+        video in it is a redundant link of something in the library. One
+        unrecognised video and the folder stays whole. No name matching,
+        no size guessing — see reconcile._filed_index."""
+        while True:
+            await asyncio.sleep(config.ORPHAN_SWEEP_INTERVAL_SECONDS)
+            try:
+                await self._sweep_orphaned_downloads()
+            except Exception:
+                logger.exception("orphan sweep cycle failed")
+
+    async def _sweep_orphaned_downloads(self) -> list[dict]:
+        roots = [str(config.MOVIE_LIBRARY_ROOT), str(config.TV_LIBRARY_ROOT)]
+        swept = await asyncio.to_thread(reconcile.remove_orphaned_download_dirs, self.store, roots, True)
+        removed = [item for item in swept if item.get("removed")]
+        if removed:
+            logger.info(
+                "orphan sweep: removed %d already-filed download folder(s), %.1f GB",
+                len(removed),
+                sum(item["size_bytes"] or 0 for item in removed) / 1_000_000_000,
+            )
+        return swept
+
     async def _watch_source_cleanup(self) -> None:
         while True:
             try:
@@ -972,7 +1019,11 @@ class Worker:
                     logger.info(
                         "source cleanup: removed original torrent %s (%s) after organizing", torrent_hash, label
                     )
-                # else: already gone (this app's own doing, or otherwise) — nothing left to clean up for this hash
+                # else: the torrent is already gone (this app's own doing, a
+                # share-limit rule, or a manual removal), so there is nothing
+                # left here to delete *through*. Its files may well still be on
+                # disk; _watch_orphaned_downloads is what collects those, by
+                # hardlink identity rather than by a path this code guessed at.
             except Exception:
                 logger.exception("source cleanup failed for torrent %s (%s) — will retry", torrent_hash, label)
                 remaining_hashes.append(torrent_hash)

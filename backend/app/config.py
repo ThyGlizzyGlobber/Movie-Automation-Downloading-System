@@ -517,6 +517,8 @@ TRAILER_DOWNLOAD_TIMEOUT_SECONDS = int(os.environ.get("TRAILER_DOWNLOAD_TIMEOUT_
 # Mission: Impossible's 5s "Your mission begins NOW!". Above the floor,
 # shortest wins; if a title has nothing above it, the longest of what it
 # does have is used rather than nothing.
+ORPHAN_SWEEP_INTERVAL_SECONDS = int(os.environ.get("ORPHAN_SWEEP_INTERVAL_SECONDS", "3600"))
+
 TRAILER_MIN_SECONDS = int(os.environ.get("TRAILER_MIN_SECONDS", "45"))
 # How many of a title's candidates are measured before choosing. Each
 # costs one yt-dlp metadata fetch, run in parallel and only on a cold
