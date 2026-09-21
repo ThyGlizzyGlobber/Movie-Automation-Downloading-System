@@ -68,8 +68,19 @@ services:
     # index.html had. dist/ never contains a dotfile/.env/Dockerfile —
     # nginx.conf's own generic dotfile-deny rule is the (now largely
     # redundant, still cheap) defense-in-depth layer for that.
+    #
+    # The TMDB image cache (frontend/nginx.conf's `location ^~ /img/`) is
+    # the one thing here that a `git pull` + deploy genuinely cannot
+    # deliver: nginx.conf is COPYed into the image, not bind-mounted like
+    # dist/ is, so changing it means recreating this container from a
+    # rebuilt image — the single exception to "an update never needs it
+    # rebuilt" above. The cache itself needs no configuration at all; it
+    # falls back to the container's writable layer. The named volume below
+    # only buys a cache that survives that recreation, and is capped at
+    # 5g by nginx regardless of where it lands.
     volumes:
       - "<REPO_PATH>/frontend/dist:/usr/share/nginx/html"
+      - "tmdb-cache:/var/cache/nginx/tmdb"
     depends_on:
       - backend
     restart: unless-stopped
@@ -140,3 +151,8 @@ services:
     expose:
       - "8000"
     restart: unless-stopped
+
+volumes:
+  # Declared so the frontend's tmdb-cache mount above resolves; TrueNAS
+  # creates it as a normal Docker named volume inside the ix- project.
+  tmdb-cache:

@@ -3,6 +3,13 @@ services:
     build: ./frontend
     ports:
       - "8080:80"
+    volumes:
+      # nginx.conf's TMDB image cache. Optional — without this mount the
+      # cache simply lives in the container's own writable layer and is
+      # lost if the container is recreated — but a named volume keeps a
+      # warm cache across recreation for free, and keeps 5GB of art out
+      # of the image layer.
+      - tmdb-cache:/var/cache/nginx/tmdb
     depends_on:
       - backend
 
@@ -69,5 +76,6 @@ services:
 
 volumes:
   backend-data:
+  tmdb-cache:
   caddy-data:
   caddy-config:

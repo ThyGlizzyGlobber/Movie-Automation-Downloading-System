@@ -1,4 +1,9 @@
-const IMG_BASE = 'https://image.tmdb.org/t/p/'
+// Same-origin, not image.tmdb.org directly: frontend/nginx.conf proxies
+// /img/ to TMDB and caches what comes back, so the second person to see
+// a poster gets it off local disk at LAN speed instead of fetching it
+// over the WAN again. Sizes below are unchanged — /img/w342/<path> maps
+// straight onto /t/p/w342/<path> upstream.
+const IMG_BASE = '/img/'
 const POSTER_SIZE = 'w342'
 // w1280 (not w780) — the hero/detail-page backdrop is now a full-bleed
 // banner that can be 2000px+ wide on a real desktop window since main's
@@ -45,5 +50,5 @@ export function sampleUrl(path: string | null | undefined): string {
 // Title logos: transparent PNGs, served at 500px wide which is plenty
 // for a hero at 2x.
 export function logoUrl(path: string | null | undefined, size: 'w500' | 'original' = 'w500'): string | null {
-  return path ? `https://image.tmdb.org/t/p/${size}${path}` : null
+  return path ? `${IMG_BASE}${size}${path}` : null
 }
