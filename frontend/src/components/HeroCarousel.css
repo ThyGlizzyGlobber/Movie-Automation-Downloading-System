@@ -314,6 +314,16 @@
   opacity: 1;
   transition: max-height 0.45s ease, opacity 0.35s ease, margin 0.45s ease;
 }
+/* A line clamp paints its ellipsis on the clamping element, in that
+   element's own color — not on the transparent sample text inside it.
+   So the loading hero drew a lit "…" hanging off the end of the last
+   shimmer bar, the one bit of the skeleton that wasn't a grey block.
+   Clearing the color here takes the ellipsis with it; the bars are
+   background, not text, so they are untouched. Two classes, to beat
+   .hero-syn's own color whichever order the stylesheets land in. */
+.hero-syn.skel-clamped {
+  color: transparent;
+}
 .hero-syn.hidden-for-video {
   max-height: 0;
   opacity: 0;

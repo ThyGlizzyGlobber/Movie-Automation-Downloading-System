@@ -122,7 +122,10 @@ function HeroSkeleton() {
               <div className="home-hero-meta">
                 <SkelText width="68%" />
               </div>
-              <p className="hero-syn">
+              {/* skel-clamped: the clamp draws its own ellipsis, which
+                  has to be hidden along with the sample text — see
+                  .hero-syn.skel-clamped in the CSS. */}
+              <p className="hero-syn skel-clamped">
                 <SkelWords text={SAMPLE_SYNOPSIS} />
               </p>
               <div className="home-hero-actions">
