@@ -12,7 +12,6 @@ import { getTvTrailer } from '../../api/tv'
 import { backdropUrl } from '../../lib/tmdbImage'
 import { profileUrl } from '../../lib/tmdbImage'
 import { plexWebUrl } from '../../lib/format'
-import { originalServiceMatch } from '../../lib/providers'
 import type { CastMember } from '../../types/movies'
 import type { RequestOut } from '../../types/requests'
 import { DetailH4, type DetailTile } from './DetailShell'
@@ -186,20 +185,6 @@ export function sourceFromName(name: string | null | undefined): string {
   return m.charAt(0).toUpperCase() + m.slice(1)
 }
 
-export function serviceTile(item: Parameters<typeof originalServiceMatch>[0], isTv: boolean): DetailTile | null {
-  const match = originalServiceMatch(item, isTv)
-  if (!match) return null
-  return {
-    label: 'Service',
-    fit: true,
-    value: (
-      <>
-        <img className="detail-tile-icon" src={`/icons/${match.icon}`} alt="" />
-        {match.label.replace(' Original', '')}
-      </>
-    ),
-  }
-}
 
 // The title's trailer, played inline in the card when one is on file
 // (the same self-hosted file the home hero uses).

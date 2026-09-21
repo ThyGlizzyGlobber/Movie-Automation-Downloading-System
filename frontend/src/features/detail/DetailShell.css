@@ -351,10 +351,14 @@
     flex: 0 0 auto;
     max-width: 60%;
   }
-  /* A third tile (Requested by, after Service and Status) starts its
-     own row and fills it. */
+  /* Only a tile that asks for a row of its own gets one. There used to
+     be an `:nth-child(3)` here as well, from when this column was
+     always Service, Status, Requested by and the third was the one that
+     needed the width. The column is built differently now — a show
+     leads with Status, then Following and Seasons — so that rule landed
+     on whatever happened to be third and broke the pair up. Every tile
+     that genuinely wants a row now says so with `wide`. */
   .detail-side .detail-tile.wide,
-  .detail-side .detail-tile:nth-child(3),
   .detail-side .detail-tile:only-child {
     flex-basis: 100%;
     max-width: none;

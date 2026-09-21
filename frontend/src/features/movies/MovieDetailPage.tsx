@@ -36,7 +36,7 @@ function MovieDetailSkeleton() {
   return (
     <>
       <DetailShellSkeleton
-        shape={{ tiles: [{}, { fit: true }], facts: 7, pills: ['7.4 · 1,234', '2024', 'PG-13', '2h 10m'], buttons: ['Add to Plex'] }}
+        shape={{ tiles: [{ wide: true }, { wide: true }], facts: 7, pills: ['7.4 · 1,234', '2024', 'PG-13', '2h 10m'], buttons: ['Add to Plex'] }}
         aside={<DetailCastSkeleton />}
       >
         <DetailTrailerSkeleton />
