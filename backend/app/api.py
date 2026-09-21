@@ -60,7 +60,7 @@ from app.plex import (
 )
 from app.qbt import QBTClient
 from app.resolve import resolve
-from app.tmdb import BROWSE_SORTS, TMDBClient, TMDBError, best_logo_path, best_trailer_key, is_movie_coming_soon, is_tv_upcoming
+from app.tmdb import BROWSE_SORTS, TMDBClient, TMDBError, best_logo_path, is_movie_coming_soon, is_tv_upcoming, trailer_candidates
 from app.tv_resolve import episode_is_released, resolve_show
 from app.tv_settings import resolve_tv_settings
 from app.tvmaze import TVMazeClient, season_airstamps
@@ -905,24 +905,22 @@ def get_movie_detail(
 
 @router.get("/api/movies/{tmdb_id}/trailer")
 def get_movie_trailer(tmdb_id: int, tmdb: TMDBClient = Depends(get_tmdb)) -> dict:
-    """Backs the home hero carousel's background video — a separate call
-    from get_movie_detail rather than another append_to_response, since
-    this is only ever fetched for the couple of hero slides that actually
-    need a trailer, not every movie the frontend touches. `url: null`
+    """Backs the hero carousel's background video — a separate call from
+    get_movie_detail rather than another append_to_response, since it is
+    only ever fetched for the handful of titles in a hero, not every
+    movie the frontend touches. `url: null`
     (never a 404) when nothing suitable is on file or the download fails —
     a title with no trailer is a normal, expected case, not an error the
     caller needs to handle specially; it just falls back to a plain
     poster/backdrop. Downloads and serves the clip from our own cache
     (trailers.py) rather than embedding YouTube's player — see that
-    module's docstring for why."""
+    module's docstring for why, and `trailers.resolve` for which of a
+    title's clips gets picked."""
     try:
         videos = tmdb.get_movie_videos(tmdb_id)
     except TMDBError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
-    key = best_trailer_key(videos)
-    if key is None:
-        return {"url": None}
-    path = trailers.ensure_downloaded("movie", tmdb_id, key)
+    path = trailers.resolve("movie", tmdb_id, trailer_candidates(videos))
     return {"url": f"/api/trailers/{path.name}" if path else None}
 
 
@@ -1065,10 +1063,7 @@ def get_tv_trailer(tmdb_id: int, tmdb: TMDBClient = Depends(get_tmdb)) -> dict:
         videos = tmdb.get_tv_videos(tmdb_id)
     except TMDBError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
-    key = best_trailer_key(videos)
-    if key is None:
-        return {"url": None}
-    path = trailers.ensure_downloaded("tv", tmdb_id, key)
+    path = trailers.resolve("tv", tmdb_id, trailer_candidates(videos))
     return {"url": f"/api/trailers/{path.name}" if path else None}
 
 

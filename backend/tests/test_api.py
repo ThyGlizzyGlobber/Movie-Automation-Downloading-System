@@ -1205,11 +1205,22 @@ def test_get_person_detail_404s_on_unknown_person_id(client_and_deps):
 
 
 # ---------------------------------------------------------------------------
-# /api/movies/{id}/trailer and /api/tv/{id}/trailer — home hero carousel
+# /api/movies/{id}/trailer and /api/tv/{id}/trailer — hero carousel
 # ---------------------------------------------------------------------------
 
 
-def test_get_movie_trailer_returns_cached_file_url(client_and_deps, monkeypatch, tmp_path):
+@pytest.fixture
+def unmeasured_trailers(monkeypatch):
+    """Keeps a trailer endpoint test off the network. trailers.resolve
+    measures a title's candidates to pick the shortest usable one, one
+    real yt-dlp call apiece; with nothing measurable it falls back to
+    the best type guess, which is the single key these tests set up.
+    Their subject is the URL the endpoint builds, not which clip wins —
+    that is test_trailers.py's."""
+    monkeypatch.setattr(api.trailers, "probe_duration", lambda key: None)
+
+
+def test_get_movie_trailer_returns_cached_file_url(client_and_deps, monkeypatch, tmp_path, unmeasured_trailers):
     client, _, tmdb, _, _, _ = client_and_deps
     tmdb._movie_videos = [{"site": "YouTube", "type": "Trailer", "official": True, "key": "abc123"}]
     monkeypatch.setattr(
@@ -1230,7 +1241,7 @@ def test_get_movie_trailer_returns_null_url_when_none_found(client_and_deps):
     assert response.json() == {"url": None}
 
 
-def test_get_movie_trailer_returns_null_url_when_download_fails(client_and_deps, monkeypatch):
+def test_get_movie_trailer_returns_null_url_when_download_fails(client_and_deps, monkeypatch, unmeasured_trailers):
     client, _, tmdb, _, _, _ = client_and_deps
     tmdb._movie_videos = [{"site": "YouTube", "type": "Trailer", "official": True, "key": "abc123"}]
     monkeypatch.setattr(api.trailers, "ensure_downloaded", lambda media_type, tmdb_id, key: None)
@@ -1250,7 +1261,7 @@ def test_get_movie_trailer_502s_on_upstream_error(client_and_deps):
     assert response.status_code == 502
 
 
-def test_get_tv_trailer_returns_cached_file_url(client_and_deps, monkeypatch, tmp_path):
+def test_get_tv_trailer_returns_cached_file_url(client_and_deps, monkeypatch, tmp_path, unmeasured_trailers):
     client, _, tmdb, _, _, _ = client_and_deps
     tmdb._tv_videos = [{"site": "YouTube", "type": "Teaser", "official": True, "key": "xyz789"}]
     monkeypatch.setattr(

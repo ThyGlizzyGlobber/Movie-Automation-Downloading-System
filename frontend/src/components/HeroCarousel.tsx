@@ -11,7 +11,6 @@ import Icon from './Icon'
 import { SAMPLE_SYNOPSIS, Skel, SkelText, SkelWords } from './Skeleton'
 import { useMediaQuery } from '../lib/hooks'
 
-const HERO_TRAILER_COUNT = 2 // only the front slides ever get a background video
 const HERO_AUTOPLAY_MS = 7000 // flat dwell time for a poster-only slide
 // How long a trailer slide's poster shows on its own — both before the
 // trailer starts and again after it finishes, before actually advancing.
@@ -187,10 +186,18 @@ export default function HeroCarousel({ items, loading = false }: { items: HeroSl
   const pausedByScrollRef = useRef(false)
   const prevIndexRef = useRef(0)
 
-  // Trailer fetch for the front couple of slides only — self-hosted,
-  // chromeless <video>, never autoplaying on its own; playback is
-  // entirely driven by the scheduling effect below, gated on the slide
-  // actually being active.
+  // Trailer fetch for every slide — self-hosted, chromeless <video>,
+  // never autoplaying on its own; playback is entirely driven by the
+  // scheduling effect below, gated on the slide actually being active.
+  //
+  // One at a time, in the order the slides come up, rather than all at
+  // once. A hit is a cached file and answers immediately, so a warm
+  // hero fills in as fast either way; a miss makes the backend fetch
+  // the clip from YouTube, and firing five of those in parallel puts
+  // five yt-dlp downloads on the NAS at once for a carousel that shows
+  // one slide every seven seconds. Sequential, the work arrives roughly
+  // in the order it is needed and a cold hero simply gains its trailers
+  // over the first pass or two.
   useEffect(() => {
     if (!trailersEnabled) {
       // Also clears anything fetched before the viewport narrowed, so
@@ -200,14 +207,19 @@ export default function HeroCarousel({ items, loading = false }: { items: HeroSl
       return
     }
     let cancelled = false
-    items.slice(0, HERO_TRAILER_COUNT).forEach(async (item, i) => {
-      try {
-        const { url } = item.mediaType === 'tv' ? await getTvTrailer(item.id) : await getMovieTrailer(item.id)
-        if (!cancelled) setVideoUrls((prev) => ({ ...prev, [i]: url }))
-      } catch {
-        // no trailer on file — the poster stays as the slide's art
+    void (async () => {
+      for (let i = 0; i < items.length; i++) {
+        if (cancelled) return
+        const item = items[i]
+        try {
+          const { url } = item.mediaType === 'tv' ? await getTvTrailer(item.id) : await getMovieTrailer(item.id)
+          if (cancelled) return
+          setVideoUrls((prev) => ({ ...prev, [i]: url }))
+        } catch {
+          // no trailer on file — the poster stays as the slide's art
+        }
       }
-    })
+    })()
     return () => {
       cancelled = true
     }
@@ -404,7 +416,7 @@ export default function HeroCarousel({ items, loading = false }: { items: HeroSl
           const href = isTv ? `#/tv/${item.id}` : `#/movies/${item.id}`
           const onPlex = !!item.on_plex
           const info = enrichment[i]
-          const hasVideo = i < HERO_TRAILER_COUNT && !!videoUrls[i]
+          const hasVideo = !!videoUrls[i]
 
           return (
             <div className={`home-hero-slide${i === activeIndex ? ' active' : ''}`} key={item.id}>
@@ -419,7 +431,7 @@ export default function HeroCarousel({ items, loading = false }: { items: HeroSl
                   alt=""
                   loading={i === 0 ? 'eager' : 'lazy'}
                 />
-                {i < HERO_TRAILER_COUNT && videoUrls[i] && (
+                {videoUrls[i] && (
                   <div className="home-hero-video-wrap">
                     <video
                       ref={(el) => {

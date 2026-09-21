@@ -490,9 +490,26 @@ TRAILER_CACHE_DIR = Path(os.environ.get("TRAILER_CACHE_DIR", Path(__file__).reso
 
 # Most-recently-used trailer files to keep on disk; enforce_downloaded()
 # evicts the oldest beyond this on every new download.
-TRAILER_CACHE_MAX_FILES = int(os.environ.get("TRAILER_CACHE_MAX_FILES", "20"))
+# Every hero slide carries a trailer now, not just the front two, and
+# three pages have a hero (home, movies, tv), so a single pass over the
+# app can touch fifteen distinct titles. At 20 the cache evicted titles
+# that were still on screen and re-downloaded them on the next loop.
+TRAILER_CACHE_MAX_FILES = int(os.environ.get("TRAILER_CACHE_MAX_FILES", "60"))
 
 TRAILER_DOWNLOAD_TIMEOUT_SECONDS = int(os.environ.get("TRAILER_DOWNLOAD_TIMEOUT_SECONDS", "45"))
+
+# The hero prefers the shortest preview that is still a preview. Under
+# this many seconds a clip is a social-media sting rather than a trailer
+# — measured on TMDB's own data, the sub-45s "Teasers" on file are
+# things like Inside Out 2's 15s "#1 Movie is Certified Fresh" and
+# Mission: Impossible's 5s "Your mission begins NOW!". Above the floor,
+# shortest wins; if a title has nothing above it, the longest of what it
+# does have is used rather than nothing.
+TRAILER_MIN_SECONDS = int(os.environ.get("TRAILER_MIN_SECONDS", "45"))
+# How many of a title's candidates are measured before choosing. Each
+# costs one yt-dlp metadata fetch, run in parallel and only on a cold
+# cache, so this bounds the wait on a title with a dozen promos on file.
+TRAILER_PROBE_LIMIT = int(os.environ.get("TRAILER_PROBE_LIMIT", "6"))
 
 # -- Stage 15: strip embedded cover-art from organized files. --
 

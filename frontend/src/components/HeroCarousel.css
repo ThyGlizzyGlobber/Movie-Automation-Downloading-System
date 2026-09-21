@@ -2,8 +2,9 @@
    (movie-only/TV-only trending items on the latter two). Same negative-
    margin bleed-under-the-fixed-topbar trick as the detail page's own
    hero, but its own class since the layout (poster+meta vs. this one's
-   title+actions) differs. Only the first couple of slides ever carry a
-   background video — every other slide is a plain backdrop image. */
+   title+actions) differs. Every slide carries a background video where
+   the title has one on file; a slide whose title has none stays a plain
+   backdrop image. */
 
 /* The hero's wrapper, and the only reason it exists: .home-hero clips
    its overflow, so the ambient glow the content page's banner sits in

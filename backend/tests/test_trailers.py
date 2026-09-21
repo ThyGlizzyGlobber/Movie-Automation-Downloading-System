@@ -130,3 +130,97 @@ def test_enforce_cache_retention_noop_when_under_limit(_cache_dir):
     trailers.enforce_cache_retention()
 
     assert {p.name for p in _cache_dir.glob("*.mp4")} == {"a.mp4"}
+
+
+# ---------------------------------------------------------------------------
+# pick_shortest_suitable / resolve — which of a title's clips the hero
+# plays. Type is a poor guide to length (a "Teaser" is as often a 5s
+# social sting as a short trailer), so these measure.
+# ---------------------------------------------------------------------------
+
+
+def _videos(*keys):
+    return [{"key": k, "site": "YouTube", "type": "Trailer"} for k in keys]
+
+
+def _durations(monkeypatch, by_key):
+    monkeypatch.setattr(trailers, "probe_duration", lambda key: by_key.get(key))
+
+
+def test_pick_shortest_suitable_takes_the_shortest_above_the_floor(monkeypatch):
+    monkeypatch.setattr(config, "TRAILER_MIN_SECONDS", 45)
+    _durations(monkeypatch, {"long": 136, "mid": 61, "sting": 15})
+    assert trailers.pick_shortest_suitable(_videos("long", "mid", "sting")) == "mid"
+
+
+def test_pick_shortest_suitable_ignores_social_stings(monkeypatch):
+    """Inside Out 2, live: four official 15-30s teasers that are
+    marketing bumpers, against one 98s trailer that is the only real
+    preview. Shortest-wins without a floor picks a bumper."""
+    monkeypatch.setattr(config, "TRAILER_MIN_SECONDS", 45)
+    _durations(monkeypatch, {"announce": 98, "fresh": 15, "celebrate": 30, "fuzzies": 15})
+    assert trailers.pick_shortest_suitable(_videos("announce", "fresh", "celebrate", "fuzzies")) == "announce"
+
+
+def test_pick_shortest_suitable_falls_back_to_the_longest_when_all_are_short(monkeypatch):
+    """A title with nothing but stings still gets one — something beats
+    a still poster."""
+    monkeypatch.setattr(config, "TRAILER_MIN_SECONDS", 45)
+    _durations(monkeypatch, {"a": 5, "b": 21, "c": 20})
+    assert trailers.pick_shortest_suitable(_videos("a", "b", "c")) == "b"
+
+
+def test_pick_shortest_suitable_keeps_the_type_guess_when_nothing_measures(monkeypatch):
+    _durations(monkeypatch, {})
+    assert trailers.pick_shortest_suitable(_videos("first", "second")) == "first"
+
+
+def test_pick_shortest_suitable_skips_unmeasurable_candidates(monkeypatch):
+    monkeypatch.setattr(config, "TRAILER_MIN_SECONDS", 45)
+    _durations(monkeypatch, {"measurable": 90})
+    assert trailers.pick_shortest_suitable(_videos("blocked", "measurable")) == "measurable"
+
+
+def test_pick_shortest_suitable_measures_at_most_the_probe_limit(monkeypatch):
+    monkeypatch.setattr(config, "TRAILER_PROBE_LIMIT", 2)
+    probed = []
+
+    def probe(key):
+        probed.append(key)
+        return 60
+
+    monkeypatch.setattr(trailers, "probe_duration", probe)
+    trailers.pick_shortest_suitable(_videos("a", "b", "c", "d"))
+    assert probed == ["a", "b"]
+
+
+def test_pick_shortest_suitable_returns_none_without_candidates():
+    assert trailers.pick_shortest_suitable([]) is None
+
+
+def test_resolve_uses_a_cached_clip_without_measuring_anything(_cache_dir, monkeypatch):
+    """The probing is once per title: whichever clip won last time is on
+    disk under its own key, so the next request has to recognise it
+    among the candidates rather than measuring them all again."""
+    _cache_dir.mkdir(parents=True, exist_ok=True)
+    (_cache_dir / "movie-42-mid.mp4").write_bytes(b"cached")
+    monkeypatch.setattr(trailers, "probe_duration", lambda key: pytest.fail("probed a title already on disk"))
+
+    path = trailers.resolve("movie", 42, _videos("long", "mid"))
+
+    assert path == _cache_dir / "movie-42-mid.mp4"
+
+
+def test_resolve_downloads_the_measured_pick(_cache_dir, monkeypatch):
+    monkeypatch.setattr(config, "TRAILER_MIN_SECONDS", 45)
+    _durations(monkeypatch, {"long": 136, "mid": 61})
+    asked = []
+    monkeypatch.setattr(trailers, "ensure_downloaded", lambda mt, tid, key: asked.append(key) or _cache_dir / f"{key}.mp4")
+
+    trailers.resolve("movie", 42, _videos("long", "mid"))
+
+    assert asked == ["mid"]
+
+
+def test_resolve_returns_none_without_candidates(_cache_dir):
+    assert trailers.resolve("movie", 42, []) is None

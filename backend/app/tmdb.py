@@ -88,6 +88,39 @@ def is_movie_coming_soon(movie: dict, release_dates_by_country: list[dict], regi
     return _is_recent_release(movie) and _lacks_digital_release(release_dates_by_country, region)
 
 
+def trailer_candidates(videos: list[dict]) -> list[dict]:
+    """Every YouTube video worth considering as a hero preview, best
+    type-guess first — official Trailer, any Trailer, official Teaser,
+    any Teaser, which is `best_trailer_key`'s order kept whole rather
+    than collapsed to one winner.
+
+    A list, because type is a poor guide to length and length is what
+    the hero actually wants (trailers.pick_shortest_suitable measures
+    them). Measured live, 2026-09-21: Inside Out 2 offers four official
+    Teasers of 15-30s — "Best Movie of the Year", "#1 Movie is Certified
+    Fresh" — which are social-media stings, not short trailers, against
+    a 98s Announce Trailer that is the only real preview on file.
+    Mission: Impossible's teasers run 5s. Preferring Teasers outright
+    would have picked those. The Scandal, meanwhile, has a 61s official
+    Teaser against a 92s Trailer, and there the Teaser is exactly the
+    shorter cut worth having. Only measuring tells those apart.
+
+    Still ranked, because the ranking is the tiebreak among equals and
+    the fallback when nothing can be measured."""
+    youtube = [v for v in videos if v.get("site") == "YouTube" and v.get("key")]
+    ranked: list[dict] = []
+    for video_type in ("Trailer", "Teaser"):
+        for official_only in (True, False):
+            for v in youtube:
+                if v.get("type") != video_type:
+                    continue
+                if official_only and not v.get("official"):
+                    continue
+                if v not in ranked:
+                    ranked.append(v)
+    return ranked
+
+
 def best_trailer_key(videos: list[dict]) -> str | None:
     """The single best YouTube trailer key from a /videos response's
     `results` list, for the home hero carousel's background video — or
@@ -97,7 +130,11 @@ def best_trailer_key(videos: list[dict]) -> str | None:
     a Teaser is a real, if lesser, substitute when no full trailer has
     been uploaded yet (common for a just-announced or still-airing
     season), but never anything further afield (a clip, a featurette,
-    a bloopers reel) that wouldn't read as "the trailer" to a viewer."""
+    a bloopers reel) that wouldn't read as "the trailer" to a viewer.
+
+    The hero goes through `trailer_candidates` + trailers.py instead, to
+    pick on length; this remains the answer to "one key, no network",
+    and the fallback when nothing can be measured."""
     youtube = [v for v in videos if v.get("site") == "YouTube" and v.get("key")]
 
     def pick(video_type: str, official_only: bool) -> dict | None:
