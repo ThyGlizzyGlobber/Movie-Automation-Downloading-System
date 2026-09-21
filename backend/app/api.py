@@ -727,19 +727,26 @@ def discover_trending(
 # ---------------------------------------------------------------------------
 
 HERO_SLIDE_COUNT = 5
-# Matches the trending lists these are drawn from (POPULAR_DISCOVER_TTL_
-# SECONDS in tmdb.py) — no point holding slides longer than the list that
-# chose them. `on_plex` rides along inside each slide and is therefore up
-# to this stale, which is already true of the ~2-minute library snapshot
-# underneath it and is of no consequence to a hero.
-HERO_TTL_SECONDS = 300
+# Well past the trending lists these are drawn from: what a hero costs is
+# five detail calls, and what it shows changes far more slowly than five
+# minutes. At 300s a household loading Home a few times an hour found it
+# cold nearly every time and paid 600ms for the privilege — measured on
+# the real server, where it was the slowest thing on the page by a factor
+# of three, everything else being served from cache in single-digit ms.
+#
+# What that leaves stale is `on_plex`, and that one is noticed: it is
+# what turns the hero's button from "Add to Plex" into "Watch now", so a
+# title you just added would go on denying it for half an hour. It is
+# refreshed per request instead — see _with_fresh_plex_state, which costs
+# nothing the page wasn't paying anyway.
+HERO_TTL_SECONDS = 1800
 
 # Only what a slide renders. The detail payloads these come from carry
 # credits, recommendations and watch providers too — a hero showing five
 # of those would be megabytes for the sake of a logo and two lines.
 _HERO_COMMON = ("id", "overview", "backdrop_path", "poster_path", "logo_path", "genres", "is_coming_soon", "on_plex")
 _HERO_MOVIE_ONLY = ("title", "runtime", "release_date", "release_dates")
-_HERO_TV_ONLY = ("name", "content_ratings", "next_episode_to_air", "last_episode_to_air", "plex_complete")
+_HERO_TV_ONLY = ("name", "first_air_date", "content_ratings", "next_episode_to_air", "last_episode_to_air", "plex_complete")
 
 
 def _hero_slide(detail: dict, media_type: str) -> dict:
@@ -800,13 +807,40 @@ def _hero_slides_cached(kind: str, store: RequestStore, tmdb: TMDBClient) -> lis
     return [s for s in built if s]
 
 
+def _with_fresh_plex_state(slides: list[dict], store: RequestStore) -> list[dict]:
+    """Re-answer `on_plex` for slides that came out of the cache.
+
+    Everything else a slide carries — the logo, the genres, the rating —
+    is as true half an hour later as it was when TMDB was asked. Whether
+    the thing is on Plex is not: it is the difference between the hero
+    offering "Watch now" and offering to add something you already have.
+
+    Cheap enough to do on every request because it is the same cached
+    whole-library snapshot the rest of the page annotates itself from
+    (see plex.py's plex_library_lookup), taken once per media type here
+    rather than once per slide. Copies rather than mutates: these dicts
+    are the cache's own."""
+    matchers: dict[str, object] = {}
+    fresh = []
+    for slide in slides:
+        media_type = slide["media_type"]
+        if media_type not in matchers:
+            matchers[media_type] = plex_library_lookup(store, "movie" if media_type == "movie" else "show")
+        matcher = matchers[media_type]
+        date = slide.get("release_date") or slide.get("first_air_date") or ""
+        year = int(date[:4]) if date[:4].isdigit() else None
+        title = slide.get("title") or slide.get("name") or ""
+        fresh.append({**slide, "on_plex": bool(matcher(title, year, slide["id"])) if matcher else False})
+    return fresh
+
+
 @router.get("/api/hero")
 def hero_slides(kind: str = "home", store: RequestStore = Depends(get_store), tmdb: TMDBClient = Depends(get_tmdb)) -> list[dict]:
     """`kind` picks which landing page's carousel this is: mixed
     movies+TV for home, one or the other for the movies and TV pages."""
     if kind not in ("home", "movies", "tv"):
         raise HTTPException(status_code=422, detail="kind must be home, movies or tv")
-    return _hero_slides_cached(kind, store, tmdb)
+    return _with_fresh_plex_state(_hero_slides_cached(kind, store, tmdb), store)
 
 
 @router.get("/api/discover/providers")

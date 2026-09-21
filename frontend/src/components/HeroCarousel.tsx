@@ -15,7 +15,11 @@ import { useCertificationRegion } from '../features/auth/useSession'
 const HERO_AUTOPLAY_MS = 7000 // flat dwell time for a poster-only slide
 // How long a trailer slide's poster shows on its own — both before the
 // trailer starts and again after it finishes, before actually advancing.
-const HERO_POSTER_LEAD_MS = 3000
+// Long enough to take in the artwork and the title before anything
+// moves; not so long that opening Home feels like waiting for something.
+// It was 3000, which with the ~750ms the page genuinely takes to have
+// its hero read as a four-second load rather than as deliberate pacing.
+const HERO_POSTER_LEAD_MS = 1200
 // How close to the synopsis counts as reaching for it, in px on every
 // side. Generous enough that it opens before the cursor is literally on
 // the text — which matters while it is hidden and there is nothing to
@@ -460,7 +464,18 @@ export default function HeroCarousel({ items, loading = false }: { items: HeroSl
                       muted={i === activeIndex ? muted : true}
                       loop={false}
                       playsInline
-                      preload="auto"
+                      // Only the slide you are looking at fetches its
+                      // file. `auto` on all of them had the browser
+                      // pulling five trailers at once the moment their
+                      // URLs arrived — measured on the real server at
+                      // ~15s each, and dragging the poster images out
+                      // to 7s with them, the same images that take 5ms
+                      // when nothing is competing for the link. The
+                      // rest load when they become the active slide;
+                      // the poster lead covers the buffering, and the
+                      // file is served with range support so playback
+                      // starts on the first chunk rather than the last.
+                      preload={i === activeIndex ? 'auto' : 'none'}
                       aria-hidden="true"
                       className={videoVisible[i] ? 'home-hero-video-visible' : ''}
                       onPlaying={() => {

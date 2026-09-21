@@ -2452,6 +2452,35 @@ def test_hero_is_cached_rather_than_rebuilt_per_viewer(client_and_deps):
     assert calls["n"] == after_first
 
 
+def test_hero_refreshes_on_plex_without_waiting_for_the_cache(client_and_deps, monkeypatch):
+    """The cache holds a hero for half an hour, which is fine for
+    everything on it except whether the title is on Plex — that is what
+    turns the button from "Add to Plex" into "Watch now", and a title you
+    just added should not go on denying it."""
+    client, _, tmdb, _, _, _ = client_and_deps
+    _hero_trending(tmdb)
+    calls = {"n": 0}
+    original = tmdb.get_movie
+
+    def counted(tmdb_id):
+        calls["n"] += 1
+        return original(tmdb_id)
+
+    tmdb.get_movie = counted
+    on_plex = {"value": False}
+    monkeypatch.setattr(api, "plex_library_lookup", lambda store, media_type: (lambda *a, **k: on_plex["value"]))
+
+    first = client.get("/api/hero?kind=home").json()
+    built = calls["n"]
+    on_plex["value"] = True
+    second = client.get("/api/hero?kind=home").json()
+
+    assert all(s["on_plex"] is False for s in first)
+    assert all(s["on_plex"] is True for s in second)
+    # And the expensive half stayed cached while that changed.
+    assert calls["n"] == built
+
+
 def test_hero_rejects_an_unknown_kind(client_and_deps):
     client, _, _, _, _, _ = client_and_deps
 
