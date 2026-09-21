@@ -21,15 +21,17 @@ const HERO_AUTOPLAY_MS = 7000 // flat dwell time for a poster-only slide
 // It was 3000, which with the ~750ms the page genuinely takes to have
 // its hero read as a four-second load rather than as deliberate pacing.
 const HERO_POSTER_LEAD_MS = 1200
-// The longest a trailer slide may hold the carousel before it moves on
-// regardless. `ended` used to be the only thing that advanced one, which
-// meant anything that stopped a video short — a stall, a decode error, a
-// file that never finishes arriving — stranded the hero on that slide
-// for good: poster showing, nothing rotating, no way out but a reload.
-// Comfortably longer than any trailer worth playing, so it never cuts a
-// healthy one short; it exists purely so a broken one cannot wedge the
-// whole carousel.
-const HERO_TRAILER_MAX_MS = 150_000
+// How long past a trailer's own end the carousel waits before moving on
+// without it. `ended` used to be the only thing that advanced a trailer
+// slide, so anything that stopped a video short stranded the hero there
+// for good. This was a flat 150s, which is not a fallback so much as a
+// very long wait: a trailer that never starts held the carousel for two
+// and a half minutes. Now the wait is measured from what the video says
+// is left to play, so a 60s trailer is given 60s and a bit, not 150.
+const HERO_TRAILER_SLACK_MS = 8000
+// When the video will not say how long it is, which is rare enough to
+// be worth guessing at rather than waiting out.
+const HERO_TRAILER_UNKNOWN_MS = 30_000
 // How close to the synopsis counts as reaching for it, in px on every
 // side. Generous enough that it opens before the cursor is literally on
 // the text — which matters while it is hidden and there is nothing to
@@ -343,24 +345,41 @@ export default function HeroCarousel({ items, loading = false }: { items: HeroSl
           advance()
           return
         }
-        video.currentTime = 0
-        video.play().catch(() => {})
+        // Deliberately not rewound here. A slide that just became
+        // active mounts its video fresh at zero anyway, so the only
+        // thing a rewind changes is the resume: seeking an unbuffered
+        // video — which is what `preload="metadata"` leaves you with
+        // after a pause — is the case that stalls, and stalling is why
+        // the trailer would not come back after a scroll.
         const onEnded = () => {
-          window.clearTimeout(ceiling)
+          if (ceilingRef.current !== null) window.clearTimeout(ceilingRef.current)
           video.removeEventListener('ended', onEnded)
           if (tokenRef.current !== myToken) return
           timerRef.current = window.setTimeout(advance, HERO_POSTER_LEAD_MS)
         }
         video.addEventListener('ended', onEnded)
-        // Whatever happens to the video, the carousel keeps moving.
-        // Cleared the moment `ended` arrives, so a trailer that plays
-        // through is unaffected by it.
-        const ceiling = window.setTimeout(() => {
-          video.removeEventListener('ended', onEnded)
-          if (tokenRef.current !== myToken) return
-          advance()
-        }, HERO_TRAILER_MAX_MS)
-        ceilingRef.current = ceiling
+        video
+          .play()
+          .then(() => {
+            if (tokenRef.current !== myToken) return
+            // Armed once it is actually playing, so it measures what is
+            // left rather than the whole clip — a slide resumed halfway
+            // waits for its second half, not for another full length.
+            const left = Number.isFinite(video.duration) ? Math.max(0, video.duration - video.currentTime) * 1000 : 0
+            ceilingRef.current = window.setTimeout(() => {
+              video.removeEventListener('ended', onEnded)
+              if (tokenRef.current !== myToken) return
+              advance()
+            }, (left || HERO_TRAILER_UNKNOWN_MS) + HERO_TRAILER_SLACK_MS)
+          })
+          .catch(() => {
+            // It refused to play at all. Nothing is coming, so treat the
+            // slide as the poster-only one it has effectively become
+            // rather than leaving the carousel waiting on it.
+            video.removeEventListener('ended', onEnded)
+            if (tokenRef.current !== myToken) return
+            timerRef.current = window.setTimeout(advance, HERO_AUTOPLAY_MS)
+          })
       }, HERO_POSTER_LEAD_MS)
     }
 
@@ -396,14 +415,10 @@ export default function HeroCarousel({ items, loading = false }: { items: HeroSl
       if (away === pausedByHiddenRef.current) return
       pausedByHiddenRef.current = away
       if (away) {
-        const video = videoRefs.current[activeIndex]
-        if (video) {
-          video.pause()
-          // Rewound rather than held, matching the scroll pause below:
-          // coming back to a trailer thirty seconds in, with no idea
-          // what came before, is worse than seeing it from the top.
-          video.currentTime = 0
-        }
+        // Paused where it is, not rewound. Resuming from the buffer it
+        // already has needs no seek, and a seek on a video whose buffer
+        // was dropped is the thing that would not come back.
+        videoRefs.current[activeIndex]?.pause()
       }
       // Re-runs the scheduler, which on the way back gives the slide the
       // same poster lead-in a freshly activated one gets.
@@ -428,13 +443,8 @@ export default function HeroCarousel({ items, loading = false }: { items: HeroSl
       const away = window.scrollY > 4
       if (away === pausedByScrollRef.current) return
       pausedByScrollRef.current = away
-      if (away) {
-        const video = videoRefs.current[activeIndex]
-        if (video) {
-          video.pause()
-          video.currentTime = 0
-        }
-      }
+      // Held rather than rewound, same as the window pause above.
+      if (away) videoRefs.current[activeIndex]?.pause()
       setScheduleTick((t) => t + 1)
     }
     window.addEventListener('scroll', onScroll, { passive: true })
