@@ -2612,7 +2612,15 @@ def test_get_current_session_reflects_the_signed_in_user(non_admin_client):
     response = client.get("/api/auth/session")
 
     assert response.status_code == 200
-    assert response.json() == {"username": "regular-user", "is_admin": False, "has_seen_tutorial": False, "avatar": False}
+    # certification_region rides along on this call rather than costing
+    # a second boot request — see the endpoint's own note.
+    assert response.json() == {
+        "username": "regular-user",
+        "is_admin": False,
+        "has_seen_tutorial": False,
+        "avatar": False,
+        "certification_region": api.DEFAULT_CERTIFICATION_REGION,
+    }
 
 
 def test_logout_clears_the_session_and_is_idempotent(client_and_deps):
@@ -2738,6 +2746,7 @@ def test_select_plex_server_during_bootstrap_also_signs_the_admin_in(tmp_path, m
             "is_admin": True,
             "has_seen_tutorial": False,
             "avatar": False,
+            "certification_region": api.DEFAULT_CERTIFICATION_REGION,
         }
 
 
