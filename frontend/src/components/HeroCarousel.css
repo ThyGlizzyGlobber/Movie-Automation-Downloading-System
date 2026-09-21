@@ -120,6 +120,17 @@
 }
 .home-hero {
   position: relative;
+  /* How far anything sitting in the frame's corners is held off its
+     edges. One value because these are meant to agree: the content's
+     side padding, the rating in the top corner and the prev/next group
+     in the bottom one all line up on it, and three matching literals
+     would only stay matching until someone changed one. Stepped down
+     with the rest of the frame in the tablet block below. */
+  --hero-inset: 48px;
+  /* The bottom edge wants its own value: the frame's corners are held
+     further off the foot than the sides, and the content has always been
+     padded that way. */
+  --hero-inset-bottom: 40px;
   /* Over the glow. */
   z-index: 1;
   /* auto, not 100% — the margins below inset it, and 100% would ignore
@@ -236,7 +247,7 @@
   z-index: 2;
   display: flex;
   align-items: flex-end;
-  padding: 24px 48px 40px;
+  padding: 24px var(--hero-inset) var(--hero-inset-bottom);
 }
 /* Prime-style hero body: logo or title, one status line, the buttons,
    and an availability line. Nothing else competes with the artwork. */
@@ -391,7 +402,7 @@
    than the page's edge inset. */
 .home-hero-cert {
   position: absolute;
-  right: 48px;
+  right: var(--hero-inset);
   /* Top right, out of the bottom edge entirely: that corner is the slide
      controls' now, and the rating has nothing to do with them. */
   top: 40px;
@@ -407,8 +418,12 @@
 /* Tablet: the frame is ~310px tall at 768, so everything steps down a
    size rather than waiting for the phone breakpoint. */
 @media (min-width: 640px) and (max-width: 1099px) {
+  .home-hero {
+    --hero-inset: 32px;
+    --hero-inset-bottom: 28px;
+  }
   .home-hero-content {
-    padding: 20px 32px 28px;
+    padding: 20px var(--hero-inset) var(--hero-inset-bottom);
   }
   .hero-line {
     font-size: 14px;
@@ -566,14 +581,21 @@
   }
 }
 /* Both slide controls live along the bottom now: dots centred, arrows to
-   their right. The group is centred on the dot row rather than sharing
-   its edge inset — the dots are 6px tall sitting 28px up, so their centre
-   line is at 31px, and centring a 44px button on it puts this group's
-   bottom edge at 31 - 22 = 9px. */
+   their right — but on the frame's padding box rather than on each
+   other. The group sat centred on the dot row for a while, which put it
+   9px off the foot of the frame: aligned with the dots, and visibly
+   tighter to the edge than anything else in the corner. Sitting it on
+   the same inset as the content instead means the dots, which keep their
+   own shallower lane, now sit lower than the arrows. That is the
+   trade this makes, deliberately. */
 .home-hero-nav {
   position: absolute;
-  right: 14px;
-  bottom: 9px;
+  /* Both insets are the content's own, so the group's outer edge lines
+     up with the text column's and its foot with the column's foot. The
+     14px and 9px it used to carry were leftovers from being pinned to
+     the sides, related to nothing else in the frame. */
+  right: var(--hero-inset);
+  bottom: var(--hero-inset-bottom);
   z-index: 3;
   display: flex;
   gap: 10px;
