@@ -13,6 +13,8 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from threading import RLock
 
+from app import config
+
 # Rows in these statuses are still live — an active job, or a torrent the
 # download watcher is still tracking. Retention purges (automatic or the
 # "Clear My Requests" button) never touch them, only settled history.
@@ -168,7 +170,9 @@ class ShowEpisodeRow:
     points at whichever `requests` row is the current audit trail for this
     episode (the original attempt, or the latest retry/upgrade if it's been
     rechecked). `recheck_count`/`last_rechecked_at` back worker.py's
-    auto-recheck loop (Stage 12.x)."""
+    auto-recheck loop (Stage 12.x), and `recheck_opted_in` records
+    whether that loop is entitled to touch this episode at all — see the
+    column's own note in the schema."""
 
     id: int
     show_id: int
@@ -176,6 +180,7 @@ class ShowEpisodeRow:
     episode_number: int
     request_id: int
     created_at: str
+    recheck_opted_in: bool
     recheck_count: int
     last_rechecked_at: str | None
 
@@ -188,6 +193,7 @@ class ShowEpisodeRow:
             episode_number=row["episode_number"],
             request_id=row["request_id"],
             created_at=row["created_at"],
+            recheck_opted_in=bool(row["recheck_opted_in"]),
             recheck_count=row["recheck_count"],
             last_rechecked_at=row["last_rechecked_at"],
         )
@@ -424,6 +430,25 @@ class RequestStore:
             # `_watch_episode_rechecks`.
             self._ensure_column("show_episodes", "recheck_count", "recheck_count INTEGER NOT NULL DEFAULT 0")
             self._ensure_column("show_episodes", "last_rechecked_at", "last_rechecked_at TEXT")
+            # Whether this episode was claimed while "keep looking for
+            # missing or better copies" was on. Recorded per episode
+            # rather than read live, because the setting answers a
+            # question about the future and not the past: turning it on
+            # used to make every episode ever downloaded immediately due
+            # — `_recheck_is_due` falls back to `created_at` when nothing
+            # has been rechecked, and while the setting is off nothing
+            # ever is — so a household that enabled it came back to find
+            # its whole library being re-searched for upgrades it never
+            # asked for.
+            #
+            # Existing rows are backfilled from the setting as it stands
+            # right now, which is the only evidence available about how
+            # they were created: a household with it on keeps the
+            # behaviour it has today, and one with it off is left alone,
+            # which is the point.
+            if self._ensure_column("show_episodes", "recheck_opted_in", "recheck_opted_in INTEGER NOT NULL DEFAULT 0"):
+                if self._recheck_enabled_now():
+                    self._conn.execute("UPDATE show_episodes SET recheck_opted_in = 1")
             # Stage 15: torrents explicitly rejected as genuinely defective
             # (bad encode, audio sync drift, wrong cut — anything the
             # search/scoring pipeline's filename-based signals could never
@@ -556,6 +581,22 @@ class RequestStore:
                 """
             )
             self._conn.commit()
+
+    def _recheck_enabled_now(self) -> bool:
+        """The saved value of `episode_recheck_enabled`, falling back to
+        config's default when it has never been set — the same precedence
+        tv_settings.settings_from_raw uses. Read straight off the table
+        rather than through get_settings(), because this runs inside
+        schema setup with the lock already held."""
+        # Schema setup runs this before the settings table itself is
+        # created on a brand-new database. There is nothing saved to read
+        # in that case, and nothing to back-fill either — a fresh file has
+        # no episodes.
+        table = self._conn.execute("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'settings'").fetchone()
+        row = self._conn.execute("SELECT data_json FROM settings WHERE id = 1").fetchone() if table else None
+        saved = json.loads(row["data_json"]) if row else {}
+        value = saved.get("episode_recheck_enabled")
+        return bool(config.EPISODE_RECHECK_ENABLED if value is None else value)
 
     def _ensure_column(self, table: str, column: str, ddl: str) -> bool:
         existing = {row["name"] for row in self._conn.execute(f"PRAGMA table_info({table})").fetchall()}
@@ -1316,16 +1357,27 @@ class RequestStore:
     def add_show_episode(self, show_id: int, season_number: int, episode_number: int, request_id: int) -> None:
         """Claims the episode's ledger slot for `request_id`. An existing
         claim stands, unless its request was cancelled or failed — then
-        the new request takes the slot over."""
+        the new request takes the slot over.
+
+        Stamps the claim with whether upgrade-rechecking is on right now,
+        rather than taking it as an argument: every one of the five
+        callers would have to look it up and agree, and one forgetting
+        would quietly opt an episode out for good."""
         with self._lock:
+            recheck_opted_in = self._recheck_enabled_now()
             self._conn.execute(
-                "INSERT INTO show_episodes (show_id, season_number, episode_number, request_id, created_at) "
-                "VALUES (?, ?, ?, ?, ?) "
+                "INSERT INTO show_episodes (show_id, season_number, episode_number, request_id, created_at, recheck_opted_in) "
+                "VALUES (?, ?, ?, ?, ?, ?) "
                 "ON CONFLICT(show_id, season_number, episode_number) DO UPDATE SET "
-                "request_id = excluded.request_id, created_at = excluded.created_at "
+                # A slot taken over by a fresh request is a fresh claim,
+                # so it adopts the setting as it stands now rather than
+                # keeping whatever the abandoned attempt was created
+                # under.
+                "request_id = excluded.request_id, created_at = excluded.created_at, "
+                "recheck_opted_in = excluded.recheck_opted_in "
                 "WHERE (SELECT status FROM requests WHERE id = show_episodes.request_id) "
                 "IN ('cancelled', 'no qualifying results', 'insufficient free space', 'failed')",
-                (show_id, season_number, episode_number, request_id, _now()),
+                (show_id, season_number, episode_number, request_id, _now(), 1 if recheck_opted_in else 0),
             )
             self._conn.commit()
 

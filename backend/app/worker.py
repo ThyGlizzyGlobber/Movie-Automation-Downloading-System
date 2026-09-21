@@ -1621,6 +1621,16 @@ class Worker:
 
     @staticmethod
     def _recheck_is_due(episode_row: ShowEpisodeRow, settings: TVScheduleSettings) -> bool:
+        # Claimed while the setting was off, so it is not this loop's to
+        # touch — not now, and not if the setting is turned on later.
+        # Without this, enabling the setting made every episode ever
+        # downloaded due at once: nothing is ever rechecked while it is
+        # off, so `last_rechecked_at` stays null for all of them and the
+        # interval below is measured from a `created_at` long past.
+        # Turning it on is a statement about what to do next, not a
+        # licence to go back over a library nobody asked to be redone.
+        if not episode_row.recheck_opted_in:
+            return False
         if settings.episode_recheck_max_attempts and episode_row.recheck_count >= settings.episode_recheck_max_attempts:
             return False
         last = episode_row.last_rechecked_at or episode_row.created_at

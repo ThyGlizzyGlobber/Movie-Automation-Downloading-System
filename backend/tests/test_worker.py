@@ -1958,6 +1958,7 @@ def _episode_row(**overrides):
         episode_number=1,
         request_id=1,
         created_at=(datetime.now(timezone.utc) - timedelta(hours=2)).isoformat(),
+        recheck_opted_in=True,
         recheck_count=0,
         last_rechecked_at=None,
     )
@@ -1975,6 +1976,20 @@ def _tv_settings(**overrides):
     )
     base.update(overrides)
     return TVScheduleSettings(**base)
+
+
+def test_recheck_skips_an_episode_claimed_while_the_setting_was_off():
+    """Turning "keep looking for missing or better copies" on says what to
+    do next; it is not a licence to go back over a library that was
+    downloaded while it was off. Those episodes have never been
+    rechecked, so their interval is measured from a `created_at` long
+    past — without this they would all come due the instant it is
+    enabled, which is precisely the flood this guards against."""
+    row = _episode_row(recheck_opted_in=False)
+
+    assert Worker._recheck_is_due(row, _tv_settings(episode_recheck_interval_hours=1)) is False
+    # And the same episode claimed with the setting on is due as ever.
+    assert Worker._recheck_is_due(_episode_row(), _tv_settings(episode_recheck_interval_hours=1)) is True
 
 
 def test_recheck_is_due_once_interval_has_elapsed_since_creation():
