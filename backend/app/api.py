@@ -1119,6 +1119,19 @@ def get_trailer_file(filename: str) -> FileResponse:
     path = config.TRAILER_CACHE_DIR / filename
     if not path.is_file():
         raise HTTPException(status_code=404, detail="trailer not found")
+    if config.TRAILER_X_ACCEL_PREFIX:
+        # Everything above still runs — the session gate on this router,
+        # the filename whitelist, the existence check — and only then is
+        # the file handed to nginx to actually send. A hero playing five
+        # of these otherwise has uvicorn streaming video while it is
+        # also the thing answering the API, and it serves ranges worse
+        # than nginx does besides. The body is empty on purpose: nginx
+        # discards it and sends the file named by the header.
+        return RawResponse(
+            status_code=200,
+            media_type="video/mp4",
+            headers={"X-Accel-Redirect": f"{config.TRAILER_X_ACCEL_PREFIX.rstrip('/')}/{filename}"},
+        )
     return FileResponse(path, media_type="video/mp4")
 
 

@@ -10,6 +10,10 @@ services:
       # warm cache across recreation for free, and keeps 5GB of art out
       # of the image layer.
       - tmdb-cache:/var/cache/nginx/tmdb
+      # Read-only: nginx sends the trailer files the backend downloaded,
+      # via the internal location in nginx.conf. The backend still
+      # authorises every request for one.
+      - backend-data:/srv/backend-data:ro
     depends_on:
       - backend
 
@@ -17,6 +21,11 @@ services:
     build: ./backend
     env_file:
       - ./backend/.env
+    environment:
+      # Hand trailer files to nginx rather than streaming them through
+      # uvicorn. Matches the `internal` location in frontend/nginx.conf;
+      # unset (as it is for the dev server) the app serves them itself.
+      - TRAILER_X_ACCEL_PREFIX=/internal-trailers/
     volumes:
       - backend-data:/app/data
     # No published port — reachable only from frontend over the internal

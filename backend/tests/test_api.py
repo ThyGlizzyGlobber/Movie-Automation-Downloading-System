@@ -1300,6 +1300,39 @@ def test_get_trailer_file_serves_cached_file(client_and_deps, monkeypatch, tmp_p
     assert response.headers["content-type"] == "video/mp4"
 
 
+def test_get_trailer_file_hands_nginx_the_file_when_configured(client_and_deps, monkeypatch, tmp_path):
+    """With an X-Accel prefix set, the app authorises and names the file;
+    nginx sends it. The empty body is the point — nginx discards it."""
+    client, _, _, _, _, _ = client_and_deps
+    monkeypatch.setattr(api.config, "TRAILER_CACHE_DIR", tmp_path)
+    monkeypatch.setattr(api.config, "TRAILER_X_ACCEL_PREFIX", "/internal-trailers/")
+    (tmp_path / "movie-693134-abc123.mp4").write_bytes(b"fake video bytes")
+
+    response = client.get("/api/trailers/movie-693134-abc123.mp4")
+
+    assert response.status_code == 200
+    assert response.headers["x-accel-redirect"] == "/internal-trailers/movie-693134-abc123.mp4"
+    assert response.content == b""
+
+
+def test_get_trailer_file_still_checks_before_handing_off(client_and_deps, monkeypatch, tmp_path):
+    """The handoff is the last thing that happens, not the first: a
+    filename the whitelist refuses, or one with no file behind it, never
+    reaches nginx — which would otherwise be asked to serve a path this
+    app never vouched for."""
+    client, _, _, _, _, _ = client_and_deps
+    monkeypatch.setattr(api.config, "TRAILER_CACHE_DIR", tmp_path)
+    monkeypatch.setattr(api.config, "TRAILER_X_ACCEL_PREFIX", "/internal-trailers/")
+
+    missing = client.get("/api/trailers/movie-693134-abc123.mp4")
+    rejected = client.get("/api/trailers/not-a-valid-name.mp4")
+
+    assert missing.status_code == 404
+    assert rejected.status_code == 404
+    assert "x-accel-redirect" not in missing.headers
+    assert "x-accel-redirect" not in rejected.headers
+
+
 def test_get_trailer_file_404s_when_missing(client_and_deps, monkeypatch, tmp_path):
     client, _, _, _, _, _ = client_and_deps
     monkeypatch.setattr(api.config, "TRAILER_CACHE_DIR", tmp_path)

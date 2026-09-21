@@ -81,6 +81,11 @@ services:
     volumes:
       - "<REPO_PATH>/frontend/dist:/usr/share/nginx/html"
       - "tmdb-cache:/var/cache/nginx/tmdb"
+      # Read-only view of the backend's data path, so nginx can send the
+      # trailer files rather than uvicorn streaming them through Python
+      # while it is also answering the API. Same <APP_DATA_PATH> the
+      # backend mounts at /app/data below; only ever read here.
+      - "<APP_DATA_PATH>:/srv/backend-data:ro"
     depends_on:
       - backend
     restart: unless-stopped
@@ -89,6 +94,12 @@ services:
     build:
       context: <REPO_PATH>/backend
     environment:
+      # Hand trailer files to nginx instead of streaming them out of
+      # uvicorn — the app still authorises every request for one, then
+      # names the file for the `internal` location in
+      # frontend/nginx.conf. Needs the frontend's read-only mount of
+      # this same data path, above. Unset, the app serves them itself.
+      TRAILER_X_ACCEL_PREFIX: "/internal-trailers/"
       TMDB_API_KEY: "REPLACE_WITH_VALUE_FROM_backend/.env"
       QBIT_HOST: "192.168.0.133"
       QBIT_PORT: "30024"

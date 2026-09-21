@@ -488,6 +488,14 @@ QBIT_MOVIE_SAVE_PATH = os.environ.get("QBIT_MOVIE_SAVE_PATH")
 # mounted at /app/data rather than needing a new one.
 TRAILER_CACHE_DIR = Path(os.environ.get("TRAILER_CACHE_DIR", Path(__file__).resolve().parent.parent / "data" / "trailers"))
 
+# Where nginx will serve trailer files from on this app's behalf — an
+# `internal` location, so only a redirect from here can reach it and
+# never a client directly. Set it and get_trailer_file hands nginx the
+# file instead of streaming it through uvicorn; leave it empty (the
+# default) and the file is streamed as before, which is what the dev
+# server does, having no nginx in front of it at all.
+TRAILER_X_ACCEL_PREFIX = os.environ.get("TRAILER_X_ACCEL_PREFIX", "").strip()
+
 # Most-recently-used trailer files to keep on disk; enforce_downloaded()
 # evicts the oldest beyond this on every new download.
 # Every hero slide carries a trailer now, not just the front two, and
