@@ -142,7 +142,15 @@ section.row .row-head-right {
      Vertical overflow is clipped instead, with enough padding above and
      below for the hover lift and the card shadow. */
   overflow-y: hidden;
-  padding: 14px 0 26px var(--row-inset);
+  /* The trailing inset is --edge-inset, not --row-inset like the
+     leading one, and the two do mirror each other. The left side gets
+     main's own 14px underneath it, so 14 + (edge-inset - 14) puts the
+     first poster at edge-inset. The right side has that 14px cancelled
+     by the negative margin below, which lets the track scroll to the
+     true viewport edge, so the full edge-inset has to come from here.
+     Without it the last poster in a row ended flush against the screen
+     while the first began 64px in. */
+  padding: 14px var(--edge-inset) 26px var(--row-inset);
   margin-right: -14px;
   scroll-snap-type: x proximity;
   -webkit-overflow-scrolling: touch;
