@@ -475,7 +475,17 @@ export default function HeroCarousel({ items, loading = false }: { items: HeroSl
                       // the poster lead covers the buffering, and the
                       // file is served with range support so playback
                       // starts on the first chunk rather than the last.
-                      preload={i === activeIndex ? 'auto' : 'none'}
+                      // `metadata`, not `auto`: the browser takes
+                      // enough to start and then streams as it plays,
+                      // stopping when the slide moves on. A hero shows
+                      // perhaps twenty seconds of a clip that runs
+                      // ninety, and `auto` fetched all ninety at full
+                      // 1080p every time. Only worth doing because
+                      // nginx serves these with real range support now
+                      // — through uvicorn this was worse than taking
+                      // the whole file. The poster lead covers the
+                      // buffering before playback starts.
+                      preload={i === activeIndex ? 'metadata' : 'none'}
                       aria-hidden="true"
                       className={videoVisible[i] ? 'home-hero-video-visible' : ''}
                       onPlaying={() => {

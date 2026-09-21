@@ -58,6 +58,37 @@ def test_ensure_downloaded_downloads_and_returns_path(_cache_dir, monkeypatch):
     assert result.read_bytes() == b"downloaded bytes"
 
 
+def test_ensure_downloaded_asks_for_a_codec_apple_can_play(_cache_dir, monkeypatch):
+    """VP9 in an .mp4 is what YouTube's "best" gives you and what an
+    iPhone refuses to play — silently, because the container claims mp4.
+    The selector must ask for H.264 and AAC by name, and must still fall
+    back rather than come away with nothing."""
+    captured = {}
+
+    class FakeYDL:
+        def __init__(self, opts):
+            captured.update(opts)
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+        def download(self, urls):
+            (config.TRAILER_CACHE_DIR / "movie-1-key.mp4").write_bytes(b"x")
+
+    monkeypatch.setattr(trailers.yt_dlp, "YoutubeDL", FakeYDL)
+    trailers.ensure_downloaded("movie", 1, "key")
+
+    fmt = captured["format"]
+    assert "vcodec^=avc1" in fmt
+    assert "acodec^=mp4a" in fmt
+    # Still degrades rather than failing outright for a VP9-only video.
+    assert fmt.count("/") >= 2
+    assert captured["merge_output_format"] == "mp4"
+
+
 def test_ensure_downloaded_returns_none_and_cleans_up_on_exception(_cache_dir, monkeypatch):
     class _FailingYDL:
         def __init__(self, opts):

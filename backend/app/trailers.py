@@ -42,7 +42,22 @@ def ensure_downloaded(media_type: str, tmdb_id: int, key: str) -> Path | None:
 
     config.TRAILER_CACHE_DIR.mkdir(parents=True, exist_ok=True)
     ydl_opts = {
-        "format": "bestvideo[height<=1080]+bestaudio/best[height<=1080]/best",
+        # H.264 video and AAC audio, explicitly, even though YouTube's
+        # "best" at this resolution is usually VP9 and Opus and smaller
+        # for it. VP9 in an .mp4 container is a combination Apple's
+        # players do not accept — confirmed on a real iPhone and iPad,
+        # both of which showed a still where Chrome played the trailer,
+        # silently, because the container says mp4 and nothing errors.
+        # The selector walks down rather than off a cliff: H.264 at
+        # 1080p, else the best progressive mp4, else whatever exists, so
+        # a video published only in VP9 still gets a file rather than
+        # none. The cost is bytes — H.264 needs more of them for the
+        # same picture — which is the trade for playing everywhere.
+        "format": (
+            "bestvideo[height<=1080][vcodec^=avc1]+bestaudio[acodec^=mp4a]/"
+            "best[height<=1080][ext=mp4]/"
+            "best[height<=1080]/best"
+        ),
         "merge_output_format": "mp4",
         "outtmpl": str(dest),
         "quiet": True,
