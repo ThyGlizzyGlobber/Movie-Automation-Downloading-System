@@ -644,6 +644,108 @@ def test_organize_pack_raises_when_torrent_not_found():
         organize_pack(LANTERNS, "abc123", qbt)
 
 
+# The disk fallback: qBittorrent can be set to drop a torrent minutes
+# after it finishes seeding, data left in place, which used to make any
+# organize failure permanent — nothing could read the file list again.
+
+
+def test_organize_pack_reads_from_disk_when_torrent_is_gone(tmp_path, monkeypatch):
+    library = tmp_path / "library"
+    monkeypatch.setattr(config, "TV_LIBRARY_ROOT", library)
+    # The download sits in the library root, where qBittorrent saves it.
+    release = library / "Lanterns.S01.COMPLETE.1080p.WEBRip-GRP"
+    release.mkdir(parents=True)
+    (release / "Lanterns.S01E01.1080p.mkv").write_bytes(b"ep1")
+    (release / "Lanterns.S01E02.1080p.mkv").write_bytes(b"ep2")
+    qbt = FakeQBTClient("/downloads", [], info=False)
+
+    # The stored name is the indexer's spaced display name; the folder on
+    # disk is the torrent's dotted one. Matching has to survive that.
+    placed = organize_pack(LANTERNS, "abc123", qbt, "Lanterns S01 COMPLETE 1080p WEBRip-GRP")
+
+    assert sorted((season, episode) for season, episode, _ in placed) == [(1, 1), (1, 2)]
+    for _, _, target_path in placed:
+        assert target_path.exists()
+
+
+def test_organize_pack_disk_fallback_needs_a_release_name(tmp_path, monkeypatch):
+    monkeypatch.setattr(config, "TV_LIBRARY_ROOT", tmp_path / "library")
+    qbt = FakeQBTClient("/downloads", [], info=False)
+    with pytest.raises(MediaOrganizerError, match="no release name"):
+        organize_pack(LANTERNS, "abc123", qbt)
+
+
+def test_organize_pack_disk_fallback_says_so_when_the_folder_is_gone_too(tmp_path, monkeypatch):
+    library = tmp_path / "library"
+    library.mkdir(parents=True)
+    monkeypatch.setattr(config, "TV_LIBRARY_ROOT", library)
+    qbt = FakeQBTClient("/downloads", [], info=False)
+    with pytest.raises(MediaOrganizerError, match="no folder matching"):
+        organize_pack(LANTERNS, "abc123", qbt, "Lanterns S01 COMPLETE 1080p WEBRip-GRP")
+
+
+def test_organize_pack_disk_fallback_does_not_match_a_different_release(tmp_path, monkeypatch):
+    """A near-match must not file someone else's download under this
+    show — the folder has to be the same words, not merely similar."""
+    library = tmp_path / "library"
+    monkeypatch.setattr(config, "TV_LIBRARY_ROOT", library)
+    other = library / "Lanterns.S02.COMPLETE.1080p.WEBRip-GRP"
+    other.mkdir(parents=True)
+    (other / "Lanterns.S02E01.1080p.mkv").write_bytes(b"ep1")
+    qbt = FakeQBTClient("/downloads", [], info=False)
+    with pytest.raises(MediaOrganizerError, match="no folder matching"):
+        organize_pack(LANTERNS, "abc123", qbt, "Lanterns S01 COMPLETE 1080p WEBRip-GRP")
+
+
+def test_organize_pack_prefers_the_torrent_when_it_is_still_there(tmp_path, monkeypatch):
+    """The fallback is a fallback: a live torrent still decides where the
+    files are, even when a same-named folder sits in the library root."""
+    library = tmp_path / "library"
+    monkeypatch.setattr(config, "TV_LIBRARY_ROOT", library)
+    downloads = tmp_path / "elsewhere" / "Lanterns.S01.COMPLETE"
+    downloads.mkdir(parents=True)
+    (downloads / "Lanterns.S01E01.mkv").write_bytes(b"from the torrent")
+    decoy = library / "Lanterns.S01.COMPLETE"
+    decoy.mkdir(parents=True)
+    (decoy / "Lanterns.S01E01.mkv").write_bytes(b"from the decoy")
+    qbt = FakeQBTClient(str(downloads), [{"name": "Lanterns.S01E01.mkv", "size": 3}])
+
+    placed = organize_pack(LANTERNS, "abc123", qbt, "Lanterns S01 COMPLETE")
+
+    assert len(placed) == 1
+    assert placed[0][2].read_bytes() == b"from the torrent"
+
+
+def test_organize_pack_disk_fallback_reads_the_real_italian_pack(tmp_path, monkeypatch):
+    """Both halves of the Supernatural S14 failure at once: the torrent
+    long gone, and every file named 14xNN rather than S14ENN."""
+    library = tmp_path / "library"
+    monkeypatch.setattr(config, "TV_LIBRARY_ROOT", library)
+    release = library / "Supernatural.S14.ITA.ENG.1080p.AMZN.WEBRip.AAC.x265-Pir8"
+    release.mkdir(parents=True)
+    for episode, titolo in ((1, "Straniero.In.Terra.Straniera"), (6, "Ottimismo"), (20, "Moriah")):
+        name = f"Supernatural.14x{episode:02d}.{titolo}.ITA.ENG.1080p.AMZN.WEBRip.AAC.x265-Pir8.mkv"
+        (release / name).write_bytes(b"ep")
+    supernatural = ShowIdentity(
+        tmdb_id=1622,
+        title="Supernatural",
+        original_title="Supernatural",
+        variants=["Supernatural"],
+        first_air_year=2005,
+    )
+    qbt = FakeQBTClient("/downloads", [], info=False)
+
+    placed = organize_pack(
+        supernatural, "26f75a7ad457d6c98dece41cc41ed840311ad9d1", qbt,
+        "Supernatural S14 ITA ENG 1080p AMZN WEBRip AAC x265-Pir8",
+    )
+
+    assert sorted((season, episode) for season, episode, _ in placed) == [(14, 1), (14, 6), (14, 20)]
+    for _, episode, target_path in placed:
+        assert target_path.name == f"Supernatural - s14e{episode:02d}.mkv"
+        assert target_path.exists()
+
+
 def test_organize_pack_raises_when_nothing_recognizable(tmp_path, monkeypatch):
     monkeypatch.setattr(config, "TV_LIBRARY_ROOT", tmp_path / "library")
     qbt = FakeQBTClient(

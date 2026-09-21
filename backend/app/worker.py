@@ -778,10 +778,15 @@ class Worker:
         "downloaded, not filed", same vocabulary as a single-episode
         organize failure."""
         torrent_hash = (row.result or {}).get("torrent_hash")
+        # The name the indexer gave the release, which is how organize_pack
+        # finds the download on disk if qBittorrent has already dropped the
+        # torrent (a share-limit rule can remove it within minutes of the
+        # download finishing, data left in place).
+        release_name = ((row.result or {}).get("winner") or {}).get("fileName")
         label = _request_label(row)
         try:
             identity = await asyncio.to_thread(resolve_show, row.tmdb_id, self.tmdb)
-            placed = await asyncio.to_thread(organize_pack, identity, torrent_hash, self.qbt)
+            placed = await asyncio.to_thread(organize_pack, identity, torrent_hash, self.qbt, release_name)
         except NoVideoFileError:
             message = await self._purge_no_video_torrent(torrent_hash, label)
             logger.warning("pack request %d (%s) downloading -> cancelled (%s)", row.id, label, message)

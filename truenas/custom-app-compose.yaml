@@ -7,10 +7,26 @@
 # (frontend reaches the backend by service name, `backend:8000`, same as
 # local Compose).
 #
-# All paths below live on the NAS itself, distinct from any workstation
-# checkout: the "deployed copy" is `git clone`d to
-# /mnt/SSD/AppData/movie-downloader/repo, and only that clone (updated by
-# `git pull` from Stage 6 onward) is ever referenced here.
+# This file is a reference copy, not the applied one. The live config is
+# maintained by hand in the TrueNAS UI, and nothing in this repo can
+# change it: `git pull` and `POST /api/admin/deploy` update the source
+# the containers already mount, never the compose config TrueNAS holds.
+# So treat this as the template you'd paste from when recreating the app
+# — and expect to fill the paths in, rather than expecting them to be
+# right.
+#
+# Every host path is therefore a <PLACEHOLDER>, deliberately: the real
+# ones move (the media datasets have already moved pools once), and a
+# stale absolute path committed here reads as fact while being wrong.
+# The container-side paths are NOT placeholders — /repo, /app/data,
+# /tv-library, /movie-library and /run/secrets/deploy_key are fixed by
+# the app's own config and code, and changing one means changing that
+# too. Fill in:
+#   <REPO_PATH>           the deployed `git clone` of this repo on the NAS
+#   <SECRETS_PATH>        holds the deploy key; outside the clone entirely
+#   <APP_DATA_PATH>       persistent SQLite; survives recreation and pulls
+#   <TV_LIBRARY_PATH>     the dataset qBittorrent's "tv" category saves to
+#   <MOVIE_LIBRARY_PATH>  the same for "movies"
 #
 # TMDB_API_KEY: TrueNAS custom apps have no env_file support, so the real
 # key value has to be inlined here when actually applying this config —
@@ -22,9 +38,9 @@
 #
 # GIT_SSH_KEY_PATH (Stage 6): the read-only GitHub deploy key, generated
 # for this NAS specifically and never committed — lives at
-# /mnt/SSD/AppData/movie-downloader/secrets/deploy_key (0600, root-only,
-# outside the git-tracked repo entirely so `git pull` itself can never
-# touch it), bind-mounted read-only into the backend container. Same
+# <SECRETS_PATH>/deploy_key (0600, root-only, outside the git-tracked
+# repo entirely so `git pull` itself can never touch it), bind-mounted
+# read-only into the backend container. Same
 # "never in the git-tracked tree, never visible via `docker inspect`"
 # handling as the confirmed architecture requires — `docker inspect` shows
 # only the mount *path*, never the key's contents.
@@ -32,7 +48,7 @@
 services:
   frontend:
     build:
-      context: /mnt/SSD/AppData/movie-downloader/repo/frontend
+      context: <REPO_PATH>/frontend
     ports:
       - "8095:80"
     # One directory-level bind mount, not per-file: a per-file bind mount
@@ -53,14 +69,14 @@ services:
     # nginx.conf's own generic dotfile-deny rule is the (now largely
     # redundant, still cheap) defense-in-depth layer for that.
     volumes:
-      - /mnt/SSD/AppData/movie-downloader/repo/frontend/dist:/usr/share/nginx/html
+      - "<REPO_PATH>/frontend/dist:/usr/share/nginx/html"
     depends_on:
       - backend
     restart: unless-stopped
 
   backend:
     build:
-      context: /mnt/SSD/AppData/movie-downloader/repo/backend
+      context: <REPO_PATH>/backend
     environment:
       TMDB_API_KEY: "REPLACE_WITH_VALUE_FROM_backend/.env"
       QBIT_HOST: "192.168.0.133"
@@ -94,31 +110,33 @@ services:
       # Deployed-copy source, live-reloaded by uvicorn --reload — confirmed
       # live during Stage 5 by editing this file directly on the NAS and
       # watching WatchFiles pick it up with no container restart.
-      - /mnt/SSD/AppData/movie-downloader/repo/backend/app:/app/app
+      - "<REPO_PATH>/backend/app:/app/app"
       # Stage 6: the whole deployed-copy clone, .git included — same host
       # directory backend/app above is a subdirectory of, so a `git pull`
       # run against this mount updates the files both this bind mount and
       # frontend's directory-level mount already serve, with no separate
       # sync step. Read-write: `git pull` has to write into `.git`.
-      - /mnt/SSD/AppData/movie-downloader/repo:/repo
+      - "<REPO_PATH>:/repo"
       # Read-only GitHub deploy key — see the note above. 0600 on the host,
       # readable only as this container's (root) user.
-      - /mnt/SSD/AppData/movie-downloader/secrets/deploy_key:/run/secrets/deploy_key:ro
+      - "<SECRETS_PATH>/deploy_key:/run/secrets/deploy_key:ro"
       # Persistent SQLite job store — distinct from the git-tracked source
       # above, survives container recreation and `git pull` alike.
-      - /mnt/SSD/AppData/movie-downloader/data:/app/data
+      - "<APP_DATA_PATH>:/app/data"
       # Stage 11: same underlying dataset qBittorrent's "tv" category
       # downloads into — media_organizer.py's hardlink can't work at all if
       # this isn't genuinely the same filesystem as qBittorrent's own
-      # download path, only a same-looking one. Currently the SSD dataset
-      # qBittorrent's "tv" category save path already points at. When the
-      # 18TB HDD arrives and qBittorrent's category save path moves to it,
-      # this line (and MOVIE_LIBRARY_ROOT's below) just repoint at the new
-      # pool's path — same requirement, new filesystem.
-      - "/mnt/SSD/Media/TV Shows:/tv-library"
+      # download path, only a same-looking one. That requirement is the
+      # whole reason this mount exists, and it is the thing to re-check
+      # whenever either side moves: the media datasets have since moved
+      # off the SSD onto the big HDD pool, and a library root left
+      # pointing at the old pool would still "work" — every organize
+      # would just silently fall back to a full copy (EXDEV) at double
+      # the disk, with one log line to say so.
+      - "<TV_LIBRARY_PATH>:/tv-library"
       # Stage 11 (movies): same idea as the TV mount above, on the SSD
       # dataset qBittorrent's "movies" category save path already points at.
-      - /mnt/SSD/Media/Movies:/movie-library
+      - "<MOVIE_LIBRARY_PATH>:/movie-library"
     expose:
       - "8000"
     restart: unless-stopped

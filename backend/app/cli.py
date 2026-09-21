@@ -1,4 +1,5 @@
 import argparse
+import asyncio
 import sys
 from pathlib import Path
 
@@ -12,6 +13,7 @@ from app.reconcile import remove_orphaned_download_dirs, remove_redundant_source
 from app.resolve import resolve
 from app.tmdb import TMDBClient
 from app.tv_resolve import resolve_show
+from app.worker import Worker
 
 
 def cmd_resolve(args: argparse.Namespace) -> int:
@@ -138,13 +140,19 @@ def cmd_organize_pack(args: argparse.Namespace) -> int:
     """Manual dev entry point for Stage 13's organize_pack(), mirroring
     cmd_organize_episode: run against a real, already-completed pack
     torrent's hash (add one first with `bulk-download`, wait for it to
-    finish in qBittorrent, then pass its hash here)."""
+    finish in qBittorrent, then pass its hash here).
+
+    `--release-name` is the recovery path for a pack whose torrent
+    qBittorrent has already dropped: with it, organize_pack finds the
+    download's folder on disk by name instead. Note this command only
+    touches the filesystem — see `retry-parked-packs` for the one that
+    also settles the request rows."""
     tmdb_client = TMDBClient(TMDB_API_KEY)
     qbt = QBTClient(QBIT_HOST, QBIT_PORT, QBIT_USERNAME, QBIT_PASSWORD)
     identity = resolve_show(args.tmdb_id, tmdb_client)
 
     try:
-        placed = organize_pack(identity, args.torrent_hash, qbt)
+        placed = organize_pack(identity, args.torrent_hash, qbt, args.release_name)
     except MediaOrganizerError as exc:
         print(f"status:   downloaded, not filed ({exc})")
         return 1
@@ -203,6 +211,53 @@ def cmd_organize_movie(args: argparse.Namespace) -> int:
     print(f"source:   {source_path}")
     print(f"target:   {target_path}")
     return 0
+
+
+def cmd_retry_parked_packs(args: argparse.Namespace) -> int:
+    """Re-run the organize step for every pack sitting on "downloaded,
+    not filed", and settle its request rows if it works this time.
+
+    That status means the download succeeded and the filing didn't, and
+    nothing in the app retries it: the per-episode recheck loop walks
+    `show_episodes`, and a pack only earns rows there once it has
+    organized successfully. So a pack that failed once stayed failed,
+    even after the reason was fixed. This is the way to pick those back
+    up — run it after deploying a fix for whatever the error_message on
+    those rows says.
+
+    It drives `Worker._organize_and_complete_pack` rather than
+    reimplementing it, so a retry does exactly what the original attempt
+    would have: organize, fan out one requests row and one ledger entry
+    per episode actually present, mark the pack organized, schedule the
+    source cleanup, refresh Plex. Reorganizing is idempotent — an
+    already-placed episode is replaced, not duplicated (`_link_or_copy`)
+    and one already in the ledger is left alone — so running this twice
+    is safe. The pack's own row is only moved off "downloaded, not
+    filed" by the retry succeeding; a still-failing one keeps its status
+    and gets a fresh error_message."""
+    store = RequestStore(config.DB_PATH)
+    rows = [r for r in store.list_requests(status="downloaded, not filed") if r.media_type == "pack"]
+    if not rows:
+        print("no packs are parked on 'downloaded, not filed'")
+        return 0
+
+    print(f"{len(rows)} parked pack(s):")
+    for row in rows:
+        print(f"  #{row.id} {row.title} S{row.season_number} — {row.error_message}")
+    if not args.apply:
+        print("\ndry run; pass --apply to retry them")
+        return 0
+
+    worker = Worker(store, TMDBClient(TMDB_API_KEY), QBTClient(QBIT_HOST, QBIT_PORT, QBIT_USERNAME, QBIT_PASSWORD))
+    failed = 0
+    for row in rows:
+        print(f"\nretrying #{row.id} {row.title} S{row.season_number}...")
+        asyncio.run(worker._organize_and_complete_pack(row))
+        after = store.get_request(row.id)
+        print(f"  -> {after.status}" + (f" ({after.error_message})" if after.error_message else ""))
+        if after.status != "complete":
+            failed += 1
+    return 1 if failed else 0
 
 
 def _state(item: dict, applying: bool) -> str:
@@ -301,7 +356,17 @@ def main(argv: list[str] | None = None) -> int:
     )
     organize_pack_parser.add_argument("tmdb_id", type=int)
     organize_pack_parser.add_argument("torrent_hash", type=str)
+    # Optional, and only used when the hash is no longer in qBittorrent:
+    # the release name to find the download's own folder on disk with.
+    organize_pack_parser.add_argument("--release-name", type=str, default=None)
     organize_pack_parser.set_defaults(func=cmd_organize_pack)
+
+    retry_parked_parser = subparsers.add_parser(
+        "retry-parked-packs",
+        help="Re-run organize for packs stuck on 'downloaded, not filed' (dry run unless --apply)",
+    )
+    retry_parked_parser.add_argument("--apply", action="store_true")
+    retry_parked_parser.set_defaults(func=cmd_retry_parked_packs)
 
     organize_episode_parser = subparsers.add_parser(
         "organize-episode", help="Place an already-completed episode torrent's file into Plex's library layout"

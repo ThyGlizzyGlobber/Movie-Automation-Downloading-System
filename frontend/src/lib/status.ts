@@ -9,6 +9,7 @@ export type RequestStatus =
   | 'insufficient free space'
   | 'failed'
   | 'cancelled'
+  | 'downloaded, not filed'
 
 interface StatusMeta {
   label: string
@@ -23,7 +24,11 @@ const STATUS_META: Record<string, StatusMeta> = {
   searching: { label: 'Searching', cls: 'status-searching', icon: 'scan' },
   downloading: { label: 'Downloading', cls: 'status-downloading', icon: 'download' },
   complete: { label: 'On Plex', cls: 'status-complete', icon: 'check-circle' },
-  'downloaded, not filed': { label: 'Importing', cls: 'status-complete', icon: 'plex' },
+  // Not a step on the way to "On Plex", however much the name sounds
+  // like one: the backend lists this with the failures, nothing retries
+  // it on its own, and it sat here as a green "Importing" pill while a
+  // season that would never arrive looked like it was almost there.
+  'downloaded, not filed': { label: 'Not filed', cls: 'status-nomatch', icon: 'alert' },
   'no qualifying results': { label: 'No match', cls: 'status-nomatch', icon: 'info' },
   'insufficient free space': { label: 'No space', cls: 'status-nospace', icon: 'alert' },
   failed: { label: 'Failed', cls: 'status-failed', icon: 'alert-circle' },
@@ -50,7 +55,11 @@ export function statusDetail(status: string, progress: number | null, errorMessa
     case 'complete':
       return 'Added to Plex'
     case 'downloaded, not filed':
-      return 'Downloaded, being filed'
+      // The download itself worked — the bytes are on the drive — so
+      // the line says what's actually true and what it needs, rather
+      // than implying either progress or a lost download. The organizer
+      // leaves its reason here the same way the no-match case does.
+      return errorMessage ? `Downloaded, but couldn't be filed: ${errorMessage}` : "Downloaded, but couldn't be filed"
     case 'no qualifying results':
       // The worker leaves a plain-English reason when the title was found
       // but only under the quality floor ("Found 9 copies, but none at

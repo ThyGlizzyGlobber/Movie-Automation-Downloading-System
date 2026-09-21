@@ -26,7 +26,7 @@ import subprocess
 from pathlib import Path, PurePosixPath
 
 from app import config
-from app.normalize import has_token, tokenize
+from app.normalize import has_token, normalize_text, tokenize
 from app.qbt import QBTClient
 from app.resolve import MediaIdentity
 from app.score import matches_any_variant
@@ -357,7 +357,92 @@ def organize_episode(show_identity: ShowIdentity, season: int, episode: int, sou
     return target
 
 
-def organize_pack(show_identity: ShowIdentity, torrent_hash: str, qbt: QBTClient) -> list[tuple[int, int, Path]]:
+def find_release_dir(root: Path, release_name: str) -> Path | None:
+    """The release's own folder under `root`, found by name when
+    qBittorrent can no longer be asked where it put it.
+
+    Matched on normalized tokens, not on the string: the name this app
+    stored is the indexer's display name ("Supernatural S14 ITA ENG
+    1080p AMZN WEBRip AAC x265-Pir8") while the folder on disk carries
+    the torrent's own dotted name ("Supernatural.S14.ITA.ENG.1080p.
+    AMZN.WEBRip.AAC.x265-Pir8") — same words, different separators, so
+    comparing either form directly misses. `normalize_text` flattens
+    both to the same string. Returns None rather than guessing when
+    nothing matches exactly: a near-match here would file somebody
+    else's download under this show."""
+    wanted = normalize_text(release_name)
+    if not wanted:
+        return None
+    try:
+        children = sorted(root.iterdir())
+    except OSError as exc:
+        logger.warning("find_release_dir: cannot list %s (%s)", root, exc)
+        return None
+    for child in children:
+        if child.is_dir() and normalize_text(child.name) == wanted:
+            return child
+    return None
+
+
+def _pack_entries(
+    torrent_hash: str | None, qbt: QBTClient, release_name: str | None
+) -> tuple[list[tuple[str, Path]], str]:
+    """Every file in the pack as (name, absolute source path) pairs —
+    from qBittorrent while it still holds the torrent, and from the disk
+    once it doesn't.
+
+    The fallback exists because the torrent is not reliably still there
+    when this runs, or when it is re-run. qBittorrent can be set to drop
+    a torrent shortly after it finishes seeding (ten minutes, on the
+    deployment this was written for) while leaving the data in place,
+    and an organize that fails for any reason parks its request on
+    "downloaded, not filed" — a status the rest of the app treats as
+    recoverable. It wasn't: the file list only ever came from the
+    torrent, so once that went, every retry failed identically and the
+    request was stranded for good, including ones a later fix would
+    otherwise have cleared. The files are still on disk; read them from
+    there.
+
+    Returns the entries and a short description of where they came
+    from, so the caller's errors can say which."""
+    info = qbt.torrent_info(torrent_hash) if torrent_hash else None
+    if info is not None:
+        save_path = info.get("save_path")
+        if not save_path:
+            raise MediaOrganizerError(f"torrent {torrent_hash!r} has no save_path")
+        base = translate_qbit_save_path(save_path, config.QBIT_TV_SAVE_PATH, config.TV_LIBRARY_ROOT)
+        files = qbt.torrent_files(torrent_hash)
+        return [(f["name"], base / f["name"]) for f in files], f"torrent {torrent_hash!r}"
+
+    if not release_name:
+        raise MediaOrganizerError(
+            f"torrent {torrent_hash!r} not found in qBittorrent, and no release name to find it on disk with"
+        )
+    release_dir = find_release_dir(config.TV_LIBRARY_ROOT, release_name)
+    if release_dir is None:
+        raise MediaOrganizerError(
+            f"torrent {torrent_hash!r} not found in qBittorrent, and no folder matching "
+            f"{release_name!r} under {config.TV_LIBRARY_ROOT}"
+        )
+    logger.info(
+        "organize_pack: torrent %r is gone from qBittorrent — reading %s off disk instead",
+        torrent_hash,
+        release_dir,
+    )
+    entries = [
+        (str(path.relative_to(release_dir.parent)), path)
+        for path in sorted(release_dir.rglob("*"))
+        if path.is_file()
+    ]
+    return entries, f"folder {str(release_dir)!r}"
+
+
+def organize_pack(
+    show_identity: ShowIdentity,
+    torrent_hash: str | None,
+    qbt: QBTClient,
+    release_name: str | None = None,
+) -> list[tuple[int, int, Path]]:
     """Stage 13: places every individually SxxEyy-identifiable file out of a
     completed season/complete-series pack torrent — an extension of
     `organize_episode`'s own per-file placement (`build_episode_path` +
@@ -374,7 +459,9 @@ def organize_pack(show_identity: ShowIdentity, torrent_hash: str, qbt: QBTClient
     it actually turns out to carry," not a fixed count this function
     checks against (Stage 13's "accept what's actually there" resolution
     of its own "partial pack" open decision). Raises `MediaOrganizerError`
-    if the torrent itself is gone, or the more specific `NoVideoFileError`
+    if neither the torrent nor, failing that, a folder on disk matching
+    `release_name` can be found (see `_pack_entries`), or the more
+    specific `NoVideoFileError`
     if literally nothing in it is recognizable as an episode — worker.py
     treats that specific case as grounds to purge the torrent outright,
     same as `select_video_file`'s own single-episode equivalent.
@@ -383,19 +470,10 @@ def organize_pack(show_identity: ShowIdentity, torrent_hash: str, qbt: QBTClient
     placed; the caller (worker.py) is what maps this back onto per-episode
     `requests` rows and Stage 12's `show_episodes` dedup ledger — this
     function only ever touches the filesystem, never the database."""
-    info = qbt.torrent_info(torrent_hash)
-    if info is None:
-        raise MediaOrganizerError(f"torrent {torrent_hash!r} not found in qBittorrent")
-    save_path = info.get("save_path")
-    if not save_path:
-        raise MediaOrganizerError(f"torrent {torrent_hash!r} has no save_path")
-
-    base = translate_qbit_save_path(save_path, config.QBIT_TV_SAVE_PATH, config.TV_LIBRARY_ROOT)
-    files = qbt.torrent_files(torrent_hash)
+    entries, source_desc = _pack_entries(torrent_hash, qbt, release_name)
     placed: list[tuple[int, int, Path]] = []
     any_video_file = False
-    for f in files:
-        name = f["name"]
+    for name, source_path in entries:
         path = Path(name)
         if path.suffix.lower() not in config.VIDEO_EXTENSIONS or has_token(path.stem, "sample"):
             continue
@@ -405,7 +483,6 @@ def organize_pack(show_identity: ShowIdentity, torrent_hash: str, qbt: QBTClient
             logger.info("organize_pack: skipping %r — no recognizable episode token", name)
             continue
         season, episode = identity_pair
-        source_path = base / name
         target = build_episode_path(show_identity, season, episode, source_path.suffix)
         target.parent.mkdir(parents=True, exist_ok=True)
         _link_or_copy(source_path, target)
@@ -414,14 +491,14 @@ def organize_pack(show_identity: ShowIdentity, torrent_hash: str, qbt: QBTClient
     if not placed:
         if not any_video_file:
             raise NoVideoFileError(
-                f"no video file at all among {len(files)} file(s) in torrent {torrent_hash!r}"
+                f"no video file at all among {len(entries)} file(s) in {source_desc}"
             )
         # Real video file(s) present, just none this app's naming parser
         # could pin to a season/episode — a genuine "can't file this yet"
         # case (unusual release naming), not a fake-release signal, so it
         # stays recoverable ("downloaded, not filed") rather than purged.
         raise MediaOrganizerError(
-            f"no recognizable episode files found among {len(files)} file(s) in torrent {torrent_hash!r}"
+            f"no recognizable episode files found among {len(entries)} file(s) in {source_desc}"
         )
     return placed
 
