@@ -163,6 +163,49 @@ services:
       - "8000"
     restart: unless-stopped
 
+  # Frontend migration Part G3 — remote access. Opt-in: delete this service
+  # (or leave TUNNEL_TOKEN unfilled and it will simply fail to connect) for
+  # a LAN-only deployment, which is the default the rest of this file
+  # assumes.
+  #
+  # A Cloudflare Tunnel rather than a port forward: nothing inbound is
+  # opened on the router at all, the home IP is never published, and TLS is
+  # terminated at Cloudflare's edge — this app never terminates HTTPS
+  # itself. cloudflared dials out (7844/tcp) and holds the connection open,
+  # so it needs no `ports:` entry of its own and the frontend's published
+  # 8095 stays a LAN-only convenience.
+  #
+  # The public hostname is configured in the Cloudflare dashboard, not
+  # here: Zero Trust > Networks > Tunnels > this tunnel > Public Hostname,
+  # pointed at `http://frontend:80` — the service name on this project's
+  # network, not localhost, which in this container is this container.
+  #
+  # TUNNEL_TOKEN is a credential and is handled exactly like TMDB_API_KEY
+  # above: the placeholder is what's committed, and the real connector
+  # token (dashboard, at tunnel creation) is substituted in at apply time,
+  # landing root-only under /mnt/.ix-apps/app_configs. Anyone holding it can
+  # run this tunnel, so it never goes in the repo. Rotate it in the
+  # dashboard if it ever does.
+  #
+  # Before pointing a hostname at this, read the real_ip note at the top of
+  # frontend/nginx.conf's server block, and confirm from outside the house
+  # that /api/setup/status answers 403 rather than JSON. Every request
+  # through here reaches nginx from this container's private address, and
+  # that address is inside the private-range allow list guarding the setup
+  # and Plex-link routes; the real_ip directives are the only reason it
+  # isn't handing the admin identity to whoever asks first. This service
+  # sitting on the same network as `frontend` is also what puts it inside
+  # the /12 those directives trust — move it off this network and that
+  # stops being true.
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    command: tunnel --no-autoupdate run
+    environment:
+      TUNNEL_TOKEN: "REPLACE_WITH_CONNECTOR_TOKEN_FROM_CLOUDFLARE_DASHBOARD"
+    depends_on:
+      - frontend
+    restart: unless-stopped
+
 volumes:
   # Declared so the frontend's tmdb-cache mount above resolves; TrueNAS
   # creates it as a normal Docker named volume inside the ix- project.

@@ -44,9 +44,14 @@ services:
   # needs a reverse proxy in front of the `frontend` service above.
   # Recommended, roughly in order of "just works" for a homelab:
   #   - Cloudflare Tunnel — no inbound port-forward at all, hides your home
-  #     IP entirely. Run `cloudflared` (its own container/binary, not part
-  #     of this compose file) pointed at http://frontend:80 on this
-  #     network.
+  #     IP entirely. Run `cloudflared` pointed at http://frontend:80 on
+  #     this network; truenas/custom-app-compose.yaml carries the service
+  #     ready to fill a token into, and this dev compose file deliberately
+  #     does not. Read the real_ip note at the top of frontend/nginx.conf's
+  #     server block before pointing a hostname at one: a tunnel reaches
+  #     nginx from a private address, which is inside the allow list
+  #     guarding the setup and Plex-link routes, and those directives are
+  #     the only thing keeping that gate from matching the whole internet.
   #   - Nginx Proxy Manager / Traefik — if you're already running one for
   #     other services, add a proxy host/router pointed at
   #     http://frontend:80 (join this compose network, or route via the

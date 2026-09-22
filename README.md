@@ -280,7 +280,8 @@ Obsidian **never terminates HTTPS itself.** Exposing it to the internet requires
 proxy in front of the frontend container. In rough order of "just works":
 
 - **Cloudflare Tunnel** — no inbound port forward at all, and your home IP stays hidden.
-  Point `cloudflared` at `http://frontend:80`.
+  Point `cloudflared` at `http://frontend:80`; `truenas/custom-app-compose.yaml` carries the
+  service, needing only a connector token from the Cloudflare dashboard.
 - **Nginx Proxy Manager / Traefik** — if you already run one, add a host pointed at
   `http://frontend:80`.
 - **The bundled Caddy profile** — automatic Let's Encrypt certificates, opt-in so it never
@@ -289,6 +290,14 @@ proxy in front of the frontend container. In rough order of "just works":
   PUBLIC_DOMAIN=your.domain.com docker compose --profile remote up -d
   ```
   Requires `PUBLIC_DOMAIN` to resolve to the host, with ports 80 and 443 forwarded.
+
+> [!WARNING]
+> Setup and Plex-linking are restricted to private IPs by `frontend/nginx.conf`, and a proxy
+> reaches nginx from a private address of its own — so whatever you put in front of this must
+> pass the real client address through, or that restriction matches the whole internet. The
+> `set_real_ip_from`/`real_ip_header` pair at the top of that file's `server` block does this
+> for a Cloudflare Tunnel; read the note there before exposing anything. Then check from
+> outside the house that `/api/setup/status` answers **403**, not JSON.
 
 > [!WARNING]
 > Get it working over plain LAN HTTP first, confirm it on the real host, *then* set up the
