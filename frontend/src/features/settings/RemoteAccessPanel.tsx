@@ -12,7 +12,7 @@ import './RemoteAccessPanel.css'
 type SaveState = 'idle' | 'saving' | 'saved' | 'error'
 
 const REMOTE_SUB =
-  'Turn this on once Obsidian is reachable over HTTPS from outside your home, for example through a reverse proxy or a Cloudflare Tunnel. It keeps sign-ins secure.'
+  'A record of where Obsidian is published — for example through a Cloudflare Tunnel. Sign-ins protect themselves per request, so nothing here decides whether you can sign in.'
 const HISTORY_SUB = 'Recent sign-ins and changes to access.'
 
 function RemoteAccessSettingsSection() {
@@ -56,7 +56,7 @@ function RemoteAccessSettingsSection() {
     <div className="settings-panel-card" style={{ marginBottom: 16 }}>
       <h2>Remote access</h2>
       <p className="settings-sub">{REMOTE_SUB}</p>
-      <SettingRow label="Obsidian is reachable from outside the house" hint="Keeps sign-ins secure once HTTPS is in front of it.">
+      <SettingRow label="Obsidian is reachable from outside the house" hint="Noted here and in the history below.">
         <Toggle checked={enabled} onChange={setEnabled} label="Obsidian is reachable from outside the house" />
       </SettingRow>
       <SettingRow label="Web address" hint="A note of where you've pointed it. Nothing else uses this." htmlFor="raPublicDomain">

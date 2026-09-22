@@ -2874,9 +2874,10 @@ def test_session_cookie_is_not_secure_by_default(client_and_deps):
     assert "Secure" not in set_cookie
 
 
-def test_session_cookie_is_secure_once_remote_access_is_enabled(client_and_deps):
-    client, store, _, _, _, _ = client_and_deps
-    store.update_settings({"remote_access_enabled": True})
+def test_session_cookie_is_secure_when_the_request_arrived_over_https(client_and_deps):
+    """No setting involved: `Secure` is a fact about the request that is
+    being answered, not a preference stored anywhere."""
+    client, _, _, _, _, _ = client_and_deps
     login_session = api_state_login_session(client)
     login_session._status = {
         "pending": False,
@@ -2884,14 +2885,56 @@ def test_session_cookie_is_secure_once_remote_access_is_enabled(client_and_deps)
         "error": None,
     }
 
-    # Over https, because that's what remote_access_enabled asserts is in
-    # front of the app — and because the login attempt cookie is itself
-    # Secure here, so a plain-http client would drop it before the status
-    # poll and never reach the branch this test is about.
     client.post("https://testserver/api/auth/login/start")
     response = client.get("https://testserver/api/auth/login/status")
 
     assert "Secure" in response.headers.get("set-cookie", "")
+
+
+def test_cookie_secure_follows_the_forwarded_scheme_not_the_connection(client_and_deps):
+    """Asserted on the response header rather than by signing in, because
+    TestClient takes both the connection scheme and its cookie jar's Secure
+    policy from the same URL — so it cannot express the shape this is
+    about, where the browser is on HTTPS and the connection reaching us is
+    not. The header is what `_cookie_secure` reads either way.
+
+    Both directions, because a rule that only ever adds Secure would pass
+    the first assertion while still being the connection talking."""
+    client, _, _, _, _, _ = client_and_deps
+
+    # The shape of every real remote request: TLS ends at Cloudflare, the
+    # tunnel hands us plain HTTP, the browser was on HTTPS throughout.
+    proxied_https = client.post("/api/auth/login/start", headers={"X-Forwarded-Proto": "https"})
+    assert "Secure" in proxied_https.headers.get("set-cookie", "")
+
+    # And the inverse: a proxy reporting http beats an https connection.
+    proxied_http = client.post(
+        "https://testserver/api/auth/login/start", headers={"X-Forwarded-Proto": "http"}
+    )
+    assert "Secure" not in proxied_http.headers.get("set-cookie", "")
+
+
+def test_enabling_remote_access_no_longer_decides_the_cookie_flag(client_and_deps):
+    """The regression this replaced: the toggle was global, the question
+    is per-request, and the app now has two front doors at once. Enabled,
+    a LAN sign-in used to mint a Secure cookie that the browser accepted
+    and then refused to send back over http — sign-in appeared to work and
+    the next call was a 401."""
+    client, store, _, _, _, _ = client_and_deps
+    store.update_settings({"remote_access_enabled": True})
+    login_session = api_state_login_session(client)
+    login_session._status = {
+        "pending": False,
+        "result": {"plex_user_id": "lan-user", "username": "lan-user", "is_admin": False},
+        "error": None,
+    }
+
+    client.post("/api/auth/login/start")
+    response = client.get("/api/auth/login/status")
+
+    set_cookie = response.headers.get("set-cookie", "")
+    assert "session_id=" in set_cookie
+    assert "Secure" not in set_cookie
 
 
 def test_revoke_all_sessions_requires_admin(non_admin_client):

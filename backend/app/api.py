@@ -101,13 +101,36 @@ def _new_session_expiry() -> str:
     return (datetime.now(timezone.utc) + timedelta(days=SESSION_TTL_DAYS)).isoformat()
 
 
-def _cookie_secure(store: RequestStore) -> bool:
-    """Part G4 — the `Secure` flag genuinely requires HTTPS, which this
-    app never terminates itself (a reverse proxy does, per Part G3); the
-    admin's own `remote_access_enabled` toggle is what tells the backend
-    that HTTPS is actually in front of it. `False` (LAN-only, plain HTTP)
-    by default, same as `remote_access_enabled` itself."""
-    return bool(store.get_settings().get("remote_access_enabled"))
+def _cookie_secure(request: Request) -> bool:
+    """Whether *this* request reached the browser over HTTPS.
+
+    `Secure` is not a preference, it is a fact about one request, and
+    getting it wrong in either direction costs a session: set it when the
+    browser is on plain HTTP and the cookie is accepted and then never
+    sent back, so signing in appears to work and the next call is a 401;
+    omit it over HTTPS and the cookie is one downgrade away from leaking.
+
+    It used to be read from the `remote_access_enabled` setting, which
+    made it a single global answer to a per-request question. That was
+    survivable while the app had one front door. It stopped being
+    survivable the moment it had two: https://<domain> through the tunnel
+    and http://<nas>:8095 on the LAN, both live, both legitimate. No value
+    of that setting is right for both, and the one that was set turned
+    every LAN sign-in into a silent 401.
+
+    So ask the request. nginx sends X-Forwarded-Proto, deriving it from
+    Cloudflare's edge for tunnel traffic and from its own listener
+    otherwise — see the map at the top of frontend/nginx.conf for what
+    that header is and is not worth trusting. The scheme is the fallback
+    for anything with no proxy in front: the tests, and `uvicorn --reload`
+    run directly in development."""
+    forwarded = request.headers.get("x-forwarded-proto")
+    if forwarded:
+        # A comma-separated chain is legal and only the first hop is the
+        # browser's own; nothing here produces one today, but reading
+        # past it would silently mean "whatever the last proxy felt like".
+        return forwarded.split(",")[0].strip().lower() == "https"
+    return request.url.scheme == "https"
 
 
 def _client_ip(request: Request) -> str | None:
@@ -1846,7 +1869,7 @@ def select_plex_server(
                 value=session_id,
                 httponly=True,
                 samesite="strict",
-                secure=_cookie_secure(store),
+                secure=_cookie_secure(request),
                 max_age=SESSION_TTL_DAYS * 24 * 3600,
                 path="/",
             )
@@ -1882,7 +1905,7 @@ async def start_login(
         value=attempt_id,
         httponly=True,
         samesite="strict",
-        secure=_cookie_secure(store),
+        secure=_cookie_secure(request),
         max_age=PIN_TIMEOUT_SECONDS,
         path="/",
     )
@@ -1917,7 +1940,7 @@ def login_status(
             value=session_id,
             httponly=True,
             samesite="strict",
-            secure=_cookie_secure(store),
+            secure=_cookie_secure(request),
             max_age=SESSION_TTL_DAYS * 24 * 3600,
             path="/",
         )
@@ -2113,12 +2136,21 @@ def update_qbt_settings(request: Request, body: SetupQbtRequest, store: RequestS
 
 # -- Remote access (frontend migration Part G2) — informational/config,
 #    not network automation (this app can't itself open a router port):
-#    displays the configured public URL back to the admin, and drives
-#    _cookie_secure() above. Defaults to False/None, same "opt-in,
+#    displays the configured public URL back to the admin, and records the
+#    change in the audit log. Defaults to False/None, same "opt-in,
 #    admin-only, after the fact" principle Part G1's LAN-only setup
 #    restriction exists to protect in the first place — an admin can only
 #    ever reach this toggle once they're already authenticated, which
-#    itself required completing setup from the LAN. --
+#    itself required completing setup from the LAN.
+#
+#    It no longer drives _cookie_secure(). It used to, and that was the
+#    bug: a global setting answering a question that is per-request once
+#    the app is reachable both over the tunnel and over plain HTTP on the
+#    LAN. Enabling it made every LAN sign-in mint a cookie the browser
+#    threw away. The cookie flag now comes from the request's own scheme,
+#    so this setting is a note to the admin about where they published it
+#    and an audited record that they did — nothing about a session
+#    depends on it. --
 
 
 class RemoteAccessSettings(BaseModel):

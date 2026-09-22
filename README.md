@@ -301,10 +301,13 @@ proxy in front of the frontend container. In rough order of "just works":
 
 > [!WARNING]
 > Get it working over plain LAN HTTP first, confirm it on the real host, *then* set up the
-> proxy — and only once that works, turn on **Settings → Remote Access**. That toggle is
-> what tells the backend HTTPS is genuinely in front of it, and it's what makes session
-> cookies `Secure`. Flipping it on without working HTTPS will stop sign-in from working,
-> because the browser will silently drop the cookie.
+> proxy. **Settings → Remote Access** is a note to yourself about where you published it,
+> plus an audited record that you did — it does not affect sign-in either way.
+>
+> Session cookies decide `Secure` from the scheme of each request, so the LAN over HTTP and
+> the tunnel over HTTPS both work at the same time. That needs the proxy to send
+> `X-Forwarded-Proto`; `frontend/nginx.conf` does, and the map at the top of that file says
+> what the header is and isn't worth trusting.
 
 Whichever you choose, the same-origin `/api/` proxy inside `frontend/nginx.conf` is
 untouched, so no CORS configuration is ever needed.
