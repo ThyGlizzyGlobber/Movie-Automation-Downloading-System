@@ -1,6 +1,5 @@
 import { useQuery } from '@tanstack/react-query'
 import { getSession } from '../../api/auth'
-import { ApiError } from '../../api/client'
 import { FALLBACK_REGION } from '../../lib/regions'
 
 // `enabled` lets callers hold this off until it's actually meaningful
@@ -12,13 +11,16 @@ export function useSession(enabled = true) {
     queryKey: ['session'],
     queryFn: getSession,
     enabled,
-    retry: false, // a 401 here is an expected, common outcome — not a transient failure to retry
+    retry: false, // what's left to fail here is genuine: 401 comes back as data, not an error
   })
 }
 
-export function isUnauthenticated(error: unknown): boolean {
-  return error instanceof ApiError && error.status === 401
-}
+// No isUnauthenticated() any more: being signed out is `data === null`,
+// not an error to interrogate. `undefined` still means the question is
+// open — never asked, or the first ask is still in flight — and callers
+// have to keep telling those two apart, because rendering a sign-in form
+// at someone whose session simply hasn't loaded yet is the same bug in
+// the other direction.
 
 // Which country's age ratings to show. It rides down with the session
 // (see api.py's get_current_session) rather than having a call of its

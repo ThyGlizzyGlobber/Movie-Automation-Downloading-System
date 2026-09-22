@@ -57,7 +57,11 @@ export default function Topbar({ onOpenSearch }: { onOpenSearch: () => void }) {
 }
 
 // The avatar opens a small menu: Account, Settings (admins), Sign out.
-function AccountMenu({ session, initials, settingsActive }: { session: SessionInfo | undefined; initials: string; settingsActive: boolean }) {
+// `null` joins `undefined` here rather than being narrowed away at the
+// call site: signed-out is now a value getSession can return, and this
+// menu already renders the same way for "no session yet" and "no session
+// at all". Collapsing them to one falsy check keeps that true.
+function AccountMenu({ session, initials, settingsActive }: { session: SessionInfo | null | undefined; initials: string; settingsActive: boolean }) {
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
   const navigate = useNavigate()
