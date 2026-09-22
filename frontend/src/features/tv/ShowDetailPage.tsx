@@ -265,12 +265,18 @@ export default function ShowDetailPage() {
   // (a 1080p season pack, a 2160p one later), and claiming either
   // number would be wrong — hence "Various" rather than picking one.
   const library = show.library
+  // Episodes is the one tile that isn't a property of the files: an
+  // episode re-downloaded at a better quality is filed under a second
+  // release name, so the ledger has two rows where the household has one
+  // episode. Plex's own count is the same number the episode list shows,
+  // and the ledger is only the fallback for a show Plex can't be asked
+  // about (not linked, or not scanned yet).
   const fileTiles: DetailTile[] | null =
     library && library.files > 0
       ? [
           { label: 'Quality', value: acrossReleases(library.releases, qualityFromName), tone: 'mint' },
           { label: 'Size', value: library.total_bytes ? formatBytes(library.total_bytes) : '—' },
-          { label: 'Episodes', value: String(library.files) },
+          { label: 'Episodes', value: String(show.plex_episode_count || library.files) },
           { label: 'Source', value: acrossReleases(library.releases, sourceFromName) },
         ]
       : null

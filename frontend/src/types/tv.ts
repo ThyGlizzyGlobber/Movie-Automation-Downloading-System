@@ -55,6 +55,11 @@ export interface TvDetail extends Omit<TmdbListItem, 'genre_ids'> {
   on_plex_tracked: boolean
   // Every aired episode is already on Plex (by Plex's own episode count).
   plex_complete?: boolean
+  // How many episodes of the show Plex holds — null when Plex isn't
+  // linked or hasn't got the show. What the episode list counts, one per
+  // episode, so a re-download isn't a second episode the way a file
+  // tally makes it.
+  plex_episode_count?: number | null
   // What this app has filed for the show across every season. Same
   // shape the movie detail carries — both pages render it as the same
   // "On disk" tiles.

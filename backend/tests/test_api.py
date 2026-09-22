@@ -1399,6 +1399,7 @@ def test_get_tv_detail_returns_full_show(client_and_deps):
         SHOW,
         on_plex=False,
         plex_complete=False,
+        plex_episode_count=None,
         is_coming_soon=False,
         on_plex_tracked=False,
         logo_path=None,
@@ -1444,6 +1445,40 @@ def test_get_tv_detail_plex_complete_when_plex_holds_every_aired_episode(client_
 
     monkeypatch.setattr(api, "_plex_episode_count", lambda store, title, year, tmdb_id=None: None)
     assert client.get("/api/tv/95350").json()["plex_complete"] is False
+
+
+def test_plex_episode_count_counts_episodes_not_files(client_and_deps, monkeypatch):
+    from app import api
+
+    _, store, _, _, _, _ = client_and_deps
+    # Plex lists an episode once however many times it was downloaded, so
+    # a re-download can't inflate this the way counting filed files does.
+    # Specials (season 0) aren't episodes of a season here or anywhere
+    # else on the show page.
+    monkeypatch.setattr(api, "plex_show_episodes", lambda store, title, year, tmdb_id=None: {(0, 1), (1, 1), (1, 2)})
+    assert api._plex_episode_count(store, "Show", 2026, 95350) == 2
+
+    monkeypatch.setattr(api, "plex_show_episodes", lambda store, title, year, tmdb_id=None: None)
+    assert api._plex_episode_count(store, "Show", 2026, 95350) is None
+
+
+def test_get_tv_detail_reports_how_many_episodes_plex_holds(client_and_deps, monkeypatch):
+    """What the show page's "On disk" Episodes tile counts."""
+    from app import api
+
+    client, _, tmdb, _, _, _ = client_and_deps
+    tmdb.get_tv = lambda tmdb_id: dict(
+        SHOW,
+        id=tmdb_id,
+        seasons=[{"season_number": 1, "episode_count": 8}],
+        last_episode_to_air={"season_number": 1, "episode_number": 8},
+    )
+    monkeypatch.setattr(api, "_on_plex_for", lambda title, year, media_type, store, tmdb_id=None: True)
+    monkeypatch.setattr(api, "plex_show_episodes", lambda store, title, year, tmdb_id=None: {(1, 1), (1, 2), (1, 3)})
+
+    body = client.get("/api/tv/95350").json()
+    assert body["plex_episode_count"] == 3
+    assert body["plex_complete"] is False
 
 
 def test_get_tv_detail_on_plex_tracked_true_after_a_completed_organized_pack(client_and_deps):

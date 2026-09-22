@@ -57,6 +57,7 @@ from app.plex import (
     locate_title,
     new_client_identifier,
     plex_library_lookup,
+    plex_show_episodes,
 )
 from app.qbt import QBTClient
 from app.resolve import resolve
@@ -620,20 +621,20 @@ def _aired_episode_count(show: dict) -> int:
 
 
 def _plex_episode_count(store: RequestStore, title: str, year: int | None, tmdb_id: int | None = None) -> int | None:
-    """How many episodes of this show Plex has, by Plex's own count, or
-    None when Plex isn't linked or can't find the show."""
-    settings = store.get_settings()
-    server_url, server_token = settings.get("plex_server_url"), settings.get("plex_server_token")
-    if not server_url or not server_token:
+    """How many episodes of this show Plex has, or None when Plex isn't
+    linked or can't find the show.
+
+    Distinct (season, episode) pairs from Plex's own episode listing —
+    the same thing the episode list counts — rather than a tally of
+    files: an episode re-downloaded at a better quality replaces the one
+    that was there, so it is still one episode however many releases it
+    took to get it. Specials are left out for the same reason
+    `_aired_episode_count` leaves them out: nothing else on the show page
+    counts them as episodes of a season."""
+    episodes = plex_show_episodes(store, title, year, tmdb_id)
+    if episodes is None:
         return None
-    client = PlexClient(settings.get("plex_client_id") or new_client_identifier())
-    try:
-        item = locate_title(store, client, "show", title, year, tmdb_id)
-        if item is None:
-            return None
-        return client.leaf_count(server_url, server_token, item["rating_key"])
-    except PlexError:
-        return None
+    return sum(1 for season, _episode in episodes if season >= 1)
 
 
 # ---------------------------------------------------------------------------
@@ -1079,11 +1080,15 @@ def get_tv_detail(tmdb_id: int, store: RequestStore = Depends(get_store), tmdb: 
     # Every aired episode is already on Plex: the show page hides "Add
     # all to Plex" rather than offering a download that would add nothing.
     aired = _aired_episode_count(show)
-    have = _plex_episode_count(store, show.get("name") or "", year, tmdb_id) if on_plex and aired else None
+    have = _plex_episode_count(store, show.get("name") or "", year, tmdb_id) if on_plex else None
     return {
         **show,
         "on_plex": on_plex,
         "plex_complete": bool(have is not None and have >= aired > 0),
+        # How many episodes the household actually has, for the "On disk"
+        # tiles. The ledger below counts files, which counts a
+        # re-downloaded episode twice; this counts episodes.
+        "plex_episode_count": have,
         "is_coming_soon": is_tv_upcoming(show),
         "logo_path": best_logo_path(show.get("images")),
         # Frontend migration Part K3 — TV parity with the movie route
