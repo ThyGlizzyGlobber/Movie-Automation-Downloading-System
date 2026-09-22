@@ -111,7 +111,49 @@ def _cookie_secure(store: RequestStore) -> bool:
 
 
 def _client_ip(request: Request) -> str | None:
+    """The address of the browser that actually made this request.
+
+    `request.client.host` is the peer that opened the TCP connection, and
+    this app has exactly one of those: nginx. The backend publishes no
+    port (docker-compose.yml's standing invariant that it never gains a
+    `ports:` entry), so nothing else can reach it — which makes
+    `request.client.host` the *same private address for every caller on
+    earth*, and useless as an identity. Read live it silently answered
+    two questions wrong: the audit log recorded a container address in
+    place of whoever signed in, and the rate limiters below keyed every
+    household member and every stranger into one shared bucket.
+
+    nginx sends the real address in X-Real-IP. Trusting a header is only
+    safe because of the invariant above plus `proxy_set_header`, which
+    *replaces* any X-Real-IP a client tried to send rather than appending
+    to it — so the value here cannot be chosen from outside. Publish the
+    backend's port and both of those stop being true at once, and this
+    becomes attacker-controlled input steering rate limits and audit
+    records alike.
+
+    Falls back to the peer when the header is absent, which is the shape
+    of every test and of `uvicorn --reload` run directly in development:
+    no proxy in front, so the peer genuinely is the client."""
+    forwarded = request.headers.get("x-real-ip")
+    if forwarded:
+        return forwarded.strip()
     return request.client.host if request.client else None
+
+
+def _rate_limit_key(request: Request) -> str:
+    """Per-client buckets, not one bucket for the whole deployment.
+
+    slowapi's own `get_remote_address` is `request.client.host`, which is
+    why this exists — see `_client_ip` above for why that is a constant
+    here. With it, the limits below did the opposite of their job once
+    remote access was on: two people signing in at once could exhaust a
+    limit meant for one, and anyone on the internet could spend the
+    household's entire login allowance without holding any credential.
+
+    `get_remote_address` stays as the fallback so a request that somehow
+    has neither header nor peer still lands on a key rather than raising
+    inside the limiter."""
+    return _client_ip(request) or get_remote_address(request)
 
 
 def _return_url(request: Request) -> str | None:
@@ -232,7 +274,7 @@ app = FastAPI(title="Obsidian", lifespan=lifespan)
 # for the poll, a couple of open tabs, and the retries that ride on top
 # of it. Cheap to serve and nothing to guess at, so the looser bound
 # costs us nothing an attacker can use.
-limiter = Limiter(key_func=get_remote_address)
+limiter = Limiter(key_func=_rate_limit_key)
 STATUS_POLL_RATE_LIMIT = "60/minute"
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)

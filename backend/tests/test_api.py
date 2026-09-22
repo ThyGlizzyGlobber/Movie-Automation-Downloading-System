@@ -2404,6 +2404,28 @@ def test_login_start_returns_auth_url(client_and_deps):
     assert "code=ABCD" in response.json()["auth_url"]
 
 
+def test_rate_limits_are_keyed_per_client_not_per_deployment(client_and_deps):
+    """Every request reaches this app from nginx, so keying the limiters
+    on the connecting peer put one bucket in front of everybody: two
+    people signing in at once could exhaust a limit meant for one, and
+    once remote access was on, a stranger could spend the household's
+    whole login allowance without holding a credential. The real client
+    arrives in X-Real-IP, which nginx sets and, crucially, replaces.
+
+    Both halves are asserted: the limit still has to bite the client that
+    actually spent it, or "per client" would be satisfied by a limiter
+    that never fires at all."""
+    client, _, _, _, _, _ = client_and_deps
+    spender = {"X-Real-IP": "203.0.113.9"}
+
+    spent = [client.post("/api/auth/login/start", headers=spender).status_code for _ in range(21)]
+
+    assert spent[:20] == [200] * 20
+    assert spent[20] == 429
+    bystander = client.post("/api/auth/login/start", headers={"X-Real-IP": "198.51.100.4"})
+    assert bystander.status_code == 200
+
+
 # -- Age-rating region ----------------------------------------------------
 
 
