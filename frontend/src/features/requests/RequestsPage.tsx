@@ -380,7 +380,13 @@ export default function RequestsPage() {
   const addedToday = rows.filter((r) => r.status === 'complete' && isToday(r.updated_at)).length
   const allItems: DisplayItem[] = groupRequestsForDisplay(rows)
   const items = allItems.filter((it) => matchesFilter(it.type === 'standalone' ? it.row.status : dominantStatus(it.rows), filter))
-  const people = new Set(rows.map((r) => r.requested_by_username).filter(Boolean)).size
+  // Counted by Plex id, not display name: the name is a denormalized copy
+  // per row and two rows from the same person can legitimately disagree
+  // (a rename propagates on their next sign-in, not retroactively in the
+  // browser), which counted one person as two. The id is what identifies
+  // someone; it is also null exactly for worker-created rows, which have
+  // no person to count.
+  const people = new Set(rows.map((r) => r.requested_by_plex_id).filter(Boolean)).size
   const summary = loading
     ? null
     : rows.length

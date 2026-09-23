@@ -3341,6 +3341,48 @@ def test_upsert_user_keeps_an_avatar_when_login_brings_none(tmp_path):
     assert again.avatar_url == "https://plex.tv/users/abc/avatar"
 
 
+def test_a_renamed_plex_account_relabels_the_requests_it_already_made(tmp_path):
+    """Identity on a request is requested_by_plex_id; the username beside
+    it is a copy taken when the request was made. Before this, renaming in
+    Plex left old requests under the old name and new ones under the new
+    one, so one person appeared as two depending on the screen."""
+    from app.db import RequestStore
+
+    store = RequestStore(tmp_path / "rename.db")
+    store.upsert_user("plex-7", "OldName", False)
+    old_row = store.create_request(
+        tmdb_id=1, title="Heat", release_year=1995, query=None,
+        requested_by_plex_id="plex-7", requested_by_username="OldName",
+    )
+    someone_else = store.create_request(
+        tmdb_id=2, title="Ronin", release_year=1998, query=None,
+        requested_by_plex_id="plex-9", requested_by_username="Other",
+    )
+
+    store.upsert_user("plex-7", "NewName", False)
+
+    assert store.get_request(old_row.id).requested_by_username == "NewName"
+    assert store.get_request(someone_else.id).requested_by_username == "Other"
+
+
+def test_a_login_that_brings_no_username_leaves_the_stored_one_alone(tmp_path):
+    """Plex not answering with a name is not Plex saying the name is now
+    nothing — blanking the requests list on a bad reply would be worse
+    than the staleness this whole change exists to remove."""
+    from app.db import RequestStore
+
+    store = RequestStore(tmp_path / "noname.db")
+    store.upsert_user("plex-7", "Known", False)
+    row = store.create_request(
+        tmdb_id=1, title="Heat", release_year=1995, query=None,
+        requested_by_plex_id="plex-7", requested_by_username="Known",
+    )
+
+    store.upsert_user("plex-7", None, False)
+
+    assert store.get_request(row.id).requested_by_username == "Known"
+
+
 def test_plex_locate_degrades_when_unlinked_and_rejects_bad_type(client_and_deps):
     client, _, _, _, _, _ = client_and_deps
     assert client.get("/api/plex/locate", params={"type": "movie", "title": "Undertow"}).json() == {"available": False}

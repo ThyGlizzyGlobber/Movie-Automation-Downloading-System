@@ -1436,11 +1436,31 @@ class RequestStore:
         change in server ownership is picked up on the next sign-in
         without any migration. First-time sign-in inserts a new row;
         every later one just updates username/is_admin/last_login_at,
-        leaving has_seen_tutorial and first_seen_at untouched."""
+        leaving has_seen_tutorial and first_seen_at untouched.
+
+        A changed display name is also written back over that person's own
+        past requests. `requests.requested_by_username` is a denormalized
+        copy taken when the request was made, and identity there is carried
+        by `requested_by_plex_id`, not by the text — so before this, a Plex
+        rename left every older request labelled with the old name forever
+        while new ones used the new one, and the same person showed up
+        under two names depending on which screen you were looking at.
+
+        Here rather than resolved at read time because this is the only
+        moment the name can change at all: Plex only ever tells us someone's
+        name via their own token (plex.py's get_account_identity), so there
+        is no path by which `users.username` moves without passing through
+        this function. Joining `users` on every request read would buy the
+        same answer, per page load, forever, to catch an update that can
+        only originate three lines above.
+
+        What it costs is the historical record of what someone was called
+        at the time — deliberate. This app's requests list exists to answer
+        "who do I go and ask about this", which is a question about now."""
         now = _now()
         with self._lock:
             existing = self._conn.execute(
-                "SELECT 1 FROM users WHERE plex_user_id = ?", (plex_user_id,)
+                "SELECT username FROM users WHERE plex_user_id = ?", (plex_user_id,)
             ).fetchone()
             if existing:
                 self._conn.execute(
@@ -1448,6 +1468,13 @@ class RequestStore:
                     "avatar_url = COALESCE(?, avatar_url) WHERE plex_user_id = ?",
                     (username, int(is_admin), now, avatar_url, plex_user_id),
                 )
+                # Only on an actual change, and never blanking a stored
+                # name with a NULL Plex didn't answer with.
+                if username and username != existing["username"]:
+                    self._conn.execute(
+                        "UPDATE requests SET requested_by_username = ? WHERE requested_by_plex_id = ?",
+                        (username, plex_user_id),
+                    )
             else:
                 self._conn.execute(
                     "INSERT INTO users (plex_user_id, username, is_admin, has_seen_tutorial, "
