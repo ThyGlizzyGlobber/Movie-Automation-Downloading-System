@@ -279,6 +279,29 @@ class TMDBClient:
         )
 
     @ttl_cache(POPULAR_DISCOVER_TTL_SECONDS)
+    def get_movie_recommendations(self, tmdb_id: int, page: int = 1) -> dict:
+        """TMDB's own "if you liked this" for a movie — the seed of every
+        "Because you watched…" row.
+
+        `/recommendations` rather than `/similar`: similar is computed from
+        shared genres and keywords, which reliably returns the same handful
+        of blockbusters for anything in a broad genre. Recommendations are
+        derived from what TMDB's users actually co-watch, which is the
+        question being asked here.
+
+        Cached on the same TTL as the discover rows: a recommendation set
+        for a given title barely moves day to day, and a household browsing
+        the same Home page shouldn't each pay for the lookup."""
+        return self._get(f"/movie/{tmdb_id}/recommendations", {"page": page})
+
+    @ttl_cache(POPULAR_DISCOVER_TTL_SECONDS)
+    def get_tv_recommendations(self, tmdb_id: int, page: int = 1) -> dict:
+        """The TV half of `get_movie_recommendations` — same reasoning, and
+        kept separate because TMDB keys movies and shows in different
+        namespaces, so an id alone can't tell you which endpoint it wants."""
+        return self._get(f"/tv/{tmdb_id}/recommendations", {"page": page})
+
+    @ttl_cache(POPULAR_DISCOVER_TTL_SECONDS)
     def discover_by_genre(self, genre_id: int, region: str = "US", page: int = 1) -> dict:
         return self._get(
             "/discover/movie",

@@ -609,6 +609,46 @@ def test_discover_tv_by_provider_passes_provider_and_region_through():
     assert calls == [("/discover/tv", {"with_watch_providers": 8, "watch_region": "GB", "page": 2, "sort_by": "popularity.desc"})]
 
 
+def test_recommendations_hit_the_right_namespace_for_each_media_type():
+    """An id alone doesn't say whether it's a film or a show — TMDB keys
+    them separately, so 1399 is Game of Thrones under /tv and something
+    else entirely under /movie. Sending a seed to the wrong one returns
+    somebody else's recommendations, confidently."""
+    client = TMDBClient(api_key="test-key")
+    calls = []
+
+    def fake_get(path, params=None):
+        calls.append((path, params))
+        return {"results": []}
+
+    client._get = fake_get
+    client.get_movie_recommendations(603, page=2)
+    client.get_tv_recommendations(1399)
+
+    assert calls == [
+        ("/movie/603/recommendations", {"page": 2}),
+        ("/tv/1399/recommendations", {"page": 1}),
+    ]
+
+
+def test_recommendations_are_ttl_cached_per_title():
+    """A household browsing the same Home page shouldn't each pay for the
+    same lookup — but two different seeds are two different questions."""
+    client = TMDBClient(api_key="test-key")
+    calls = []
+
+    def fake_get(path, params=None):
+        calls.append(path)
+        return {"results": []}
+
+    client._get = fake_get
+    client.get_movie_recommendations(603)
+    client.get_movie_recommendations(603)
+    client.get_movie_recommendations(604)
+
+    assert calls == ["/movie/603/recommendations", "/movie/604/recommendations"]
+
+
 def test_discover_by_genre_passes_genre_and_region_through():
     client = TMDBClient(api_key="test-key")
     calls = []
