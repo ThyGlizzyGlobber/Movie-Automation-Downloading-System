@@ -284,6 +284,41 @@ def build_rows(
     return rows
 
 
+def top_picks(rows: list[Row], size: int = ITEMS_PER_ROW) -> list[dict]:
+    """One blended row across everything this person's seeds suggested.
+
+    Ranked by how many *different* seeds recommended the same title, not by
+    popularity. A film that turns up under both "because you watched Heat"
+    and "because you watched Sicario" is being pointed at from two
+    directions at once, and that agreement is a better bet than either
+    row's own first entry — which is usually just whatever is most popular
+    in the genre. Popularity only breaks ties.
+
+    Needs at least two rows to mean anything: with one, "everything your
+    seeds agreed on" is that row again, under a grander name.
+    """
+    if len(rows) < 2:
+        return []
+    seen: dict[tuple[str, int], dict] = {}
+    agreement: dict[tuple[str, int], int] = {}
+    for row in rows:
+        for item in row.items:
+            if not item.get("id"):
+                continue
+            key = (row.media_type, int(item["id"]))
+            # Carried per item, because this row is the one place films and
+            # shows sit together. A single media_type on the row would send
+            # every show in it to a film's detail page — the kind of wrong
+            # that looks like a broken link rather than a bad recommendation.
+            seen.setdefault(key, {**item, "media_type": row.media_type})
+            agreement[key] = agreement.get(key, 0) + 1
+    ranked = sorted(
+        seen.items(),
+        key=lambda pair: (-agreement[pair[0]], -(pair[1].get("popularity") or 0)),
+    )
+    return [item for _, item in ranked[:size]]
+
+
 def today(now: datetime | None = None) -> str:
     """The rotation's clock, in UTC.
 

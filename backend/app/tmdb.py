@@ -279,6 +279,23 @@ class TMDBClient:
         )
 
     @ttl_cache(POPULAR_DISCOVER_TTL_SECONDS)
+    def discover_curated(self, media_type: str, **params) -> dict:
+        """A discover call with the filters passed straight through.
+
+        The existing discover_movies/discover_tv take a fixed handful of
+        filters because the browse UI offers a fixed handful. The named
+        rows ("Pitch-Black Comedies", "Sci-Fi That Earns Its Ending") are
+        defined by combinations those can't express — two genres at once, a
+        decade, a rating floor with a vote floor under it so the floor means
+        something. Rather than grow that signature a filter at a time, this
+        one hands TMDB whatever the mood asked for.
+
+        Safe to cache on kwargs because every value a mood carries is a
+        string or an int — see moods.py, where the queries live."""
+        path = "/discover/tv" if media_type == "tv" else "/discover/movie"
+        return self._get(path, {"include_adult": "false", **params})
+
+    @ttl_cache(POPULAR_DISCOVER_TTL_SECONDS)
     def get_movie_recommendations(self, tmdb_id: int, page: int = 1) -> dict:
         """TMDB's own "if you liked this" for a movie — the seed of every
         "Because you watched…" row.

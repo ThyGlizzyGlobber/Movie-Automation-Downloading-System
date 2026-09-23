@@ -35,7 +35,7 @@ from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
 
-from app import config, trailers
+from app import config, moods, taste, trailers
 from app.cache import ttl_cache
 from app.db import RequestRow, RequestStore, SessionRow, ShowRow
 from app.deploy import DeployError, run_git_pull
@@ -2526,6 +2526,119 @@ def _resolve_tmdb_ids(client: PlexClient, url: str, token: str, rating_keys: set
                 results[futures[future]] = None
         pool.shutdown(wait=False, cancel_futures=True)
     return results
+
+
+# The rows Home can render, and which of them hold still. Mirrors the keys
+# in frontend/src/features/home/HomePage.tsx — the frontend ignores keys it
+# doesn't recognise and appends any row the layout didn't mention, so the
+# two halves can deploy apart without either going blank. Backend owns the
+# order because it owns the day: one answer per person per day, identical on
+# their phone and their laptop.
+#
+# Pinned is the top of the page, in this order, every day. Top 10 leads
+# under the hero because that is the reference layout this rebuild matches.
+# New in your library comes next because it is the one row that is only
+# worth anything while it is new — a title that arrived today is news on
+# exactly one day, and burying it is how a household misses it. Continue
+# watching third because resuming what you were in the middle of should not
+# begin with hunting for the row.
+#
+# Trending is deliberately *not* pinned. It is the same list for everyone on
+# earth and it moves on its own, so it needs no help staying interesting —
+# the rows that benefit from a fixed home are the ones about this household.
+HOME_PINNED_ROWS = ("top10", "recent", "continue")
+HOME_ROTATING_ROWS = ("trending", "requested", "popular-movies", "popular-tv", "coming-soon", "subscribed")
+
+
+@router.get("/api/recommendations")
+def get_recommendations(
+    store: RequestStore = Depends(get_store),
+    tmdb: TMDBClient = Depends(get_tmdb),
+    session: SessionRow = Depends(require_session),
+) -> dict:
+    """This person's rows for today, and the order the page runs in.
+
+    Both halves are per (person, day) and both are computed here rather than
+    in the browser, so the same account gets the same page on every device
+    and a reload never redeals it.
+
+    Not separately cached: the TMDB lookups behind it are already TTL-cached
+    per title (see tmdb.py), and everything else is a bounded read of this
+    person's own requests plus arithmetic. Adding a second cache would mostly
+    add a second thing that can serve yesterday.
+
+    Degrades to empty rather than erroring — it decorates Home, it isn't a
+    page anyone asked for. A household with no request history yet simply
+    gets the fixed rows, in a daily order."""
+    now = datetime.now(timezone.utc)
+    day = taste.today(now)
+    who = session.plex_user_id
+
+    seeds = taste.seeds_from_requests(store.list_requests_for_user(who), now)
+    # Never recommend what they already asked for, or what the house already
+    # has — the two most obvious ways for this to look broken.
+    exclude = {(s.media_type, s.tmdb_id) for s in seeds} | store.library_tmdb_ids()
+    picked = taste.pick_seeds(seeds, taste.daily_rng(who, day, "seeds"))
+
+    def recommend(media_type: str, tmdb_id: int) -> list[dict]:
+        fetch = tmdb.get_tv_recommendations if media_type == "tv" else tmdb.get_movie_recommendations
+        return fetch(tmdb_id).get("results", [])
+
+    rows = taste.build_rows(picked, recommend, taste.daily_rng(who, day, "items"), exclude)
+
+    # One blended row across everything the seeds suggested, ranked by how
+    # many different seeds pointed at the same title. Agreement between two
+    # of someone's interests is a better bet than the first entry of either
+    # row alone, which is usually just the most popular thing in the genre.
+    picks = taste.top_picks(rows)
+    if len(picks) >= 4:
+        rows.append(
+            taste.Row(
+                key="top-picks",
+                title="Today's top picks",
+                qualifier="for you",
+                # Each item carries its own; see taste.top_picks.
+                media_type="mixed",
+                items=picks,
+            )
+        )
+
+    # Named rows ("Comedies That Go Somewhere Dark"), steered by what the
+    # rows above turned out to be made of. Read from those rather than
+    # fetched: they already carry genre_ids and they are by construction
+    # "things like what this person watches", so the affinity is free and
+    # points somewhere adjacent to their taste rather than back at it.
+    affinity = moods.affinity_from_rows(rows)
+    for mood in moods.pick_moods(affinity, taste.daily_rng(who, day, "moods")):
+        try:
+            found = tmdb.discover_curated(mood.media_type, **mood.params).get("results", [])
+        except Exception:  # noqa: BLE001 — one empty row, never the page
+            continue
+        items = [
+            item for item in found
+            if item.get("id") and (mood.media_type, int(item["id"])) not in exclude
+        ]
+        if len(items) < 4:
+            continue
+        rows.append(
+            taste.Row(
+                key=mood.key,
+                title=mood.title,
+                # No qualifier: the name is the whole point, and "Quietly
+                # Devastating · drama" would explain away the thing that
+                # made it worth reading.
+                qualifier="",
+                media_type=mood.media_type,
+                items=items[: taste.ITEMS_PER_ROW],
+            )
+        )
+
+    layout = taste.order_rows(
+        list(HOME_PINNED_ROWS),
+        [row.key for row in rows] + list(HOME_ROTATING_ROWS),
+        taste.daily_rng(who, day, "layout"),
+    )
+    return {"day": day, "rows": [asdict(row) for row in rows], "layout": layout}
 
 
 @router.get("/api/plex/on-deck")

@@ -256,3 +256,53 @@ def test_drawing_seeds_and_dealing_the_page_are_independent():
     layout_stream = taste.daily_rng("u", "2026-09-24", "layout").random()
 
     assert seeds_stream != layout_stream
+
+
+# -- Top picks: what several of your seeds agreed on ----------------------
+
+
+def test_top_picks_favours_what_several_seeds_agreed_on():
+    """A title pointed at from two directions is a better bet than either
+    row's own first entry, which is usually just whatever is most popular
+    in that genre."""
+    rows = [
+        taste.Row("a", "Because you watched", "Heat", "movie",
+                  [{"id": 1, "popularity": 5}, {"id": 2, "popularity": 90}]),
+        taste.Row("b", "Because you watched", "Sicario", "movie",
+                  [{"id": 1, "popularity": 5}, {"id": 3, "popularity": 80}]),
+    ]
+
+    picks = taste.top_picks(rows)
+
+    assert picks[0]["id"] == 1, "agreement should beat raw popularity"
+
+
+def test_top_picks_breaks_ties_on_popularity():
+    rows = [
+        taste.Row("a", "t", "A", "movie", [{"id": 1, "popularity": 10}]),
+        taste.Row("b", "t", "B", "movie", [{"id": 2, "popularity": 99}]),
+    ]
+
+    assert [p["id"] for p in taste.top_picks(rows)] == [2, 1]
+
+
+def test_top_picks_carries_each_items_own_media_type():
+    """The one row where films and shows sit together, so the row's own
+    media_type can't answer for them — a show routed to a film's detail
+    page reads as a broken link, not a bad recommendation."""
+    rows = [
+        taste.Row("a", "t", "Heat", "movie", [{"id": 1, "popularity": 9}]),
+        taste.Row("b", "t", "Fargo", "tv", [{"id": 2, "popularity": 8}]),
+    ]
+
+    picks = taste.top_picks(rows)
+
+    assert {p["id"]: p["media_type"] for p in picks} == {1: "movie", 2: "tv"}
+
+
+def test_top_picks_needs_more_than_one_row_to_mean_anything():
+    """With a single row, "what your seeds agreed on" is that row again
+    wearing a grander name."""
+    rows = [taste.Row("a", "t", "A", "movie", [{"id": n} for n in range(10)])]
+
+    assert taste.top_picks(rows) == []
