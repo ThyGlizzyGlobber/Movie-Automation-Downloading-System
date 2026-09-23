@@ -181,7 +181,10 @@ def test_check_server_access_matches_by_machine_identifier():
     session = FakeSession(get_responses=[FakeResponse(json_data=resources)])
     client = PlexClient("client-1", session=session)
 
-    assert client.check_server_access("account-token", "our-machine-id") == {"owned": False}
+    # The access token comes back too: it is this account's own token for
+    # that server, and it is what lets a per-user Plex read be made as them
+    # rather than as the admin.
+    assert client.check_server_access("account-token", "our-machine-id") == {"owned": False, "token": "tok"}
 
 
 def test_check_server_access_returns_none_when_server_not_in_list():
@@ -571,7 +574,7 @@ def test_login_session_persists_result_once_signed_in_with_server_access(monkeyp
     monkeypatch.setattr(PlexClient, "create_pin", lambda self: {"id": 1, "code": "ABCD"})
     monkeypatch.setattr(PlexClient, "check_pin", lambda self, pin_id: "user-token")
     monkeypatch.setattr(
-        PlexClient, "check_server_access", lambda self, token, machine_id: {"owned": False}
+        PlexClient, "check_server_access", lambda self, token, machine_id: {"owned": False, "token": "their-token"}
     )
     monkeypatch.setattr(
         PlexClient, "get_account_identity", lambda self, token: {"id": 99, "username": "friend"}
@@ -590,7 +593,15 @@ def test_login_session_persists_result_once_signed_in_with_server_access(monkeyp
     asyncio.run(run())
 
     status = login.status(attempt[0])
-    assert status["result"] == {"plex_user_id": "99", "username": "friend", "is_admin": False, "thumb": None}
+    assert status["result"] == {
+        "plex_user_id": "99",
+        "username": "friend",
+        "is_admin": False,
+        "thumb": None,
+        # Carried through to be stored against the user; never sent onward
+        # to the browser.
+        "server_token": "their-token",
+    }
     assert status["error"] is None
 
 

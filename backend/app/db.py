@@ -545,6 +545,14 @@ class RequestStore:
             # Household controls per user.
             self._ensure_column("users", "can_request", "can_request INTEGER NOT NULL DEFAULT 1")
             self._ensure_column("users", "avatar_url", "avatar_url TEXT")
+            # That user's *own* access token for the linked server, kept so
+            # per-user Plex reads (Continue Watching) can be made as them
+            # rather than as the admin. Deliberately not a field on UserRow:
+            # that dataclass is what /api/admin/users serialises, and a token
+            # that never enters the object can't leave in a response. Read it
+            # through get_user_server_token() instead, which exists to be the
+            # one path.
+            self._ensure_column("users", "plex_server_token", "plex_server_token TEXT")
             # The notification system was removed: drop its tables from
             # databases created before that.
             self._conn.execute("DROP TABLE IF EXISTS notifications")
@@ -1430,7 +1438,14 @@ class RequestStore:
 
     # -- users / sessions (frontend migration Part C2) --
 
-    def upsert_user(self, plex_user_id: str, username: str | None, is_admin: bool, avatar_url: str | None = None) -> UserRow:
+    def upsert_user(
+        self,
+        plex_user_id: str,
+        username: str | None,
+        is_admin: bool,
+        avatar_url: str | None = None,
+        server_token: str | None = None,
+    ) -> UserRow:
         """Called on every successful login — `is_admin` is re-derived
         fresh each time from a live Plex access check (see api.py), so a
         change in server ownership is picked up on the next sign-in
@@ -1465,8 +1480,9 @@ class RequestStore:
             if existing:
                 self._conn.execute(
                     "UPDATE users SET username = ?, is_admin = ?, last_login_at = ?, "
-                    "avatar_url = COALESCE(?, avatar_url) WHERE plex_user_id = ?",
-                    (username, int(is_admin), now, avatar_url, plex_user_id),
+                    "avatar_url = COALESCE(?, avatar_url), "
+                    "plex_server_token = COALESCE(?, plex_server_token) WHERE plex_user_id = ?",
+                    (username, int(is_admin), now, avatar_url, server_token, plex_user_id),
                 )
                 # Only on an actual change, and never blanking a stored
                 # name with a NULL Plex didn't answer with.
@@ -1478,8 +1494,9 @@ class RequestStore:
             else:
                 self._conn.execute(
                     "INSERT INTO users (plex_user_id, username, is_admin, has_seen_tutorial, "
-                    "first_seen_at, last_login_at, avatar_url) VALUES (?, ?, ?, 0, ?, ?, ?)",
-                    (plex_user_id, username, int(is_admin), now, now, avatar_url),
+                    "first_seen_at, last_login_at, avatar_url, plex_server_token) "
+                    "VALUES (?, ?, ?, 0, ?, ?, ?, ?)",
+                    (plex_user_id, username, int(is_admin), now, now, avatar_url, server_token),
                 )
             self._conn.commit()
         return self.get_user(plex_user_id)
@@ -1555,6 +1572,19 @@ class RequestStore:
             cur = self._conn.execute("DELETE FROM sessions")
             self._conn.commit()
             return cur.rowcount
+
+    def get_user_server_token(self, plex_user_id: str) -> str | None:
+        """That user's own access token for the linked server.
+
+        Its own method rather than a field on UserRow so it cannot be
+        serialised by accident: UserRow is what /api/admin/users returns,
+        and anything on it is one `**row.__dict__` away from the wire.
+        Callers here want it for exactly one thing — asking Plex a question
+        *as that person* — and the answer, not the token, is what travels."""
+        row = self._conn.execute(
+            "SELECT plex_server_token FROM users WHERE plex_user_id = ?", (plex_user_id,)
+        ).fetchone()
+        return row["plex_server_token"] if row else None
 
     def list_users(self) -> list[UserRow]:
         rows = self._conn.execute("SELECT * FROM users ORDER BY is_admin DESC, last_login_at DESC").fetchall()

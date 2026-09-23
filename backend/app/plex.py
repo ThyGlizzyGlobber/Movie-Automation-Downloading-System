@@ -222,12 +222,20 @@ class PlexClient:
         Plex server identified by `machine_identifier` (this app's own
         linked server, from settings' `plex_server_machine_id`). None
         means no access at all, which is a hard refusal for end-user
-        login (frontend migration Part C3); otherwise `{"owned": bool}`,
-        which is what distinguishes the admin from every other authorized
-        user."""
+        login (frontend migration Part C3); otherwise `{"owned": bool,
+        "token": str}` — `owned` is what distinguishes the admin from every
+        other authorized user, and `token` is this account's *own* access
+        token for that server.
+
+        The token was already being fetched and thrown away here. It is what
+        makes a per-user Plex read possible at all: /library/onDeck answers
+        for whoever's token asked, so Continue Watching built on the admin's
+        token shows the admin's viewing to the whole household, no matter who
+        is signed in. This is the only moment it can be captured — it comes
+        back with the access check that every sign-in already performs."""
         for resource in self.list_resources(token):
             if resource["machine_identifier"] == machine_identifier:
-                return {"owned": resource["owned"]}
+                return {"owned": resource["owned"], "token": resource["token"]}
         return None
 
     def has_movie(self, server_url: str, server_token: str, title: str, year: int | None, tmdb_id: int | None = None) -> bool:
@@ -699,6 +707,9 @@ class LoginSession:
                         "username": identity.get("username"),
                         "is_admin": access["owned"],
                         "thumb": identity.get("thumb"),
+                        # Stored against the user, never sent to the browser
+                        # — see db.get_user_server_token.
+                        "server_token": access.get("token"),
                     }
                     return
                 await asyncio.sleep(PIN_POLL_INTERVAL_SECONDS)

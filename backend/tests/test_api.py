@@ -3239,6 +3239,73 @@ def test_plex_on_deck_and_image_unlinked(client_and_deps):
     assert client.get("/api/plex/image", params={"path": "/etc/passwd"}).status_code == 400
 
 
+def _capture_on_deck_token(monkeypatch):
+    """Records the token /library/onDeck was asked with, which is the whole
+    question: Plex answers on-deck for whoever's token asked."""
+    seen = {}
+
+    def fake_on_deck(self, server_url, server_token):
+        seen["token"] = server_token
+        return []
+
+    monkeypatch.setattr(api.PlexClient, "on_deck", fake_on_deck)
+    return seen
+
+
+def test_continue_watching_asks_plex_as_the_signed_in_user(non_admin_client, monkeypatch):
+    """The bug this replaces: on-deck was fetched with the admin's server
+    token, so every member of the household saw the admin's half-watched
+    episodes on their own Home page — wrong, and a small privacy leak
+    between people who share a server."""
+    client, store, _, _, _, _ = non_admin_client
+    store.update_settings({"plex_server_url": "http://plex.local:32400", "plex_server_token": "admin-token"})
+    store.upsert_user("regular-plex-id", "regular-user", False, server_token="their-own-token")
+    seen = _capture_on_deck_token(monkeypatch)
+
+    client.get("/api/plex/on-deck")
+
+    assert seen["token"] == "their-own-token"
+
+
+def test_continue_watching_stays_empty_rather_than_showing_someone_elses(non_admin_client, monkeypatch):
+    """A session older than this change has no token stored yet. Falling
+    back to the admin's would reinstate exactly the bug, for exactly the
+    people it affected; an empty row until their next sign-in is the honest
+    answer."""
+    client, store, _, _, _, _ = non_admin_client
+    store.update_settings({"plex_server_url": "http://plex.local:32400", "plex_server_token": "admin-token"})
+    seen = _capture_on_deck_token(monkeypatch)
+
+    body = client.get("/api/plex/on-deck").json()
+
+    assert body == {"available": False, "items": []}
+    assert "token" not in seen
+
+
+def test_continue_watching_falls_back_to_the_settings_token_for_the_admin(client_and_deps, monkeypatch):
+    """Same account either way, so the admin's row keeps working through
+    the changeover instead of going blank until they sign in again."""
+    client, store, _, _, _, _ = client_and_deps
+    store.update_settings({"plex_server_url": "http://plex.local:32400", "plex_server_token": "admin-token"})
+    seen = _capture_on_deck_token(monkeypatch)
+
+    client.get("/api/plex/on-deck")
+
+    assert seen["token"] == "admin-token"
+
+
+def test_a_users_server_token_never_leaves_the_backend(client_and_deps):
+    """It is stored deliberately off UserRow so it cannot be serialised by
+    accident; this is the assertion that says so out loud."""
+    client, store, _, _, _, _ = client_and_deps
+    store.upsert_user("admin-plex-id", "admin", True, server_token="secret-token")
+
+    body = client.get("/api/admin/users").text
+
+    assert "secret-token" not in body
+    assert store.get_user_server_token("admin-plex-id") == "secret-token"
+
+
 def test_discover_browse_passes_every_filter_through(client_and_deps):
     client, _, _, _, _, _ = client_and_deps
     response = client.get("/api/discover", params={"genre": 28, "provider": 8, "year": 2024, "sort": "rated", "page": 3})

@@ -1932,7 +1932,13 @@ def login_status(
         # Spend the attempt before minting anything: one resolved PIN is
         # one session, and a replayed poll finds nothing left to claim.
         login.finish(attempt_id)
-        user = store.upsert_user(result["plex_user_id"], result["username"], result["is_admin"], result.get("thumb"))
+        user = store.upsert_user(
+            result["plex_user_id"],
+            result["username"],
+            result["is_admin"],
+            result.get("thumb"),
+            server_token=result.get("server_token"),
+        )
         session_id = secrets.token_urlsafe(32)
         store.create_session(session_id, user.plex_user_id, user.username, user.is_admin, _new_session_expiry())
         response.set_cookie(
@@ -2523,14 +2529,35 @@ def _resolve_tmdb_ids(client: PlexClient, url: str, token: str, rating_keys: set
 
 
 @router.get("/api/plex/on-deck")
-def get_plex_on_deck(store: RequestStore = Depends(get_store)) -> dict:
-    """Plex's Continue Watching for the linked server, shaped for the Home
-    row: progress fraction, minutes left, the TMDB id (so a card can open
-    this app's own detail page) and a same-origin artwork URL. Degrades
+def get_plex_on_deck(
+    store: RequestStore = Depends(get_store),
+    session: SessionRow = Depends(require_session),
+) -> dict:
+    """Plex's Continue Watching *for whoever is signed in*, shaped for the
+    Home row: progress fraction, minutes left, the TMDB id (so a card can
+    open this app's own detail page) and a same-origin artwork URL. Degrades
     to `available: false` rather than erroring — it backs a Home row, not
-    a page anyone navigated to on purpose."""
+    a page anyone navigated to on purpose.
+
+    Asked with that person's own server token, because /library/onDeck
+    answers for whoever's token asked. Built on the admin's token — which is
+    what settings holds and what this used — it showed the admin's viewing
+    to the entire household: everyone's Home row was one person's half-watched
+    episodes, which is both wrong and a small privacy leak between members.
+
+    The token is captured during the access check every sign-in already makes
+    (plex.py's check_server_access), so it arrives without an extra round
+    trip. Someone whose session predates that has none stored yet; rather
+    than fall back to the admin's and quietly reintroduce the bug for the
+    people it most affects, the row simply stays empty until they next sign
+    in. The admin keeps the settings token as a fallback because for the
+    admin it is the same account's token — the same answer either way, so
+    nothing regresses while the household cycles through."""
     settings = store.get_settings()
-    url, token = settings.get("plex_server_url"), settings.get("plex_server_token")
+    url = settings.get("plex_server_url")
+    token = store.get_user_server_token(session.plex_user_id)
+    if not token and session.is_admin:
+        token = settings.get("plex_server_token")
     if not url or not token:
         return {"available": False, "items": []}
     client = PlexClient(settings.get("plex_client_id") or new_client_identifier())
