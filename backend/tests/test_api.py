@@ -3298,6 +3298,57 @@ def test_each_page_pins_what_matters_on_that_page(client_and_deps):
     assert "continue" not in movies and "continue" not in tv
 
 
+def test_a_page_can_declare_rows_this_module_has_no_name_for(client_and_deps):
+    """The genre and provider rows are the frontend's to define. Before
+    this they fell to a fixed tail — so Action sat above Sci-Fi above
+    Horror every single day, which is exactly the staleness the rest of
+    this exists to remove."""
+    client, _, tmdb, _, _, _ = client_and_deps
+    _stub_recommendation_sources(tmdb)
+    declared = "genre:Action,genre:Sci-Fi,provider:8"
+
+    layout = client.get("/api/recommendations", params={"rows": declared}).json()["layout"]
+
+    assert {"genre:Action", "genre:Sci-Fi", "provider:8"} <= set(layout)
+
+
+def test_a_declared_row_repeated_is_only_dealt_once(client_and_deps):
+    """Dealt twice and rendered once silently shortens the page."""
+    client, _, tmdb, _, _, _ = client_and_deps
+    _stub_recommendation_sources(tmdb)
+
+    layout = client.get("/api/recommendations", params={"rows": "genre:Action,genre:Action"}).json()["layout"]
+
+    assert layout.count("genre:Action") == 1
+
+
+def test_declared_rows_are_bounded(client_and_deps):
+    """User-supplied, so it gets a ceiling — not because anything
+    dangerous fits in a row key, but because a response should stay a
+    response."""
+    client, _, tmdb, _, _, _ = client_and_deps
+    _stub_recommendation_sources(tmdb)
+    flood = ",".join(f"genre:{n}" for n in range(500))
+
+    layout = client.get("/api/recommendations", params={"rows": flood}).json()["layout"]
+
+    assert len([k for k in layout if k.startswith("genre:")]) <= api._MAX_DECLARED_ROWS
+
+
+def test_recommendations_mark_what_the_household_already_has(client_and_deps):
+    """Obsidian is where someone decides what to watch tonight, not only
+    what to download. A title already on Plex is the most useful card on
+    the page, not the least — it is the one that can be watched now — so it
+    arrives badged rather than hidden."""
+    client, _, tmdb, _, _, _ = client_and_deps
+    _stub_recommendation_sources(tmdb)
+
+    body = client.get("/api/recommendations").json()
+
+    assert body["rows"], "expected at least one row to inspect"
+    assert all("on_plex" in item for row in body["rows"] for item in row["items"])
+
+
 def test_an_unknown_page_falls_back_to_home_rather_than_erroring(client_and_deps):
     client, _, tmdb, _, _, _ = client_and_deps
     _stub_recommendation_sources(tmdb)

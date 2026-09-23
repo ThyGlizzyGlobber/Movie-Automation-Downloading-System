@@ -35,10 +35,16 @@ function RecommendedMediaRow({ row }: { row: RecommendedRow }) {
  * here instead would mean a different page per device and a new one on every
  * refresh — which is not freshness, it's noise.
  */
-export function useRecommendedRows(page: 'home' | 'movies' | 'tv') {
+export function useRecommendedRows(page: 'home' | 'movies' | 'tv', declaredRows: string[] = []) {
+  // The page's own rows, declared so the backend can deal them too. Without
+  // this they fell to a fixed tail — Action above Sci-Fi above Horror, every
+  // day, which is the staleness the rest of this exists to remove. Their
+  // keys are labels and provider ids the backend has no reason to know, so
+  // the page is the one that has to say.
+  const declared = declaredRows.join(',')
   const query = useQuery({
-    queryKey: ['recommendations', page],
-    queryFn: () => getRecommendations(page),
+    queryKey: ['recommendations', page, declared],
+    queryFn: () => getRecommendations(page, declared),
     // The answer only changes at midnight UTC, so re-asking while a tab is
     // open buys nothing. Errors aren't retried: these rows decorate a page
     // that works without them, and a failed fetch should cost the

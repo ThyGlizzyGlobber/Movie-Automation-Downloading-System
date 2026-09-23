@@ -306,3 +306,33 @@ def test_top_picks_needs_more_than_one_row_to_mean_anything():
     rows = [taste.Row("a", "t", "A", "movie", [{"id": n} for n in range(10)])]
 
     assert taste.top_picks(rows) == []
+
+
+def test_a_seed_never_opens_its_own_row():
+    """"Because you watched Heat" leading with Heat is the one exclusion
+    that is always right, however good the co-watch data is."""
+    seeds = [taste.Seed(42, "movie", "Heat", 1.0, "watched")]
+
+    rows = taste.build_rows(
+        seeds,
+        recommend=lambda media_type, tmdb_id: [{"id": n} for n in range(40, 70)],
+        rng=taste.daily_rng("u", "2026-09-24"),
+    )
+
+    assert 42 not in {item["id"] for item in rows[0].items}
+
+
+def test_titles_the_household_already_has_are_not_hidden():
+    """This app is where someone decides what to watch tonight, not only
+    what to download — hiding what is already downloaded answers a question
+    nobody asked."""
+    seeds = [taste.Seed(1, "movie", "Heat", 1.0, "watched")]
+    owned = [{"id": n} for n in range(10, 40)]
+
+    rows = taste.build_rows(
+        seeds,
+        recommend=lambda media_type, tmdb_id: owned,
+        rng=taste.daily_rng("u", "2026-09-24"),
+    )
+
+    assert len(rows[0].items) >= 4

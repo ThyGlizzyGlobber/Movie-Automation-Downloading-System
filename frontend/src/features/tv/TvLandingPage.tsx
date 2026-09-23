@@ -36,6 +36,11 @@ const TV_GENRES = [
 // Followed shows carry no year or genre, so their cards have no meta line.
 const followedSkeleton = () => <PosterCardSkeleton meta={false} />
 
+const TV_ROW_KEYS = [
+  ...TV_GENRES.map((g) => `genre:${g.id}`),
+  ...ROW_PROVIDERS.map((p) => `provider:${p.id}`),
+]
+
 export default function TvLandingPage() {
   usePageTitle('TV Shows')
 
@@ -58,7 +63,7 @@ export default function TvLandingPage() {
 
   // Enriched server-side in one call — see HomePage's own note.
   const hero = useQuery({ queryKey: ['hero', 'tv'], queryFn: () => getHeroSlides('tv') })
-  const { order } = useRecommendedRows('tv')
+  const { order } = useRecommendedRows('tv', TV_ROW_KEYS)
 
   // Each section shows its own skeleton until its data arrives; the page
   // only gives way to an error once the main lists have all failed.
@@ -101,29 +106,34 @@ export default function TvLandingPage() {
       />
     )
   })
+  ROW_PROVIDERS.forEach((provider, i) => {
+    ownRows[`provider:${provider.id}`] = (
+      <MediaRow
+        key={provider.id}
+        title="Popular"
+        qualifier={`on ${provider.name}`}
+        items={providerResults[i].data?.results ?? []}
+        mediaType="tv"
+        loading={providerResults[i].isLoading}
+        expandHref={browseHref({ type: 'tv', provider: provider.id })}
+      />
+    )
+  })
   const contentRows = order(ownRows)
 
   return (
     <>
       <HeroCarousel items={hero.data ?? []} loading={hero.isLoading} />
       {contentRows}
+      {/* Last, always: the service icons are a way out of the page rather
+          than another row of it, and dealing them into the middle would
+          interrupt the browsing they exist to follow. */}
       <section className="row">
         <h2>
           Browse <span className="row-qualifier">by service</span>
         </h2>
         <ProviderChips type="tv" />
       </section>
-      {ROW_PROVIDERS.map((p, i) => (
-        <MediaRow
-          key={p.id}
-          title="Popular"
-          qualifier={`on ${p.name}`}
-          items={providerResults[i].data?.results ?? []}
-          mediaType="tv"
-          loading={providerResults[i].isLoading}
-          expandHref={browseHref({ type: 'tv', provider: p.id })}
-        />
-      ))}
     </>
   )
 }

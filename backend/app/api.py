@@ -28,7 +28,7 @@ from dataclasses import asdict
 from datetime import datetime, timedelta, timezone
 from urllib.parse import urlparse
 
-from fastapi import APIRouter, Depends, FastAPI, HTTPException, Request, Response
+from fastapi import APIRouter, Depends, FastAPI, HTTPException, Query, Request, Response
 from fastapi.responses import FileResponse, Response as RawResponse
 from pydantic import BaseModel, Field, field_validator, model_validator
 from slowapi import Limiter, _rate_limit_exceeded_handler
@@ -2563,9 +2563,83 @@ PAGE_LAYOUTS = {
 }
 
 
+# A page may carry rows this module has no name for — the genre rows, keyed
+# by label, and the provider rows, keyed by a TMDB provider id. They are the
+# frontend's to define and the frontend's to change, so rather than
+# duplicating those lists here (and going stale the first time one moves),
+# the page declares them and they join the deal. Bounded because it is
+# user-supplied: enough for any page this app will have, and short enough
+# that nothing interesting fits in one.
+_MAX_DECLARED_ROWS = 60
+_MAX_ROW_KEY = 64
+
+
+def _declared_rows(raw: str) -> list[str]:
+    """Row keys the page says it has, cleaned up.
+
+    Echoed back inside `layout` and nowhere else — they never reach a
+    query, a filesystem path or a template, so the cap is about keeping a
+    response sane rather than holding off an attack. Deduplicated because a
+    key repeated in the query would otherwise be dealt twice and render
+    once, silently shortening the page."""
+    seen: list[str] = []
+    for key in raw.split(","):
+        key = key.strip()
+        if key and len(key) <= _MAX_ROW_KEY and key not in seen:
+            seen.append(key)
+        if len(seen) >= _MAX_DECLARED_ROWS:
+            break
+    return seen
+
+
+def _with_on_plex(rows: list[taste.Row], store: RequestStore) -> list[taste.Row]:
+    """Mark what the household already has, rather than hiding it.
+
+    Every other discover row in this file goes through _annotate_on_plex,
+    and these should too — a recommendation the house already owns is the
+    most useful card on the page, not the least, because it is the one that
+    can be watched right now. The badge is what turns it from "request
+    this" into "this is here".
+
+    Grouped by media type rather than annotated item by item: the matcher
+    behind it is built per library, so asking per item would rebuild it per
+    item. The blended picks row is the only one carrying both, and its
+    items say which they are.
+    """
+    annotated: list[taste.Row] = []
+    for row in rows:
+        by_type: dict[str, list[dict]] = {}
+        for item in row.items:
+            media_type = item.get("media_type") or (row.media_type if row.media_type != "mixed" else "movie")
+            by_type.setdefault(media_type, []).append(item)
+        marked: dict[int, dict] = {}
+        for media_type, items in by_type.items():
+            for item in _annotate_on_plex(
+                items,
+                media_type,
+                store,
+                title_key="title" if media_type == "movie" else "name",
+                date_key="release_date" if media_type == "movie" else "first_air_date",
+            ):
+                marked[int(item["id"])] = item
+        # Rebuilt in the row's own order — the grouping above is an
+        # implementation detail and must not reach the page.
+        annotated.append(
+            taste.Row(
+                key=row.key,
+                title=row.title,
+                qualifier=row.qualifier,
+                media_type=row.media_type,
+                items=[marked.get(int(item["id"]), item) for item in row.items],
+            )
+        )
+    return annotated
+
+
 @router.get("/api/recommendations")
 def get_recommendations(
     page: str = "home",
+    rows_param: str = Query("", alias="rows"),
     store: RequestStore = Depends(get_store),
     tmdb: TMDBClient = Depends(get_tmdb),
     session: SessionRow = Depends(require_session),
@@ -2595,9 +2669,6 @@ def get_recommendations(
     who = session.plex_user_id
 
     seeds = taste.seeds_from_requests(store.list_requests_for_user(who), now)
-    # Never recommend what they already asked for, or what the house already
-    # has — the two most obvious ways for this to look broken.
-    exclude = {(s.media_type, s.tmdb_id) for s in seeds} | store.library_tmdb_ids()
     if only:
         seeds = [seed for seed in seeds if seed.media_type == only]
     picked = taste.pick_seeds(seeds, taste.daily_rng(who, f"{day}:{page}", "seeds"))
@@ -2606,7 +2677,7 @@ def get_recommendations(
         fetch = tmdb.get_tv_recommendations if media_type == "tv" else tmdb.get_movie_recommendations
         return fetch(tmdb_id).get("results", [])
 
-    rows = taste.build_rows(picked, recommend, taste.daily_rng(who, f"{day}:{page}", "items"), exclude)
+    rows = taste.build_rows(picked, recommend, taste.daily_rng(who, f"{day}:{page}", "items"))
 
     # One blended row across everything the seeds suggested, ranked by how
     # many different seeds pointed at the same title. Agreement between two
@@ -2637,10 +2708,7 @@ def get_recommendations(
             found = tmdb.discover_curated(mood.media_type, **mood.params).get("results", [])
         except Exception:  # noqa: BLE001 — one empty row, never the page
             continue
-        items = [
-            item for item in found
-            if item.get("id") and (mood.media_type, int(item["id"])) not in exclude
-        ]
+        items = [item for item in found if item.get("id")]
         if len(items) < 4:
             continue
         rows.append(
@@ -2658,10 +2726,15 @@ def get_recommendations(
 
     ordered = taste.order_rows(
         list(layout_spec["pinned"]),
-        [row.key for row in rows] + list(layout_spec["rotating"]),
+        [row.key for row in rows] + list(layout_spec["rotating"]) + _declared_rows(rows_param),
         taste.daily_rng(who, f"{day}:{page}", "layout"),
     )
-    return {"day": day, "page": page, "rows": [asdict(row) for row in rows], "layout": ordered}
+    return {
+        "day": day,
+        "page": page,
+        "rows": [asdict(row) for row in (_with_on_plex(rows, store))],
+        "layout": ordered,
+    }
 
 
 @router.get("/api/plex/on-deck")

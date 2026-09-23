@@ -27,6 +27,11 @@ const MOVIE_GENRES = [
   { id: 99, label: 'Documentaries' },
 ]
 
+const MOVIE_ROW_KEYS = [
+  ...MOVIE_GENRES.map((g) => `genre:${g.id}`),
+  ...ROW_PROVIDERS.map((p) => `provider:${p.id}`),
+]
+
 export default function MoviesLandingPage() {
   usePageTitle('Movies')
 
@@ -48,7 +53,7 @@ export default function MoviesLandingPage() {
 
   // Enriched server-side in one call — see HomePage's own note.
   const hero = useQuery({ queryKey: ['hero', 'movies'], queryFn: () => getHeroSlides('movies') })
-  const { order } = useRecommendedRows('movies')
+  const { order } = useRecommendedRows('movies', MOVIE_ROW_KEYS)
 
   // Each section shows its own skeleton until its data arrives; the page
   // only gives way to an error once the main lists have all failed.
@@ -80,29 +85,34 @@ export default function MoviesLandingPage() {
       />
     )
   })
+  ROW_PROVIDERS.forEach((provider, i) => {
+    ownRows[`provider:${provider.id}`] = (
+      <MediaRow
+        key={provider.id}
+        title="Popular"
+        qualifier={`on ${provider.name}`}
+        items={providerResults[i].data?.results ?? []}
+        mediaType="movie"
+        loading={providerResults[i].isLoading}
+        expandHref={browseHref({ type: 'movie', provider: provider.id })}
+      />
+    )
+  })
   const contentRows = order(ownRows)
 
   return (
     <>
       <HeroCarousel items={hero.data ?? []} loading={hero.isLoading} />
       {contentRows}
+      {/* Last, always: the service icons are a way out of the page rather
+          than another row of it, and dealing them into the middle would
+          interrupt the browsing they exist to follow. */}
       <section className="row">
         <h2>
           Browse <span className="row-qualifier">by service</span>
         </h2>
         <ProviderChips type="movie" />
       </section>
-      {ROW_PROVIDERS.map((p, i) => (
-        <MediaRow
-          key={p.id}
-          title="Popular"
-          qualifier={`on ${p.name}`}
-          items={providerResults[i].data?.results ?? []}
-          mediaType="movie"
-          loading={providerResults[i].isLoading}
-          expandHref={browseHref({ type: 'movie', provider: p.id })}
-        />
-      ))}
     </>
   )
 }

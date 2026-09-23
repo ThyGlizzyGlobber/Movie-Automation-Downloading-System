@@ -247,11 +247,13 @@ def build_rows(
     testable and so a failing lookup is the caller's problem to degrade: one
     unavailable seed costs its row, never the page.
 
-    `exclude` is everything this person has already watched or asked for.
-    Recommending someone the film they requested last week is the single
-    most obvious way for this feature to look broken, and it is exactly what
-    TMDB will do, since co-watch data has no idea what is already in your
-    library.
+    A seed never appears in its own row — "because you watched Heat" opening
+    with Heat is the one exclusion that is always right. Beyond that,
+    `exclude` is empty by default and titles the household already has are
+    deliberately left in: this app is where someone decides what to watch
+    tonight, not only what to download, and hiding the thing that is already
+    downloaded would be answering a question nobody asked. They arrive
+    badged instead, so a card leads to watching rather than requesting.
     """
     exclude = exclude or set()
     rows: list[Row] = []
@@ -262,10 +264,11 @@ def build_rows(
             candidates = recommend(seed.media_type, seed.tmdb_id) or []
         except Exception:  # noqa: BLE001 — a dead seed costs its row, not the page
             continue
+        blocked = exclude | {(seed.media_type, seed.tmdb_id)}
         fresh = [
             item
             for item in candidates
-            if item.get("id") and (seed.media_type, int(item["id"])) not in exclude
+            if item.get("id") and (seed.media_type, int(item["id"])) not in blocked
         ]
         picked = rotate(fresh, rng, items_per_row)
         # A row of two is worse than no row: it reads as a bug rather than a

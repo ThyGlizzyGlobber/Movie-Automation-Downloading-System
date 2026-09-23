@@ -56,6 +56,9 @@ export function HomeSkeleton() {
 // Followed shows carry no year or genre, so their cards have no meta line.
 const followedSkeleton = () => <PosterCardSkeleton meta={false} />
 
+// Static, so the hook's query key doesn't change between renders.
+const HOME_ROW_KEYS = HOME_GENRES.map((g) => `genre:${g.label}`)
+
 export default function HomePage() {
   usePageTitle(null)
 
@@ -82,7 +85,7 @@ export default function HomePage() {
   // carousel fetching a detail per slide to learn any of that, which is
   // what used to keep the title logos a round trip behind the page.
   const hero = useQuery({ queryKey: ['hero', 'home'], queryFn: () => getHeroSlides('home') })
-  const { order } = useRecommendedRows('home')
+  const { order } = useRecommendedRows('home', HOME_ROW_KEYS)
 
   // Sorted by most recently subscribed — see TvLandingPage's own note on
   // why the old app's richer "New In Watching" (sorted by most recently
