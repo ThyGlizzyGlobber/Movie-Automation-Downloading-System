@@ -159,16 +159,48 @@ def merge_seeds(*groups: list[Seed]) -> list[Seed]:
     return sorted(merged.values(), key=lambda s: s.weight, reverse=True)
 
 
-def daily_rng(plex_user_id: str, day: str) -> random.Random:
+def daily_rng(plex_user_id: str, day: str, purpose: str = "") -> random.Random:
     """A generator that is fixed for one person for one day.
 
     Hashed rather than using `hash()` — that is salted per process in
     Python, so rows would change every time the backend restarted, which is
     the opposite of the point. sha256 of "<person>:<date>" gives the same
     stream on every process, every worker, every restart.
+
+    `purpose` separates decisions that shouldn't move together. Drawing the
+    seeds and ordering the page from one stream would couple them: changing
+    ROWS_PER_DAY would silently redeal the layout too, and a day where the
+    seed draw happened to be short would shift every row under it. Each
+    decision gets its own stream, so each can be reasoned about alone.
     """
-    digest = hashlib.sha256(f"{plex_user_id}:{day}".encode()).digest()
+    key = f"{plex_user_id}:{day}:{purpose}" if purpose else f"{plex_user_id}:{day}"
+    digest = hashlib.sha256(key.encode()).digest()
     return random.Random(int.from_bytes(digest[:8], "big"))
+
+
+def order_rows(pinned: list[str], rotating: list[str], rng: random.Random) -> list[str]:
+    """The order rows appear down the page, dealt fresh each day.
+
+    Which personalised rows appear, and their order among themselves, moves
+    already — that falls out of sampling the seed pool. What this adds is
+    the rest of the page: without it, Popular movies is forever above
+    Popular TV which is forever above Coming soon, and the personalised
+    rows sit in one fixed slot no matter what they contain.
+
+    `pinned` keeps its order at the top and never moves, because a couple
+    of rows earn their place by being navigation rather than browsing:
+    Continue watching is how you resume the thing you were in the middle
+    of, and hunting for it is a worse experience than any amount of
+    freshness is worth. Everything else is dealt.
+
+    Deals the whole list rather than nudging it, deliberately: a gentle
+    shuffle produces a page that looks the same at a glance while being
+    subtly different, which is the worst of both — it reads as stale *and*
+    you can't find anything twice.
+    """
+    dealt = list(rotating)
+    rng.shuffle(dealt)
+    return [*pinned, *dealt]
 
 
 def pick_seeds(seeds: list[Seed], rng: random.Random, count: int = ROWS_PER_DAY, pool: int = SEED_POOL) -> list[Seed]:

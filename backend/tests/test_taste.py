@@ -205,3 +205,54 @@ def test_rotation_survives_a_restart():
     second = taste.daily_rng("user-1", "2026-09-24").random()
 
     assert first == second
+
+
+# -- Page layout: which row sits where, day to day ------------------------
+
+ROTATING = ["because:movie:1", "because:tv:2", "popular-movies", "popular-tv", "coming-soon", "new-in-library"]
+PINNED = ["continue-watching", "trending"]
+
+
+def test_the_page_is_dealt_fresh_each_day():
+    """Without this, only the personalised rows move: Popular movies is
+    forever above Popular TV, forever above Coming soon, and the whole page
+    reads as the same page with two new rows in it."""
+    orders = {
+        tuple(taste.order_rows(PINNED, ROTATING, taste.daily_rng("u", f"2026-09-{d:02d}", "layout")))
+        for d in range(1, 15)
+    }
+
+    assert len(orders) > 1
+
+
+def test_continue_watching_and_trending_never_move():
+    """These two are navigation, not browsing — resuming what you were in
+    the middle of shouldn't involve hunting for the row first."""
+    for day in range(1, 15):
+        order = taste.order_rows(PINNED, ROTATING, taste.daily_rng("u", f"2026-09-{day:02d}", "layout"))
+        assert order[:2] == ["continue-watching", "trending"]
+
+
+def test_dealing_the_page_neither_loses_nor_duplicates_a_row():
+    order = taste.order_rows(PINNED, ROTATING, taste.daily_rng("u", "2026-09-24", "layout"))
+
+    assert sorted(order) == sorted(PINNED + ROTATING)
+
+
+def test_the_layout_holds_still_within_a_day_and_differs_between_people():
+    first = taste.order_rows(PINNED, ROTATING, taste.daily_rng("u", "2026-09-24", "layout"))
+    second = taste.order_rows(PINNED, ROTATING, taste.daily_rng("u", "2026-09-24", "layout"))
+    other = taste.order_rows(PINNED, ROTATING, taste.daily_rng("someone-else", "2026-09-24", "layout"))
+
+    assert first == second
+    assert first != other
+
+
+def test_drawing_seeds_and_dealing_the_page_are_independent():
+    """Same person, same day, different questions — they must not share a
+    stream, or changing how many rows we draw would silently redeal the
+    layout too."""
+    seeds_stream = taste.daily_rng("u", "2026-09-24", "seeds").random()
+    layout_stream = taste.daily_rng("u", "2026-09-24", "layout").random()
+
+    assert seeds_stream != layout_stream
