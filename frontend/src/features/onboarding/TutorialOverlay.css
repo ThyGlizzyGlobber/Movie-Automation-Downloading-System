@@ -8,9 +8,15 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 20px;
+  /* Clear the status bar and home indicator, and scroll rather than clip
+     when the card is taller than a phone (the card's auto margins keep
+     it centred when it fits and pin it to the top when it doesn't). */
+  padding: calc(20px + var(--safe-top)) 20px calc(20px + var(--safe-bottom));
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 .tutorial-card {
+  margin: auto 0;
   position: relative;
   width: 100%;
   max-width: 400px;

@@ -150,6 +150,13 @@
   /* ---- Layout (unchanged by the repaint) ---- */
   --safe-top: env(safe-area-inset-top, 0px);
   --safe-bottom: env(safe-area-inset-bottom, 0px);
+  /* The phone tab bar and everything that floats above it. The bar sits
+     inside the home-indicator strip rather than on top of it, the way
+     iOS's own floating tab bars do: 14px from the edge where there is
+     no indicator, and 12px into the inset where there is one. */
+  --tabbar-bottom: max(14px, calc(var(--safe-bottom) - 12px));
+  --tabbar-h: 66px;
+  --above-tabbar: calc(var(--tabbar-bottom) + var(--tabbar-h) + 12px);
   --row-gap: 10px;
   /* Left-aligns a row's title and first poster with the header/hero
      column at --edge-inset, on top of #app's own 14px edge padding

@@ -3,7 +3,6 @@ import { Outlet, ScrollRestoration } from 'react-router-dom'
 import { ToastProvider } from '../lib/toast'
 import Topbar from './Topbar'
 import Tabbar from './Tabbar'
-import StorageIndicator from './StorageIndicator'
 import SearchOverlay from './SearchOverlay'
 import ToastStack from './ToastStack'
 import TutorialOverlay from '../features/onboarding/TutorialOverlay'
@@ -45,7 +44,6 @@ export default function AppShell() {
         <Outlet />
       </main>
       <Tabbar onOpenSearch={() => setSearchOpen(true)} />
-      <StorageIndicator />
       <TutorialOverlay />
       <ToastStack />
     </ToastProvider>

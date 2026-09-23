@@ -1,7 +1,7 @@
 .toast-stack {
   position: fixed;
   right: var(--edge-inset);
-  bottom: calc(98px + var(--safe-bottom));
+  bottom: var(--above-tabbar);
   z-index: 30;
   display: grid;
   gap: 10px;

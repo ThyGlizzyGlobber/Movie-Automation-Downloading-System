@@ -1,15 +1,17 @@
-/* Mobile bottom navigation as a floating glass pill above the safe
-   area (the reference's mobile tab bar). Fixed elements that sit above
-   it (StorageIndicator, the Requests clear button) clear it at 98px. */
+/* Mobile bottom navigation as a floating glass pill (the reference's
+   mobile tab bar). Its position and height are tokens (--tabbar-bottom,
+   --tabbar-h) so the fixed elements above it and main's bottom padding
+   follow it rather than restating its numbers. */
 #tabbar {
   position: fixed;
   left: 14px;
   right: 14px;
-  bottom: calc(14px + var(--safe-bottom));
+  bottom: var(--tabbar-bottom);
   z-index: 10;
   display: flex;
   gap: 2px;
   padding: 6px;
+  /* 52px tabs + 6px padding + 1px border each side = --tabbar-h. */
   border-radius: var(--radius-pill);
   background: var(--glass-overlay);
   backdrop-filter: var(--glass-blur);

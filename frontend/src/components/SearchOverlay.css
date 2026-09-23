@@ -280,7 +280,7 @@
   text-overflow: ellipsis;
 }
 .search-results {
-  max-height: calc(100dvh - var(--topbar-h, 64px) - 190px);
+  max-height: calc(100dvh - var(--topbar-h, 64px) - var(--safe-bottom) - 190px);
   overflow-y: auto;
   overscroll-behavior: contain;
 }
@@ -318,7 +318,7 @@
     font-size: 12px;
   }
   .search-results {
-    max-height: calc(100dvh - var(--topbar-h, 64px) - 170px);
+    max-height: calc(100dvh - var(--topbar-h, 64px) - var(--safe-bottom) - 170px);
   }
 }
 

@@ -36,12 +36,11 @@ button {
 /* Top padding compensates for #topbar being fixed/out-of-flow (--topbar-h
    is measured and kept in sync by Topbar.tsx). Applied unconditionally,
    including on hero-topped pages — only the hero's own background needs
-   to reach behind the header, not main's other content. 130px bottom
-   clears the tab bar plus the floating downloads FAB/storage indicator
-   above it. No max-width — the row-based layout fills the real browser
+   to reach behind the header, not main's other content. The bottom
+   padding clears the phone tab bar. No max-width — the row-based layout fills the real browser
    width edge to edge (Prime/Netflix-style), not centered with gaps. */
 main {
-  padding: calc(var(--topbar-h, 64px) + 14px) 14px calc(150px + var(--safe-bottom));
+  padding: calc(var(--topbar-h, 64px) + 14px) 14px calc(var(--above-tabbar) + 16px);
   min-height: 60vh;
 }
 @media (min-width: 860px) {
