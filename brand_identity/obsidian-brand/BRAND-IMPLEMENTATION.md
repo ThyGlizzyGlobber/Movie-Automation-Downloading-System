@@ -61,32 +61,42 @@ semantic aliases components actually consume (`--bg`, `--text`,
 
 ## 2. Mark
 
-> ⚠️ **The mark below is the outgoing one and describes what exists, not
-> what is wanted.** The letterform is an **"M", drawn for Meridian**. It
-> was deliberately left alone in the 2026-09-20 rename: the owner plans
-> to replace the mark outright rather than transliterate it to an "O",
-> so a stopgap letter swap would have been thrown away. It stays
-> consistent across SVG and PNG in the meantime, which is the one thing
-> worth protecting until the replacement lands.
->
-> **When the new mark arrives**, it has to land in one pass across four
-> SVGs — `icons/icon-mark-only.svg` (source of truth), `icons/icon-512.svg`,
-> `icons/favicon.svg`, and `frontend/public/brand-icon.svg` (currently
-> byte-identical to the first) — plus a re-rasterise of every PNG in
-> `icons/` and `frontend/public/`. Then rewrite this section.
+**The obsidian shard** (2026-09-23), replacing the "M" drawn for
+Meridian. A faceted gem split into three slices, drawn flat in four
+shades: `#9cc0ff` (`--obsidian-ice`) on the lit faces, `#3644d6`
+(`--glow-1`) on the body, `#2d39b2` on the mid-shadow faces and
+`#1c2270` in the undersides and the gaps between slices.
 
-A rounded square (radius 28% of its side) filled with a diagonal
-gradient from `#7f8bff` (periwinkle) to `#3fd6c8` (teal), carrying a
-geometric "M" drawn as a single round-capped stroke in the page black
-`#050508` (`M18 46V18l14 16 14-16v28`). It is the same shape language as
-the app's glass pills and cards. Source of truth:
-`icons/icon-mark-only.svg` (identical to
-`frontend/public/brand-icon.svg`). PNGs in `icons/` are rasterised from
-it; regenerate them from the SVG rather than editing them.
+As an app icon the shard sits centred at 0.53 scale on a vertical
+gradient that holds `#050508` for the top ~11% and ramps to violet
+`#8445ff` at the bottom, so the ice faces sit on near-black and the
+violet reads as light coming from under the gem.
 
-In the app the mark sits to the left of the wordmark in the top bar
-(32px) and the detail-page footer (28px), and alone as the PWA icon,
-favicon and login-card badge.
+Sources, all in `icons/`:
+
+- `Obsidian-Logo-Icon-Only.svg`: **the source of truth.** The shard
+  alone on a transparent background.
+- `Obsidian-Logo-Icon.svg`: the shard on a flat `#050508` square.
+- `Obsidian-Logo-Squared.af` / `.png`: the Affinity working file and its
+  export.
+- `iOS App Icon.icon`: the Icon Composer bundle, for a future native
+  app. The website doesn't use it.
+- `icon-tile.svg` / `icon-1024.png`: the app-icon composition (gradient
+  plus shard).
+- `build_icons.py`: renders the composition from the shard SVG.
+
+Don't edit the rasters. Change the shard SVG, then run
+`python3 brand_identity/obsidian-brand/icons/build_icons.py` from the
+repo root. That writes every icon in `frontend/public/`:
+
+- `brand-icon.svg`: the rounded tile. Used for the favicon, the manifest
+  `any` icon and the login-card badge.
+- `apple-touch-icon.png` (180): square and opaque, because iOS applies
+  its own mask and fills any transparency with black.
+- `icon-192.png`, `icon-512.png`: the manifest icons.
+- `favicon-32.png`: the PNG favicon fallback.
+
+The top bar carries the wordmark alone, with no mark beside it.
 
 ## 3. Color
 
@@ -169,8 +179,10 @@ bar, except the thin "continue watching" line under landscape cards.
 - **Done (2026-09-20):** rename to Obsidian — every user-facing and
   code-facing string, the `--obsidian-*` token prefix, the npm package,
   this kit's folder name, and this guide.
-- **Not yet:** **the mark still reads "M"** (see §2 — the open item from
-  the rename); component restyle to the reference (glass nav pill, white
+- **Done (2026-09-23):** the obsidian shard replaced the "M" mark
+  across the favicon, the PWA and iOS home-screen icons, and the login
+  badge (see §2).
+- **Not yet:** component restyle to the reference (glass nav pill, white
   primary buttons, ring progress, Top 10 row, search palette, request
   modal, settings layout), icon set migration, poster-derived glows.
 
@@ -181,7 +193,11 @@ obsidian-brand/
 ├── BRAND-IMPLEMENTATION.md   this file
 ├── manifest.json             copy of frontend/public/manifest.json
 └── icons/
-    ├── icon-mark-only.svg    source of truth for the mark
-    ├── icon-512.svg, favicon.svg
-    └── icon-512.png, icon-72.png, favicon.png, icon-mark-only.png
+    ├── Obsidian-Logo-Icon-Only.svg   source of truth: the shard
+    ├── Obsidian-Logo-Icon.svg        the shard on #050508
+    ├── Obsidian-Logo-Squared.af/.png Affinity working file and export
+    ├── iOS App Icon.icon/            Icon Composer bundle (native, unused by the web app)
+    ├── apple-touch-icon.png          designer's 1024 export (rounded, for reference)
+    ├── icon-tile.svg, icon-1024.png  the app-icon composition
+    └── build_icons.py                renders every icon in frontend/public/
 ```
