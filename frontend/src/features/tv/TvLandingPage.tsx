@@ -1,8 +1,11 @@
+import type { ReactNode } from 'react'
 import { useQueries, useQuery } from '@tanstack/react-query'
+import { useRecommendedRows } from '../recommendations/useRecommendedRows'
 import { getTvDiscoverByGenre, getTvDiscoverByProvider, getTvDiscoverPopular, getTvDiscoverTrending, getTvComingSoon, listShows } from '../../api/tv'
 import HeroCarousel from '../../components/HeroCarousel'
 import { getHeroSlides } from '../../api/hero'
 import MediaRow from '../../components/MediaRow'
+import TopTenRow from '../../components/TopTenRow'
 import ProviderChips from '../../components/ProviderChips'
 import { PosterCardSkeleton } from '../../components/Skeleton'
 import ErrorState from '../../components/ErrorState'
@@ -55,6 +58,7 @@ export default function TvLandingPage() {
 
   // Enriched server-side in one call — see HomePage's own note.
   const hero = useQuery({ queryKey: ['hero', 'tv'], queryFn: () => getHeroSlides('tv') })
+  const { order } = useRecommendedRows('tv')
 
   // Each section shows its own skeleton until its data arrives; the page
   // only gives way to an error once the main lists have all failed.
@@ -73,23 +77,36 @@ export default function TvLandingPage() {
     .sort((a, b) => b.created_at.localeCompare(a.created_at))
     .map((s) => ({ id: s.tmdb_id, name: s.title, poster_path: s.poster_path }))
 
+  // Ordered by the backend — see useRecommendedRows. On this page the pins
+  // are Top 10 then Shows you follow: on a page about television, the shows
+  // you are already mid-way through outrank anything discovery has to
+  // offer. The "Browse by service" section and its provider rows stay put,
+  // because that heading introduces the rows beneath it.
+  const ownRows: Record<string, ReactNode> = {
+    top10: <TopTenRow key="top10" movies={[]} shows={trending.data?.results ?? []} only="tv" loading={trending.isLoading} />,
+    subscribed: <MediaRow key="subscribed" title="Shows" qualifier="you follow" items={subscribedShows} mediaType="tv" loading={shows.isLoading} renderSkeleton={followedSkeleton} expandHref="/tv/watching" />,
+    trending: <MediaRow key="trending" title="Trending" qualifier="shows" items={trending.data?.results ?? []} mediaType="tv" loading={trending.isLoading} expandHref={browseHref({ type: 'tv', sort: 'trending' })} />,
+    popular: <MediaRow key="popular" title="Popular" items={popular.data?.results ?? []} mediaType="tv" loading={popular.isLoading} expandHref={browseHref({ type: 'tv' })} />,
+    'coming-soon': <MediaRow key="coming-soon" title="Coming" qualifier="soon" items={comingSoon.data?.results ?? []} mediaType="tv" loading={comingSoon.isLoading} expandHref={browseHref({ type: 'tv', list: 'coming-soon' })} />,
+  }
+  TV_GENRES.forEach((g, i) => {
+    ownRows[`genre:${g.id}`] = (
+      <MediaRow
+        key={g.id}
+        title={g.label}
+        items={genreResults[i].data?.results ?? []}
+        mediaType="tv"
+        loading={genreResults[i].isLoading}
+        expandHref={browseHref({ type: 'tv', genre: g.id })}
+      />
+    )
+  })
+  const contentRows = order(ownRows)
+
   return (
     <>
       <HeroCarousel items={hero.data ?? []} loading={hero.isLoading} />
-      <MediaRow title="Shows" qualifier="you follow" items={subscribedShows} mediaType="tv" loading={shows.isLoading} renderSkeleton={followedSkeleton} expandHref="/tv/watching" />
-      <MediaRow title="Trending" qualifier="shows" items={trending.data?.results ?? []} mediaType="tv" loading={trending.isLoading} expandHref={browseHref({ type: 'tv', sort: 'trending' })} />
-      <MediaRow title="Popular" items={popular.data?.results ?? []} mediaType="tv" loading={popular.isLoading} expandHref={browseHref({ type: 'tv' })} />
-      <MediaRow title="Coming" qualifier="soon" items={comingSoon.data?.results ?? []} mediaType="tv" loading={comingSoon.isLoading} expandHref={browseHref({ type: 'tv', list: 'coming-soon' })} />
-      {TV_GENRES.map((g, i) => (
-        <MediaRow
-          key={g.id}
-          title={g.label}
-          items={genreResults[i].data?.results ?? []}
-          mediaType="tv"
-          loading={genreResults[i].isLoading}
-          expandHref={browseHref({ type: 'tv', genre: g.id })}
-        />
-      ))}
+      {contentRows}
       <section className="row">
         <h2>
           Browse <span className="row-qualifier">by service</span>

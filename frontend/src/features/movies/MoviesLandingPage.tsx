@@ -1,8 +1,11 @@
+import type { ReactNode } from 'react'
 import { useQueries, useQuery } from '@tanstack/react-query'
+import { useRecommendedRows } from '../recommendations/useRecommendedRows'
 import { getDiscoverByGenre, getDiscoverByProvider, getDiscoverPopular, getDiscoverTrending, getComingSoon } from '../../api/movies'
 import HeroCarousel from '../../components/HeroCarousel'
 import { getHeroSlides } from '../../api/hero'
 import MediaRow from '../../components/MediaRow'
+import TopTenRow from '../../components/TopTenRow'
 import ProviderChips from '../../components/ProviderChips'
 import ErrorState from '../../components/ErrorState'
 import { usePageTitle } from '../../lib/chrome'
@@ -45,6 +48,7 @@ export default function MoviesLandingPage() {
 
   // Enriched server-side in one call — see HomePage's own note.
   const hero = useQuery({ queryKey: ['hero', 'movies'], queryFn: () => getHeroSlides('movies') })
+  const { order } = useRecommendedRows('movies')
 
   // Each section shows its own skeleton until its data arrives; the page
   // only gives way to an error once the main lists have all failed.
@@ -53,22 +57,35 @@ export default function MoviesLandingPage() {
     return <ErrorState message={firstError instanceof Error ? firstError.message : undefined} />
   }
 
+  // Ordered by the backend, same as Home — see useRecommendedRows. Only
+  // the discovery rows take part: the "Browse by service" section and the
+  // provider rows below it stay put, because that heading introduces the
+  // rows under it and shuffling it away from them would leave it
+  // introducing nothing.
+  const ownRows: Record<string, ReactNode> = {
+    top10: <TopTenRow key="top10" movies={trending.data?.results ?? []} shows={[]} only="movie" loading={trending.isLoading} />,
+    trending: <MediaRow key="trending" title="Trending" qualifier="movies" items={trending.data?.results ?? []} mediaType="movie" loading={trending.isLoading} expandHref={browseHref({ type: 'movie', sort: 'trending' })} />,
+    popular: <MediaRow key="popular" title="Popular" items={popular.data?.results ?? []} mediaType="movie" loading={popular.isLoading} expandHref={browseHref({ type: 'movie' })} />,
+    'coming-soon': <MediaRow key="coming-soon" title="Coming" qualifier="soon" items={comingSoon.data?.results ?? []} mediaType="movie" loading={comingSoon.isLoading} expandHref={browseHref({ type: 'movie', list: 'coming-soon' })} />,
+  }
+  MOVIE_GENRES.forEach((g, i) => {
+    ownRows[`genre:${g.id}`] = (
+      <MediaRow
+        key={g.id}
+        title={g.label}
+        items={genreResults[i].data?.results ?? []}
+        mediaType="movie"
+        loading={genreResults[i].isLoading}
+        expandHref={browseHref({ type: 'movie', genre: g.id })}
+      />
+    )
+  })
+  const contentRows = order(ownRows)
+
   return (
     <>
       <HeroCarousel items={hero.data ?? []} loading={hero.isLoading} />
-      <MediaRow title="Trending" qualifier="movies" items={trending.data?.results ?? []} mediaType="movie" loading={trending.isLoading} expandHref={browseHref({ type: 'movie', sort: 'trending' })} />
-      <MediaRow title="Popular" items={popular.data?.results ?? []} mediaType="movie" loading={popular.isLoading} expandHref={browseHref({ type: 'movie' })} />
-      <MediaRow title="Coming" qualifier="soon" items={comingSoon.data?.results ?? []} mediaType="movie" loading={comingSoon.isLoading} expandHref={browseHref({ type: 'movie', list: 'coming-soon' })} />
-      {MOVIE_GENRES.map((g, i) => (
-        <MediaRow
-          key={g.id}
-          title={g.label}
-          items={genreResults[i].data?.results ?? []}
-          mediaType="movie"
-          loading={genreResults[i].isLoading}
-          expandHref={browseHref({ type: 'movie', genre: g.id })}
-        />
-      ))}
+      {contentRows}
       <section className="row">
         <h2>
           Browse <span className="row-qualifier">by service</span>

@@ -2528,48 +2528,68 @@ def _resolve_tmdb_ids(client: PlexClient, url: str, token: str, rating_keys: set
     return results
 
 
-# The rows Home can render, and which of them hold still. Mirrors the keys
-# in frontend/src/features/home/HomePage.tsx — the frontend ignores keys it
-# doesn't recognise and appends any row the layout didn't mention, so the
-# two halves can deploy apart without either going blank. Backend owns the
-# order because it owns the day: one answer per person per day, identical on
-# their phone and their laptop.
+# What each landing page is made of: which rows hold still at the top, which
+# are dealt daily, and whether the page is about one half of the catalogue.
+# Keys mirror the frontend's own — it ignores any it doesn't recognise and
+# appends rows the layout never mentioned (the genre and provider rows,
+# whose keys are ids the backend has no reason to know), so the two halves
+# can deploy apart without either going blank.
 #
-# Pinned is the top of the page, in this order, every day. Top 10 leads
-# under the hero because that is the reference layout this rebuild matches.
-# New in your library comes next because it is the one row that is only
-# worth anything while it is new — a title that arrived today is news on
-# exactly one day, and burying it is how a household misses it. Continue
-# watching third because resuming what you were in the middle of should not
-# begin with hunting for the row.
+# Pinning is per page because "what must not move" is a different question
+# on each. Home pins New in your library second: a title that arrived today
+# is news on exactly one day, and burying it is how a household misses it.
+# TV pins Shows you follow instead — on a page about television, the shows
+# you are actually mid-way through outrank anything discovery has to offer.
+# Movies has no such row, so only Top 10 is fixed there.
 #
-# Trending is deliberately *not* pinned. It is the same list for everyone on
-# earth and it moves on its own, so it needs no help staying interesting —
-# the rows that benefit from a fixed home are the ones about this household.
-HOME_PINNED_ROWS = ("top10", "recent", "continue")
-HOME_ROTATING_ROWS = ("trending", "requested", "popular-movies", "popular-tv", "coming-soon", "subscribed")
+# Continue watching is Home only. It spans both halves of the library, so
+# it answers a question neither of the other two pages is asking.
+PAGE_LAYOUTS = {
+    "home": {
+        "pinned": ("top10", "recent", "continue"),
+        "rotating": ("trending", "requested", "popular-movies", "popular-tv", "coming-soon", "subscribed"),
+        "media_type": None,
+    },
+    "movies": {
+        "pinned": ("top10",),
+        "rotating": ("trending", "popular", "coming-soon"),
+        "media_type": "movie",
+    },
+    "tv": {
+        "pinned": ("top10", "subscribed"),
+        "rotating": ("trending", "popular", "coming-soon"),
+        "media_type": "tv",
+    },
+}
 
 
 @router.get("/api/recommendations")
 def get_recommendations(
+    page: str = "home",
     store: RequestStore = Depends(get_store),
     tmdb: TMDBClient = Depends(get_tmdb),
     session: SessionRow = Depends(require_session),
 ) -> dict:
     """This person's rows for today, and the order the page runs in.
 
-    Both halves are per (person, day) and both are computed here rather than
-    in the browser, so the same account gets the same page on every device
-    and a reload never redeals it.
+    Both halves are per (person, day) and both are decided here rather than
+    in the browser, so an account gets the same page on its phone and its
+    laptop and a reload never redeals it.
+
+    `page` narrows it: Movies and TV get only their own half of the
+    catalogue, since a row of shows on the Movies page is a category error
+    however good the recommendation is. Home takes both.
 
     Not separately cached: the TMDB lookups behind it are already TTL-cached
-    per title (see tmdb.py), and everything else is a bounded read of this
-    person's own requests plus arithmetic. Adding a second cache would mostly
+    per title and per query (see tmdb.py), and the rest is a bounded read of
+    this person's own requests plus arithmetic. A second cache would mostly
     add a second thing that can serve yesterday.
 
-    Degrades to empty rather than erroring — it decorates Home, it isn't a
-    page anyone asked for. A household with no request history yet simply
-    gets the fixed rows, in a daily order."""
+    Degrades to empty rather than erroring — it decorates a page, it isn't a
+    page. A household with nothing requested yet still gets the fixed rows,
+    in a daily order, with named rows drawn from the whole catalogue."""
+    layout_spec = PAGE_LAYOUTS.get(page) or PAGE_LAYOUTS["home"]
+    only = layout_spec["media_type"]
     now = datetime.now(timezone.utc)
     day = taste.today(now)
     who = session.plex_user_id
@@ -2578,13 +2598,15 @@ def get_recommendations(
     # Never recommend what they already asked for, or what the house already
     # has — the two most obvious ways for this to look broken.
     exclude = {(s.media_type, s.tmdb_id) for s in seeds} | store.library_tmdb_ids()
-    picked = taste.pick_seeds(seeds, taste.daily_rng(who, day, "seeds"))
+    if only:
+        seeds = [seed for seed in seeds if seed.media_type == only]
+    picked = taste.pick_seeds(seeds, taste.daily_rng(who, f"{day}:{page}", "seeds"))
 
     def recommend(media_type: str, tmdb_id: int) -> list[dict]:
         fetch = tmdb.get_tv_recommendations if media_type == "tv" else tmdb.get_movie_recommendations
         return fetch(tmdb_id).get("results", [])
 
-    rows = taste.build_rows(picked, recommend, taste.daily_rng(who, day, "items"), exclude)
+    rows = taste.build_rows(picked, recommend, taste.daily_rng(who, f"{day}:{page}", "items"), exclude)
 
     # One blended row across everything the seeds suggested, ranked by how
     # many different seeds pointed at the same title. Agreement between two
@@ -2609,7 +2631,8 @@ def get_recommendations(
     # "things like what this person watches", so the affinity is free and
     # points somewhere adjacent to their taste rather than back at it.
     affinity = moods.affinity_from_rows(rows)
-    for mood in moods.pick_moods(affinity, taste.daily_rng(who, day, "moods")):
+    catalogue = [m for m in moods.CATALOGUE if not only or m.media_type == only]
+    for mood in moods.pick_moods(affinity, taste.daily_rng(who, f"{day}:{page}", "moods"), catalogue=catalogue):
         try:
             found = tmdb.discover_curated(mood.media_type, **mood.params).get("results", [])
         except Exception:  # noqa: BLE001 — one empty row, never the page
@@ -2633,12 +2656,12 @@ def get_recommendations(
             )
         )
 
-    layout = taste.order_rows(
-        list(HOME_PINNED_ROWS),
-        [row.key for row in rows] + list(HOME_ROTATING_ROWS),
-        taste.daily_rng(who, day, "layout"),
+    ordered = taste.order_rows(
+        list(layout_spec["pinned"]),
+        [row.key for row in rows] + list(layout_spec["rotating"]),
+        taste.daily_rng(who, f"{day}:{page}", "layout"),
     )
-    return {"day": day, "rows": [asdict(row) for row in rows], "layout": layout}
+    return {"day": day, "page": page, "rows": [asdict(row) for row in rows], "layout": ordered}
 
 
 @router.get("/api/plex/on-deck")

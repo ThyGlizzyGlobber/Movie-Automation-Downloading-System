@@ -24,8 +24,23 @@ function MoveChip({ move }: { move: RankMove }) {
 // switch in the header. Numerals are drawn as text with the gradient
 // clipped to the glyph so they read as light through glass rather than
 // as solid digits.
-export default function TopTenRow({ movies, shows, loading = false }: { movies: TmdbListItem[]; shows: TmdbListItem[]; loading?: boolean }) {
-  const [mediaType, setMediaType] = useState<'movie' | 'tv'>('movie')
+export default function TopTenRow({
+  movies,
+  shows,
+  loading = false,
+  only,
+}: {
+  movies: TmdbListItem[]
+  shows: TmdbListItem[]
+  loading?: boolean
+  /* Pages about one half of the catalogue pass it here, which drops the
+     Movies/TV toggle. Without this the Movies page would carry a TV tab
+     that opens an empty row — a control whose only function is to
+     disappoint. */
+  only?: 'movie' | 'tv'
+}) {
+  const [picked, setMediaType] = useState<'movie' | 'tv'>('movie')
+  const mediaType = only ?? picked
   const items = useMemo(() => (mediaType === 'movie' ? movies : shows).slice(0, TOP_N), [mediaType, movies, shows])
   const moves = useMemo(
     () =>
@@ -56,6 +71,7 @@ export default function TopTenRow({ movies, shows, loading = false }: { movies: 
       )}
       expandHref={browseHref({ type: mediaType, sort: 'trending' })}
       headerRight={
+        only ? undefined : (
         <div className="seg" role="tablist" aria-label="Top 10 type">
           <button role="tab" aria-selected={mediaType === 'movie'} className={mediaType === 'movie' ? 'active' : ''} onClick={() => setMediaType('movie')}>
             Movies
@@ -64,6 +80,7 @@ export default function TopTenRow({ movies, shows, loading = false }: { movies: 
             TV
           </button>
         </div>
+        )
       }
       renderItem={(item, index) => (
         <div className="top10-card">

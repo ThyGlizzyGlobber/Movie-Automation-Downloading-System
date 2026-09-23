@@ -3232,6 +3232,92 @@ def test_storage_details_shape(client_and_deps):
         assert isinstance(body[key], int)
 
 
+def _stub_recommendation_sources(tmdb, movie_ids=range(500, 530), tv_ids=range(900, 930)):
+    """Enough of TMDB for the rows to build. Ids are distinct per media type
+    so a test can tell a film row from a show row by its contents."""
+    tmdb.get_movie_recommendations = lambda tmdb_id, page=1: {
+        "results": [{"id": n, "genre_ids": [28]} for n in movie_ids]
+    }
+    tmdb.get_tv_recommendations = lambda tmdb_id, page=1: {
+        "results": [{"id": n, "genre_ids": [18]} for n in tv_ids]
+    }
+    tmdb.discover_curated = lambda media_type, **params: {
+        "results": [{"id": n, "genre_ids": [28]} for n in (movie_ids if media_type == "movie" else tv_ids)]
+    }
+
+
+def test_recommendations_need_a_session(client_and_deps):
+    client, _, _, _, _, _ = client_and_deps
+    client.cookies.delete(api.SESSION_COOKIE_NAME)
+
+    assert client.get("/api/recommendations").status_code == 401
+
+
+def test_every_row_returned_appears_in_the_layout(client_and_deps):
+    """The layout is what the page renders from. A row missing from it is a
+    row that was fetched, paid for, and never shown."""
+    client, store, tmdb, _, _, _ = client_and_deps
+    _stub_recommendation_sources(tmdb)
+    store.create_request(tmdb_id=603, title="The Matrix", release_year=1999, query=None,
+                         requested_by_plex_id="admin-plex-id", requested_by_username="admin")
+
+    body = client.get("/api/recommendations").json()
+
+    assert {row["key"] for row in body["rows"]} <= set(body["layout"])
+
+
+def test_the_movies_page_never_gets_a_row_of_shows(client_and_deps):
+    """A row of television on the Movies page is a category error however
+    good the recommendation is."""
+    client, store, tmdb, _, _, _ = client_and_deps
+    _stub_recommendation_sources(tmdb)
+    show = store.create_show(tmdb_id=1399, title="Game of Thrones")
+    store.create_episode_request(tmdb_id=1399, show_id=show.id, title="Game of Thrones",
+                                 season_number=1, episode_number=1)
+
+    body = client.get("/api/recommendations", params={"page": "movies"}).json()
+
+    assert all(row["media_type"] in ("movie", "mixed") for row in body["rows"])
+
+
+def test_each_page_pins_what_matters_on_that_page(client_and_deps):
+    """Home leads with what just arrived, TV with what you're mid-way
+    through, and neither Movies nor TV carries Continue watching — it spans
+    both halves of the library, so it answers a question those pages aren't
+    asking."""
+    client, _, tmdb, _, _, _ = client_and_deps
+    _stub_recommendation_sources(tmdb)
+
+    home = client.get("/api/recommendations").json()["layout"]
+    movies = client.get("/api/recommendations", params={"page": "movies"}).json()["layout"]
+    tv = client.get("/api/recommendations", params={"page": "tv"}).json()["layout"]
+
+    assert home[:3] == ["top10", "recent", "continue"]
+    assert tv[:2] == ["top10", "subscribed"]
+    assert movies[0] == "top10"
+    assert "continue" not in movies and "continue" not in tv
+
+
+def test_an_unknown_page_falls_back_to_home_rather_than_erroring(client_and_deps):
+    client, _, tmdb, _, _, _ = client_and_deps
+    _stub_recommendation_sources(tmdb)
+
+    body = client.get("/api/recommendations", params={"page": "nonsense"}).json()
+
+    assert body["layout"][:3] == ["top10", "recent", "continue"]
+
+
+def test_a_household_with_no_history_still_gets_named_rows(client_and_deps):
+    """Nothing requested yet should mean a varied, well-named page — not an
+    empty one waiting to be earned."""
+    client, _, tmdb, _, _, _ = client_and_deps
+    _stub_recommendation_sources(tmdb)
+
+    body = client.get("/api/recommendations").json()
+
+    assert any(row["key"].startswith("mood:") for row in body["rows"])
+
+
 def test_plex_on_deck_and_image_unlinked(client_and_deps):
     client, _, _, _, _, _ = client_and_deps
     assert client.get("/api/plex/on-deck").json() == {"available": False, "items": []}
