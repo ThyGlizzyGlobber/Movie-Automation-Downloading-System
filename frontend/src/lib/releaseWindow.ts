@@ -31,8 +31,9 @@ export interface ReleaseOutlook {
   kind: 'digital' | 'physical' | 'estimate' | 'unknown'
   /** ISO yyyy-mm-dd. Null when `kind` is `unknown`. */
   date: string | null
-  /** Ready to render: "14 Nov 2026", or "around November 2026" for an
-   *  estimate, or "not announced yet". */
+  /** Ready to render: "14 Nov 2026", or "Nov 2026" for an estimate
+   *  (which carries no day — see TYPICAL_WINDOW_DAYS), or "not
+   *  announced yet". */
   when: string
   /** "tomorrow", "in 3 weeks" — null once the date is today or past,
    *  which happens while TMDB still hasn't caught up. */
@@ -82,8 +83,11 @@ function formatDate(iso: string): string {
   return new Date(`${iso}T00:00:00`).toLocaleDateString([], { day: 'numeric', month: 'short', year: 'numeric' })
 }
 
+// Month and year only, in the same short-month style as the exact
+// dates beside it — the absent day is what marks it as approximate, so
+// it doesn't need a hedging word in front of it as well.
 function formatMonth(iso: string): string {
-  return new Date(`${iso}T00:00:00`).toLocaleDateString([], { month: 'long', year: 'numeric' })
+  return new Date(`${iso}T00:00:00`).toLocaleDateString([], { month: 'short', year: 'numeric' })
 }
 
 function etaFrom(iso: string, now: Date): string | null {
@@ -133,7 +137,7 @@ export function releaseOutlook(
     // know.
     if (guess > now) {
       const iso = guess.toISOString().slice(0, 10)
-      return { kind: 'estimate', date: iso, when: `around ${formatMonth(iso)}`, eta: null }
+      return { kind: 'estimate', date: iso, when: formatMonth(iso), eta: null }
     }
   }
 
@@ -149,7 +153,7 @@ export function downloadableLabel(outlook: ReleaseOutlook): string {
     case 'physical':
       return `${outlook.when} (disc date)`
     case 'estimate':
-      return `${outlook.when} (estimated)`
+      return `${outlook.when} (Estimate)`
     default:
       return outlook.when
   }
