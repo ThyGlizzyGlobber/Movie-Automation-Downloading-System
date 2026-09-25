@@ -16,6 +16,7 @@ import { originalServiceMatch } from '../../lib/providers'
 import { useMediaQuery } from '../../lib/hooks'
 import { useCertificationRegion } from '../auth/useSession'
 import { moviePill } from '../../lib/homeHero'
+import { downloadableLabel, releaseOutlook } from '../../lib/releaseWindow'
 import { formatBytes } from '../../lib/format'
 import { NON_TERMINAL, statusMeta } from '../../lib/status'
 import { errorText, useToast } from '../../lib/toast'
@@ -97,6 +98,10 @@ export default function MovieDetailPage() {
 
   const active = requests.find((r) => NON_TERMINAL.has(r.status)) ?? null
   const certification = certificationOf(movie, region)
+  // When an unreleased title becomes something you could actually
+  // download — which is not its cinema date, and is the only date worth
+  // showing on a page whose whole purpose is getting a copy onto Plex.
+  const outlook = movie.is_coming_soon ? releaseOutlook(movie, region) : null
   const genres = (movie.genres ?? []).slice(0, 3)
 
   const pills: DetailPill[] = []
@@ -131,6 +136,18 @@ export default function MovieDetailPage() {
       ? { label: 'Status', value: (<><Icon name="check-circle" />Available on Plex</>), tone: 'mint', wide: true }
       : { label: 'Status', value: movie.is_coming_soon ? 'Coming soon' : active ? 'On the way' : 'Not on Plex yet', tone: active ? 'ice' : 'dim', wide: true },
   )
+  // Under Status, and only while it's still ahead: once a title is out
+  // the tile is answering a question nobody is asking any more. `dim`
+  // for an estimate or a shrug, so a guess doesn't get the same
+  // confident treatment as a date TMDB actually has on file.
+  if (outlook) {
+    sideTiles.push({
+      label: 'Available to download',
+      value: downloadableLabel(outlook),
+      tone: outlook.kind === 'digital' || outlook.kind === 'physical' ? 'ice' : 'dim',
+      wide: true,
+    })
+  }
   if (requests[0]?.requested_by_username) sideTiles.push({ label: 'Requested by', value: requests[0].requested_by_username, wide: true })
 
   // From the library ledger, not a completed request's recorded winner.
@@ -159,7 +176,15 @@ export default function MovieDetailPage() {
   // closest thing to one — and it keeps the fact list reading the same
   // on both kinds of page, which is the point of it being here.
   if (serviceMark) details.push({ label: 'Network', value: serviceMark.label.replace(' Original', '') })
-  if (movie.release_date) details.push({ label: 'Released', value: new Date(`${movie.release_date}T00:00:00`).toLocaleDateString([], { day: 'numeric', month: 'short', year: 'numeric' }) })
+  if (movie.release_date) {
+    // A future date under the word "Released" is the fact list arguing
+    // with the Coming soon badge six inches above it.
+    const cinemaAhead = new Date(`${movie.release_date}T00:00:00`) > new Date()
+    details.push({
+      label: cinemaAhead ? 'In cinemas' : 'Released',
+      value: new Date(`${movie.release_date}T00:00:00`).toLocaleDateString([], { day: 'numeric', month: 'short', year: 'numeric' }),
+    })
+  }
   const lang = languageNameOf(movie.original_language)
   if (lang) details.push({ label: 'Language', value: lang })
   if (movie.genres?.length) details.push({ label: 'Genres', value: genreLinks(movie.genres, 'movie', ', ') })
@@ -170,7 +195,13 @@ export default function MovieDetailPage() {
   const actions = movie.is_coming_soon ? (
     <span className="btn pri dis">
       <Icon name="clock" />
-      Coming soon
+      {/* The date rather than the word, when we have one worth standing
+          behind — this is where someone looks to find out what they can
+          do about a title, and "not yet" is a poorer answer than "the
+          14th". An estimate stays vague on purpose. */}
+      {outlook && (outlook.kind === 'digital' || outlook.kind === 'physical')
+        ? `Coming ${new Date(`${outlook.date}T00:00:00`).toLocaleDateString([], { day: 'numeric', month: 'short' })}`
+        : 'Coming soon'}
     </span>
   ) : movie.on_plex ? (
     <>
