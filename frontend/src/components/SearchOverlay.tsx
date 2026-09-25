@@ -137,7 +137,7 @@ export default function SearchOverlay({ isOpen, onClose }: { isOpen: boolean; on
               ))}
             </div>
             <span className="search-overlay-k">
-              {hits.length} result{hits.length === 1 ? '' : 's'} · ↑↓ to move · ↵ to open
+              {hits.length} result{hits.length === 1 ? '' : 's'} | ↑↓ to move | ↵ to open
             </span>
           </div>
         )}

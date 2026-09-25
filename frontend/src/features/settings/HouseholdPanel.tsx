@@ -64,7 +64,7 @@ export default function HouseholdPanel() {
                     {u.is_admin && <span className="household-tag">Admin</span>}
                   </b>
                   <small>
-                    {u.requests} request{u.requests === 1 ? '' : 's'} · signed in {relativeTime(u.last_login_at)}
+                    {u.requests} request{u.requests === 1 ? '' : 's'} | signed in {relativeTime(u.last_login_at)}
                   </small>
                 </div>
               </div>

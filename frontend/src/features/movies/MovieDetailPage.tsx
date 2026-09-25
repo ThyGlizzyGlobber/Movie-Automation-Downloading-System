@@ -37,7 +37,7 @@ function MovieDetailSkeleton() {
   return (
     <>
       <DetailShellSkeleton
-        shape={{ tiles: [{ wide: true }, { wide: true }], facts: 7, pills: ['7.4 · 1,234', '2024', 'PG-13', '2h 10m'], buttons: ['Add to Plex'] }}
+        shape={{ tiles: [{ wide: true }, { wide: true }], facts: 7, pills: ['7.4 | 1,234', '2024', 'PG-13', '2h 10m'], buttons: ['Add to Plex'] }}
         aside={<DetailCastSkeleton />}
       >
         <DetailTrailerSkeleton />
@@ -111,7 +111,7 @@ export default function MovieDetailPage() {
       text: (
         <>
           {movie.vote_average.toFixed(1)}
-          {movie.vote_count ? <small>· {movie.vote_count.toLocaleString()}</small> : null}
+          {movie.vote_count ? <small>| {movie.vote_count.toLocaleString()}</small> : null}
         </>
       ),
     })
@@ -274,7 +274,7 @@ export default function MovieDetailPage() {
       <RequestModal
         open={requestOpen}
         title={title}
-        subtitle={[year, 'Movie', 'Not on Plex'].filter(Boolean).join(' · ')}
+        subtitle={[year, 'Movie', 'Not on Plex'].filter(Boolean).join(' | ')}
         posterPath={movie.poster_path}
         onClose={() => setRequestOpen(false)}
         onSubmit={() => {

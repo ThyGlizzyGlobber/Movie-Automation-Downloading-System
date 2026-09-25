@@ -55,7 +55,7 @@ export default function ActivityDashboardPanel() {
               <div className="activity-user-row" key={s.plex_user_id}>
                 <span className="activity-user-name">{s.username || 'Unknown'}</span>
                 <span className="activity-user-counts">
-                  {s.total_requests} total · {s.requests_this_month} this month
+                  {s.total_requests} total | {s.requests_this_month} this month
                 </span>
               </div>
             ))}
@@ -78,7 +78,7 @@ export default function ActivityDashboardPanel() {
                   <div className="activity-request-main">
                     <span className="activity-request-title">{r.title}</span>
                     <span className="activity-request-sub">
-                      {r.requested_by_username || 'System'} ·{' '}
+                      {r.requested_by_username || 'System'} |{' '}
                       {new Date(r.created_at).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}
                     </span>
                     {winner?.fileName && (
@@ -88,11 +88,11 @@ export default function ActivityDashboardPanel() {
                         </span>
                         <span className="activity-pick-meta">
                           <span className={seeds.unknown ? 'activity-pick-warn' : 'activity-pick-seeds'}>{seeds.text}</span>
-                          {winner.engineName ? <> · {winner.engineName}</> : null}
-                          {winner.fileSize ? <> · {formatBytes(winner.fileSize)}</> : null}
-                          {pick?.candidates_considered ? <> · chosen from {pick.candidates_considered}</> : null}
+                          {winner.engineName ? <> | {winner.engineName}</> : null}
+                          {winner.fileSize ? <> | {formatBytes(winner.fileSize)}</> : null}
+                          {pick?.candidates_considered ? <> | chosen from {pick.candidates_considered}</> : null}
                           {pick?.stall_attempts && pick.stall_attempts > 1 ? (
-                            <> · <span className="activity-pick-warn">attempt {pick.stall_attempts}</span></>
+                            <> | <span className="activity-pick-warn">attempt {pick.stall_attempts}</span></>
                           ) : null}
                         </span>
                       </>

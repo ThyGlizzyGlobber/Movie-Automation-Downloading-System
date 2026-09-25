@@ -12,7 +12,7 @@ export default function UpdatesPanel() {
     setDeploying(true)
     try {
       const result = await postDeploy()
-      toast({ tone: 'ok', title: 'Updated', body: `${result.detail} · ${result.commit}` })
+      toast({ tone: 'ok', title: 'Updated', body: `${result.detail} | ${result.commit}` })
     } catch (err) {
       toast({ tone: 'error', title: 'Update failed', body: err instanceof ApiError ? err.message : 'Something went wrong.' })
     } finally {

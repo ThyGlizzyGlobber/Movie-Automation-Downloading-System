@@ -115,9 +115,9 @@ export default function BrowsePage() {
         <div>
           <h1 className="browse-title">
             {typeLabel}
-            {total !== null && total > 0 && <span className="browse-count"> · {total.toLocaleString()}</span>}
+            {total !== null && total > 0 && <span className="browse-count"> | {total.toLocaleString()}</span>}
           </h1>
-          <p className="browse-sub">{subtitleBits.join(' · ')}</p>
+          <p className="browse-sub">{subtitleBits.join(' | ')}</p>
         </div>
         <div className="seg browse-type" role="tablist" aria-label="Movies or TV">
           <button role="tab" aria-selected={type === 'movie'} className={type === 'movie' ? 'active' : ''} onClick={() => switchType('movie')}>

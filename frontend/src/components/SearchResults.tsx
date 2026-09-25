@@ -133,7 +133,7 @@ export default function SearchResults({
             <div className="search-result-title">{hitTitle(hit)}</div>
             <div className="search-result-meta">
               {hit.mediaType === 'tv' ? 'Series' : 'Movie'}
-              {hitYear(hit) && ` · ${hitYear(hit)}`}
+              {hitYear(hit) && ` | ${hitYear(hit)}`}
             </div>
           </div>
           {!!hit.vote_average && (

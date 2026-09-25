@@ -24,7 +24,7 @@ function EpisodePill({ ep }: { ep: EpisodeStatus }) {
   }
   if (ep.state === 'requested' || ep.state === 'failed') {
     const meta = statusMeta(ep.status ?? 'queued')
-    const pct = ep.status === 'downloading' && ep.download_progress != null ? ` · ${Math.round(ep.download_progress * 100)}%` : ''
+    const pct = ep.status === 'downloading' && ep.download_progress != null ? ` | ${Math.round(ep.download_progress * 100)}%` : ''
     return (
       <span className={`status-pill ${meta.cls}`}>
         <Icon name={meta.icon} className="status-icon" />

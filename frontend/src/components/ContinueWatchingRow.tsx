@@ -20,7 +20,7 @@ function subtitle(item: OnDeckItem): string {
     parts.push(String(item.year))
   }
   if (item.remaining_minutes != null) parts.push(`${item.remaining_minutes} min left`)
-  return parts.join(' · ')
+  return parts.join(' | ')
 }
 
 export function ContinueWatchingSkeleton() {
@@ -78,7 +78,7 @@ export default function ContinueWatchingRow() {
               <Icon name="play" />
             </a>
             <b>{title}</b>
-            <small>{item.type === 'episode' && item.title ? `${subtitle(item)} · ${item.title}` : subtitle(item)}</small>
+            <small>{item.type === 'episode' && item.title ? `${subtitle(item)} | ${item.title}` : subtitle(item)}</small>
           </div>
         )
       }}

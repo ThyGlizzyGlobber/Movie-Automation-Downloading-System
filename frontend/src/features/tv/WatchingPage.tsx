@@ -130,7 +130,7 @@ export default function WatchingPage() {
         <div>
           <h1 className="browse-title">Following</h1>
           <p className="browse-sub">
-            {loading ? <SkelWords text="4 shows · new episodes are picked up on their own" /> : `${shows.length} show${shows.length === 1 ? '' : 's'} · new episodes are picked up on their own`}
+            {loading ? <SkelWords text="4 shows | new episodes are picked up on their own" /> : `${shows.length} show${shows.length === 1 ? '' : 's'} | new episodes are picked up on their own`}
           </p>
         </div>
       </div>

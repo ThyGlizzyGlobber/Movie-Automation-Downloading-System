@@ -232,7 +232,7 @@ export interface DetailSkeletonShape {
 }
 
 const FACT_WIDTHS = ['38%', '62%', '44%', '70%', '56%', '80%', '48%', '66%']
-const SAMPLE_GENRES = 'Science Fiction · Adventure'
+const SAMPLE_GENRES = 'Science Fiction | Adventure'
 
 export function DetailShellSkeleton({ shape, aside, children }: { shape: DetailSkeletonShape; aside?: ReactNode; children?: ReactNode }) {
   return (

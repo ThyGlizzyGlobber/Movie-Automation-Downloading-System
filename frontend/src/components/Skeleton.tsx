@@ -40,7 +40,7 @@ export function SkelWords({ text }: { text: string }) {
 }
 
 /* A poster card as the rows and grids draw it: art, title, and the
-   "year · genre" line unless the row's cards have none. */
+   "year | genre" line unless the row's cards have none. */
 export function PosterCardSkeleton({ caption = true, meta = true }: { caption?: boolean; meta?: boolean }) {
   return (
     <div className="poster-card" aria-hidden="true">

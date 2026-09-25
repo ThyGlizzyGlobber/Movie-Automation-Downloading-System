@@ -271,7 +271,7 @@ export default function HeroCarousel({ items, loading = false }: { items: HeroSl
   const enrichment = useMemo<Record<number, Enrichment>>(() => {
     const out: Record<number, Enrichment> = {}
     items.forEach((item, i) => {
-      const genres = (item.genres ?? []).slice(0, 2).map((g) => g.name).join(' · ')
+      const genres = (item.genres ?? []).slice(0, 2).map((g) => g.name).join(' | ')
       const logo = logoUrl(item.logo_path)
       if (item.mediaType === 'tv') {
         const seasons = (item.seasons ?? []).filter((se) => se.season_number > 0).length
@@ -663,7 +663,7 @@ export default function HeroCarousel({ items, loading = false }: { items: HeroSl
                       info?.cert,
                     ]
                       .filter(Boolean)
-                      .join(' · ')}
+                      .join(' | ')}
                   </div>
                   {item.overview && (
                     <p className={`hero-syn${videoVisible[i] && !cursorNear ? ' hidden-for-video' : ''}`}>{item.overview}</p>

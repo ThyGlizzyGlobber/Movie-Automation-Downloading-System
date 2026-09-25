@@ -168,7 +168,7 @@ function AuditLogSection() {
               <div className="audit-log-main">
                 <span className="audit-log-type">{eventLabel(e.event_type)}</span>
                 <span className="audit-log-sub">
-                  {[e.username, e.ip_address, e.detail].filter(Boolean).join(' · ') || '—'}
+                  {[e.username, e.ip_address, e.detail].filter(Boolean).join(' | ') || '—'}
                 </span>
               </div>
               <span className="audit-log-time">

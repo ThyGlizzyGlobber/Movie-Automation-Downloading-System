@@ -49,7 +49,7 @@ export default function PersonPage() {
 
   const count = person.credits.length
   const role = person.known_for_department === 'Acting' ? 'Actor' : person.known_for_department || null
-  const meta = [role, `${count} title${count === 1 ? '' : 's'}`].filter(Boolean).join(' · ')
+  const meta = [role, `${count} title${count === 1 ? '' : 's'}`].filter(Boolean).join(' | ')
 
   return (
     <>

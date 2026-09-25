@@ -30,7 +30,7 @@
   background: var(--bg-card);
   display: block;
 }
-/* Caption: Outfit title and a muted "year · genre" line. Fixed line
+/* Caption: Outfit title and a muted "year | genre" line. Fixed line
    heights keep every card the same height when a title falls back to a
    taller font (Japanese, say), and match the loading skeleton. */
 .poster-caption {

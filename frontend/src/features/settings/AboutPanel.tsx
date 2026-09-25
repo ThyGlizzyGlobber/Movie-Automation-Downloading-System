@@ -33,14 +33,14 @@ export default function AboutPanel() {
       <SettingRow label="Plex server">
         <span className="about-value">{a.plex_server_name ?? 'Not connected'}</span>
       </SettingRow>
-      <SettingRow label="Library folders" hint={`${a.movie_library_root} · ${a.tv_library_root}`}>
-        <span className="about-value">Movies · TV</span>
+      <SettingRow label="Library folders" hint={`${a.movie_library_root} | ${a.tv_library_root}`}>
+        <span className="about-value">Movies | TV</span>
       </SettingRow>
-      <SettingRow label="History" hint={`${a.users} ${a.users === 1 ? 'person' : 'people'} · database ${a.db_bytes != null ? formatBytes(a.db_bytes) : '—'}`}>
+      <SettingRow label="History" hint={`${a.users} ${a.users === 1 ? 'person' : 'people'} | database ${a.db_bytes != null ? formatBytes(a.db_bytes) : '—'}`}>
         <span className="about-value">{a.requests.toLocaleString()} requests</span>
       </SettingRow>
       <SettingRow label="Runtime" hint={`Python ${a.python}`}>
-        <span className="about-value">FastAPI · React</span>
+        <span className="about-value">FastAPI | React</span>
       </SettingRow>
     </div>
   )

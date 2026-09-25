@@ -55,9 +55,9 @@ function ActiveRow({ r, hasAvatar }: { r: RequestOut; hasAvatar: boolean }) {
         <b>{r.title}</b>
         <small>
           {who}
-          {r.media_type === 'episode' && r.season_number != null ? ` · S${String(r.season_number).padStart(2, '0')}E${String(r.episode_number).padStart(2, '0')}` : ''}
-          {r.media_type === 'pack' ? (r.season_number == null ? ' · Complete series' : ` · Season ${r.season_number}`) : ''}
-          {' · '}
+          {r.media_type === 'episode' && r.season_number != null ? ` | S${String(r.season_number).padStart(2, '0')}E${String(r.episode_number).padStart(2, '0')}` : ''}
+          {r.media_type === 'pack' ? (r.season_number == null ? ' | Complete series' : ` | Season ${r.season_number}`) : ''}
+          {' | '}
           {statusDetail(r.status, r.download_progress)}
         </small>
         <i className="dash-active-bar">
@@ -101,7 +101,7 @@ function StorageSkeleton() {
           <Skel>1.2 TB</Skel>
         </b>
         <span>
-          <SkelWords text="of 3.6 TB used · 33%" />
+          <SkelWords text="of 3.6 TB used | 33%" />
         </span>
       </div>
       <Skel className="dash-storage-bar" />
@@ -256,7 +256,7 @@ export default function DashboardPanel({ onOpen }: { onOpen: (key: string) => vo
             <>
               <div className="dash-storage-line">
                 <b>{formatBytes(d.used_bytes)}</b>
-                <span>of {formatBytes(d.total_bytes)} used · {Math.round(d.used_percent)}%</span>
+                <span>of {formatBytes(d.total_bytes)} used | {Math.round(d.used_percent)}%</span>
               </div>
               <div className="dash-storage-bar" aria-hidden="true">
                 {segments.map((s) => (

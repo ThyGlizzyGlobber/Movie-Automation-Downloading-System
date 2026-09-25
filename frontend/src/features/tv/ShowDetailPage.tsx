@@ -36,7 +36,7 @@ function ShowDetailSkeleton() {
   return (
     <>
       <DetailShellSkeleton
-        shape={{ tiles: [{ wide: true }, {}, {}, { wide: true }, { wide: true }], facts: 8, pills: ['7.9 · 1,234', '2024', 'TV-MA', '2 seasons'], buttons: ['Follow', 'Add all to Plex'] }}
+        shape={{ tiles: [{ wide: true }, {}, {}, { wide: true }, { wide: true }], facts: 8, pills: ['7.9 | 1,234', '2024', 'TV-MA', '2 seasons'], buttons: ['Follow', 'Add all to Plex'] }}
         aside={<DetailCastSkeleton />}
       >
         <DetailTrailerSkeleton />
@@ -132,7 +132,7 @@ export default function ShowDetailPage() {
       toast({
         tone: 'info',
         title: `Adding ${title} to Plex`,
-        body: `${scope === 'series' ? 'Whole series' : `Season ${seasonNumber}`} · looking for the best copy now${follows ? ' · following for new episodes' : ''}`,
+        body: `${scope === 'series' ? 'Whole series' : `Season ${seasonNumber}`} | looking for the best copy now${follows ? ' | following for new episodes' : ''}`,
       })
     } catch (err) {
       toast({ tone: 'error', title: "Couldn't request that", body: errorText(err) })
@@ -173,14 +173,14 @@ export default function ShowDetailPage() {
       text: (
         <>
           {show.vote_average.toFixed(1)}
-          {show.vote_count ? <small>· {show.vote_count.toLocaleString()}</small> : null}
+          {show.vote_count ? <small>| {show.vote_count.toLocaleString()}</small> : null}
         </>
       ),
     })
   }
   if (year) pills.push({ text: year })
   if (certification) pills.push({ text: certification })
-  if (limited) pills.push({ text: show.number_of_episodes ? `Limited series · ${show.number_of_episodes} episodes` : 'Limited series' })
+  if (limited) pills.push({ text: show.number_of_episodes ? `Limited series | ${show.number_of_episodes} episodes` : 'Limited series' })
   else if (seasons.length) pills.push({ text: `${seasons.length} season${seasons.length === 1 ? '' : 's'}` })
   if (genres.length) pills.push({ text: genreLinks(genres, 'tv'), mute: true })
 
@@ -192,13 +192,13 @@ export default function ShowDetailPage() {
   const nextIsOut = !!next && new Date(`${next}T00:00:00`) <= startOfToday()
   // A finished run wins over whatever stale "next" TMDB still lists.
   const nextLabel = limited
-    ? 'Limited series · all out'
+    ? 'Limited series | all out'
     : show.status === 'Ended' || show.status === 'Canceled'
       ? 'No more episodes'
       : next
         ? nextIsOut
-          ? ['Out now', nextCode].filter(Boolean).join(' · ')
-          : [new Date(`${next}T00:00:00`).toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' }), nextCode].filter(Boolean).join(' · ')
+          ? ['Out now', nextCode].filter(Boolean).join(' | ')
+          : [new Date(`${next}T00:00:00`).toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' }), nextCode].filter(Boolean).join(' | ')
         : 'Not scheduled'
   // An ended or cancelled show has nothing left to follow: no Follow
   // button, and the tile shows the years it ran instead.
@@ -392,7 +392,7 @@ export default function ShowDetailPage() {
 
       <RequestModal
         open={requestModal != null}
-        title={requestModal?.scope === 'series' ? title : `${title} · ${requestModal?.label ?? ''}`}
+        title={requestModal?.scope === 'series' ? title : `${title} | ${requestModal?.label ?? ''}`}
         subtitle={requestModal?.scope === 'series' ? (limited ? 'Limited series' : 'Complete series') : 'One season'}
         posterPath={show.poster_path}
         submitLabel="Add to Plex"

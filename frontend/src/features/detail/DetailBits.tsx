@@ -77,8 +77,8 @@ export function DetailCastSkeleton({ count = 8 }: { count?: number }) {
 }
 
 // Genre names as links into the browse page with that genre already
-// selected, for the pills ("Action · Comedy") and the facts list.
-export function genreLinks(genres: { id: number; name: string }[], type: 'movie' | 'tv', separator = ' · ') {
+// selected, for the pills ("Action | Comedy") and the facts list.
+export function genreLinks(genres: { id: number; name: string }[], type: 'movie' | 'tv', separator = ' | ') {
   return (
     <>
       {genres.map((g, i) => (
@@ -143,7 +143,7 @@ const RES_RE = /\b(2160p|4k|uhd|1080p|720p|480p)\b/i
 const SRC_RE = /\b(remux|bluray|blu-ray|web-?dl|webrip|web|hdtv|dvdrip)\b/i
 const HDR_RE = /\b(dolby ?vision|dv|hdr10\+?|hdr)\b/i
 
-// "4K · HDR" style quality read from a release name.
+// "4K | HDR" style quality read from a release name.
 export function qualityFromName(name: string | null | undefined): string {
   if (!name) return ''
   const flat = name.replace(/[._]/g, ' ')

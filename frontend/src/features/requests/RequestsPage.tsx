@@ -211,7 +211,7 @@ function leafMeta(r: RequestOut): string {
   if (r.redownload_mode) bits.push(r.redownload_mode === 'overwrite' ? 'Replacing' : 'Upgrading')
   bits.push(relativeTime(r.updated_at))
   if (FAILED_STATES.has(r.status)) bits.push(statusDetail(r.status, r.download_progress, r.error_message))
-  return bits.join(' · ')
+  return bits.join(' | ')
 }
 
 function LeafRow({ row, onChanged }: { row: RequestOut; onChanged: () => void }) {
@@ -255,7 +255,7 @@ function SeasonStrip({ season, onChanged }: { season: SeasonGroup; onChanged: ()
           const meta = statusMeta(r.status)
           const pct = r.status === 'downloading' && r.download_progress != null ? ` ${Math.round(r.download_progress * 100)}%` : ''
           return (
-            <span key={r.id} className={`rq-ep ${meta.cls}`} title={`${episodePillLabel(r)} · ${meta.label} · ${statusDetail(r.status, r.download_progress, r.error_message)}`}>
+            <span key={r.id} className={`rq-ep ${meta.cls}`} title={`${episodePillLabel(r)} | ${meta.label} | ${statusDetail(r.status, r.download_progress, r.error_message)}`}>
               <Icon name={meta.icon} />
               {episodePillLabel(r)}
               {pct}
@@ -299,7 +299,7 @@ function ShowRow({ group, expanded, onToggle, onChanged }: { group: ShowGroup; e
     explained ? statusDetail(explained.status, explained.download_progress, explained.error_message) : null,
   ]
     .filter(Boolean)
-    .join(' · ')
+    .join(' | ')
   return (
     <Row
       poster={group.posterPath}
@@ -390,7 +390,7 @@ export default function RequestsPage() {
   const summary = loading
     ? null
     : rows.length
-    ? `${rows.length} request${rows.length === 1 ? '' : 's'}${people > 1 ? ` from ${people} people` : ''} · updated ${relativeTime(new Date(requestsQuery.dataUpdatedAt).toISOString())}`
+    ? `${rows.length} request${rows.length === 1 ? '' : 's'}${people > 1 ? ` from ${people} people` : ''} | updated ${relativeTime(new Date(requestsQuery.dataUpdatedAt).toISOString())}`
     : 'Nothing on the way yet'
 
   return (
@@ -399,11 +399,11 @@ export default function RequestsPage() {
         <div>
           <h1 className="rq-h1">Requests</h1>
           <p className="rq-lead">
-            {summary ?? <SkelWords text="13 requests · updated just now" />}
+            {summary ?? <SkelWords text="13 requests | updated just now" />}
             {rows.length > 0 && (downloading > 0 || queued > 0) && (
               <span className="rq-lead-m">
-                {' · '}
-                {[downloading > 0 ? `${downloading} downloading` : null, queued > 0 ? `${queued} queued` : null].filter(Boolean).join(' · ')}
+                {' | '}
+                {[downloading > 0 ? `${downloading} downloading` : null, queued > 0 ? `${queued} queued` : null].filter(Boolean).join(' | ')}
               </span>
             )}
           </p>
