@@ -32,7 +32,7 @@ export interface ReleaseOutlook {
   /** ISO yyyy-mm-dd. Null when `kind` is `unknown`. */
   date: string | null
   /** Ready to render: "14 Nov 2026", or "Nov 2026" for an estimate
-   *  (which carries no day — see TYPICAL_WINDOW_DAYS), or "not
+   *  (which carries no day — see TYPICAL_WINDOW_DAYS), or "Not
    *  announced yet". */
   when: string
   /** "tomorrow", "in 3 weeks" — null once the date is today or past,
@@ -141,20 +141,32 @@ export function releaseOutlook(
     }
   }
 
-  return { kind: 'unknown', date: null, when: 'not announced yet', eta: null }
+  return { kind: 'unknown', date: null, when: 'Not announced yet', eta: null }
 }
 
-/** The tile on a coming-soon movie's page: the date, and how sure we are
- *  of it, in one line. */
+// What kind of date this is, in one capitalised word. Parallel on
+// purpose: three dates that mean three different things read as three
+// variants of one label rather than three separate inventions, and the
+// reader learns the scheme once. Digital is named rather than left bare
+// because it is only the default in our heads — on the page, an
+// unlabelled date beside a "(Disc)" one just looks like the label went
+// missing.
+const KIND_LABEL: Record<ReleaseOutlook['kind'], string> = {
+  digital: 'Digital',
+  physical: 'Disc',
+  estimate: 'Estimate',
+  unknown: '',
+}
+
+/** The tile on a coming-soon movie's page: the date, what kind of date
+ *  it is, and how long the wait is, in one line. */
 export function downloadableLabel(outlook: ReleaseOutlook): string {
-  switch (outlook.kind) {
-    case 'digital':
-      return outlook.eta ? `${outlook.when} · ${outlook.eta}` : outlook.when
-    case 'physical':
-      return `${outlook.when} (disc date)`
-    case 'estimate':
-      return `${outlook.when} (Estimate)`
-    default:
-      return outlook.when
-  }
+  const kind = KIND_LABEL[outlook.kind]
+  // No date to qualify or count down to — the phrase is the whole answer.
+  if (!kind) return outlook.when
+  // The countdown trails the pair rather than splitting it, so the
+  // qualifier stays attached to the date it qualifies. An estimate has
+  // no eta by construction: a countdown to a month we guessed would be
+  // the one part of this that sounded certain.
+  return `${outlook.when} (${kind})${outlook.eta ? ` · ${outlook.eta}` : ''}`
 }
