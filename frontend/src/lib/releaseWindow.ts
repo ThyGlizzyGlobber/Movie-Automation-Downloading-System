@@ -35,8 +35,8 @@ export interface ReleaseOutlook {
    *  (which carries no day — see TYPICAL_WINDOW_DAYS), or "Not
    *  announced yet". */
   when: string
-  /** "tomorrow", "in 3 weeks" — null once the date is today or past,
-   *  which happens while TMDB still hasn't caught up. */
+  /** "32 Days" — null once the date is today or past, which happens
+   *  while TMDB still hasn't caught up. */
   eta: string | null
 }
 
@@ -90,13 +90,15 @@ function formatMonth(iso: string): string {
   return new Date(`${iso}T00:00:00`).toLocaleDateString([], { month: 'short', year: 'numeric' })
 }
 
+// A plain day count, at every distance. It used to round into weeks
+// and months past a fortnight, which reads more naturally in a sentence
+// but is the wrong unit beside a date: "in 3 weeks" next to 17 Oct
+// makes you do the arithmetic to find out whether that means the 17th,
+// and the rounding meant it sometimes didn't.
 function etaFrom(iso: string, now: Date): string | null {
   const days = Math.ceil((new Date(`${iso}T00:00:00`).getTime() - now.getTime()) / 86400000)
   if (days <= 0) return null
-  if (days === 1) return 'tomorrow'
-  if (days < 14) return `in ${days} days`
-  if (days < 60) return `in ${Math.round(days / 7)} weeks`
-  return `in ${Math.round(days / 30)} months`
+  return `${days} Day${days === 1 ? '' : 's'}`
 }
 
 /**
@@ -168,5 +170,5 @@ export function downloadableLabel(outlook: ReleaseOutlook): string {
   // qualifier stays attached to the date it qualifies. An estimate has
   // no eta by construction: a countdown to a month we guessed would be
   // the one part of this that sounded certain.
-  return `${outlook.when} (${kind})${outlook.eta ? ` · ${outlook.eta}` : ''}`
+  return `${outlook.when} (${kind})${outlook.eta ? ` | ${outlook.eta}` : ''}`
 }
