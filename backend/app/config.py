@@ -185,6 +185,15 @@ RESOLUTION_TIERS = (
     (1, ("480p", "sd", "dvdrip", "dvdr", "tvrip", "hdtv", "pdtv", "sdtv", "dsr", "xvid",
          "remux", "bluray", "blu-ray", "bdrip", "brrip", "bd-rip")),
 )
+
+# The tier-1 entries above that are *source* words standing in for SD
+# rather than a stated resolution. Named separately so a caller can ask
+# whether a release actually said what it is, which is the difference
+# between using the tier as a floor (fine) and as a claim (not).
+INFERRED_SD_SOURCES = (
+    "dvdrip", "dvdr", "tvrip", "hdtv", "pdtv", "sdtv", "dsr", "xvid",
+    "remux", "bluray", "blu-ray", "bdrip", "brrip", "bd-rip",
+)
 MIN_RESOLUTION = "480p"
 
 YEAR_TOLERANCE = 1

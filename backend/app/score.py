@@ -186,6 +186,25 @@ def _resolution_score(tokens: list[str]) -> int:
     return _best_tier(tokens, config.RESOLUTION_TIERS)
 
 
+def states_resolution(tokens: list[str]) -> bool:
+    """True when the name names a resolution, rather than one being
+    inferred from its source.
+
+    RESOLUTION_TIERS deliberately conflates the two so a floor accepts a
+    DVDRip or a Blu-ray that never says a number. That is right for a
+    floor and wrong for a comparison: the SD tier such a release lands on
+    is a deliberate understatement, and reading it as the release's
+    actual quality makes an untagged Blu-ray look worse than a 720p file.
+    Callers weighing two releases against each other ask this first."""
+    for _tier, phrases in config.RESOLUTION_TIERS:
+        for phrase in phrases:
+            if phrase in config.INFERRED_SD_SOURCES:
+                continue
+            if contains_phrase(tokens, phrase):
+                return True
+    return False
+
+
 def _resolution_floor_tier(min_resolution: str) -> int:
     """The tier value for a `min_resolution` setting. An unrecognized
     setting fails safe to the strictest (highest) known tier rather than

@@ -19,6 +19,7 @@ from app.score import (
     passes_relevance_gate,
     passes_viability_gate,
     rank_candidates,
+    states_resolution,
 )
 from app.pack_score import passes_season_pack_gate, passes_season_range_pack_gate, passes_series_pack_gate
 from app.tmdb import TMDBClient
@@ -648,9 +649,19 @@ def download_pack(
         # every season had 2160p and 1080p packs of its own. When the
         # seasons come in better, skip the series pack and let the
         # worker's fallback ask for each season instead.
-        best_series = rank_candidates(candidates)[0][1].resolution_score
+        best_result, best_score = rank_candidates(candidates)[0]
+        best_series = best_score.resolution_score
         best_season = _best_season_pack_tier(qbt, identity, existing_hashes, settings)
-        if best_season > best_series:
+        # Only on stated evidence. A pack naming no resolution sits at the
+        # SD tier because its source implies at least that much — an
+        # understatement on purpose (config.RESOLUTION_TIERS) — and
+        # reading it as the pack's real quality abandons the thing that
+        # was asked for in favour of a 720p season pack. Found on
+        # "Justice League Unlimited 2001 S01-05 Bluray x265": 69 seeders,
+        # the healthiest pack on offer, at tier 1 for saying "Bluray"
+        # where the season packs say "720p".
+        stated = states_resolution(tokenize(best_result.get("fileName", "")))
+        if best_season > best_series and stated:
             return PackDownloadResult(
                 status="no qualifying results",
                 identity=identity,

@@ -1124,6 +1124,58 @@ def test_download_pack_series_steps_aside_when_the_seasons_come_in_better():
     assert qbt.added == []
 
 
+def test_download_pack_series_keeps_a_pack_that_never_stated_its_resolution():
+    """The other half of the Ted rule, and the half that was wrong.
+
+    A pack naming no resolution sits at the SD tier because its source
+    implies at least that much — an understatement on purpose. Comparing
+    that understatement against a season pack's stated 720p made the
+    healthiest complete-series pack available lose to a season pack and
+    hand the household exactly the season-by-season result it was trying
+    to avoid.
+
+    Justice League Unlimited, 2026-09-27: "...S01-05 Bluray x265" at 69
+    seeders against "(Season 1) 720p iTunes" at 10."""
+    jlu = ShowIdentity(
+        tmdb_id=84200, title="Justice League Unlimited", original_title="Justice League Unlimited",
+        variants=["Justice League Unlimited"], number_of_seasons=3, finished_seasons=3,
+        first_air_year=2004,
+    )
+    qbt = FakeQBTClient(
+        results_by_variant={
+            "Justice League Unlimited complete series": [
+                _pack_result(fileName="Justice League Unlimited 2001 S01-05 Bluray x265 ByteShare", fileSize=32_000_000_000)
+            ],
+            "Justice League Unlimited Season 01": [
+                _pack_result(fileName="Justice League Unlimited S01 720p iTunes", fileUrl="magnet:?xt=urn:btih:CCCC", fileSize=6_500_000_000)
+            ],
+        }
+    )
+
+    result = download_pack(jlu, "series", qbt, dataclasses.replace(PipelineSettings.from_config(), min_resolution="480p"))
+
+    assert result.status == "added"
+    assert result.winner["fileName"].startswith("Justice League Unlimited 2001 S01-05")
+
+
+def test_download_pack_series_still_steps_aside_on_a_stated_resolution():
+    """The safeguard is unchanged where it was right: a series pack that
+    says 720p against seasons that say 2160p still declines. Only the
+    silent case moved."""
+    two = ShowIdentity(tmdb_id=1, title="Ted", original_title="Ted", variants=["Ted"], number_of_seasons=2, finished_seasons=2)
+    qbt = FakeQBTClient(
+        results_by_variant={
+            "Ted complete series": [_pack_result(fileName="Ted.2024.S01-S02.720p.BluRay.x265", fileSize=4_500_000_000)],
+            "Ted Season 01": [_pack_result(fileName="Ted.2024.S01.2160p.WEB-DL.H.265", fileUrl="magnet:?xt=urn:btih:DDDD", fileSize=35_000_000_000)],
+        }
+    )
+
+    result = download_pack(two, "series", qbt, dataclasses.replace(PipelineSettings.from_config(), min_resolution="480p"))
+
+    assert result.status == "no qualifying results"
+    assert qbt.added == []
+
+
 def test_download_pack_series_keeps_the_series_pack_when_it_is_as_good_as_the_seasons():
     two = ShowIdentity(tmdb_id=1, title="Ted", original_title="Ted", variants=["Ted"], number_of_seasons=2, finished_seasons=2)
     qbt = FakeQBTClient(
