@@ -437,32 +437,41 @@
   }
 }
 /* The facts line. Desktop says the same things through its pills and
-   the corner cert badge, so it only appears on the phone card. */
+   the corner cert badge, so it only appears on a phone. */
 .home-hero-meta {
   display: none;
 }
-.home-hero-info-label {
-  display: none;
-}
 
-/* Phones: a different hero, not a squeezed one.
-   A scope frame is ~150px tall at 390 wide, which cannot hold a logo,
-   a synopsis and two buttons — tried, and the logo clipped straight out
-   of the pane. So the phone gets a card instead: portrait key art in a
-   square-ish well, the logo sitting over the bottom of it, then the
-   facts line, synopsis and two full-width buttons stacked underneath on
-   the card's own ground. Scope is a frame for a trailer, and there are
-   no trailers here (see HeroCarousel.tsx), so nothing is lost by
-   dropping it at this width. */
+/* Phones: the content page's hero, not a squeezed scope frame.
+   The slide is the title's 2:3 poster at the full width of the screen,
+   starting under the top bar, as a whole rounded card — the same treatment, in the same place, as the page a tap on it
+   opens, so going in reads as one poster staying put while the page
+   fills in around it. Beneath it, centred: one status line, one facts
+   line and one button.
+   What went, and why. The card before this was the frame's contents
+   stacked into a box: a square crop of the poster with the title logo
+   laid over the foot of it — twice over, since a poster carries its own
+   title — then the facts, a three-line synopsis and two full-width
+   buttons that both opened the same page. The poster is the title and
+   is itself the link, so the logo and the second button said nothing;
+   the synopsis is the content page's to tell. No trailers here either
+   (see HeroCarousel.tsx), so nothing needed the scope frame. */
 @media (max-width: 639px) {
   .home-hero {
-    /* Content-driven height, not a ratio — the art well below has the
-       fixed shape now. */
     aspect-ratio: auto;
-    border-radius: 14px;
-    box-shadow: 0 24px 50px rgba(0, 0, 0, 0.55), 0 0 0 1px rgba(255, 255, 255, 0.08);
+    /* Out to the screen's edges (cancelling main's side padding), but
+       starting under the top bar rather than behind it: plenty of
+       posters put their title at the top, and the bar sat right on it
+       (measured on The Scandal). */
+    margin: calc(var(--hero-top-gap) - 14px) -14px 22px;
+    border-radius: 0;
+    /* Visible, so the poster's shadow isn't cut off at the hero's box.
+       The slides share one box, so nothing else spills. */
+    overflow: visible;
+    background: none;
+    box-shadow: none;
   }
-  /* The active slide stands in the flow so the card takes its height;
+  /* The active slide stands in the flow so the hero takes its height;
      the rest stay stacked underneath it for the crossfade. */
   .home-hero-slide {
     position: absolute;
@@ -470,112 +479,95 @@
   .home-hero-slide.active {
     position: relative;
   }
-  /* The art well: a block at the top of the card rather than a layer
-     behind everything. */
+  /* The phone poster frame (tokens.css), shared with the content page
+     so a tapped hero opens with its poster the same size and in the
+     same place. */
   .home-hero-media {
     position: relative;
     inset: auto;
     display: block;
-    width: 100%;
-    aspect-ratio: 1 / 1;
+    width: var(--phone-poster-w);
+    margin: 0 auto;
+    aspect-ratio: 2 / 3;
+    border-radius: var(--phone-poster-radius);
+    box-shadow: var(--phone-poster-shadow);
   }
-  .home-hero-media img {
+  .home-hero-media img,
+  .home-hero-art-skel {
     object-position: center top;
   }
-  /* Fades the art into the card's ground exactly where the well ends,
-     so the logo reads over the bottom of it and the text below sits on
-     a clean surface. */
   .home-hero-fade {
-    inset: 0 0 auto 0;
-    aspect-ratio: 1 / 1;
-    /* Netflix's ramp: the key art stays untouched for its top ~45%,
-       then darkens over a long smooth run into the card's ground. The
-       earlier version started fading at 70% and lost most of the
-       artwork to a scrim it didn't need — the logo only has to clear
-       the bottom of the well, not the whole of it. */
-    background-image: linear-gradient(
-      0deg,
-      var(--bg-card) 0%,
-      var(--bg-card) 5%,
-      color-mix(in srgb, var(--bg-card) 88%, transparent) 16%,
-      color-mix(in srgb, var(--bg-card) 62%, transparent) 27%,
-      color-mix(in srgb, var(--bg-card) 34%, transparent) 38%,
-      color-mix(in srgb, var(--bg-card) 12%, transparent) 48%,
-      transparent 58%
-    );
+    display: none;
   }
   .home-hero-content {
     position: relative;
     inset: auto;
     display: block;
-    /* Pulls the stack up so the logo overlaps the foot of the art. */
-    margin-top: -22%;
-    /* The bottom padding is the dots' lane. At 18px they landed exactly
-       on the second button's bottom edge — measured, 697px against
-       697px — which read as the button being clipped. */
-    padding: 0 16px 34px;
+    /* The same breathing room the content page leaves under its
+       poster. */
+    margin-top: 18px;
+    /* The bottom padding is the dots' lane. */
+    padding: 0 20px 34px;
+    text-align: center;
   }
   .home-hero-body {
     max-width: none;
   }
+  /* The poster carries the title; the heading stays for screen readers. */
   .home-hero-body h1 {
-    font-size: clamp(26px, 8vw, 40px);
-    margin: 0 0 10px;
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: 0;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
   }
-  .hero-logo {
-    max-width: 82%;
-    max-height: 84px;
-  }
-  /* The trending/announcement line is desktop's; the phone card leads
-     with the facts line instead, the way the reference does. */
   .hero-line {
-    display: none;
+    justify-content: center;
+    gap: 6px;
+    font-size: 12px;
+    font-weight: 800;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    margin-bottom: 8px;
+  }
+  .hero-line .icon {
+    font-size: 14px;
   }
   .home-hero-meta {
     display: block;
-    font-size: 12.5px;
-    font-weight: 700;
+    font-size: 13px;
+    font-weight: 600;
     color: var(--text-dim);
-    margin-bottom: 8px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
   .hero-syn {
-    font-size: 13.5px;
-    line-height: 1.5;
-    margin-bottom: 14px;
-    -webkit-line-clamp: 3;
-    max-height: 4.5em;
+    display: none;
   }
-  /* Two full-width buttons, stacked. */
   .home-hero-actions {
-    flex-direction: column;
-    align-items: stretch;
-    gap: 8px;
+    justify-content: center;
+    margin-top: 18px;
   }
-  .home-hero-actions .btn {
-    width: 100%;
-    height: 46px;
-    padding: 0 18px;
+  .home-hero-actions .btn.pri {
+    min-width: 220px;
+    height: 48px;
+    padding: 0 26px;
     justify-content: center;
   }
-  /* Beats .btn.circ's own width, which is a two-class selector and
-     would otherwise keep this button 54px wide with no room for a
-     label. */
-  .home-hero-actions .btn.home-hero-info {
-    width: 100%;
-    padding: 0 18px;
+  /* The poster already is the way in; a second button to the same page
+     was the clutter. */
+  .home-hero-actions .home-hero-info {
+    display: none;
   }
-  .home-hero-info-label {
-    display: inline;
-  }
-  /* In the facts line now, not a floating badge. */
+  /* In the facts line. */
   .home-hero-cert {
     display: none;
   }
-  /* Prev/next belong to a pointer. On the card they sit on top of the
-     key art, and a phone has the dots instead.
-     Two classes deliberately: the base .home-hero-nav rule is further
-     down this file, so an equally specific selector here would lose to
-     it on order. */
+  /* Prev/next belong to a pointer; a phone swipes, and has the dots. Two
+     classes: the base .home-hero-nav rule comes later in this file. */
   .home-hero .home-hero-nav {
     display: none;
   }

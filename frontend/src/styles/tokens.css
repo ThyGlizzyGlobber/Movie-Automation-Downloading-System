@@ -200,5 +200,22 @@
 @media (max-width: 639px) {
   :root {
     --edge-inset: 30px;
+    /* The phone poster frame, shared by the landing heroes and the
+       content page so the two are one frame: a 2:3 poster under the top
+       bar, as wide as the screen allows while a landing hero's whole
+       stack — poster, status and facts lines, button, dots
+       (--phone-hero-info) — still fits above the tab bar. Within a few
+       pixels of full width on a typical phone (369 of 402 at 874 tall);
+       narrower only on a short screen, where full width put the hero's
+       button on the tab bar or below the fold.
+       The 100% is substituted where it's used, so it has to be used on
+       a box that spans the screen (both callers bleed theirs to it). */
+    --phone-hero-info: 162px;
+    --phone-poster-w: min(100%, calc((100svh - var(--topbar-h, 64px) - var(--hero-top-gap) - var(--phone-hero-info) - var(--above-tabbar)) * 2 / 3));
+    --phone-poster-radius: 22px;
+    /* A whole poster card, not an image melting into the page: the
+       PosterCard's drop shadow and a hairline edge to hold it off the
+       glow. */
+    --phone-poster-shadow: 0 24px 44px rgba(0, 0, 0, 0.55), 0 0 0 1px rgba(255, 255, 255, 0.1);
   }
 }

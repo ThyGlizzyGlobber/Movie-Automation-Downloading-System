@@ -876,14 +876,12 @@
     padding-left: 20px;
     padding-right: 20px;
   }
-  /* Phones: no banner or logo. The 2:3 poster is the hero instead: the
-     full width of the screen from its very top (under the floating top
-     bar, as the home hero sits), fading out at its foot, with the tiles
-     rising out of that fade in the same rows as desktop. The fade is a
-     mask rather than a gradient to --bg because the ambient glow behind
-     the page isn't --bg, and a painted fade would leave a dark band.
-     Measured against One Piece, whose logo sits in the poster's bottom
-     sixth: a longer fade and a deeper overlap covered it. */
+  /* Phones: no banner or logo. The 2:3 poster is the hero instead, in
+     the landing heroes' frame — the same width, corners and place under
+     the top bar — with the tiles under it in the same rows as desktop.
+     It used to fade out at its foot; a whole card with its bottom edge
+     intact reads cleaner, and never eats into a title printed low on
+     the poster. */
   .detail-banner {
     display: none;
   }
@@ -893,25 +891,27 @@
   }
   .detail-poster-wrap {
     display: block;
-    margin: calc(-1 * (var(--topbar-h, 64px) + var(--hero-top-gap))) -20px 0;
+    /* Out to the screen's edges, starting where a hero does under the
+       top bar — not behind it, where it sat on any title printed at the
+       top of a poster — so the poster inside can take the landing
+       heroes' frame (tokens.css --phone-poster-w). */
+    margin: 0 -20px;
   }
   .detail-poster {
-    border-radius: 0;
-    box-shadow: none;
-    -webkit-mask-image: linear-gradient(180deg, #000 86%, transparent 100%);
-    mask-image: linear-gradient(180deg, #000 86%, transparent 100%);
+    width: var(--phone-poster-w);
+    margin: 0 auto;
+    border-radius: var(--phone-poster-radius);
+    box-shadow: var(--phone-poster-shadow);
   }
-  /* The Status tile says the same thing, and the corner is under the
-     top bar now. */
+  /* The Status tile says the same thing. */
   .detail-poster-wrap .on-plex-badge {
     display: none;
   }
+  /* Clear of the poster's foot, with room to breathe. The grid's own
+     18px row gap, so the poster reads as one more block in the page's
+     rhythm; the landing heroes leave the same under theirs. */
   .detail-side .detail-tiles {
-    position: relative;
-    z-index: 1;
-    /* Only into the last of the fade: a poster's title often sits low,
-       and neither the fade nor a tile should eat into it. */
-    margin-top: -14px;
+    margin-top: 18px;
   }
   .detail-side .detail-tile b {
     font-size: 16px;

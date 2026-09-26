@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react'
+import { useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent, type TouchEvent as ReactTouchEvent } from 'react'
 import { getMovieTrailer } from '../api/movies'
 import { getTvTrailer } from '../api/tv'
 import { backdropUrl, logoUrl, posterUrl } from '../lib/tmdbImage'
@@ -115,8 +115,8 @@ function HeroGlow({ items, activeIndex }: { items: HeroSlide[]; activeIndex: num
 
 // The hero while its titles load: one slide of the real markup, so the
 // same CSS shapes it — a scope frame with the art, logo, status line,
-// blurb and buttons over it on desktop, and the same elements as a
-// portrait card with the facts line and two stacked buttons on a phone.
+// blurb and buttons over it on desktop, and on a phone the full-width
+// poster with the status line, facts line and button beneath it.
 function HeroSkeleton() {
   return (
     <div className="home-hero-wrap">
@@ -155,12 +155,10 @@ function HeroSkeleton() {
                   <Icon name="plus" />
                   Not on Plex yet
                 </Skel>
-                {/* Carries home-hero-info and the label, so on a phone it
-                    widens into the second full-width button rather than
-                    staying a 54px circle the loaded card doesn't have. */}
+                {/* Carries home-hero-info so a phone hides it, as it does
+                    the real one. */}
                 <Skel className="btn sec circ home-hero-info">
                   <Icon name="info" />
-                  <span className="home-hero-info-label">More info</span>
                 </Skel>
               </div>
             </div>
@@ -177,12 +175,12 @@ function HeroSkeleton() {
 }
 
 export default function HeroCarousel({ items, loading = false }: { items: HeroSlide[]; loading?: boolean }) {
-  // Phones get a different hero entirely (see HeroCarousel.css): portrait
-  // key art in a card, with the meta line, synopsis and two stacked
-  // buttons below it rather than overlaid on a scope frame.
+  // Phones get a different hero entirely (see HeroCarousel.css): the
+  // full-width poster the content page opens with, and a status line,
+  // facts line and one button beneath it rather than a scope frame.
   const isPhone = useMediaQuery('(max-width: 639px)')
   const region = useCertificationRegion()
-  // And no trailers there. The card's art is a portrait poster, which a
+  // And no trailers there. The phone's art is a portrait poster, which a
   // landscape trailer can't fill without cropping it to a strip, and it
   // would cost a mobile connection a video fetch per slide. Gates the
   // fetch too, not just playback, so nothing is downloaded to sit unused.
@@ -196,6 +194,8 @@ export default function HeroCarousel({ items, loading = false }: { items: HeroSl
   // cursor is near the hero's text (Prime's behaviour).
   const [cursorNear, setCursorNear] = useState(false)
   const heroRef = useRef<HTMLDivElement>(null)
+  // Where a touch began, for the phone's swipe between slides.
+  const touchRef = useRef<{ x: number; y: number } | null>(null)
 
   const videoRefs = useRef<(HTMLVideoElement | null)[]>([])
   const timerRef = useRef<number | null>(null)
@@ -480,6 +480,23 @@ export default function HeroCarousel({ items, loading = false }: { items: HeroSl
   function goToSlide(i: number) {
     setActiveIndex(((i % items.length) + items.length) % items.length)
   }
+  // A phone has no arrows: a sideways swipe across the hero moves it on.
+  // Only a clearly horizontal drag counts, so scrolling the page past
+  // the hero never changes the slide.
+  function handleTouchStart(e: ReactTouchEvent) {
+    const t = e.touches[0]
+    touchRef.current = { x: t.clientX, y: t.clientY }
+  }
+  function handleTouchEnd(e: ReactTouchEvent) {
+    const start = touchRef.current
+    touchRef.current = null
+    if (!start || items.length < 2) return
+    const t = e.changedTouches[0]
+    const dx = t.clientX - start.x
+    const dy = t.clientY - start.y
+    if (Math.abs(dx) < 40 || Math.abs(dx) < Math.abs(dy) * 1.5) return
+    goToSlide(activeIndex + (dx < 0 ? 1 : -1))
+  }
   function handleMouseEnter() {
     tokenRef.current++
     if (timerRef.current !== null) {
@@ -541,7 +558,15 @@ export default function HeroCarousel({ items, loading = false }: { items: HeroSl
           not a layer inside the pane, and dimming it pulsed the whole
           page dark every time a trailer started. */}
       <HeroGlow items={items} activeIndex={activeIndex} />
-      <div className="home-hero" ref={heroRef} onMouseEnter={handleMouseEnter} onMouseLeave={handleMouseLeave} onMouseMove={handleMouseMove}>
+      <div
+        className="home-hero"
+        ref={heroRef}
+        onMouseEnter={handleMouseEnter}
+        onMouseLeave={handleMouseLeave}
+        onMouseMove={handleMouseMove}
+        onTouchStart={handleTouchStart}
+        onTouchEnd={handleTouchEnd}
+      >
         {items.map((item, i) => {
           const isTv = item.mediaType === 'tv'
           const title = item.title || item.name || item.original_title || item.original_name || ''
@@ -556,9 +581,9 @@ export default function HeroCarousel({ items, loading = false }: { items: HeroSl
             <div className={`home-hero-slide${i === activeIndex ? ' active' : ''}`} key={item.id}>
                 <Link className="home-hero-media" to={href} aria-label={title}>
                 {/* Portrait key art on a phone, the landscape backdrop
-                    everywhere else: the phone card's art well is taller
-                    than it is wide, and a 16:9 backdrop cropped into it
-                    loses almost everything either side of centre. */}
+                    everywhere else: the phone's hero is the 2:3 poster,
+                    and a 16:9 backdrop cropped into it loses almost
+                    everything either side of centre. */}
                 <img
                   className={videoVisible[i] ? 'home-hero-poster-hidden' : ''}
                   src={isPhone ? posterUrl(item.poster_path) : backdropUrl(item.backdrop_path)}
@@ -650,10 +675,10 @@ export default function HeroCarousel({ items, loading = false }: { items: HeroSl
                     <Icon name={info?.badge ? 'megaphone' : 'chart'} />
                     {info?.badge ?? `#${i + 1} trending this week`}
                   </div>
-                  {/* The phone card's dot-separated facts line. Rendered
-                      always, shown only under 640px (the desktop frame
-                      says the same things through its pills and the cert
-                      badge in the corner). */}
+                  {/* The phone's facts line. Rendered always, shown only
+                      under 640px (the desktop frame says the same things
+                      through its pills and the cert badge in the
+                      corner). */}
                   <div className="home-hero-meta">
                     {[
                       isTv ? 'Show' : 'Movie',
@@ -673,13 +698,10 @@ export default function HeroCarousel({ items, loading = false }: { items: HeroSl
                       <Icon name={onPlex ? 'play' : 'plus'} />
                       <FlipLabel first={onPlex ? 'On Plex' : 'Not on Plex yet'} second={onPlex ? 'Watch now' : 'Add to Plex'} active={i === activeIndex} />
                     </Link>
-                    {/* Icon-only on desktop, a full-width labelled button
-                        on the phone card — same link either way, so the
-                        label is markup the CSS reveals rather than a
-                        second control. */}
+                    {/* Icon-only on desktop; hidden on a phone, where the
+                        poster is already the way in. */}
                     <Link className="btn sec circ home-hero-info" to={href} aria-label="More info">
                       <Icon name="info" />
-                      <span className="home-hero-info-label">More info</span>
                     </Link>
                     {i === activeIndex && hasVideo && (
                       <button
