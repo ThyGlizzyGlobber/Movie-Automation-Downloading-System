@@ -1,52 +1,13 @@
-/* Reuses .req-row/.req-poster/.req-main/.req-title/.req-sub/.req-actions
-   from RequestsPage.css (imported alongside this file) — same list-row
-   language, just its own pills/actions below. */
-#watchingList {
-  padding: 0 var(--row-inset);
-}
-.watch-pills {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  flex-wrap: wrap;
-  margin-top: 6px;
-}
-.watch-link {
-  font-size: 12.5px;
-  font-weight: 600;
-  padding: 5px 12px;
-  border-radius: 999px;
-  background: transparent;
-  color: var(--text-dim);
-  border: 1px solid var(--border);
-}
-.watch-link:active {
-  background: var(--bg-card);
-}
-.watch-link[disabled] {
-  opacity: 0.5;
-}
-/* Pause/Resume — same pill shape as .cancel-btn but a neutral (not
-   destructive) accent color, since pausing isn't deleting anything. */
-.toggle-show-btn {
-  font-size: 12.5px;
-  font-weight: 600;
-  padding: 5px 12px;
-  border-radius: 999px;
-  background: transparent;
-  color: var(--accent);
-  border: 1px solid var(--accent);
-}
-.toggle-show-btn:active {
-  background: color-mix(in srgb, var(--accent) 18%, transparent);
-}
-.toggle-show-btn[disabled] {
-  opacity: 0.5;
-}
-
+/* The Following page is the Requests grid (RequestsPage.css, imported
+   alongside this file): the same header, cards, chips, bar and sheet. */
 .watching {
   padding: 0 var(--row-inset);
 }
-.watching #watchingList {
-  padding: 0;
+.watching .rq-head {
+  margin-bottom: 30px;
+}
+/* The grid already sits inside the page inset. */
+.watching .grid {
+  padding-left: 0;
+  padding-right: 0;
 }

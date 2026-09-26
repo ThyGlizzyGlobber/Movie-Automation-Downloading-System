@@ -259,7 +259,7 @@
   border-radius: 8px;
   color: var(--text);
 }
-/* flex-wrap (same fix as RequestsPage.css's .req-row): a text input's
+/* flex-wrap (the fix the old list rows used): a text input's
    own intrinsic minimum content width doesn't shrink to nothing just
    because its flex-item wrapper has min-width:0, so a two-field row
    silently overflowed a narrow phone width instead of wrapping. Each

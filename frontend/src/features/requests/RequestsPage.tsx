@@ -7,12 +7,13 @@ import { useSession } from '../auth/useSession'
 import Icon from '../../components/Icon'
 import PosterCard from '../../components/PosterCard'
 import DownloadBar from '../../components/DownloadBar'
+import RequestStatusChip from '../../components/RequestStatusChip'
 import { PosterCardSkeleton, Skel, SkelWords } from '../../components/Skeleton'
 import ErrorState from '../../components/ErrorState'
 import EmptyState from '../../components/EmptyState'
 import { usePageTitle } from '../../lib/chrome'
 import { relativeTime } from '../../lib/format'
-import { FAILED_STATES, NON_TERMINAL, statusDetail, statusMeta } from '../../lib/status'
+import { FAILED_STATES, NON_TERMINAL, statusDetail } from '../../lib/status'
 import { dominantStatus, groupProgress, groupRequestsForDisplay, packScopeLabel, requestLabelAndHref, type DisplayItem } from '../../lib/requestGrouping'
 import { RETENTION_OPTIONS } from '../../lib/retention'
 import { errorText, useToast } from '../../lib/toast'
@@ -39,17 +40,6 @@ function isToday(iso: string): boolean {
   const d = new Date(iso)
   const now = new Date()
   return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth() && d.getDate() === now.getDate()
-}
-
-// The chip's colour per state, as on the home page's "On the way" row.
-const STATUS_TONE: Record<string, string> = {
-  queued: 'var(--text)',
-  searching: 'var(--status-searching)',
-  failed: 'var(--status-failed)',
-  cancelled: 'var(--text-dim)',
-  'downloaded, not filed': 'var(--status-nomatch)',
-  'no qualifying results': 'var(--status-nomatch)',
-  'insufficient free space': 'var(--status-nospace)',
 }
 
 function itemKey(item: DisplayItem): string {
@@ -119,20 +109,6 @@ function cardModel(item: DisplayItem): CardModel {
   }
 }
 
-// Top-right of the poster: what state the title is in, unless it's
-// downloading — the bar under the poster says that on its own.
-function StatusChip({ status }: { status: string }) {
-  if (status === 'downloading') return null
-  if (status === 'complete') return <div className="on-plex-badge">On Plex</div>
-  const meta = statusMeta(status)
-  return (
-    <span className={`poster-chip rq-chip${status === 'searching' ? ' rq-chip-live' : ''}`} style={{ color: STATUS_TONE[status] ?? 'var(--text-dim)' }}>
-      <Icon name={meta.icon} />
-      {meta.label}
-    </span>
-  )
-}
-
 // A request as the browse grids draw a title: the poster (linking to its
 // page) with a status chip, then the title. A download in progress puts
 // its bar straight under the poster; everything else keeps a one-line
@@ -147,7 +123,7 @@ function RequestCard({ item, onOpen }: { item: DisplayItem; onOpen: () => void }
         mediaType={m.isTv ? 'tv' : 'movie'}
         caption={false}
         href={m.href}
-        chip={<StatusChip status={m.status} />}
+        chip={<RequestStatusChip status={m.status} />}
       />
       {downloading && <DownloadBar progress={m.progress} className="rq-card-bar" />}
       <div className="rq-cap">
