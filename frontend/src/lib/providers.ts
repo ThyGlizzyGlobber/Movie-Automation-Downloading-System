@@ -44,6 +44,14 @@ export const ORIGINAL_SERVICE_MATCH: { names: string[]; icon: string; label: str
   { names: ['Disney+', 'Disney Plus'], icon: 'disney-plus.png', label: 'Disney+ Original' },
   { names: ['Hulu'], icon: 'hulu.png', label: 'Hulu Original' },
   { names: ['Paramount+', 'Paramount Plus'], icon: 'paramount-plus.png', label: 'Paramount+ Original' },
+  // Above Peacock, and the order is doing work: this list is a priority
+  // list, since `find` takes the first entry that matches and a show can
+  // name two networks. Wolf Like Me is on TMDB as ['Stan', 'Peacock'] —
+  // an Australian original with a US co-producer — and for this
+  // household Stan is the answer. Checked live 2026-09-26: Bump,
+  // Scrublands, Bad Behaviour and C*A*U*G*H*T all report the network as
+  // exactly "Stan".
+  { names: ['Stan'], icon: 'stan.png', label: 'Stan Original' },
   { names: ['Peacock'], icon: 'peacock.png', label: 'Peacock Original' },
 ]
 
