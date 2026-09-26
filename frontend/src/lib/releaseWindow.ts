@@ -160,6 +160,31 @@ const KIND_LABEL: Record<ReleaseOutlook['kind'], string> = {
   unknown: '',
 }
 
+/**
+ * "Available this Tuesday (29 Sep)" — the hero's one line about a title
+ * that isn't out yet.
+ *
+ * A weekday inside the week, because that is how anyone actually holds a
+ * date that close, and the date in brackets after it so the sentence is
+ * still answerable without a calendar. Past a week the weekday stops
+ * helping ("available Thursday" three weeks out is a riddle) and it
+ * reverts to the plain date.
+ *
+ * `verb` is the caller's, because a film becomes available and a show
+ * premieres, and the hero says both.
+ */
+export function arrivalPhrase(iso: string, verb: string, now: Date = new Date()): string {
+  const when = new Date(`${iso}T00:00:00`)
+  const midnight = new Date(now)
+  midnight.setHours(0, 0, 0, 0)
+  const days = Math.round((when.getTime() - midnight.getTime()) / 86400000)
+  if (days <= 0) return `${verb} now`
+  if (days === 1) return `${verb} tomorrow`
+  const date = when.toLocaleDateString([], { day: 'numeric', month: 'short' })
+  if (days < 7) return `${verb} this ${when.toLocaleDateString([], { weekday: 'long' })} (${date})`
+  return `${verb} ${date}`
+}
+
 /** The tile on a coming-soon movie's page: the date, what kind of date
  *  it is, and how long the wait is, in one line. */
 export function downloadableLabel(outlook: ReleaseOutlook): string {

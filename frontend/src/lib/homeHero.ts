@@ -1,5 +1,6 @@
 import { FALLBACK_REGION } from './regions'
 import type { MovieDetail, ReleaseDatesResult, TmdbListItem } from '../types/movies'
+import { arrivalPhrase, releaseOutlook } from './releaseWindow'
 import type { EpisodeToAir, TvDetail } from '../types/tv'
 
 // The hero's wording is derived from these few fields and nothing more,
@@ -16,6 +17,7 @@ type MovieBadgeSource = {
 }
 type TvBadgeSource = {
   plex_complete?: boolean
+  first_air_date?: string | null
   next_episode_to_air?: EpisodeToAir | null
   last_episode_to_air?: EpisodeToAir | null
 }
@@ -57,6 +59,13 @@ export function tvHeroBadge(show: TvBadgeSource): string | null {
 function tvAiringBadge(show: TvBadgeSource): string | null {
   const next = show.next_episode_to_air
   const last = show.last_episode_to_air
+  // A show that hasn't started has neither episode on file, so without
+  // this it fell through to null and the hero captioned an unaired
+  // premiere "#2 trending this week".
+  if (!next && !last && show.first_air_date) {
+    const start = new Date(`${show.first_air_date}T00:00:00`)
+    if (start > startOfToday()) return arrivalPhrase(show.first_air_date, 'Premieres')
+  }
   if (next?.air_date) {
     const nextDate = new Date(`${next.air_date}T00:00:00`)
     const today = startOfToday()
@@ -89,7 +98,19 @@ function daysSince(date: string | null | undefined): number | null {
 }
 
 export function movieHeroBadge(movie: MovieBadgeSource, region: string = FALLBACK_REGION): string | null {
-  if (movie.is_coming_soon) return 'Coming soon'
+  if (movie.is_coming_soon) {
+    // The hero now holds a slot for these (api.py's HERO_ARRIVING_SLOTS),
+    // so "Coming soon" is no longer good enough here: the slide exists to
+    // tell you when, and a title three days from digital and one four
+    // months out were saying the same thing.
+    const outlook = releaseOutlook(movie, region)
+    if (outlook.date && (outlook.kind === 'digital' || outlook.kind === 'physical')) {
+      return arrivalPhrase(outlook.date, 'Available')
+    }
+    // No date worth standing behind. It is in cinemas — that is what
+    // is_coming_soon means — so say the true thing rather than guess.
+    return 'In cinemas now'
+  }
   const age = daysSince(digitalReleaseDate(movie, region))
   if (age != null && age >= 0 && age <= 30) return 'Just dropped'
   return null

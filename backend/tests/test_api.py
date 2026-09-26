@@ -88,6 +88,7 @@ class FakeTMDBClient:
     ):
         self._search_results = search_results if search_results is not None else [MOVIE]
         self._movie = movie or MOVIE
+        self.digital_calendar: list[dict] = []
         self._raise_on_get_movie = raise_on_get_movie
         self._tv_search_results = tv_search_results if tv_search_results is not None else [SHOW]
         self._raise_on_get_tv = raise_on_get_tv
@@ -130,6 +131,12 @@ class FakeTMDBClient:
 
     def get_coming_soon(self, region="US", page=1):
         return {"results": [MOVIE], "page": page, "total_pages": 3}
+
+    # What the hero holds a slot for: films whose digital release is
+    # imminent. Empty by default so the existing hero tests still assert
+    # on trending alone; the tests that care set it.
+    def get_digital_calendar(self, region="US", days=60, page=1):
+        return {"results": list(self.digital_calendar), "page": page}
 
     def browse_movies(self, **filters):
         return {"results": [MOVIE], "page": filters.get("page", 1), "total_pages": 10, "filters": filters}
@@ -2599,6 +2606,75 @@ def test_hero_orders_by_popularity_not_by_medium(client_and_deps):
     _hero_trending(tmdb, movie_pop=1, tv_pop=99)
 
     assert [s["media_type"] for s in client.get("/api/hero?kind=home").json()] == ["tv", "movie"]
+
+
+ARRIVING = {"id": 969681, "title": "Spider-Man: Brand New Day", "release_date": "2026-07-29",
+            "backdrop_path": "/spidey.jpg", "popularity": 630.0}
+
+
+def test_the_hero_holds_a_slot_for_something_arriving(client_and_deps):
+    """The bug this closes: the hero drew only from the trending rows,
+    which filter out anything with no digital release — so a film could
+    be the most popular title on TMDB and three days from digital and
+    still be invisible here. Checked live 2026-09-26 with exactly this
+    one, at popularity 630 against a trending top of 483."""
+    client, _, tmdb, _, _, _ = client_and_deps
+    _hero_trending(tmdb, movie_pop=99)
+    tmdb.digital_calendar = [ARRIVING]
+    tmdb._movie = dict(ARRIVING)
+
+    ids = [s["id"] for s in client.get("/api/hero?kind=movies").json()]
+
+    assert ARRIVING["id"] in ids
+
+
+def test_the_held_slot_is_held_even_when_the_arrival_is_unpopular(client_and_deps):
+    """Popularity alone doesn't guarantee it. It happened to on the day
+    this was written, but a quiet week has nothing arriving above the
+    fold — and without the hold the row silently goes back to what it
+    was, which is the failure that is hardest to notice."""
+    client, _, tmdb, _, _, _ = client_and_deps
+    _hero_trending(tmdb, movie_pop=500)
+    tmdb.digital_calendar = [dict(ARRIVING, popularity=0.1)]
+    tmdb._movie = dict(ARRIVING)
+
+    ids = [s["id"] for s in client.get("/api/hero?kind=movies").json()]
+
+    assert ARRIVING["id"] in ids
+
+
+def test_an_arrival_that_is_also_trending_only_appears_once(client_and_deps):
+    """The two pools overlap — a film can be trending and days from
+    digital at the same time, which is the normal case for the ones
+    worth holding a slot for."""
+    client, _, tmdb, _, _, _ = client_and_deps
+    api._hero_slides_cached.cache.clear()
+    tmdb.get_available_trending = lambda **kw: {"results": [dict(ARRIVING)]}
+    tmdb.get_available_tv_trending = lambda **kw: {"results": []}
+    tmdb.digital_calendar = [dict(ARRIVING)]
+    tmdb._movie = dict(ARRIVING)
+
+    ids = [s["id"] for s in client.get("/api/hero?kind=movies").json()]
+
+    assert ids.count(ARRIVING["id"]) == 1
+
+
+def test_arrivals_ask_the_household_region_then_top_up_from_the_us(client_and_deps):
+    """Measured 2026-09-26: the same 60-day window returned 14 titles for
+    AU against 242 for US, and the film this feature exists to surface
+    had no Australian digital record at all. Asking only the household's
+    region would answer honestly and uselessly."""
+    client, store, tmdb, _, _, _ = client_and_deps
+    _hero_trending(tmdb)
+    store.update_settings({"certification_region": "AU"})
+    asked = []
+    tmdb.get_digital_calendar = lambda region="US", days=60, page=1: (
+        asked.append(region) or {"results": [], "page": page}
+    )
+
+    client.get("/api/hero?kind=movies")
+
+    assert asked == ["AU", "US"]
 
 
 def test_hero_is_cached_rather_than_rebuilt_per_viewer(client_and_deps):

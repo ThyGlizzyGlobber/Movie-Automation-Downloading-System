@@ -539,6 +539,39 @@ class TMDBClient:
         ]
         return {**now_playing, "results": filtered}
 
+    @ttl_cache(POPULAR_DISCOVER_TTL_SECONDS)
+    def get_digital_calendar(self, region: str = "US", days: int = 60, page: int = 1) -> dict:
+        """Films whose digital or disc release lands in the next `days`,
+        most popular first — "what is about to become gettable".
+
+        Not get_coming_soon, which reads /movie/now_playing and asks the
+        opposite question: what is in cinemas and has no digital date on
+        record. Those overlap but the difference is the whole feature.
+        Checked 2026-09-26 with Spider-Man: Brand New Day, the most
+        popular title on TMDB at 630 and three days from digital — it is
+        absent from every page of now_playing (it opened two months
+        earlier and has long since dropped off), so get_coming_soon
+        cannot see it at all, while this query returns it first.
+
+        Ordered by popularity rather than by date on purpose: a hero has
+        five slots and the question it answers is "what is arriving that
+        you would care about", not "what is arriving soonest", which
+        reliably surfaces the smallest film of the week.
+        """
+        today = datetime.now(timezone.utc).date()
+        return self._get(
+            "/discover/movie",
+            {
+                "region": region,
+                "with_release_type": f"{_DIGITAL_RELEASE_TYPE}|{_PHYSICAL_RELEASE_TYPE}",
+                "release_date.gte": today.isoformat(),
+                "release_date.lte": (today + timedelta(days=days)).isoformat(),
+                "sort_by": "popularity.desc",
+                "include_adult": "false",
+                "page": page,
+            },
+        )
+
     def get_available_by_genre(self, genre_id: int, region: str = "US", page: int = 1) -> dict:
         """Same digital-availability filter as get_available_popular/
         get_available_trending, applied to a genre row — without this, a

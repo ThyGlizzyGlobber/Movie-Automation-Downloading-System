@@ -847,7 +847,60 @@ def _hero_slide(detail: dict, media_type: str) -> dict:
     return slide
 
 
-def _hero_picks(kind: str, tmdb: TMDBClient) -> list[tuple[str, dict]]:
+# How many of the five slides are held for something that isn't out yet.
+# One, not zero and not a share of them: a hero that is all arrivals stops
+# being the front of the library, and a hero with none of them is the
+# state this was added to fix — a title can be the most popular thing on
+# TMDB and still be invisible here, because the trending rows the hero
+# drew from filter out anything without a digital release.
+#
+# Held rather than merged, because popularity alone doesn't guarantee it.
+# It happened to on 2026-09-26 (Spider-Man: Brand New Day at 630 beat
+# every trending title), but a quiet week has nothing arriving above the
+# fold and the row would silently go back to what it was.
+HERO_ARRIVING_SLOTS = 1
+
+# How far ahead the hero looks for arrivals. Long enough that the slot is
+# almost never empty, short enough that "available" still means soon: at
+# 60 days the US calendar held 242 films on 2026-09-26.
+HERO_ARRIVING_DAYS = 60
+
+
+def _arriving_soon(kind: str, tmdb: TMDBClient, region: str) -> list[tuple[str, dict]]:
+    """Titles about to become gettable — digital releases for films, a
+    premiere date for shows.
+
+    Films ask the household's region first and then the US, and the
+    top-up is not optional padding: TMDB records digital street dates
+    thoroughly for the US and barely at all elsewhere. Measured
+    2026-09-26, the same 60-day window returned 14 titles for AU against
+    242 for US, and the AU fourteen were obscure — the film this feature
+    exists to surface had no Australian digital record at all. The same
+    reasoning as releaseWindow.ts's cascade on the frontend: a release
+    reaching the indexers is a worldwide event whatever a territory's own
+    paperwork says.
+    """
+    found: list[tuple[str, dict]] = []
+    if kind in ("home", "movies"):
+        seen: set[int] = set()
+        for scope in dict.fromkeys([region, "US"]):
+            try:
+                results = tmdb.get_digital_calendar(region=scope, days=HERO_ARRIVING_DAYS).get("results", [])
+            except TMDBError:
+                continue
+            for item in results:
+                if item.get("id") and item["id"] not in seen:
+                    seen.add(item["id"])
+                    found.append(("movie", item))
+    if kind in ("home", "tv"):
+        try:
+            found += [("tv", it) for it in tmdb.get_tv_coming_soon(region=region).get("results", [])]
+        except TMDBError:
+            pass
+    return found
+
+
+def _hero_picks(kind: str, tmdb: TMDBClient, region: str) -> list[tuple[str, dict]]:
     """(media_type, list item) for the slides, most popular first. A title
     with no backdrop art can't be a hero, so that filter runs before the
     count is taken rather than after."""
@@ -856,28 +909,37 @@ def _hero_picks(kind: str, tmdb: TMDBClient) -> list[tuple[str, dict]]:
         candidates += [("movie", it) for it in tmdb.get_available_trending().get("results", [])]
     if kind in ("home", "tv"):
         candidates += [("tv", it) for it in tmdb.get_available_tv_trending().get("results", [])]
-    usable = [c for c in candidates if c[1].get("backdrop_path")]
-    usable.sort(key=lambda c: c[1].get("popularity") or 0, reverse=True)
-    return usable[:HERO_SLIDE_COUNT]
+
+    def by_popularity(pool: list[tuple[str, dict]]) -> list[tuple[str, dict]]:
+        usable = [c for c in pool if c[1].get("backdrop_path")]
+        usable.sort(key=lambda c: c[1].get("popularity") or 0, reverse=True)
+        return usable
+
+    arriving = by_popularity(_arriving_soon(kind, tmdb, region))
+    held = arriving[:HERO_ARRIVING_SLOTS]
+    taken = {(mt, it.get("id")) for mt, it in held}
+
+    # The rest of the hero is drawn from trending and the arrivals
+    # together, so a second arrival can still earn a slot on merit rather
+    # than being capped at the one that was held for it.
+    rest = [c for c in by_popularity(candidates + arriving) if (c[0], c[1].get("id")) not in taken]
+
+    # Sorted as one list at the end: the held slide keeps its slot but not
+    # a promoted position, so the carousel still opens on the most popular
+    # thing unless the arrival happens to be it.
+    return by_popularity(held + rest[: HERO_SLIDE_COUNT - len(held)])
 
 
 @ttl_cache(HERO_TTL_SECONDS)
-def _hero_slides_cached(kind: str, store: RequestStore, tmdb: TMDBClient) -> list[dict]:
+def _hero_slides_cached(kind: str, region: str, store: RequestStore, tmdb: TMDBClient) -> list[dict]:
     """Keyed on the kind plus the two singletons on app.state, so this
     holds three entries rather than one per title — which matters,
     because app.cache's TTLCache has no size bound and only drops an
     entry when it is next read. A per-title cache here would grow
     without end."""
-    picks = _hero_picks(kind, tmdb)
+    picks = _hero_picks(kind, tmdb, region)
     if not picks:
         return []
-
-    # Resolved once here rather than left to the dependency, because this
-    # is the one caller that reaches get_movie_detail as a plain function
-    # — FastAPI isn't in the loop, so nothing would fill a Depends() in
-    # for it. Passing it explicitly is also the cheaper shape: one
-    # settings read per hero build instead of one per slide.
-    region = resolve_region(None, store)
 
     def build(media_type: str, item: dict) -> dict | None:
         try:
@@ -929,12 +991,17 @@ def _with_fresh_plex_state(slides: list[dict], store: RequestStore) -> list[dict
 
 
 @router.get("/api/hero")
-def hero_slides(kind: str = "home", store: RequestStore = Depends(get_store), tmdb: TMDBClient = Depends(get_tmdb)) -> list[dict]:
+def hero_slides(
+    kind: str = "home",
+    region: str = Depends(resolve_region),
+    store: RequestStore = Depends(get_store),
+    tmdb: TMDBClient = Depends(get_tmdb),
+) -> list[dict]:
     """`kind` picks which landing page's carousel this is: mixed
     movies+TV for home, one or the other for the movies and TV pages."""
     if kind not in ("home", "movies", "tv"):
         raise HTTPException(status_code=422, detail="kind must be home, movies or tv")
-    return _with_fresh_plex_state(_hero_slides_cached(kind, store, tmdb), store)
+    return _with_fresh_plex_state(_hero_slides_cached(kind, region, store, tmdb), store)
 
 
 @router.get("/api/discover/providers")
