@@ -101,7 +101,10 @@ export default function MovieDetailPage() {
   // When an unreleased title becomes something you could actually
   // download — which is not its cinema date, and is the only date worth
   // showing on a page whose whole purpose is getting a copy onto Plex.
-  const outlook = movie.is_coming_soon ? releaseOutlook(movie, region) : null
+  // Not for something already on the server: "Available to download:
+  // Not announced yet" under a Status tile reading "Available on Plex"
+  // is the page contradicting itself about a file it is holding.
+  const outlook = movie.is_coming_soon && !movie.on_plex ? releaseOutlook(movie, region) : null
   const genres = (movie.genres ?? []).slice(0, 3)
 
   const pills: DetailPill[] = []
@@ -192,18 +195,19 @@ export default function MovieDetailPage() {
   if (writers.length) details.push({ label: 'Writers', value: peopleLinks(writers) })
   if (movie.production_companies?.[0]) details.push({ label: 'Studio', value: movie.production_companies[0].name })
 
-  const actions = movie.is_coming_soon ? (
-    <span className="btn pri dis">
-      <Icon name="clock" />
-      {/* The date rather than the word, when we have one worth standing
-          behind — this is where someone looks to find out what they can
-          do about a title, and "not yet" is a poorer answer than "the
-          14th". An estimate stays vague on purpose. */}
-      {outlook && (outlook.kind === 'digital' || outlook.kind === 'physical')
-        ? `Coming ${new Date(`${outlook.date}T00:00:00`).toLocaleDateString([], { day: 'numeric', month: 'short' })}`
-        : 'Coming soon'}
-    </span>
-  ) : movie.on_plex ? (
+  // on_plex first, and the ordering is the fix: a title already on the
+  // server was rendering a disabled "Coming soon" button, so the one
+  // thing you could definitely do with it — watch it — was the one thing
+  // the page wouldn't let you do. moviePill has always checked on_plex
+  // first, which is why the banner said "Watch now on Plex" directly
+  // above a button saying the opposite.
+  // on_plex first, and the ordering is the fix: a title already on the
+  // server rendered a disabled "Coming soon" button, so the one thing
+  // you could definitely do with it — watch it — was the one thing the
+  // page wouldn't let you do. moviePill has always checked on_plex
+  // first, which is why the banner read "Watch now on Plex" directly
+  // above a button saying the opposite.
+  const actions = movie.on_plex ? (
     <>
       {plexHref ? (
         <a className="btn pri" href={plexHref} target="_blank" rel="noreferrer">
@@ -221,6 +225,17 @@ export default function MovieDetailPage() {
         Re-download
       </button>
     </>
+  ) : movie.is_coming_soon ? (
+    <span className="btn pri dis">
+      <Icon name="clock" />
+      {/* The date rather than the word, when we have one worth standing
+          behind — this is where someone looks to find out what they can
+          do about a title, and "not yet" is a poorer answer than "the
+          14th". An estimate stays vague on purpose. */}
+      {outlook && (outlook.kind === 'digital' || outlook.kind === 'physical')
+        ? `Coming ${new Date(`${outlook.date}T00:00:00`).toLocaleDateString([], { day: 'numeric', month: 'short' })}`
+        : 'Coming soon'}
+    </span>
   ) : (
     <>
       {/* Once requested, the button itself shows where the request is:

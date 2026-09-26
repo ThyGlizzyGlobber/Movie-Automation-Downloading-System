@@ -966,7 +966,7 @@ def _hero_slides_cached(kind: str, region: str, store: RequestStore, tmdb: TMDBC
     def build(media_type: str, item: dict) -> dict | None:
         try:
             detail = (
-                get_movie_detail(item["id"], region, store, tmdb)
+                get_movie_detail(item["id"], store, tmdb)
                 if media_type == "movie"
                 else get_tv_detail(item["id"], store, tmdb)
             )
@@ -1086,10 +1086,7 @@ def discover_coming_soon(
 
 @router.get("/api/movies/{tmdb_id}")
 def get_movie_detail(
-    tmdb_id: int,
-    region: str = Depends(resolve_region),
-    store: RequestStore = Depends(get_store),
-    tmdb: TMDBClient = Depends(get_tmdb),
+    tmdb_id: int, store: RequestStore = Depends(get_store), tmdb: TMDBClient = Depends(get_tmdb)
 ) -> dict:
     """Full TMDB detail for the detail view — overview, runtime, genres,
     poster/backdrop paths. The frontend hotlinks poster/backdrop images
@@ -1104,7 +1101,7 @@ def get_movie_detail(
     # the data is_movie_coming_soon needs — no second TMDB call. Coming
     # Soon titles use this to grey out their own Add to Plex button.
     release_dates = movie.get("release_dates", {}).get("results", [])
-    is_coming_soon = is_movie_coming_soon(movie, release_dates, region=region)
+    is_coming_soon = is_movie_coming_soon(movie, release_dates)
     on_plex = _on_plex_for(movie.get("title") or "", year, "movie", store, tmdb_id)
     tracked = bool(store.get_library_items(tmdb_id, "movie")) or store.get_latest_organized_request(tmdb_id, ("movie",)) is not None
     return {

@@ -335,34 +335,32 @@
 .detail-side .detail-tile small {
   font-size: 10px;
 }
-/* Wider screens: the side tiles flow in rows. A fit tile (Service,
+/* The side tiles flow in rows, phones included. A fit tile (Service,
    Requested by) is only as wide as its content and the tile beside it
    takes the rest, so "Available on Plex" keeps to one line. */
-@media (min-width: 640px) {
-  .detail-side .detail-tiles {
-    display: flex;
-    flex-wrap: wrap;
-  }
-  .detail-side .detail-tile {
-    flex: 1 1 0;
-  }
-  /* Capped so a long service name can't crowd out the tile beside it. */
-  .detail-side .detail-tile.fit {
-    flex: 0 0 auto;
-    max-width: 60%;
-  }
-  /* Only a tile that asks for a row of its own gets one. There used to
-     be an `:nth-child(3)` here as well, from when this column was
-     always Service, Status, Requested by and the third was the one that
-     needed the width. The column is built differently now — a show
-     leads with Status, then Following and Seasons — so that rule landed
-     on whatever happened to be third and broke the pair up. Every tile
-     that genuinely wants a row now says so with `wide`. */
-  .detail-side .detail-tile.wide,
-  .detail-side .detail-tile:only-child {
-    flex-basis: 100%;
-    max-width: none;
-  }
+.detail-side .detail-tiles {
+  display: flex;
+  flex-wrap: wrap;
+}
+.detail-side .detail-tile {
+  flex: 1 1 0;
+}
+/* Capped so a long service name can't crowd out the tile beside it. */
+.detail-side .detail-tile.fit {
+  flex: 0 0 auto;
+  max-width: 60%;
+}
+/* Only a tile that asks for a row of its own gets one. There used to
+   be an `:nth-child(3)` here as well, from when this column was
+   always Service, Status, Requested by and the third was the one that
+   needed the width. The column is built differently now — a show
+   leads with Status, then Following and Seasons — so that rule landed
+   on whatever happened to be third and broke the pair up. Every tile
+   that genuinely wants a row now says so with `wide`. */
+.detail-side .detail-tile.wide,
+.detail-side .detail-tile:only-child {
+  flex-basis: 100%;
+  max-width: none;
 }
 /* Facts under the tiles: label / value rows. */
 .detail-facts {
@@ -451,7 +449,8 @@
 }
 /* Sections under the card (episodes on a show page). */
 .detail-section {
-  padding: 0 var(--row-inset);
+  --section-inset: var(--row-inset);
+  padding: 0 var(--section-inset);
   margin: 6px 0 26px;
 }
 .detail-section-head {
@@ -504,6 +503,10 @@
 }
 .detail-season-bar .btn {
   margin-left: auto;
+}
+/* The season buttons' own box only exists below 860px (see there). */
+.detail-season-tabs {
+  display: contents;
 }
 /* The glass card. */
 .detail-card {
@@ -847,45 +850,75 @@
     width: 100%;
     justify-content: center;
   }
+  /* One sideways strip running to the screen's edges, like Browse's
+     genre chips; the request button gets the row under it. */
+  .detail-season-tabs {
+    position: relative;
+    display: flex;
+    gap: 8px;
+    /* Wider than the row by the two bleeds it pulls back in. */
+    flex: 0 0 calc(100% + 2 * (var(--section-inset) + 14px));
+    min-width: 0;
+    overflow-x: auto;
+    margin: 0 calc(-1 * var(--section-inset) - 14px);
+    padding: 0 calc(var(--section-inset) + 14px);
+    scrollbar-width: none;
+  }
+  .detail-season-tabs::-webkit-scrollbar {
+    display: none;
+  }
+  .detail-season-tabs .season-btn {
+    flex: 0 0 auto;
+  }
 }
 @media (max-width: 639px) {
   .detail {
     padding-left: 20px;
     padding-right: 20px;
   }
-  /* Phones: no banner or logo; the 2:3 poster carries the name, with
-     the tiles beside it, under the status line. */
+  /* Phones: no banner or logo. The 2:3 poster is the hero instead: the
+     full width of the screen from its very top (under the floating top
+     bar, as the home hero sits), fading out at its foot, with the tiles
+     rising out of that fade in the same rows as desktop. The fade is a
+     mask rather than a gradient to --bg because the ambient glow behind
+     the page isn't --bg, and a painted fade would leave a dark band.
+     Measured against One Piece, whose logo sits in the poster's bottom
+     sixth: a longer fade and a deeper overlap covered it. */
   .detail-banner {
     display: none;
   }
   .detail-poster-row {
-    display: grid;
-    grid-template-columns: 124px minmax(0, 1fr);
-    gap: 12px;
-    align-items: stretch;
+    display: block;
     order: 2;
   }
   .detail-poster-wrap {
     display: block;
+    margin: calc(-1 * (var(--topbar-h, 64px) + var(--hero-top-gap))) -20px 0;
   }
   .detail-poster {
-    border-radius: 16px;
+    border-radius: 0;
+    box-shadow: none;
+    -webkit-mask-image: linear-gradient(180deg, #000 86%, transparent 100%);
+    mask-image: linear-gradient(180deg, #000 86%, transparent 100%);
   }
+  /* The Status tile says the same thing, and the corner is under the
+     top bar now. */
   .detail-poster-wrap .on-plex-badge {
-    top: 8px;
-    right: 8px;
+    display: none;
   }
   .detail-side .detail-tiles {
-    order: initial;
-    grid-template-rows: 1fr 1fr;
-  }
-  .detail-side .detail-tile {
-    display: flex;
-    flex-direction: column;
-    justify-content: center;
-    padding: 10px 12px;
+    position: relative;
+    z-index: 1;
+    /* Only into the last of the fade: a poster's title often sits low,
+       and neither the fade nor a tile should eat into it. */
+    margin-top: -14px;
   }
   .detail-side .detail-tile b {
-    font-size: 15px;
+    font-size: 16px;
+  }
+  /* The episodes keep the frame's 20px gutter, not the rows' 30px: they
+     belong to the page above them. */
+  .detail-section {
+    --section-inset: 6px;
   }
 }

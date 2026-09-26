@@ -55,15 +55,30 @@ def _is_recent_release(movie: dict, max_age_days: int = _MAX_COMING_SOON_AGE_DAY
     return (datetime.now(timezone.utc) - released_at).days <= max_age_days
 
 
-def _lacks_digital_release(release_dates_by_country: list[dict], region: str) -> bool:
-    """True if `region`'s release-dates entry has no Digital/Physical
-    release dated today or earlier — i.e. still theatrical-only there. A
-    region with no entry at all is treated the same way: TMDB simply has
-    nothing on record yet, which isn't evidence of a digital release."""
+def _lacks_digital_release(release_dates_by_country: list[dict]) -> bool:
+    """True when no country on record has a Digital or Physical release
+    dated today or earlier — i.e. nothing anywhere says this has left
+    cinemas yet.
+
+    Asks every region rather than the household's, and that is the whole
+    point of it. A digital release is a worldwide event as far as this
+    app is concerned: once a copy exists it is on the indexers, whatever
+    a territory's own paperwork says. The same reasoning already runs in
+    releaseWindow.ts's cascade and in api.py's _arriving_soon.
+
+    It used to ask one region and treat that region having no entry as
+    evidence of no release, which is only safe where TMDB's coverage is
+    good. Obsession, checked 2026-09-27: digital in the US and GB since
+    2026-06-30 and in five more territories since 2026-07-17, while its
+    Australian record holds nothing but a premiere and a cinema date. An
+    Australian household was told a film it already had on Plex was not
+    out yet, and the Add to Plex button was disabled on that basis.
+
+    The asymmetry decides it. Wrongly saying "still in cinemas" locks
+    someone out of a film that exists; wrongly saying "out" costs a
+    search that finds nothing, which the pipeline already handles."""
     now = datetime.now(timezone.utc)
     for country in release_dates_by_country:
-        if country.get("iso_3166_1") != region:
-            continue
         for rd in country.get("release_dates", []):
             if rd.get("type") not in (_DIGITAL_RELEASE_TYPE, _PHYSICAL_RELEASE_TYPE):
                 continue
@@ -73,11 +88,10 @@ def _lacks_digital_release(release_dates_by_country: list[dict], region: str) ->
             released_at = datetime.fromisoformat(release_date.replace("Z", "+00:00"))
             if released_at <= now:
                 return False
-        return True
     return True
 
 
-def is_movie_coming_soon(movie: dict, release_dates_by_country: list[dict], region: str) -> bool:
+def is_movie_coming_soon(movie: dict, release_dates_by_country: list[dict]) -> bool:
     """The single combined "is this movie Coming Soon" predicate — used
     both to build the Coming Soon list itself and to flag one movie's own
     detail page (disables its Add to Plex button there). Recent *and*
@@ -85,7 +99,7 @@ def is_movie_coming_soon(movie: dict, release_dates_by_country: list[dict], regi
     recency half is what keeps an old catalog title with no Digital/
     Physical record on file (TMDB just never logged one) from reading as
     "coming soon" forever."""
-    return _is_recent_release(movie) and _lacks_digital_release(release_dates_by_country, region)
+    return _is_recent_release(movie) and _lacks_digital_release(release_dates_by_country)
 
 
 def trailer_candidates(videos: list[dict]) -> list[dict]:
@@ -343,7 +357,7 @@ class TMDBClient:
         filtered = [
             movie
             for movie in popular.get("results", [])
-            if not _lacks_digital_release(self.get_release_dates(movie["id"]), region)
+            if not _lacks_digital_release(self.get_release_dates(movie["id"]))
         ]
         return {**popular, "results": filtered}
 
@@ -354,7 +368,7 @@ class TMDBClient:
         filtered = [
             movie
             for movie in trending.get("results", [])
-            if not _lacks_digital_release(self.get_release_dates(movie["id"]), region)
+            if not _lacks_digital_release(self.get_release_dates(movie["id"]))
         ]
         return {**trending, "results": filtered}
 
@@ -535,7 +549,7 @@ class TMDBClient:
         filtered = [
             movie
             for movie in results
-            if _is_recent_release(movie) and is_movie_coming_soon(movie, self.get_release_dates(movie["id"]), region)
+            if _is_recent_release(movie) and is_movie_coming_soon(movie, self.get_release_dates(movie["id"]))
         ]
         return {**now_playing, "results": filtered}
 
@@ -581,7 +595,7 @@ class TMDBClient:
         filtered = [
             movie
             for movie in discover.get("results", [])
-            if not _lacks_digital_release(self.get_release_dates(movie["id"]), region)
+            if not _lacks_digital_release(self.get_release_dates(movie["id"]))
         ]
         return {**discover, "results": filtered}
 
@@ -591,7 +605,7 @@ class TMDBClient:
         filtered = [
             movie
             for movie in discover.get("results", [])
-            if not _lacks_digital_release(self.get_release_dates(movie["id"]), region)
+            if not _lacks_digital_release(self.get_release_dates(movie["id"]))
         ]
         return {**discover, "results": filtered}
 
@@ -639,7 +653,7 @@ class TMDBClient:
         filtered = [
             movie
             for movie in discover.get("results", [])
-            if not _lacks_digital_release(self.get_release_dates(movie["id"]), region)
+            if not _lacks_digital_release(self.get_release_dates(movie["id"]))
         ]
         return {**discover, "results": filtered}
 

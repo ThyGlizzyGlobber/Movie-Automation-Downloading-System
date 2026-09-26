@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { useParams } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { getTvShow, listShows, createShow, deleteShow, bulkDownload } from '../../api/tv'
@@ -46,6 +46,27 @@ function ShowDetailSkeleton() {
         <MediaRow loading title="More" qualifier="like this" items={[]} mediaType="movie" />
       </div>
     </>
+  )
+}
+
+// The season buttons. On phones and portrait tablets they're one
+// sideways strip rather than rows of wrapped buttons (a long-running
+// show has dozens, some with long names that pushed the page wider than
+// the screen), so the selected one is scrolled to the middle whenever it
+// changes — the default is the latest season, at the far end. On wider
+// screens the strip is display: contents and this does nothing.
+function SeasonTabs({ active, children }: { active: number | null; children: ReactNode }) {
+  const ref = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    const strip = ref.current
+    const btn = strip?.querySelector<HTMLElement>('.season-btn.active')
+    if (!strip || !btn || strip.scrollWidth <= strip.clientWidth) return
+    strip.scrollLeft = btn.offsetLeft - (strip.clientWidth - btn.offsetWidth) / 2
+  }, [active])
+  return (
+    <div className="detail-season-tabs" ref={ref}>
+      {children}
+    </div>
   )
 }
 
@@ -202,6 +223,12 @@ export default function ShowDetailPage() {
         : 'Not scheduled'
   // An ended or cancelled show has nothing left to follow: no Follow
   // button, and the tile shows the years it ran instead.
+  // A show Plex is already holding has aired, whatever TMDB's dates
+  // say — is_tv_upcoming reads a first_air_date that can be missing or
+  // wrong, and on the movie side the same trust in it left a film the
+  // household already owned with a disabled "Coming soon" button.
+  // Possession beats paperwork.
+  const unaired = !!show.is_coming_soon && !show.on_plex
   const ended = show.status === 'Ended' || show.status === 'Canceled'
   const following = subscription?.status === 'watching'
   const firstYear = show.first_air_date?.slice(0, 4)
@@ -233,7 +260,7 @@ export default function ShowDetailPage() {
         }
       : {
           label: 'Status',
-          value: show.is_coming_soon ? 'Coming soon' : activeRequest ? 'On the way' : 'Not on Plex yet',
+          value: unaired ? 'Coming soon' : activeRequest ? 'On the way' : 'Not on Plex yet',
           tone: activeRequest ? 'ice' : 'dim',
           wide: true,
         },
@@ -316,9 +343,9 @@ export default function ShowDetailPage() {
           followed only while its row is "watching" — a paused row is the
           anchor a one-off season add leaves behind, not a follow. */}
       {ended ? null : !following ? (
-        <button className={`btn ${show.on_plex ? 'sec' : 'pri'}`} disabled={subscribeBusy || show.is_coming_soon} onClick={follow}>
+        <button className={`btn ${show.on_plex ? 'sec' : 'pri'}`} disabled={subscribeBusy || unaired} onClick={follow}>
           <Icon name="plus" />
-          {show.is_coming_soon ? 'Coming soon' : 'Follow'}
+          {unaired ? 'Coming soon' : 'Follow'}
         </button>
       ) : (
         <button className="btn sec" disabled={subscribeBusy} onClick={unfollow}>
@@ -372,11 +399,13 @@ export default function ShowDetailPage() {
         </div>
         {/* A limited series is one run: its one button says so instead of "Season 1". */}
         <div className="detail-season-bar" role="tablist" aria-label="Season">
-          {seasons.map((s) => (
-            <button key={s.id} role="tab" aria-selected={s.season_number === currentSeason} className={`season-btn${s.season_number === currentSeason ? ' active' : ''}`} onClick={() => setActiveSeason(s.season_number)}>
-              {limited ? 'Limited series' : s.name || `Season ${s.season_number}`}
-            </button>
-          ))}
+          <SeasonTabs active={currentSeason}>
+            {seasons.map((s) => (
+              <button key={s.id} role="tab" aria-selected={s.season_number === currentSeason} className={`season-btn${s.season_number === currentSeason ? ' active' : ''}`} onClick={() => setActiveSeason(s.season_number)}>
+                {limited ? 'Limited series' : s.name || `Season ${s.season_number}`}
+              </button>
+            ))}
+          </SeasonTabs>
           <button className="btn sec sm" disabled={bulkBusyKey === `season-${currentSeason}`} onClick={() => handleBulkClick('season', currentSeason, currentSeasonLabel, `season-${currentSeason}`)}>
             <Icon name="download" />
             {bulkBusyKey === `season-${currentSeason}` ? 'Adding…' : limited ? 'Add limited series to Plex' : `Add ${/^season \d/i.test(currentSeasonLabel) ? currentSeasonLabel.toLowerCase() : currentSeasonLabel} to Plex`}

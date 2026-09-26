@@ -32,7 +32,7 @@ def test_lacks_digital_release_true_when_only_theatrical():
     releases = _release_dates([
         {"iso_3166_1": "US", "release_dates": [{"type": 3, "release_date": "2026-07-30T00:00:00.000Z"}]},
     ])
-    assert _lacks_digital_release(releases, "US") is True
+    assert _lacks_digital_release(releases) is True
 
 
 def test_lacks_digital_release_false_once_digital_date_has_passed():
@@ -45,7 +45,7 @@ def test_lacks_digital_release_false_once_digital_date_has_passed():
             ],
         },
     ])
-    assert _lacks_digital_release(releases, "US") is False
+    assert _lacks_digital_release(releases) is False
 
 
 def test_lacks_digital_release_true_when_digital_date_is_in_the_future():
@@ -58,21 +58,51 @@ def test_lacks_digital_release_true_when_digital_date_is_in_the_future():
             ],
         },
     ])
-    assert _lacks_digital_release(releases, "US") is True
+    assert _lacks_digital_release(releases) is True
 
 
-def test_lacks_digital_release_true_when_region_absent_entirely():
+def test_a_digital_release_in_another_country_still_counts():
+    """This asserted the opposite, and the opposite was the bug. TMDB
+    records digital street dates thoroughly for a handful of territories
+    and barely at all for the rest, so reading one region's silence as
+    "not released" locks a household out of most of what it can already
+    get.
+
+    Obsession, checked live 2026-09-27: digital in the US and GB since
+    2026-06-30 and in five more territories since 2026-07-17, while its
+    Australian record holds nothing but a premiere and a cinema date. It
+    was on Plex, and its own page said it wasn't out."""
     releases = _release_dates([
-        {"iso_3166_1": "FR", "release_dates": [{"type": 4, "release_date": "2020-01-01T00:00:00.000Z"}]},
+        {"iso_3166_1": "AU", "release_dates": [
+            {"type": 1, "release_date": "2026-05-08T00:00:00.000Z"},
+            {"type": 3, "release_date": "2026-05-14T00:00:00.000Z"},
+        ]},
+        {"iso_3166_1": "US", "release_dates": [
+            {"type": 3, "release_date": "2026-05-15T00:00:00.000Z"},
+            {"type": 4, "release_date": "2026-06-30T00:00:00.000Z"},
+        ]},
     ])
-    assert _lacks_digital_release(releases, "US") is True
+
+    assert _lacks_digital_release(releases) is False
+
+
+def test_nothing_anywhere_is_still_nothing():
+    """The other direction has to keep working, or every film in cinemas
+    reads as downloadable."""
+    releases = _release_dates([
+        {"iso_3166_1": "AU", "release_dates": [{"type": 3, "release_date": "2026-09-01T00:00:00.000Z"}]},
+        {"iso_3166_1": "US", "release_dates": [{"type": 3, "release_date": "2026-09-02T00:00:00.000Z"}]},
+        {"iso_3166_1": "FR", "release_dates": [{"type": 4, "release_date": "2099-01-01T00:00:00.000Z"}]},
+    ])
+
+    assert _lacks_digital_release(releases) is True
 
 
 def test_lacks_digital_release_physical_type_counts_too():
     releases = _release_dates([
         {"iso_3166_1": "US", "release_dates": [{"type": 5, "release_date": "2020-01-01T00:00:00.000Z"}]},
     ])
-    assert _lacks_digital_release(releases, "US") is False
+    assert _lacks_digital_release(releases) is False
 
 
 def test_get_coming_soon_filters_out_titles_with_a_past_digital_release(monkeypatch):
@@ -260,13 +290,13 @@ def test_get_available_by_provider_excludes_theatrical_only_titles(monkeypatch):
 def test_is_movie_coming_soon_true_for_recent_theatrical_only_release():
     movie = {"release_date": (datetime.now(timezone.utc) - timedelta(days=10)).strftime("%Y-%m-%d")}
     releases = [{"iso_3166_1": "US", "release_dates": [{"type": 3, "release_date": "2026-01-01T00:00:00.000Z"}]}]
-    assert is_movie_coming_soon(movie, releases, "US") is True
+    assert is_movie_coming_soon(movie, releases) is True
 
 
 def test_is_movie_coming_soon_false_once_digitally_released():
     movie = {"release_date": (datetime.now(timezone.utc) - timedelta(days=10)).strftime("%Y-%m-%d")}
     releases = [{"iso_3166_1": "US", "release_dates": [{"type": 4, "release_date": "2020-01-01T00:00:00.000Z"}]}]
-    assert is_movie_coming_soon(movie, releases, "US") is False
+    assert is_movie_coming_soon(movie, releases) is False
 
 
 def test_is_movie_coming_soon_false_for_an_old_title_with_no_digital_record():
@@ -274,7 +304,7 @@ def test_is_movie_coming_soon_false_for_an_old_title_with_no_digital_record():
     # an old title TMDB never logged a Digital/Physical entry for must not
     # read as permanently Coming Soon.
     movie = {"release_date": "1998-10-16"}
-    assert is_movie_coming_soon(movie, [], "US") is False
+    assert is_movie_coming_soon(movie, []) is False
 
 
 def test_is_tv_upcoming_true_for_a_future_first_air_date():

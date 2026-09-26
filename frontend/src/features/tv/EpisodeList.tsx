@@ -161,8 +161,10 @@ export function EpisodesSectionSkeleton() {
         </h2>
       </div>
       <div className="detail-season-bar" aria-hidden="true">
-        <Skel className="season-btn">Season 1</Skel>
-        <Skel className="season-btn">Season 2</Skel>
+        <div className="detail-season-tabs">
+          <Skel className="season-btn">Season 1</Skel>
+          <Skel className="season-btn">Season 2</Skel>
+        </div>
         <Skel className="btn sec sm">
           <Icon name="download" />
           Add season 2 to Plex

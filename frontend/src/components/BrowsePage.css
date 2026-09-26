@@ -118,6 +118,22 @@
   padding-right: 0;
 }
 @media (max-width: 639px) {
+  /* The availability switch and the pickers are one sideways strip on
+     a phone, as the genres are, instead of three wrapped lines above
+     the first poster. */
+  .browse-filters {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    margin: 0 calc(-1 * var(--row-inset) - 14px) 12px;
+    padding: 0 calc(var(--row-inset) + 14px);
+    scrollbar-width: none;
+  }
+  .browse-filters::-webkit-scrollbar {
+    display: none;
+  }
+  .browse-filters > * {
+    flex: 0 0 auto;
+  }
   .browse-genres {
     flex-wrap: nowrap;
     overflow-x: auto;

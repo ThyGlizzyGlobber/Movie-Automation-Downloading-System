@@ -1067,13 +1067,41 @@ def test_region_falls_back_to_the_default_when_nothing_is_chosen(client_and_deps
     assert seen == [api.DEFAULT_CERTIFICATION_REGION]
 
 
-def test_coming_soon_is_decided_in_the_household_region(client_and_deps):
-    """The same film, the same day, two answers. Dune is on digital in
-    the US and cinema-only in Australia here — which is the ordinary
-    case for a few weeks after a release, and the whole reason the
-    detail page's "Coming soon" badge and its Add to Plex button have
-    to ask where the household is rather than where TMDB's data is
-    richest."""
+def test_a_film_already_digital_abroad_is_not_coming_soon_here(client_and_deps):
+    """This test used to assert the opposite, and shipping it is what
+    broke the detail page. It set up a film digital in the US and
+    cinema-only in Australia and called that "coming soon" for an
+    Australian household — reasonable-sounding, and wrong for an app
+    whose question is "can I get a copy", not "has my territory been
+    served".
+
+    Reported on Obsession, live 2026-09-27: digital in the US and GB
+    since June, nothing but a premiere and a cinema date on its
+    Australian record, sitting on the household's own Plex server, with
+    its page saying it wasn't out and its button disabled."""
+    client, store, tmdb, _, _, _ = client_and_deps
+    recent = (datetime.now(timezone.utc) - timedelta(days=30)).date().isoformat()
+    past = (datetime.now(timezone.utc) - timedelta(days=10)).date().isoformat()
+    tmdb._movie = dict(
+        MOVIE,
+        release_date=recent,
+        release_dates={
+            "results": [
+                {"iso_3166_1": "AU", "release_dates": [{"type": 3, "release_date": f"{recent}T00:00:00.000Z"}]},
+                {"iso_3166_1": "US", "release_dates": [{"type": 4, "release_date": f"{past}T00:00:00.000Z"}]},
+            ]
+        },
+    )
+
+    assert client.get(f"/api/movies/{MOVIE['id']}").json()["is_coming_soon"] is False
+
+    store.update_settings({"certification_region": "AU"})
+    assert client.get(f"/api/movies/{MOVIE['id']}").json()["is_coming_soon"] is False
+
+
+def test_a_film_in_cinemas_everywhere_is_still_coming_soon(client_and_deps):
+    """The safeguard in the other direction: reaching wider must not
+    mean reaching for anything."""
     client, store, tmdb, _, _, _ = client_and_deps
     recent = (datetime.now(timezone.utc) - timedelta(days=30)).date().isoformat()
     soon = (datetime.now(timezone.utc) + timedelta(days=30)).date().isoformat()
@@ -1082,15 +1110,13 @@ def test_coming_soon_is_decided_in_the_household_region(client_and_deps):
         release_date=recent,
         release_dates={
             "results": [
-                {"iso_3166_1": "US", "release_dates": [{"type": 4, "release_date": f"{recent}T00:00:00.000Z"}]},
-                {"iso_3166_1": "AU", "release_dates": [{"type": 3, "release_date": f"{soon}T00:00:00.000Z"}]},
+                {"iso_3166_1": "AU", "release_dates": [{"type": 3, "release_date": f"{recent}T00:00:00.000Z"}]},
+                {"iso_3166_1": "US", "release_dates": [{"type": 4, "release_date": f"{soon}T00:00:00.000Z"}]},
             ]
         },
     )
-
-    assert client.get(f"/api/movies/{MOVIE['id']}").json()["is_coming_soon"] is False
-
     store.update_settings({"certification_region": "AU"})
+
     assert client.get(f"/api/movies/{MOVIE['id']}").json()["is_coming_soon"] is True
 
 

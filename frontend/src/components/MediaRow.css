@@ -223,18 +223,21 @@ section.row .row-head-right {
 /* Phones: the row head keeps the title on one line; "See all" drops its
    label and keeps the circle. */
 @media (max-width: 639px) {
-  /* The head wraps so a row with a switch keeps its full title. */
+  /* The controls share the title's line when they fit beside it, and
+     wrap under it (held to the right edge) only when they don't, so the
+     title is never cut short. It used to always wrap, which gave a lone
+     "See all" circle a line of its own under every row title. */
   section.row .row-head {
     flex-wrap: wrap;
     gap: 6px 12px;
   }
   section.row .row-head h2,
   section.row .row-head .row-title {
-    flex: 1 1 100%;
-    margin-bottom: 8px;
+    flex: 0 1 auto;
+    margin-bottom: 10px;
   }
   section.row .row-head-right {
-    margin-left: var(--row-inset);
+    margin-left: auto;
     margin-bottom: 10px;
   }
   section.row .row-more {
