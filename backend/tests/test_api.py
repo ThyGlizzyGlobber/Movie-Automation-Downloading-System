@@ -2659,6 +2659,37 @@ def test_an_arrival_that_is_also_trending_only_appears_once(client_and_deps):
     assert ids.count(ARRIVING["id"]) == 1
 
 
+def test_an_overlapping_arrival_that_is_not_the_held_one_still_appears_once(client_and_deps):
+    """The duplicate the first version shipped. Dedupe ran against the
+    held id only, so a title in both pools survived twice whenever
+    something *else* took the hold — which is the ordinary case, not an
+    edge one: on 2026-09-26 Spider-Man took the slot at 630 and The End
+    of Oak Street sat in both trending and the digital calendar at
+    384.6, and the movies hero showed it twice.
+
+    The earlier test missed it by making the overlapping title the held
+    one, which is the single arrangement where the old filter was
+    enough."""
+    client, _, tmdb, _, _, _ = client_and_deps
+    api._hero_slides_cached.cache.clear()
+    both = {"id": 1234, "title": "The End of Oak Street", "release_date": "2026-08-12",
+            "backdrop_path": "/oak.jpg", "popularity": 384.6}
+    tmdb.get_available_trending = lambda **kw: {"results": [dict(both)]}
+    tmdb.get_available_tv_trending = lambda **kw: {"results": []}
+    tmdb.digital_calendar = [dict(ARRIVING), dict(both)]
+    # Per id, not the fixture's one shared movie: with every detail call
+    # answering with the same title, two distinct slides would read as a
+    # duplicate too and this would pass or fail for the wrong reason.
+    by_id = {ARRIVING["id"]: dict(ARRIVING), both["id"]: dict(both)}
+    tmdb.get_movie = lambda tmdb_id: by_id[tmdb_id]
+
+    ids = [s["id"] for s in client.get("/api/hero?kind=movies").json()]
+
+    assert ids.count(both["id"]) == 1
+    assert ids.count(ARRIVING["id"]) == 1
+    assert len(ids) == len(set(ids))
+
+
 def test_arrivals_ask_the_household_region_then_top_up_from_the_us(client_and_deps):
     """Measured 2026-09-26: the same 60-day window returned 14 titles for
     AU against 242 for US, and the film this feature exists to surface

@@ -882,16 +882,16 @@ def _arriving_soon(kind: str, tmdb: TMDBClient, region: str) -> list[tuple[str, 
     """
     found: list[tuple[str, dict]] = []
     if kind in ("home", "movies"):
-        seen: set[int] = set()
+        # Both scopes concatenated, duplicates and all: _hero_picks'
+        # `usable` is the one place that dedupes, and having a second
+        # place do it too is how the first version ended up with one
+        # that was subtly weaker than the other.
         for scope in dict.fromkeys([region, "US"]):
             try:
                 results = tmdb.get_digital_calendar(region=scope, days=HERO_ARRIVING_DAYS).get("results", [])
             except TMDBError:
                 continue
-            for item in results:
-                if item.get("id") and item["id"] not in seen:
-                    seen.add(item["id"])
-                    found.append(("movie", item))
+            found += [("movie", item) for item in results if item.get("id")]
     if kind in ("home", "tv"):
         try:
             found += [("tv", it) for it in tmdb.get_tv_coming_soon(region=region).get("results", [])]
@@ -910,24 +910,46 @@ def _hero_picks(kind: str, tmdb: TMDBClient, region: str) -> list[tuple[str, dic
     if kind in ("home", "tv"):
         candidates += [("tv", it) for it in tmdb.get_available_tv_trending().get("results", [])]
 
-    def by_popularity(pool: list[tuple[str, dict]]) -> list[tuple[str, dict]]:
-        usable = [c for c in pool if c[1].get("backdrop_path")]
-        usable.sort(key=lambda c: c[1].get("popularity") or 0, reverse=True)
-        return usable
+    def usable(pool: list[tuple[str, dict]]) -> list[tuple[str, dict]]:
+        """Backdrop-having, most popular first, each title once.
 
-    arriving = by_popularity(_arriving_soon(kind, tmdb, region))
+        The three belong together rather than at separate call sites.
+        The first version sorted and filtered here but deduped only
+        against the held id further down, and the two pools overlap by
+        design — a film days from digital is exactly the kind that is
+        also trending. So any overlapping title that wasn't the one held
+        got two slides. Seen live: Spider-Man took the hold at 630 while
+        The End of Oak Street sat in both pools at 384.6 and the movies
+        hero showed it twice.
+        """
+        ranked = sorted(
+            (c for c in pool if c[1].get("backdrop_path")),
+            key=lambda c: c[1].get("popularity") or 0,
+            reverse=True,
+        )
+        out: list[tuple[str, dict]] = []
+        seen: set[tuple[str, int | None]] = set()
+        for media_type, item in ranked:
+            key = (media_type, item.get("id"))
+            if key in seen:
+                continue
+            seen.add(key)
+            out.append((media_type, item))
+        return out
+
+    arriving = usable(_arriving_soon(kind, tmdb, region))
     held = arriving[:HERO_ARRIVING_SLOTS]
     taken = {(mt, it.get("id")) for mt, it in held}
 
     # The rest of the hero is drawn from trending and the arrivals
     # together, so a second arrival can still earn a slot on merit rather
     # than being capped at the one that was held for it.
-    rest = [c for c in by_popularity(candidates + arriving) if (c[0], c[1].get("id")) not in taken]
+    rest = [c for c in usable(candidates + arriving) if (c[0], c[1].get("id")) not in taken]
 
     # Sorted as one list at the end: the held slide keeps its slot but not
     # a promoted position, so the carousel still opens on the most popular
     # thing unless the arrival happens to be it.
-    return by_popularity(held + rest[: HERO_SLIDE_COUNT - len(held)])
+    return usable(held + rest[: HERO_SLIDE_COUNT - len(held)])
 
 
 @ttl_cache(HERO_TTL_SECONDS)
