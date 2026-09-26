@@ -212,69 +212,9 @@ body.search-open #searchToggleBtn {
   display: block;
 }
 
-/* Avatar menu. */
+/* Avatar menu: the account sheet below opens from here. */
 .account-menu {
   position: relative;
-}
-.account-menu-panel {
-  position: absolute;
-  top: calc(100% + 12px);
-  right: 0;
-  min-width: 220px;
-  padding: 8px;
-  border-radius: 18px;
-  background: var(--glass-overlay);
-  backdrop-filter: var(--glass-blur);
-  -webkit-backdrop-filter: var(--glass-blur);
-  border: 1px solid var(--glass-border);
-  box-shadow: var(--shadow-float), var(--glass-highlight);
-  z-index: 20;
-}
-.account-menu-who {
-  padding: 8px 12px 10px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.07);
-  margin-bottom: 6px;
-}
-.account-menu-who b {
-  display: block;
-  font-size: 14px;
-  font-weight: 700;
-}
-.account-menu-who small {
-  display: block;
-  color: var(--text-dim);
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  margin-top: 2px;
-}
-.account-menu-item {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  width: 100%;
-  padding: 10px 12px;
-  border-radius: 12px;
-  border: none;
-  background: none;
-  color: var(--text);
-  font-size: 14px;
-  font-weight: 700;
-  text-align: left;
-}
-.account-menu-item .icon {
-  font-size: 17px;
-  color: var(--text-dim);
-}
-.account-menu-item:hover {
-  background: rgba(255, 255, 255, 0.08);
-}
-.account-menu-item.danger {
-  color: var(--status-failed);
-}
-.account-menu-item.danger .icon {
-  color: var(--status-failed);
 }
 
 /* Phones: wordmark centred, avatar on the right;
@@ -305,9 +245,10 @@ body.search-open #searchToggleBtn {
   }
 }
 
-/* Phones: the account sheet. The same blurred page behind as the
-   search palette (SearchOverlay.css), and the same glass panel under the
-   top bar, holding who's signed in and one row per place to go. */
+/* The account sheet. The same blurred page behind as the search
+   palette (SearchOverlay.css), and the same glass panel under the top
+   bar, holding who's signed in and one row per place to go: full width
+   on a phone, under the avatar on desktop (below). */
 #accountOverlay {
   position: fixed;
   inset: 0;
@@ -405,6 +346,26 @@ body.search-open #searchToggleBtn {
 .account-sheet-item.danger .account-sheet-icon {
   background: color-mix(in srgb, var(--status-failed) 10%, transparent);
   border-color: color-mix(in srgb, var(--status-failed) 20%, transparent);
+}
+/* Desktop: a column under the avatar, its right edge on the nav pill's
+   and its top the same gap under the pill as the search palette's. */
+@media (min-width: 860px) {
+  #accountOverlay {
+    display: flex;
+    justify-content: flex-end;
+    align-items: flex-start;
+    padding: calc(var(--topbar-h, 88px) + 14px) var(--nav-side) 0;
+  }
+  .account-sheet {
+    width: 380px;
+    transform-origin: top right;
+  }
+  .account-sheet-item {
+    cursor: pointer;
+  }
+  .account-sheet-item:hover {
+    background: rgba(255, 255, 255, 0.07);
+  }
 }
 @keyframes account-fade {
   from {
