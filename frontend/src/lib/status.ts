@@ -37,6 +37,8 @@ const STATUS_META: Record<string, StatusMeta> = {
 
 export const NON_TERMINAL = new Set(['queued', 'searching', 'downloading'])
 export const CANCELLABLE = new Set(['queued', 'downloading', 'complete'])
+// The states the Requests page files under Failed.
+export const FAILED_STATES = new Set(['failed', 'no qualifying results', 'insufficient free space'])
 
 export function statusMeta(status: string): StatusMeta {
   return STATUS_META[status] || { label: status, cls: 'status-queued', icon: 'clock' }

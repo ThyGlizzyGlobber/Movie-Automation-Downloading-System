@@ -1,4 +1,5 @@
 import type { RequestOut } from '../types/requests'
+import { NON_TERMINAL } from './status'
 
 function pad2(n: number): string {
   return String(n).padStart(2, '0')
@@ -146,4 +147,19 @@ export function groupRequestsForDisplay(rows: RequestOut[]): DisplayItem[] {
     if (item.type === 'show') item.seasons.sort((a, b) => b.repId - a.repId)
   }
   return items.sort((a, b) => b.repId - a.repId)
+}
+
+// A show's own progress: the average over everything it has on the way
+// or done — a finished season counts as 100%, a downloading one as its
+// own percentage, one still waiting or searching as 0%. Failed and
+// cancelled rows don't count. Null when nothing is moving or done.
+export function groupProgress(rows: RequestOut[]): number | null {
+  const counted = rows.filter((r) => NON_TERMINAL.has(r.status) || r.status === 'complete' || r.status === 'downloaded, not filed')
+  if (!counted.length) return null
+  const total = counted.reduce((sum, r) => {
+    if (r.status === 'complete' || r.status === 'downloaded, not filed') return sum + 1
+    if (r.status === 'downloading') return sum + (r.download_progress ?? 0)
+    return sum
+  }, 0)
+  return total / counted.length
 }

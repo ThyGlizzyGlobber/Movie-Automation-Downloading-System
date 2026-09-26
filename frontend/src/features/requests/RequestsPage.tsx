@@ -1,32 +1,23 @@
 import { Link } from 'react-router-dom'
-import { useState, type ReactNode } from 'react'
+import { useCallback, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { listRequests, cancelRequest, clearRequests } from '../../api/requests'
+import { listRequests, clearRequests } from '../../api/requests'
 import { getRetention, setRetention } from '../../api/settings'
 import { useSession } from '../auth/useSession'
-import StatusPill from '../../components/StatusPill'
-import StatusRing from '../../components/StatusRing'
 import Icon from '../../components/Icon'
-import Img from '../../components/Img'
-import { Skel, SkelText, SkelWords } from '../../components/Skeleton'
+import PosterCard from '../../components/PosterCard'
+import DownloadBar from '../../components/DownloadBar'
+import { PosterCardSkeleton, Skel, SkelWords } from '../../components/Skeleton'
 import ErrorState from '../../components/ErrorState'
 import EmptyState from '../../components/EmptyState'
 import { usePageTitle } from '../../lib/chrome'
-import { posterUrl } from '../../lib/tmdbImage'
 import { relativeTime } from '../../lib/format'
-import { CANCELLABLE, NON_TERMINAL, statusDetail, statusMeta } from '../../lib/status'
-import {
-  dominantStatus,
-  groupRequestsForDisplay,
-  packScopeLabel,
-  requestLabelAndHref,
-  type DisplayItem,
-  type SeasonGroup,
-  type ShowGroup,
-} from '../../lib/requestGrouping'
+import { FAILED_STATES, NON_TERMINAL, statusDetail, statusMeta } from '../../lib/status'
+import { dominantStatus, groupProgress, groupRequestsForDisplay, packScopeLabel, requestLabelAndHref, type DisplayItem } from '../../lib/requestGrouping'
 import { RETENTION_OPTIONS } from '../../lib/retention'
 import { errorText, useToast } from '../../lib/toast'
 import type { RequestOut } from '../../types/requests'
+import RequestSheet from './RequestSheet'
 import './RequestsPage.css'
 
 type Filter = 'all' | 'active' | 'plex' | 'failed'
@@ -36,7 +27,6 @@ const FILTERS: { id: Filter; label: string }[] = [
   { id: 'plex', label: 'On Plex' },
   { id: 'failed', label: 'Failed' },
 ]
-const FAILED_STATES = new Set(['failed', 'no qualifying results', 'insufficient free space'])
 
 function matchesFilter(status: string, filter: Filter): boolean {
   if (filter === 'all') return true
@@ -51,274 +41,133 @@ function isToday(iso: string): boolean {
   return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth() && d.getDate() === now.getDate()
 }
 
-// One card per title. Movies are a single line; a show's card expands
-// into its seasons, each a strip of small episode pills, so a long-
-// running show never turns into a wall of nested rows.
-function Row({
-  poster,
-  title,
-  href,
-  meta,
-  status,
-  progress,
-  actions,
-  onToggle,
-  expanded,
-  children,
-}: {
-  poster?: string | null
+// The chip's colour per state, as on the home page's "On the way" row.
+const STATUS_TONE: Record<string, string> = {
+  queued: 'var(--text)',
+  searching: 'var(--status-searching)',
+  failed: 'var(--status-failed)',
+  cancelled: 'var(--text-dim)',
+  'downloaded, not filed': 'var(--status-nomatch)',
+  'no qualifying results': 'var(--status-nomatch)',
+  'insufficient free space': 'var(--status-nospace)',
+}
+
+function itemKey(item: DisplayItem): string {
+  return item.type === 'standalone' ? `req-${item.row.id}` : `show-${item.showId}`
+}
+
+function itemStatus(item: DisplayItem): string {
+  return item.type === 'standalone' ? item.row.status : dominantStatus(item.rows)
+}
+
+// Everything a card draws, for a movie (or a stray episode with no show
+// to sit under) and for a whole show alike.
+interface CardModel {
+  tmdbId: number
+  isTv: boolean
   title: string
+  poster: string | null
   href: string
-  meta: string
   status: string
   progress: number | null
-  actions?: ReactNode
-  onToggle?: () => void
-  expanded?: boolean
-  children?: ReactNode
-}) {
-  const [open, setOpen] = useState(false)
-  const clickable = !!onToggle
-  return (
-    <div className={`rq-card${expanded ? ' rq-expanded' : ''}`}>
-      <div
-        className={`rq-row${clickable ? ' rq-clickable' : ''}${open ? ' rq-open' : ''}`}
-        onClick={() => (onToggle ? onToggle() : setOpen((o) => !o))}
-      >
-        <div className="rq-art">
-          <Img src={posterUrl(poster ?? null)} alt="" />
-        </div>
-        <div className="rq-t">
-          {/* Link, not an anchor to "#/…" — see PosterCard for why the
-              difference decides where the next page starts scrolled. */}
-          <Link className="rq-title" to={href.replace(/^#/, '')} onClick={(e) => e.stopPropagation()}>
-            {title}
-          </Link>
-          <small>{meta}</small>
-          <span className="rq-pill-m">
-            <StatusPill status={status} />
-          </span>
-        </div>
-        <div className="rq-state">
-          <StatusPill status={status} />
-        </div>
-        <div className="rq-prog">
-          <StatusRing status={status} progress={progress} size={44} />
-        </div>
-        <div className="rq-acts" onClick={(e) => e.stopPropagation()}>
-          {actions}
-          {onToggle && (
-            <button className={`rq-circ${expanded ? ' on' : ''}`} aria-label={expanded ? 'Collapse' : 'Expand'} onClick={onToggle}>
-              <Icon name="next" />
-            </button>
-          )}
-        </div>
-      </div>
-      {expanded && children}
-    </div>
-  )
-}
-
-// A request row while the list loads: poster, title, meta line, the
-// status pill and ring, and the action button.
-const SKELETON_ROWS = 6
-
-function StatusPillSkeleton() {
-  return (
-    <Skel className="status-pill">
-      <Icon name="check-circle" className="status-icon" />
-      On Plex
-    </Skel>
-  )
-}
-
-function RowSkeleton() {
-  return (
-    <div className="rq-card" aria-hidden="true">
-      <div className="rq-row">
-        <div className="rq-art">
-          <Skel className="rq-art-skel" />
-        </div>
-        <div className="rq-t">
-          <span className="rq-title">
-            <SkelText width="46%" />
-          </span>
-          <small>
-            <SkelText width="62%" />
-          </small>
-          <span className="rq-pill-m">
-            <StatusPillSkeleton />
-          </span>
-        </div>
-        <div className="rq-state">
-          <StatusPillSkeleton />
-        </div>
-        <div className="rq-prog">
-          <Skel className="rq-ring-skel" />
-        </div>
-        <div className="rq-acts">
-          <Skel className="rq-circ" />
-        </div>
-      </div>
-    </div>
-  )
-}
-
-// Cancel while something is still in flight; delete the file once it
-// has finished. Both go through the same cancel route.
-function CancelAction({ row, onChanged, compact = false }: { row: RequestOut; onChanged: () => void; compact?: boolean }) {
-  const [busy, setBusy] = useState(false)
-  const { toast } = useToast()
-  if (!CANCELLABLE.has(row.status)) return null
-  const isDelete = row.status === 'complete'
-  if (compact && isDelete) return null
-  async function handleClick() {
-    if (isDelete && !confirm(`Delete ${row.title} from Plex?`)) return
-    setBusy(true)
-    try {
-      await cancelRequest(row.id)
-      onChanged()
-    } catch (err) {
-      toast({ tone: 'error', title: `Couldn't ${isDelete ? 'delete' : 'cancel'} that`, body: errorText(err) })
-      setBusy(false)
-    }
-  }
-  if (compact) {
-    return (
-      <button className="rq-ep-x" aria-label="Cancel" disabled={busy} onClick={handleClick}>
-        <Icon name="close" />
-      </button>
-    )
-  }
-  return (
-    <button className={`rq-circ${isDelete ? ' danger' : ''}`} aria-label={isDelete ? 'Delete' : 'Cancel'} disabled={busy} onClick={handleClick}>
-      <Icon name={isDelete ? 'trash' : 'close'} />
-    </button>
-  )
+  meta: string
+  hint: string
 }
 
 function leafMeta(r: RequestOut): string {
-  const bits: string[] = []
-  if (r.media_type === 'movie') {
-    if (r.release_year) bits.push(String(r.release_year))
-    bits.push('Movie')
-  } else if (r.media_type === 'episode') {
-    bits.push(`S${String(r.season_number).padStart(2, '0')}E${String(r.episode_number).padStart(2, '0')}`)
-  } else {
-    bits.push(packScopeLabel(r))
-  }
-  if (r.requested_by_username) bits.push(r.requested_by_username)
-  if (r.redownload_mode) bits.push(r.redownload_mode === 'overwrite' ? 'Replacing' : 'Upgrading')
-  bits.push(relativeTime(r.updated_at))
-  if (FAILED_STATES.has(r.status)) bits.push(statusDetail(r.status, r.download_progress, r.error_message))
-  return bits.join(' | ')
+  if (FAILED_STATES.has(r.status) || r.status === 'downloaded, not filed') return statusDetail(r.status, r.download_progress, r.error_message)
+  const scope =
+    r.media_type === 'movie'
+      ? r.release_year
+        ? String(r.release_year)
+        : 'Movie'
+      : r.media_type === 'episode'
+      ? `S${String(r.season_number).padStart(2, '0')}E${String(r.episode_number).padStart(2, '0')}`
+      : packScopeLabel(r)
+  return [scope, r.requested_by_username ?? (r.media_type === 'movie' ? 'Movie' : 'Series')].join(' | ')
 }
 
-function LeafRow({ row, onChanged }: { row: RequestOut; onChanged: () => void }) {
-  const { href } = requestLabelAndHref(row)
+function cardModel(item: DisplayItem): CardModel {
+  if (item.type === 'standalone') {
+    const r = item.row
+    return {
+      tmdbId: r.tmdb_id,
+      isTv: r.media_type !== 'movie',
+      title: r.title,
+      poster: r.poster_path,
+      href: requestLabelAndHref(r).href,
+      status: r.status,
+      progress: r.download_progress,
+      meta: leafMeta(r),
+      hint: statusDetail(r.status, r.download_progress, r.error_message),
+    }
+  }
+  const status = dominantStatus(item.rows)
+  const ready = item.rows.filter((r) => r.status === 'complete').length
+  const explained = FAILED_STATES.has(status) ? item.rows.filter((r) => FAILED_STATES.has(r.status)).sort((a, b) => b.id - a.id)[0] : null
+  const reason = explained ? statusDetail(explained.status, explained.download_progress, explained.error_message) : null
+  return {
+    tmdbId: item.tmdbId,
+    isTv: true,
+    title: item.title,
+    poster: item.posterPath,
+    href: `#/tv/${item.tmdbId}`,
+    status,
+    progress: groupProgress(item.rows),
+    meta: reason ?? `Series | ${ready} of ${item.rows.length} on Plex`,
+    hint: reason ?? `${ready} of ${item.rows.length} on Plex`,
+  }
+}
+
+// Top-right of the poster: what state the title is in, unless it's
+// downloading — the bar under the poster says that on its own.
+function StatusChip({ status }: { status: string }) {
+  if (status === 'downloading') return null
+  if (status === 'complete') return <div className="on-plex-badge">On Plex</div>
+  const meta = statusMeta(status)
   return (
-    <Row
-      poster={row.poster_path}
-      title={row.title}
-      href={href}
-      meta={leafMeta(row)}
-      status={row.status}
-      progress={row.download_progress}
-      actions={<CancelAction row={row} onChanged={onChanged} />}
-    />
+    <span className={`poster-chip rq-chip${status === 'searching' ? ' rq-chip-live' : ''}`} style={{ color: STATUS_TONE[status] ?? 'var(--text-dim)' }}>
+      <Icon name={meta.icon} />
+      {meta.label}
+    </span>
   )
 }
 
-function episodePillLabel(r: RequestOut): string {
-  if (r.media_type === 'episode') return `E${String(r.episode_number).padStart(2, '0')}`
-  return r.season_number == null ? 'Whole series' : 'Season pack'
-}
-
-// A season inside a show's card: a heading with its count and a strip
-// of pills, one per episode (or pack), coloured by state.
-function SeasonStrip({ season, onChanged }: { season: SeasonGroup; onChanged: () => void }) {
-  const rows = season.rows.slice().sort((a, b) => {
-    if (a.media_type !== b.media_type) return a.media_type === 'pack' ? -1 : 1
-    return (a.episode_number ?? 0) - (b.episode_number ?? 0)
-  })
-  const ready = rows.filter((r) => r.status === 'complete').length
+// A request as the browse grids draw a title: the poster (linking to its
+// page) with a status chip, then the title. A download in progress puts
+// its bar straight under the poster; everything else keeps a one-line
+// caption. The ⋯ opens the sheet with the rest.
+function RequestCard({ item, onOpen }: { item: DisplayItem; onOpen: () => void }) {
+  const m = cardModel(item)
+  const downloading = m.status === 'downloading'
   return (
-    <div className="rq-season">
-      <div className="rq-season-head">
-        <b>{season.label}</b>
-        <small>
-          {ready} of {rows.length} on Plex
-        </small>
-      </div>
-      <div className="rq-eps">
-        {rows.map((r) => {
-          const meta = statusMeta(r.status)
-          const pct = r.status === 'downloading' && r.download_progress != null ? ` ${Math.round(r.download_progress * 100)}%` : ''
-          return (
-            <span key={r.id} className={`rq-ep ${meta.cls}`} title={`${episodePillLabel(r)} | ${meta.label} | ${statusDetail(r.status, r.download_progress, r.error_message)}`}>
-              <Icon name={meta.icon} />
-              {episodePillLabel(r)}
-              {pct}
-              <CancelAction row={r} onChanged={onChanged} compact />
-            </span>
-          )
-        })}
+    <div className={`rq-card${m.status === 'cancelled' ? ' rq-dim' : ''}${downloading ? ' rq-live' : ''}`}>
+      <PosterCard
+        item={{ id: m.tmdbId, title: m.title, poster_path: m.poster }}
+        mediaType={m.isTv ? 'tv' : 'movie'}
+        caption={false}
+        href={m.href}
+        chip={<StatusChip status={m.status} />}
+      />
+      {downloading && <DownloadBar progress={m.progress} className="rq-card-bar" />}
+      <div className="rq-cap">
+        <div className="rq-cap-text">
+          {/* Link, not an anchor to "#/…" — see PosterCard for why the
+              difference decides where the next page starts scrolled. */}
+          <Link className="rq-cap-title" to={m.href.replace(/^#/, '')}>
+            {m.title}
+          </Link>
+          {!downloading && <small title={m.hint}>{m.meta}</small>}
+        </div>
+        <button className="rq-more" aria-label={`Details for ${m.title}`} onClick={onOpen}>
+          <Icon name="more" />
+        </button>
       </div>
     </div>
   )
 }
 
-// A show's own progress: the average over everything it has on the way
-// or done — a finished season counts as 100%, a downloading one as its
-// own percentage, one still waiting or searching as 0%. Failed and
-// cancelled rows don't count. Null when nothing is moving or done.
-function groupProgress(rows: RequestOut[]): number | null {
-  const counted = rows.filter((r) => NON_TERMINAL.has(r.status) || r.status === 'complete' || r.status === 'downloaded, not filed')
-  if (!counted.length) return null
-  const total = counted.reduce((sum, r) => {
-    if (r.status === 'complete' || r.status === 'downloaded, not filed') return sum + 1
-    if (r.status === 'downloading') return sum + (r.download_progress ?? 0)
-    return sum
-  }, 0)
-  return total / counted.length
-}
-
-function ShowRow({ group, expanded, onToggle, onChanged }: { group: ShowGroup; expanded: boolean; onToggle: () => void; onChanged: () => void }) {
-  const ready = group.rows.filter((r) => r.status === 'complete').length
-  const active = group.rows.filter((r) => NON_TERMINAL.has(r.status)).length
-  const status = dominantStatus(group.rows)
-  // When the show as a whole reads as failed, say why: the newest failed
-  // row's own explanation (a pack that stepped aside, a floor miss…).
-  const explained = FAILED_STATES.has(status) ? group.rows.filter((r) => FAILED_STATES.has(r.status)).sort((a, b) => b.id - a.id)[0] : null
-  const meta = [
-    'Series',
-    `${group.rows.length} item${group.rows.length === 1 ? '' : 's'}`,
-    `${ready} on Plex`,
-    active ? `${active} on the way` : null,
-    relativeTime(group.rows.reduce((best, r) => (r.updated_at > best ? r.updated_at : best), group.rows[0].updated_at)),
-    explained ? statusDetail(explained.status, explained.download_progress, explained.error_message) : null,
-  ]
-    .filter(Boolean)
-    .join(' | ')
-  return (
-    <Row
-      poster={group.posterPath}
-      title={group.title}
-      href={`#/tv/${group.tmdbId}`}
-      meta={meta}
-      status={status}
-      progress={groupProgress(group.rows)}
-      expanded={expanded}
-      onToggle={onToggle}
-    >
-      <div className="rq-seasons">
-        {group.seasons.map((season) => (
-          <SeasonStrip key={season.key} season={season} onChanged={onChanged} />
-        ))}
-      </div>
-    </Row>
-  )
-}
+const SKELETON_CARDS = 14
 
 export default function RequestsPage() {
   usePageTitle('Requests')
@@ -332,18 +181,15 @@ export default function RequestsPage() {
   const retentionQuery = useQuery({ queryKey: ['retention'], queryFn: () => getRetention(), enabled: isAdmin })
 
   const [filter, setFilter] = useState<Filter>('all')
-  const [expandedShows, setExpandedShows] = useState<Set<number>>(new Set())
+  // The sheet follows its title by key, so the 5s poll keeps it live and
+  // it closes on its own if the title is cleared away underneath it.
+  const [openKey, setOpenKey] = useState<string | null>(null)
   const [clearing, setClearing] = useState(false)
   const [retentionOpen, setRetentionOpen] = useState(false)
+  const closeSheet = useCallback(() => setOpenKey(null), [])
 
   function onChanged() {
     queryClient.invalidateQueries({ queryKey: ['requests'] })
-  }
-  function toggleIn<T>(set: Set<T>, key: T): Set<T> {
-    const next = new Set(set)
-    if (next.has(key)) next.delete(key)
-    else next.add(key)
-    return next
   }
 
   async function handleClear() {
@@ -379,63 +225,29 @@ export default function RequestsPage() {
   const queued = rows.filter((r) => r.status === 'queued' || r.status === 'searching').length
   const addedToday = rows.filter((r) => r.status === 'complete' && isToday(r.updated_at)).length
   const allItems: DisplayItem[] = groupRequestsForDisplay(rows)
-  const items = allItems.filter((it) => matchesFilter(it.type === 'standalone' ? it.row.status : dominantStatus(it.rows), filter))
-  // Counted by Plex id, not display name: the name is a denormalized copy
-  // per row and two rows from the same person can legitimately disagree
-  // (a rename propagates on their next sign-in, not retroactively in the
-  // browser), which counted one person as two. The id is what identifies
-  // someone; it is also null exactly for worker-created rows, which have
-  // no person to count.
-  const people = new Set(rows.map((r) => r.requested_by_plex_id).filter(Boolean)).size
-  const summary = loading
-    ? null
-    : rows.length
-    ? `${rows.length} request${rows.length === 1 ? '' : 's'}${people > 1 ? ` from ${people} people` : ''} | updated ${relativeTime(new Date(requestsQuery.dataUpdatedAt).toISOString())}`
+  const items = allItems.filter((it) => matchesFilter(itemStatus(it), filter))
+  const openItem = openKey ? allItems.find((it) => itemKey(it) === openKey) : undefined
+
+  const lead = rows.length
+    ? [
+        downloading ? `${downloading} downloading` : null,
+        queued ? `${queued} queued` : null,
+        addedToday ? `${addedToday} added today` : null,
+        `updated ${relativeTime(new Date(requestsQuery.dataUpdatedAt).toISOString())}`,
+      ]
+        .filter(Boolean)
+        .join(' | ')
     : 'Nothing on the way yet'
 
   return (
     <div className="rq">
       <div className="rq-head">
         <div>
-          <h1 className="rq-h1">Requests</h1>
-          <p className="rq-lead">
-            {summary ?? <SkelWords text="13 requests | updated just now" />}
-            {rows.length > 0 && (downloading > 0 || queued > 0) && (
-              <span className="rq-lead-m">
-                {' | '}
-                {[downloading > 0 ? `${downloading} downloading` : null, queued > 0 ? `${queued} queued` : null].filter(Boolean).join(' | ')}
-              </span>
-            )}
-          </p>
-        </div>
-        <div className="rq-stats">
-          <div className="rq-stat">
-            <span className="rq-stat-icon ice">
-              <Icon name="download" />
-            </span>
-            <div>
-              <b>{loading ? <Skel>0</Skel> : downloading}</b>
-              <small>Downloading</small>
-            </div>
-          </div>
-          <div className="rq-stat">
-            <span className="rq-stat-icon">
-              <Icon name="clock" />
-            </span>
-            <div>
-              <b>{loading ? <Skel>0</Skel> : queued}</b>
-              <small>Queued</small>
-            </div>
-          </div>
-          <div className="rq-stat">
-            <span className="rq-stat-icon mint">
-              <Icon name="plex" />
-            </span>
-            <div>
-              <b>{loading ? <Skel>0</Skel> : addedToday}</b>
-              <small>Added today</small>
-            </div>
-          </div>
+          <h1 className="rq-h1">
+            Requests
+            {allItems.length > 0 && <span className="rq-count"> | {allItems.length}</span>}
+          </h1>
+          <p className="rq-lead">{loading ? <SkelWords text="2 downloading | 3 queued | updated just now" /> : lead}</p>
         </div>
       </div>
 
@@ -482,39 +294,35 @@ export default function RequestsPage() {
         )}
       </div>
 
-      <div className="rq-list" aria-busy={loading || undefined}>
-        {loading ? (
-          Array.from({ length: SKELETON_ROWS }, (_, i) => <RowSkeleton key={i} />)
-        ) : items.length === 0 ? (
-          <EmptyState
-            icon="download"
-            title={rows.length ? 'Nothing here' : 'Nothing queued'}
-            message={rows.length ? 'Nothing matches that filter.' : 'Find a movie or show and tap Request. It shows up here while it downloads.'}
-            action={
-              rows.length ? undefined : (
-                <Link className="retry" to="/browse?type=movie">
-                  <Icon name="search" />
-                  Browse
-                </Link>
-              )
-            }
-          />
-        ) : (
-          items.map((item) =>
-            item.type === 'standalone' ? (
-              <LeafRow key={`req-${item.row.id}`} row={item.row} onChanged={onChanged} />
-            ) : (
-              <ShowRow
-                key={`show-${item.showId}`}
-                group={item}
-                expanded={expandedShows.has(item.showId)}
-                onToggle={() => setExpandedShows((s) => toggleIn(s, item.showId))}
-                onChanged={onChanged}
-              />
-            ),
-          )
-        )}
-      </div>
+      {loading ? (
+        <div className="grid category-grid" aria-busy="true">
+          {Array.from({ length: SKELETON_CARDS }, (_, i) => (
+            <PosterCardSkeleton key={i} />
+          ))}
+        </div>
+      ) : items.length === 0 ? (
+        <EmptyState
+          icon="download"
+          title={rows.length ? 'Nothing here' : 'Nothing queued'}
+          message={rows.length ? 'Nothing matches that filter.' : 'Find a movie or show and tap Request. It shows up here while it downloads.'}
+          action={
+            rows.length ? undefined : (
+              <Link className="retry" to="/browse?type=movie">
+                <Icon name="search" />
+                Browse
+              </Link>
+            )
+          }
+        />
+      ) : (
+        <div className="grid category-grid">
+          {items.map((item) => (
+            <RequestCard key={itemKey(item)} item={item} onOpen={() => setOpenKey(itemKey(item))} />
+          ))}
+        </div>
+      )}
+
+      {openItem && <RequestSheet item={openItem} onClose={closeSheet} onChanged={onChanged} />}
     </div>
   )
 }
