@@ -39,8 +39,10 @@
   box-shadow: var(--shadow-float), var(--glass-highlight);
   transition: opacity 0.2s ease;
 }
-/* The search palette has its own glass; the nav pill fades out under it. */
-body.search-open #topbar::before {
+/* The search palette and the phone account sheet have their own glass;
+   the nav pill fades out under them. */
+body.search-open #topbar::before,
+body.account-open #topbar::before {
   opacity: 0;
 }
 
@@ -300,5 +302,124 @@ body.search-open #searchToggleBtn {
     bottom: 0;
     transform: translateX(-50%);
     margin: 0;
+  }
+}
+
+/* Phones: the account sheet. The same blurred page behind as the
+   search palette (SearchOverlay.css), and the same glass panel under the
+   top bar, holding who's signed in and one row per place to go. */
+#accountOverlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9;
+  background: rgba(5, 5, 8, 0.62);
+  backdrop-filter: blur(18px) saturate(120%);
+  -webkit-backdrop-filter: blur(18px) saturate(120%);
+  padding: calc(var(--topbar-h, 64px) + 10px) 14px 0;
+  animation: account-fade 0.2s ease;
+}
+.account-sheet {
+  padding: 8px;
+  border-radius: var(--radius-xl);
+  background: var(--glass-overlay);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  border: 1px solid var(--glass-border);
+  box-shadow: var(--shadow-float), var(--glass-highlight);
+  animation: account-drop 0.28s cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+.account-sheet-who {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 16px 14px 18px;
+  margin-bottom: 6px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+}
+.account-sheet-who b {
+  display: block;
+  font-family: var(--font-display);
+  font-weight: 300;
+  font-size: 30px;
+  letter-spacing: var(--tracking-display);
+  line-height: 1;
+}
+.account-sheet-who small {
+  display: block;
+  margin-top: 8px;
+  color: var(--text-dim);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.account-sheet-item {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+  min-height: 64px;
+  padding: 10px 12px;
+  border: none;
+  border-radius: 18px;
+  background: none;
+  color: var(--text);
+  font-size: 16px;
+  font-weight: 700;
+  text-align: left;
+}
+.account-sheet-item > span:nth-child(2) {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.account-sheet-item small {
+  display: block;
+  margin-top: 3px;
+  color: var(--text-dim);
+  font-size: 12.5px;
+  font-weight: 600;
+}
+.account-sheet-item:active,
+.account-sheet-item.on {
+  background: rgba(255, 255, 255, 0.07);
+}
+.account-sheet-icon {
+  flex: 0 0 auto;
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  background: var(--glass);
+  border: 1px solid var(--glass-border-soft);
+  display: grid;
+  place-items: center;
+  font-size: 19px;
+}
+.account-sheet-go {
+  flex: 0 0 auto;
+  font-size: 18px;
+  color: var(--text-dim);
+}
+.account-sheet-item.danger {
+  color: var(--status-failed);
+}
+.account-sheet-item.danger .account-sheet-icon {
+  background: color-mix(in srgb, var(--status-failed) 10%, transparent);
+  border-color: color-mix(in srgb, var(--status-failed) 20%, transparent);
+}
+@keyframes account-fade {
+  from {
+    opacity: 0;
+  }
+}
+@keyframes account-drop {
+  from {
+    opacity: 0;
+    transform: translateY(-10px) scale(0.98);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  #accountOverlay,
+  .account-sheet {
+    animation: none;
   }
 }

@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { NavLink, useLocation, useNavigate } from 'react-router-dom'
 import { useQueryClient } from '@tanstack/react-query'
 import { useSession } from '../features/auth/useSession'
@@ -7,6 +8,7 @@ import type { SessionInfo } from '../types/auth'
 import { badgeLabel, initialsOf, useActiveRequestCount } from '../lib/useActiveRequestCount'
 import Avatar from './Avatar'
 import { useTopbarHeight } from '../lib/chrome'
+import { useMediaQuery } from '../lib/hooks'
 import { SECTIONS } from '../lib/sections'
 import './Topbar.css'
 import Icon from './Icon'
@@ -57,6 +59,9 @@ export default function Topbar({ onOpenSearch }: { onOpenSearch: () => void }) {
 }
 
 // The avatar opens a small menu: Account, Settings (admins), Sign out.
+// On phones (the tab-bar layout) it's a full-screen sheet over the
+// blurred page instead, the way search opens, with rows big enough for
+// a thumb — Settings has no other way in there.
 // `null` joins `undefined` here rather than being narrowed away at the
 // call site: signed-out is now a value getSession can return, and this
 // menu already renders the same way for "no session yet" and "no session
@@ -67,11 +72,14 @@ function AccountMenu({ session, initials, settingsActive }: { session: SessionIn
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const location = useLocation()
+  const phone = useMediaQuery('(max-width: 859px)')
 
   useEffect(() => {
     if (!open) return
+    // The sheet closes from its own backdrop; only the dropdown needs
+    // to notice a click anywhere else.
     function onDoc(e: MouseEvent) {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
+      if (!phone && ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
     }
     function onKey(e: KeyboardEvent) {
       if (e.key === 'Escape') setOpen(false)
@@ -82,7 +90,17 @@ function AccountMenu({ session, initials, settingsActive }: { session: SessionIn
       document.removeEventListener('mousedown', onDoc)
       document.removeEventListener('keydown', onKey)
     }
-  }, [open])
+  }, [open, phone])
+
+  // The nav pill fades out under the sheet as it does under search.
+  useEffect(() => {
+    const on = open && phone
+    document.body.classList.toggle('account-open', on)
+    return () => document.body.classList.remove('account-open')
+  }, [open, phone])
+
+  // Leaving the page (a tab bar tap) closes it too.
+  useEffect(() => setOpen(false), [location.pathname])
 
   function go(path: string) {
     setOpen(false)
@@ -109,7 +127,58 @@ function AccountMenu({ session, initials, settingsActive }: { session: SessionIn
       >
         <Avatar src="/api/me/avatar" name={session?.username} hasPicture={!!session?.avatar} />
       </button>
-      {open && (
+      {open &&
+        phone &&
+        // Portalled: #topbar's backdrop-filter would otherwise make it
+        // the containing block of anything fixed inside it.
+        createPortal(
+          <div
+            id="accountOverlay"
+            onClick={(e) => {
+              if (e.target === e.currentTarget) setOpen(false)
+            }}
+          >
+            <div className="account-sheet" role="menu" aria-label="Account">
+              <div className="account-sheet-who">
+                <Avatar src="/api/me/avatar" name={session?.username} hasPicture={!!session?.avatar} className="account-avatar-big" />
+                <div>
+                  <b>{session?.username ?? 'Signed in'}</b>
+                  <small>{session?.is_admin ? 'Admin' : 'Household'}</small>
+                </div>
+              </div>
+              <button role="menuitem" className={`account-sheet-item${onAccountPage ? ' on' : ''}`} onClick={() => go('/account')}>
+                <span className="account-sheet-icon">
+                  <Icon name="user" />
+                </span>
+                <span>
+                  Account
+                  <small>Your profile and the tutorial</small>
+                </span>
+                <Icon name="next" className="account-sheet-go" />
+              </button>
+              {session?.is_admin && (
+                <button role="menuitem" className={`account-sheet-item${settingsActive ? ' on' : ''}`} onClick={() => go('/settings')}>
+                  <span className="account-sheet-icon">
+                    <Icon name="gear" />
+                  </span>
+                  <span>
+                    Settings
+                    <small>Plex, downloads and the household</small>
+                  </span>
+                  <Icon name="next" className="account-sheet-go" />
+                </button>
+              )}
+              <button role="menuitem" className="account-sheet-item danger" onClick={signOut}>
+                <span className="account-sheet-icon">
+                  <Icon name="close" />
+                </span>
+                <span>Sign out</span>
+              </button>
+            </div>
+          </div>,
+          document.body,
+        )}
+      {open && !phone && (
         <div className="account-menu-panel" role="menu">
           <div className="account-menu-who">
             <b>{session?.username ?? 'Signed in'}</b>
