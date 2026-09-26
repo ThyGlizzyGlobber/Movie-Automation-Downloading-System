@@ -13,20 +13,23 @@ export function getDiscoverTrending(page = 1) {
   return request<TmdbListResponse>(`/api/discover/trending?page=${page}`)
 }
 
-export function getDiscoverProviders(region = 'US') {
-  return request<Record<string, unknown>[]>(`/api/discover/providers?region=${region}`)
+export function getDiscoverProviders() {
+  return request<Record<string, unknown>[]>('/api/discover/providers')
 }
 
-export function getDiscoverByProvider(providerId: number, page = 1, region = 'US') {
-  return request<TmdbListResponse>(`/api/discover/providers/${providerId}?page=${page}&region=${region}`)
+export function getDiscoverByProvider(providerId: number, page = 1) {
+  return request<TmdbListResponse>(`/api/discover/providers/${providerId}?page=${page}`)
 }
 
-export function getDiscoverByGenre(genreId: number, page = 1, region = 'US') {
-  return request<TmdbListResponse>(`/api/discover/genre/${genreId}?page=${page}&region=${region}`)
+export function getDiscoverByGenre(genreId: number, page = 1) {
+  return request<TmdbListResponse>(`/api/discover/genre/${genreId}?page=${page}`)
 }
 
-export function getComingSoon(page = 1, region = 'US') {
-  return request<TmdbListResponse>(`/api/discover/coming-soon?page=${page}&region=${region}`)
+// No region argument on any of these: the backend answers in the
+// household's own region (api.py's resolve_region), which is the only
+// place that knows it and the only way a caller can't forget to ask.
+export function getComingSoon(page = 1) {
+  return request<TmdbListResponse>(`/api/discover/coming-soon?page=${page}`)
 }
 
 export function getMovie(tmdbId: number) {

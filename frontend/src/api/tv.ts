@@ -17,16 +17,17 @@ export function getTvDiscoverTrending(page = 1) {
   return request<TmdbListResponse>(`/api/tv/discover/trending?page=${page}`)
 }
 
-export function getTvDiscoverByProvider(providerId: number, page = 1, region = 'US') {
-  return request<TmdbListResponse>(`/api/tv/discover/providers/${providerId}?page=${page}&region=${region}`)
+export function getTvDiscoverByProvider(providerId: number, page = 1) {
+  return request<TmdbListResponse>(`/api/tv/discover/providers/${providerId}?page=${page}`)
 }
 
-export function getTvDiscoverByGenre(genreId: number, page = 1, region = 'US') {
-  return request<TmdbListResponse>(`/api/tv/discover/genre/${genreId}?page=${page}&region=${region}`)
+export function getTvDiscoverByGenre(genreId: number, page = 1) {
+  return request<TmdbListResponse>(`/api/tv/discover/genre/${genreId}?page=${page}`)
 }
 
-export function getTvComingSoon(page = 1, region = 'US') {
-  return request<TmdbListResponse>(`/api/tv/discover/coming-soon?page=${page}&region=${region}`)
+// See getComingSoon in movies.ts — the region is the backend's to know.
+export function getTvComingSoon(page = 1) {
+  return request<TmdbListResponse>(`/api/tv/discover/coming-soon?page=${page}`)
 }
 
 export function getTvShow(tmdbId: number) {

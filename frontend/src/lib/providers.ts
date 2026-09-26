@@ -19,6 +19,12 @@ export const CURATED_PROVIDERS: CuratedProvider[] = [
   // one — kept for the provider-browse id even though the logo is now local.
   { id: 2303, name: 'Paramount+', icon: 'paramount-plus.png' },
   { id: 386, name: 'Peacock', icon: 'peacock.png' },
+  // Last, so it stays out of ROW_PROVIDERS' first four and doesn't earn
+  // a row of its own. It can be here at all only because the browse
+  // path stopped pinning every lookup to the US: TMDB lists 0 titles on
+  // provider 21 there against 613 in AU, so before api.py's
+  // resolve_region this chip would have opened an empty page.
+  { id: 21, name: 'Stan', icon: 'stan.png' },
 ]
 
 // Subset surfaced as inline "Popular on X" rows on the Movies/TV curated

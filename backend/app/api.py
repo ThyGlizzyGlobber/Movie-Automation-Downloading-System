@@ -330,6 +330,27 @@ def get_qbt(request: Request) -> QBTClient:
     return request.app.state.qbt
 
 
+def resolve_region(region: str | None = None, store: RequestStore = Depends(get_store)) -> str:
+    """Which country TMDB should answer for.
+
+    Provider availability, digital release dates and what counts as
+    Coming Soon are all region-scoped, and every one of those endpoints
+    used to carry its own literal "US" default that no caller ever
+    overrode. That quietly made the household's Region setting a
+    ratings-only switch: an Australian household browsing Stan got an
+    empty page, because TMDB lists 0 titles on provider 21 in the US
+    against 613 in AU (checked 2026-09-26).
+
+    An explicit ?region= still wins, so each endpoint stays addressable
+    on its own terms and the existing tests that pin a region keep
+    working. Absent one, the household's own setting answers, falling
+    back to DEFAULT_CERTIFICATION_REGION when nothing has been chosen.
+    """
+    if region:
+        return region.upper()
+    return store.get_settings().get("certification_region") or DEFAULT_CERTIFICATION_REGION
+
+
 def get_worker(request: Request) -> Worker:
     worker = request.app.state.worker
     if worker is None:
@@ -733,7 +754,7 @@ def discover_browse(
     provider: int | None = None,
     year: int | None = None,
     sort: str = "popular",
-    region: str = "US",
+    region: str = Depends(resolve_region),
     page: int = 1,
     store: RequestStore = Depends(get_store),
     tmdb: TMDBClient = Depends(get_tmdb),
@@ -851,10 +872,17 @@ def _hero_slides_cached(kind: str, store: RequestStore, tmdb: TMDBClient) -> lis
     if not picks:
         return []
 
+    # Resolved once here rather than left to the dependency, because this
+    # is the one caller that reaches get_movie_detail as a plain function
+    # — FastAPI isn't in the loop, so nothing would fill a Depends() in
+    # for it. Passing it explicitly is also the cheaper shape: one
+    # settings read per hero build instead of one per slide.
+    region = resolve_region(None, store)
+
     def build(media_type: str, item: dict) -> dict | None:
         try:
             detail = (
-                get_movie_detail(item["id"], store, tmdb)
+                get_movie_detail(item["id"], region, store, tmdb)
                 if media_type == "movie"
                 else get_tv_detail(item["id"], store, tmdb)
             )
@@ -910,7 +938,7 @@ def hero_slides(kind: str = "home", store: RequestStore = Depends(get_store), tm
 
 
 @router.get("/api/discover/providers")
-def discover_providers(region: str = "US", tmdb: TMDBClient = Depends(get_tmdb)) -> list[dict]:
+def discover_providers(region: str = Depends(resolve_region), tmdb: TMDBClient = Depends(get_tmdb)) -> list[dict]:
     try:
         data = tmdb.get_watch_providers(region=region)
     except TMDBError as exc:
@@ -921,7 +949,7 @@ def discover_providers(region: str = "US", tmdb: TMDBClient = Depends(get_tmdb))
 @router.get("/api/discover/providers/{provider_id}")
 def discover_by_provider(
     provider_id: int,
-    region: str = "US",
+    region: str = Depends(resolve_region),
     page: int = 1,
     store: RequestStore = Depends(get_store),
     tmdb: TMDBClient = Depends(get_tmdb),
@@ -940,7 +968,7 @@ def discover_by_provider(
 @router.get("/api/discover/genre/{genre_id}")
 def discover_by_genre(
     genre_id: int,
-    region: str = "US",
+    region: str = Depends(resolve_region),
     page: int = 1,
     store: RequestStore = Depends(get_store),
     tmdb: TMDBClient = Depends(get_tmdb),
@@ -957,7 +985,7 @@ def discover_by_genre(
 
 @router.get("/api/discover/coming-soon")
 def discover_coming_soon(
-    region: str = "US", page: int = 1, store: RequestStore = Depends(get_store), tmdb: TMDBClient = Depends(get_tmdb)
+    region: str = Depends(resolve_region), page: int = 1, store: RequestStore = Depends(get_store), tmdb: TMDBClient = Depends(get_tmdb)
 ) -> dict:
     try:
         data = tmdb.get_coming_soon(region=region, page=page)
@@ -969,7 +997,10 @@ def discover_coming_soon(
 
 @router.get("/api/movies/{tmdb_id}")
 def get_movie_detail(
-    tmdb_id: int, store: RequestStore = Depends(get_store), tmdb: TMDBClient = Depends(get_tmdb)
+    tmdb_id: int,
+    region: str = Depends(resolve_region),
+    store: RequestStore = Depends(get_store),
+    tmdb: TMDBClient = Depends(get_tmdb),
 ) -> dict:
     """Full TMDB detail for the detail view — overview, runtime, genres,
     poster/backdrop paths. The frontend hotlinks poster/backdrop images
@@ -984,7 +1015,7 @@ def get_movie_detail(
     # the data is_movie_coming_soon needs — no second TMDB call. Coming
     # Soon titles use this to grey out their own Add to Plex button.
     release_dates = movie.get("release_dates", {}).get("results", [])
-    is_coming_soon = is_movie_coming_soon(movie, release_dates, region="US")
+    is_coming_soon = is_movie_coming_soon(movie, release_dates, region=region)
     on_plex = _on_plex_for(movie.get("title") or "", year, "movie", store, tmdb_id)
     tracked = bool(store.get_library_items(tmdb_id, "movie")) or store.get_latest_organized_request(tmdb_id, ("movie",)) is not None
     return {
@@ -1043,7 +1074,7 @@ def tv_discover_browse(
     provider: int | None = None,
     year: int | None = None,
     sort: str = "popular",
-    region: str = "US",
+    region: str = Depends(resolve_region),
     page: int = 1,
     store: RequestStore = Depends(get_store),
     tmdb: TMDBClient = Depends(get_tmdb),
@@ -1089,7 +1120,7 @@ def tv_discover_trending(
 @router.get("/api/tv/discover/providers/{provider_id}")
 def tv_discover_by_provider(
     provider_id: int,
-    region: str = "US",
+    region: str = Depends(resolve_region),
     page: int = 1,
     store: RequestStore = Depends(get_store),
     tmdb: TMDBClient = Depends(get_tmdb),
@@ -1105,7 +1136,7 @@ def tv_discover_by_provider(
 @router.get("/api/tv/discover/genre/{genre_id}")
 def tv_discover_by_genre(
     genre_id: int,
-    region: str = "US",
+    region: str = Depends(resolve_region),
     page: int = 1,
     store: RequestStore = Depends(get_store),
     tmdb: TMDBClient = Depends(get_tmdb),
@@ -1120,7 +1151,7 @@ def tv_discover_by_genre(
 
 @router.get("/api/tv/discover/coming-soon")
 def tv_discover_coming_soon(
-    region: str = "US", page: int = 1, store: RequestStore = Depends(get_store), tmdb: TMDBClient = Depends(get_tmdb)
+    region: str = Depends(resolve_region), page: int = 1, store: RequestStore = Depends(get_store), tmdb: TMDBClient = Depends(get_tmdb)
 ) -> dict:
     try:
         data = tmdb.get_tv_coming_soon(region=region, page=page)

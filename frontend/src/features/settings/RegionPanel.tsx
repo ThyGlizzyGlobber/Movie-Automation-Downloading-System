@@ -7,7 +7,7 @@ import ErrorState from '../../components/ErrorState'
 import SettingRow from '../../components/SettingRow'
 
 const REGION_SUB =
-  "Age ratings differ by country: the same show is TV-MA in the United States and MA15+ in Australia. Pick where you are and Obsidian shows that country's ratings everywhere."
+  "Ratings, streaming services and release dates all differ by country: the same show is TV-MA in the United States and MA15+ in Australia, and Stan exists in one of them and not the other. Pick where you are and Obsidian answers in that country everywhere."
 
 export default function RegionPanel() {
   const queryClient = useQueryClient()
@@ -30,10 +30,19 @@ export default function RegionPanel() {
     try {
       await setRegionSettings({ certification_region: next })
       // The region rides down with the session, so that is what every
-      // page reads it from — invalidate it and the ratings on screen
-      // change without a reload.
+      // page reads its ratings from — invalidate it and they change
+      // without a reload.
       queryClient.invalidateQueries({ queryKey: ['settings', 'region'] })
       queryClient.invalidateQueries({ queryKey: ['session'] })
+      // And everything else, unfiltered. The region is no longer only a
+      // ratings switch: the backend now answers provider rows, coming
+      // soon and digital release dates in it too (api.py's
+      // resolve_region), and none of those carry it in their query key,
+      // because it isn't a parameter the frontend passes any more.
+      // Naming the affected keys here would mean keeping a list in sync
+      // with every future row — a blanket refetch on a settings change
+      // nobody makes twice a day is the cheaper promise to keep.
+      queryClient.invalidateQueries()
     } catch (err) {
       setError(err instanceof Error ? err.message : "Couldn't save that.")
     } finally {
@@ -45,7 +54,7 @@ export default function RegionPanel() {
     <div className="settings-panel-card">
       <h2>Region</h2>
       <p className="settings-sub">{REGION_SUB}</p>
-      <SettingRow label="Country" hint="Used for age ratings." htmlFor="certification-region">
+      <SettingRow label="Country" hint="Used for ratings, availability and release dates." htmlFor="certification-region">
         <select
           id="certification-region"
           value={region}

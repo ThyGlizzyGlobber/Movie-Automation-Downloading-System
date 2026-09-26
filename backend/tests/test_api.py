@@ -1005,6 +1005,88 @@ def test_discover_by_provider_passes_provider_id_through(client_and_deps):
     assert body["provider_id"] == 8
 
 
+def test_provider_browse_follows_the_household_region(client_and_deps):
+    """The bug this closes: every region-scoped endpoint defaulted to a
+    literal "US" and no caller ever passed anything else, so the Region
+    setting was a ratings-only switch. An Australian household browsing
+    Stan (TMDB provider 21) got an empty page, because TMDB lists
+    nothing on it in the US."""
+    client, store, tmdb, _, _, _ = client_and_deps
+    store.update_settings({"certification_region": "AU"})
+    seen = []
+    tmdb.get_available_by_provider = lambda provider_id, region="US", page=1: (
+        seen.append(region) or {"results": [MOVIE], "page": page, "total_pages": 1}
+    )
+
+    assert client.get("/api/discover/providers/21").status_code == 200
+    assert seen == ["AU"]
+
+
+def test_tv_provider_browse_follows_the_household_region(client_and_deps):
+    client, store, tmdb, _, _, _ = client_and_deps
+    store.update_settings({"certification_region": "AU"})
+    seen = []
+    tmdb.get_available_tv_by_provider = lambda provider_id, region="US", page=1: (
+        seen.append(region) or {"results": [SHOW], "page": page, "total_pages": 1}
+    )
+
+    assert client.get("/api/tv/discover/providers/21").status_code == 200
+    assert seen == ["AU"]
+
+
+def test_an_explicit_region_still_beats_the_household_setting(client_and_deps):
+    """The query parameter stays live so each endpoint remains
+    addressable on its own terms — the household setting is a default,
+    not an override."""
+    client, store, tmdb, _, _, _ = client_and_deps
+    store.update_settings({"certification_region": "AU"})
+    seen = []
+    tmdb.get_available_by_provider = lambda provider_id, region="US", page=1: (
+        seen.append(region) or {"results": [MOVIE], "page": page, "total_pages": 1}
+    )
+
+    assert client.get("/api/discover/providers/8?region=jp").status_code == 200
+    assert seen == ["JP"]
+
+
+def test_region_falls_back_to_the_default_when_nothing_is_chosen(client_and_deps):
+    client, _, tmdb, _, _, _ = client_and_deps
+    seen = []
+    tmdb.get_coming_soon = lambda region="US", page=1: (
+        seen.append(region) or {"results": [MOVIE], "page": page, "total_pages": 1}
+    )
+
+    assert client.get("/api/discover/coming-soon").status_code == 200
+    assert seen == [api.DEFAULT_CERTIFICATION_REGION]
+
+
+def test_coming_soon_is_decided_in_the_household_region(client_and_deps):
+    """The same film, the same day, two answers. Dune is on digital in
+    the US and cinema-only in Australia here — which is the ordinary
+    case for a few weeks after a release, and the whole reason the
+    detail page's "Coming soon" badge and its Add to Plex button have
+    to ask where the household is rather than where TMDB's data is
+    richest."""
+    client, store, tmdb, _, _, _ = client_and_deps
+    recent = (datetime.now(timezone.utc) - timedelta(days=30)).date().isoformat()
+    soon = (datetime.now(timezone.utc) + timedelta(days=30)).date().isoformat()
+    tmdb._movie = dict(
+        MOVIE,
+        release_date=recent,
+        release_dates={
+            "results": [
+                {"iso_3166_1": "US", "release_dates": [{"type": 4, "release_date": f"{recent}T00:00:00.000Z"}]},
+                {"iso_3166_1": "AU", "release_dates": [{"type": 3, "release_date": f"{soon}T00:00:00.000Z"}]},
+            ]
+        },
+    )
+
+    assert client.get(f"/api/movies/{MOVIE['id']}").json()["is_coming_soon"] is False
+
+    store.update_settings({"certification_region": "AU"})
+    assert client.get(f"/api/movies/{MOVIE['id']}").json()["is_coming_soon"] is True
+
+
 def test_discover_by_genre_passes_genre_id_through(client_and_deps):
     client, _, _, _, _, _ = client_and_deps
     response = client.get("/api/discover/genre/28")
