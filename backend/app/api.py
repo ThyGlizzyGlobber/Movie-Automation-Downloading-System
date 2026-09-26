@@ -35,7 +35,7 @@ from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
 
-from app import config, moods, taste, trailers
+from app import config, language, moods, taste, trailers
 from app.cache import ttl_cache
 from app.db import RequestRow, RequestStore, SessionRow, ShowRow
 from app.deploy import DeployError, run_git_pull
@@ -2671,6 +2671,7 @@ def _with_on_plex(rows: list[taste.Row], store: RequestStore) -> list[taste.Row]
 def get_recommendations(
     page: str = "home",
     rows_param: str = Query("", alias="rows"),
+    region: str = Depends(resolve_region),
     store: RequestStore = Depends(get_store),
     tmdb: TMDBClient = Depends(get_tmdb),
     session: SessionRow = Depends(require_session),
@@ -2736,7 +2737,11 @@ def get_recommendations(
     catalogue = [m for m in moods.CATALOGUE if not only or m.media_type == only]
     for mood in moods.pick_moods(affinity, taste.daily_rng(who, f"{day}:{page}", "moods"), catalogue=catalogue):
         try:
-            found = tmdb.discover_curated(mood.media_type, **mood.params).get("results", [])
+            # Asked in the household's language — see language.py for the
+            # measurement that prompted it, and for why a mood that names
+            # its own language (the Korean row) is left alone.
+            params = language.with_preferred_language(mood.params, region)
+            found = tmdb.discover_curated(mood.media_type, **params).get("results", [])
         except Exception:  # noqa: BLE001 — one empty row, never the page
             continue
         items = [item for item in found if item.get("id")]

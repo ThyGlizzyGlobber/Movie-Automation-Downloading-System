@@ -3328,6 +3328,39 @@ def _stub_recommendation_sources(tmdb, movie_ids=range(500, 530), tv_ids=range(9
     }
 
 
+def test_named_rows_are_asked_for_in_the_households_language(client_and_deps):
+    """Measured 2026-09-26, the 45 named rows came back 66% English —
+    "Animated, and Not for the Kids" was 20%, and several were majority
+    Korean or Japanese. Asking in the household's language moved that to
+    98% with no row losing items. This is the wire that carries it."""
+    client, store, tmdb, _, _, _ = client_and_deps
+    _stub_recommendation_sources(tmdb)
+    asked = []
+    original = tmdb.discover_curated
+    tmdb.discover_curated = lambda media_type, **params: (
+        asked.append(params) or original(media_type, **params)
+    )
+    store.update_settings({"certification_region": "AU"})
+
+    assert client.get("/api/recommendations").status_code == 200
+    assert asked, "no named row was built, so this test proves nothing"
+    assert all(p.get("with_original_language") == "en" for p in asked)
+
+
+def test_a_french_household_gets_french_named_rows(client_and_deps):
+    client, store, tmdb, _, _, _ = client_and_deps
+    _stub_recommendation_sources(tmdb)
+    asked = []
+    original = tmdb.discover_curated
+    tmdb.discover_curated = lambda media_type, **params: (
+        asked.append(params) or original(media_type, **params)
+    )
+    store.update_settings({"certification_region": "FR"})
+
+    assert client.get("/api/recommendations").status_code == 200
+    assert asked and all(p.get("with_original_language") == "fr" for p in asked)
+
+
 def test_recommendations_need_a_session(client_and_deps):
     client, _, _, _, _, _ = client_and_deps
     client.cookies.delete(api.SESSION_COOKIE_NAME)
