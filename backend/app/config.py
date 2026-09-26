@@ -167,11 +167,45 @@ RESOLUTION_TIERS = (
     # XviD…). Those source words count as the SD tier so an "Anything"
     # (480p) floor genuinely accepts them; any explicit higher token in
     # the same name still wins, since tiers are matched highest first.
-    (1, ("480p", "sd", "dvdrip", "dvdr", "tvrip", "hdtv", "pdtv", "sdtv", "dsr", "xvid")),
+    #
+    # The disc sources belong here for the same reason, and their absence
+    # was worse than an oversight: it scored a Blu-ray rip that named no
+    # resolution at 0, *below* a DVDRip, so an "Anything" floor rejected
+    # it outright. Found on "Justice League Unlimited 2001 S01-05 Bluray
+    # x265 ByteShare [UTR]" — 69 seeders, the healthiest complete-series
+    # pack on offer, discarded for not saying a number its own source
+    # already implies. These are a floor, not a claim: a 1080p floor
+    # still wants the token said out loud, and a REMUX sitting at the SD
+    # tier understates it on purpose rather than guessing upward.
+    #
+    # The line is drawn at disc and broadcast, and "web" is deliberately
+    # on the far side of it. A disc or a broadcast has a known minimum;
+    # "WEB" names a delivery channel that runs from a phone capture to
+    # 2160p and so genuinely tells you nothing about resolution.
+    (1, ("480p", "sd", "dvdrip", "dvdr", "tvrip", "hdtv", "pdtv", "sdtv", "dsr", "xvid",
+         "remux", "bluray", "blu-ray", "bdrip", "brrip", "bd-rip")),
 )
 MIN_RESOLUTION = "480p"
 
 YEAR_TOLERANCE = 1
+
+# The same check, loosened for a season or series *pack*.
+#
+# A pack is named after the run it contains, and for a show that
+# continues an earlier one the scene tags it with the franchise's first
+# year rather than this show's. Justice League Unlimited first aired in
+# 2004 and every complete-series pack of it on offer says 2001 — the year
+# Justice League started — because the pack bundles both: five seasons,
+# two TMDB ids. At YEAR_TOLERANCE those were rejected, and the season-by-
+# season fallback is the only reason the download worked at all.
+#
+# Five years, not unlimited. The year is still the only thing separating
+# a show from its own reboot, and reboots are a generation apart, not
+# three years: Doctor Who 1963/2005 is 42 apart, Battlestar Galactica
+# 1978/2004 is 26. A sequel series that gets bundled with its parent
+# arrives within a few years by definition — that is what makes it a
+# bundle rather than a remake.
+PACK_YEAR_TOLERANCE = 5
 LANGUAGE_ALLOWLIST: tuple[str, ...] = ()  # empty = no restriction, OR semantics (any one qualifies)
 LANGUAGE_BLOCKLIST: tuple[str, ...] = ()  # empty = nothing blocked
 # AND semantics, distinct from LANGUAGE_ALLOWLIST's OR — every language

@@ -351,3 +351,77 @@ def test_pack_gates_reject_another_show_that_contains_the_title():
     assert passes_series_pack_gate("The Batman (2004) Season 1-5 S01-S05 + Extras (1080p BluRay x265)", brave, PipelineSettings.from_config()) is False
     assert passes_season_pack_gate("Better Off Ted (2009) Season 1-2 S01-S02 (1080p AMZN WEB-DL x265)", ted, 1, PipelineSettings.from_config()) is False
     assert passes_season_pack_gate("Ted (2024) Season 1 S01 (2160p AMZN WEB-DL)", ted, 1, PipelineSettings.from_config()) is True
+
+
+# ---------------------------------------------------------------------------
+# A pack's year is the run's, not the show's — config.PACK_YEAR_TOLERANCE.
+# ---------------------------------------------------------------------------
+
+JLU = ShowIdentity(
+    tmdb_id=84200,
+    title="Justice League Unlimited",
+    original_title="Justice League Unlimited",
+    variants=["Justice League Unlimited"],
+    number_of_seasons=3,
+    finished_seasons=3,
+    ended=True,
+    first_air_year=2004,
+)
+
+
+def test_a_series_pack_tagged_with_the_franchise_year_is_still_this_show():
+    """Justice League Unlimited first aired in 2004 and continues Justice
+    League, which started in 2001. Every complete-series pack of it bundles
+    both — five seasons across two TMDB ids — and is tagged 2001. At the
+    one-year tolerance those were all rejected, and season-by-season was
+    the only thing that worked.
+
+    The two below are the healthiest on offer, checked live 2026-09-27 at
+    69 and 19 seeders."""
+    assert passes_series_pack_gate(
+        "Justice League Unlimited 2001 S01-05 Bluray x265 ByteShare [UTR]", JLU
+    ) is True
+    assert passes_series_pack_gate(
+        "Justice League Unlimited (2001) Season 1-5 S01-S05 (1080p BluRay x265 HEVC AAC 5.1)", JLU
+    ) is True
+
+
+def test_the_wider_tolerance_is_a_few_years_and_not_a_generation():
+    """The year is still the only thing separating a show from its own
+    reboot, and reboots are a generation apart rather than three years.
+    Widening this to "ignore the year" would make every Doctor Who pack
+    match every Doctor Who."""
+    who = ShowIdentity(
+        tmdb_id=57243, title="Doctor Who", original_title="Doctor Who",
+        variants=["Doctor Who"], number_of_seasons=14, finished_seasons=14,
+        ended=False, first_air_year=2005,
+    )
+
+    assert passes_series_pack_gate("Doctor Who 1963 Complete Series 1080p", who) is False
+    assert passes_series_pack_gate("Doctor Who 2005 Complete Series 1080p", who) is True
+
+
+def test_the_looser_year_does_not_let_the_parent_show_through():
+    """The tolerance widens the year, never the title. A pack of the
+    sequel series still names the sequel, so the parent's identity finds
+    nothing to match — which is what keeps "bundled with" from becoming
+    "the same as"."""
+    justice_league = ShowIdentity(
+        tmdb_id=1618, title="Justice League", original_title="Justice League",
+        variants=["Justice League"], number_of_seasons=2, finished_seasons=2,
+        ended=True, first_air_year=2001,
+    )
+
+    assert passes_series_pack_gate(
+        "Justice League Unlimited 2001 S01-05 Bluray x265", justice_league
+    ) is False
+
+
+def test_the_episode_gate_keeps_the_strict_year():
+    """Only the pack gates loosen. A single episode names one show and one
+    airing, so its year is a real signal and stays at YEAR_TOLERANCE."""
+    from app.tv_score import passes_episode_relevance_gate
+
+    assert passes_episode_relevance_gate(
+        "Justice League Unlimited 2001 S01E04 1080p BluRay.mkv", JLU, 1, 4
+    ) is False

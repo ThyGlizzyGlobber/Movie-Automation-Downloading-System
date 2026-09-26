@@ -102,10 +102,17 @@ _TITLE_BOUNDARY_PAIRS = {("the", "complete"), ("the", "movie"), ("all", "seasons
 _LEADING_NOISE = {"www", "com", "net", "org", "torrent", "torrents", "p", "rarbg", "yts", "eztv", "ettv", "tgx"}
 
 
-def _title_stands_alone(tokens: list[str], start: int, end: int, year: int | None) -> bool:
+def _title_stands_alone(
+    tokens: list[str], start: int, end: int, year: int | None, year_tolerance: int | None = None
+) -> bool:
     """The title at tokens[start:end] is the release's own title: nothing
     but noise or metadata before it, metadata after it, and any year
-    sitting right after it is this title's year (`year`, when known)."""
+    sitting right after it is this title's year (`year`, when known).
+
+    `year_tolerance` overrides config.YEAR_TOLERANCE for callers whose
+    year signal is weaker than a single title's — see
+    config.PACK_YEAR_TOLERANCE, and pack_score.py, which is the only one
+    that passes it."""
     if start > 0:
         before = tokens[start - 1]
         if not (
@@ -116,7 +123,8 @@ def _title_stands_alone(tokens: list[str], start: int, end: int, year: int | Non
             return False
     if not _metadata_follows(tokens, end):
         return False
-    if year and end < len(tokens) and _YEAR_TOKEN_RE.match(tokens[end]) and abs(int(tokens[end]) - year) > config.YEAR_TOLERANCE:
+    tolerance = config.YEAR_TOLERANCE if year_tolerance is None else year_tolerance
+    if year and end < len(tokens) and _YEAR_TOKEN_RE.match(tokens[end]) and abs(int(tokens[end]) - year) > tolerance:
         return False
     return True
 
@@ -134,7 +142,9 @@ def _phrase_positions(tokens: list[str], phrase_tokens: list[str]) -> list[int]:
     return [i for i in range(len(tokens) - n + 1) if tokens[i : i + n] == phrase_tokens]
 
 
-def matches_any_variant(tokens: list[str], variants: list[str], year: int | None = None) -> bool:
+def matches_any_variant(
+    tokens: list[str], variants: list[str], year: int | None = None, year_tolerance: int | None = None
+) -> bool:
     """Public (Stage 10: reused by tv_score.py's episode gate — a show's
     title-variant list is matched the exact same way a movie's is, so this
     takes the plain variant list rather than a MediaIdentity, decoupling it
@@ -158,7 +168,7 @@ def matches_any_variant(tokens: list[str], variants: list[str], year: int | None
         if not positions:
             continue
         for start in positions:
-            if _title_stands_alone(tokens, start, start + len(phrase_tokens), year):
+            if _title_stands_alone(tokens, start, start + len(phrase_tokens), year, year_tolerance):
                 return True
     return False
 

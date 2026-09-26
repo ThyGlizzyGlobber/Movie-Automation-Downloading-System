@@ -133,10 +133,45 @@ def test_passes_relevance_gate_matches_subtitle_free_variant():
     assert passes_relevance_gate("Dune.2024.2160p.REMUX.mkv", DUNE) is True
 
 
-def test_passes_relevance_gate_rejects_no_recognized_resolution_token_at_all():
-    # Fail safe: no floor setting should ever admit a release we can't
-    # actually verify the resolution of.
+def test_passes_relevance_gate_rejects_a_release_with_no_quality_signal_at_all():
+    """Fail safe still: a name that says nothing about what it is stays
+    out at every floor. What changed is what counts as saying something
+    — see the test below."""
+    assert passes_relevance_gate("Dune.Part.Two.2024.mkv", DUNE) is False
+
+
+def test_a_disc_source_stands_in_for_a_resolution_at_the_anything_floor():
+    """DVDRip, TVRip and HDTV have always counted as the SD tier, because
+    standard-definition releases say what they were ripped from instead
+    of naming a number. The disc sources were missing from that list, so
+    a Blu-ray rip scored 0 — below a DVDRip — and an "Anything" floor
+    turned it away.
+
+    Found on the healthiest complete-series pack available for Justice
+    League Unlimited ("...S01-05 Bluray x265", 69 seeders), rejected for
+    not stating a number its own source already implies."""
+    assert passes_relevance_gate("Dune.Part.Two.2024.REMUX.mkv", DUNE) is True
+    assert passes_relevance_gate("Dune.Part.Two.2024.BluRay.x265.mkv", DUNE) is True
+
+
+def test_a_disc_source_is_a_floor_and_never_a_claim(monkeypatch):
+    """Standing in for SD is the whole of it. A REMUX is almost always
+    1080p or better, but inferring that upward is how a household that
+    asked for 2160p ends up with a 720p file — so a raised floor still
+    wants the number said out loud."""
+    monkeypatch.setattr(config, "MIN_RESOLUTION", "1080p")
+
     assert passes_relevance_gate("Dune.Part.Two.2024.REMUX.mkv", DUNE) is False
+    assert passes_relevance_gate("Dune.Part.Two.2024.1080p.REMUX.mkv", DUNE) is True
+
+
+def test_web_is_not_a_disc_source(monkeypatch):
+    """The line is disc and broadcast, not "any source word". A disc or a
+    broadcast has a known minimum; "WEB" names a delivery channel running
+    from a phone capture to 2160p, so it genuinely says nothing."""
+    monkeypatch.setattr(config, "MIN_RESOLUTION", "480p")
+
+    assert passes_relevance_gate("Dune.Part.Two.2024.WEB-DL.mkv", DUNE) is False
 
 
 # ---------------------------------------------------------------------------
