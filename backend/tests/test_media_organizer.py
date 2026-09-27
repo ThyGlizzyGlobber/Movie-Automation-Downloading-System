@@ -1267,3 +1267,97 @@ def test_mkvs_are_left_out_of_the_plan_entirely(monkeypatch, tmp_path):
     (tmp_path / "Already Fine.mkv").write_bytes(b"mkv")
 
     assert media_organizer.plan_container_conversion(tmp_path) == []
+
+
+# ---------------------------------------------------------------------------
+# The library stays one container: an MP4 is filed as an MKV.
+# ---------------------------------------------------------------------------
+
+
+def _remux_writes_an_mkv(monkeypatch, streams=("video", "audio")):
+    """ffprobe answers, ffmpeg writes something at the path it was given."""
+
+    def run(cmd, **kwargs):
+        if cmd[0] == "ffprobe":
+            payload = {"streams": [{"index": i, "codec_type": k} for i, k in enumerate(streams)]}
+            return subprocess.CompletedProcess(cmd, 0, stdout=json.dumps(payload), stderr="")
+        Path(cmd[-1]).write_bytes(b"remuxed")
+        return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+
+    monkeypatch.setattr(media_organizer.subprocess, "run", run)
+
+
+def test_an_mp4_episode_is_filed_as_an_mkv(tmp_path, monkeypatch):
+    """Every MP4 that lands is a file the audio-default fix can never
+    touch again — mkvpropedit is Matroska-only — so the library is kept
+    in one container rather than accumulating exceptions."""
+    monkeypatch.setattr(config, "TV_LIBRARY_ROOT", tmp_path / "library")
+    source = tmp_path / "Lanterns.S01E01.WEB-DL.mp4"
+    source.write_bytes(b"mp4 bytes")
+    _remux_writes_an_mkv(monkeypatch)
+
+    target = organize_episode(LANTERNS, 1, 1, source)
+
+    assert target.suffix == ".mkv"
+    assert target.exists()
+
+
+def test_the_mp4_source_is_left_alone(tmp_path, monkeypatch):
+    """A rewrap writes a new file; it never touches the source, so
+    qBittorrent keeps seeding the copy it has."""
+    monkeypatch.setattr(config, "TV_LIBRARY_ROOT", tmp_path / "library")
+    source = tmp_path / "Lanterns.S01E01.mp4"
+    source.write_bytes(b"mp4 bytes")
+    _remux_writes_an_mkv(monkeypatch)
+
+    organize_episode(LANTERNS, 1, 1, source)
+
+    assert source.read_bytes() == b"mp4 bytes"
+
+
+def test_an_mp4_movie_is_filed_as_an_mkv(tmp_path, monkeypatch):
+    """Movies keep the release's own filename, so the extension is the
+    one part of it this changes."""
+    monkeypatch.setattr(config, "MOVIE_LIBRARY_ROOT", tmp_path / "library")
+    source = tmp_path / "Dune.Part.Two.2024.2160p.WEB-DL.mp4"
+    source.write_bytes(b"mp4 bytes")
+    _remux_writes_an_mkv(monkeypatch)
+
+    target = organize_movie(DUNE, source)
+
+    assert target.name == "Dune.Part.Two.2024.2160p.WEB-DL.mkv"
+
+
+def test_an_mkv_still_gets_its_free_hardlink(tmp_path, monkeypatch):
+    """The rewrap must not cost every other file its zero-cost placement.
+    An MKV with nothing to fix is still the same inode afterwards."""
+    monkeypatch.setattr(config, "TV_LIBRARY_ROOT", tmp_path / "library")
+    source = tmp_path / "Lanterns.S01E01.mkv"
+    source.write_bytes(b"episode bytes")
+
+    target = organize_episode(LANTERNS, 1, 1, source)
+
+    assert target.suffix == ".mkv"
+    assert os.stat(source).st_ino == os.stat(target).st_ino
+
+
+def test_a_failed_rewrap_files_the_mp4_under_its_own_name(tmp_path, monkeypatch):
+    """The one fallback that can't be a hardlink at the .mkv name: that
+    would file an MP4 as an MKV, which is worse than either honest
+    outcome. It keeps its real extension instead."""
+    monkeypatch.setattr(config, "TV_LIBRARY_ROOT", tmp_path / "library")
+    source = tmp_path / "Lanterns.S01E01.mp4"
+    source.write_bytes(b"mp4 bytes")
+
+    def run(cmd, **kwargs):
+        if cmd[0] == "ffprobe":
+            return subprocess.CompletedProcess(cmd, 0, stdout='{"streams": []}', stderr="")
+        return subprocess.CompletedProcess(cmd, 1, stdout="", stderr="nope")
+
+    monkeypatch.setattr(media_organizer.subprocess, "run", run)
+
+    target = organize_episode(LANTERNS, 1, 1, source)
+
+    assert target.suffix == ".mp4"
+    assert target.exists()
+    assert not target.with_suffix(".mkv").exists()

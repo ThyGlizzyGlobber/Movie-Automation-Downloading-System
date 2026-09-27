@@ -414,7 +414,7 @@ def _audio_default_disposition(source: Path, preferred: str) -> list[str]:
     return args
 
 
-def _strip_embedded_artwork(
+def _remux(
     source: Path, target: Path, strip_indices: list[int], extra_args: list[str] | None = None
 ) -> bool:
     """Re-muxes `source` into `target`, dropping the given stream indices
@@ -452,7 +452,7 @@ def _strip_embedded_artwork(
     return True
 
 
-def _link_or_copy(source: Path, target: Path, preferred_audio_language: str | None = None) -> None:
+def _link_or_copy(source: Path, target: Path, preferred_audio_language: str | None = None) -> Path:
     """Hardlinks `source` into `target` — the same safe pattern Sonarr/
     Radarr rely on: qBittorrent's own copy keeps seeding, untouched, while
     Plex sees a second, correctly-named reference to the same bytes at zero
@@ -474,22 +474,48 @@ def _link_or_copy(source: Path, target: Path, preferred_audio_language: str | No
     subtitles/fonts) untouched. Only takes this path when something to
     strip is actually found and the remux succeeds; any other file keeps
     the zero-cost hardlink it always got."""
+    # An MP4 is filed as an MKV. The library is kept in one container on
+    # purpose: mkvpropedit can edit an MKV's header in place in
+    # milliseconds and MP4 has no equivalent, so every MP4 that lands is
+    # a file the audio-default fix can never touch again. Rewrapping is
+    # a stream copy, so it costs the write and nothing else.
+    rewrap = source.suffix.lower() in (".mp4", ".m4v")
+    if rewrap:
+        target = target.with_suffix(".mkv")
+
     if target.exists() or target.is_symlink():
         target.unlink()
 
-    # Two reasons to write a real file instead of a hardlink, and they
-    # share the trip: there is no point remuxing twice. The hardlink is
+    # Every reason to write a real file rather than hardlink, taken in
+    # one trip: there is no point remuxing twice. The hardlink is also
     # what makes an edit-in-place tool like mkvpropedit unusable here —
     # the library copy and qBittorrent's are the same bytes, so editing
     # one corrupts the torrent mid-seed.
     strip_indices = _embedded_artwork_stream_indices(source)
     disposition = _audio_default_disposition(source, preferred_audio_language) if preferred_audio_language else []
-    if (strip_indices or disposition) and _strip_embedded_artwork(source, target, strip_indices, disposition):
+    extra_args = list(disposition)
+    if rewrap:
+        # MP4 keeps text subtitles as mov_text, which Matroska will not
+        # take and which aborts the whole remux under -c copy.
+        streams = _streams(source) or []
+        if any(stream.get("codec_name") == _MOV_TEXT for stream in streams):
+            extra_args += ["-c:s", "srt"]
+    if (rewrap or strip_indices or disposition) and _remux(source, target, strip_indices, extra_args):
+        if rewrap:
+            logger.info("rewrapped %r as %r while organizing", source.name, target.name)
         if strip_indices:
             logger.info("stripped %d embedded-artwork stream(s) from %r while organizing", len(strip_indices), str(source))
         if disposition:
             logger.info("made the %s audio track default on %r while organizing", preferred_audio_language, str(target))
-        return
+        return target
+    if rewrap:
+        # The rewrap is the one of the three that can't fall back: a
+        # hardlink here would file an MP4 under a .mkv name, which is
+        # worse than either honest outcome.
+        target = target.with_suffix(source.suffix)
+        logger.warning("could not rewrap %r as MKV; filing it as-is", source.name)
+        if target.exists() or target.is_symlink():
+            target.unlink()
 
     try:
         os.link(source, target)
@@ -502,6 +528,7 @@ def _link_or_copy(source: Path, target: Path, preferred_audio_language: str | No
             target,
         )
         shutil.copy2(source, target)
+    return target
 
 
 def organize_episode(
@@ -523,8 +550,7 @@ def organize_episode(
     source_path = Path(source_path)
     target = build_episode_path(show_identity, season, episode, source_path.suffix, title)
     target.parent.mkdir(parents=True, exist_ok=True)
-    _link_or_copy(source_path, target, preferred_audio_language)
-    return target
+    return _link_or_copy(source_path, target, preferred_audio_language)
 
 
 def find_release_dir(root: Path, release_name: str) -> Path | None:
@@ -679,8 +705,7 @@ def organize_pack(
             )
         target = build_episode_path(show_identity, season, episode, source_path.suffix, title)
         target.parent.mkdir(parents=True, exist_ok=True)
-        _link_or_copy(source_path, target, preferred_audio_language)
-        placed.append((season, episode, target))
+        placed.append((season, episode, _link_or_copy(source_path, target, preferred_audio_language)))
 
     if not placed:
         if not any_video_file:
@@ -709,8 +734,7 @@ def organize_movie(
     source_path = Path(source_path)
     target = build_movie_path(identity, source_path.name)
     target.parent.mkdir(parents=True, exist_ok=True)
-    _link_or_copy(source_path, target, preferred_audio_language)
-    return target
+    return _link_or_copy(source_path, target, preferred_audio_language)
 
 
 # ---------------------------------------------------------------------------
