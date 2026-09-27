@@ -564,9 +564,13 @@
   font-size: 12px;
   font-weight: 600;
   color: var(--text-dim);
-  margin-left: 2px;
 }
 .detail-pill.mute {
+  /* Block, not the pills' inline-flex: as flex items the genre spans
+     lost the space before each " | " to trimming and gained the 6px
+     gap instead, so the bar sat further from the word before it than
+     the one after. In normal flow both spaces are real and equal. */
+  display: block;
   background: transparent;
   color: var(--text-dim);
   padding: 0 4px;

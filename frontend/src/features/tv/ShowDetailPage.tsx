@@ -13,7 +13,7 @@ import { acrossReleases, DetailCast, DetailCastSkeleton, DetailTrailer, DetailTr
 import { formatBytes } from '../../lib/format'
 import { usePageTitle } from '../../lib/chrome'
 import { errorText, useToast } from '../../lib/toast'
-import { languageNameOf, tvCertificationOf, yearOf } from '../../lib/detailHelpers'
+import { displayLanguageOf, tvCertificationOf, yearOf } from '../../lib/detailHelpers'
 import { showPill, startOfToday } from '../../lib/homeHero'
 import { NON_TERMINAL } from '../../lib/status'
 import { originalServiceMatch } from '../../lib/providers'
@@ -192,10 +192,12 @@ export default function ShowDetailPage() {
     pills.push({
       star: true,
       text: (
-        <>
+        // One inline run, not two flex items: as items the pill's gap
+        // replaced the space before the bar and it sat off-centre.
+        <span>
           {show.vote_average.toFixed(1)}
-          {show.vote_count ? <small>| {show.vote_count.toLocaleString()}</small> : null}
-        </>
+          {show.vote_count ? <> <small>| {show.vote_count.toLocaleString()}</small></> : null}
+        </span>
       ),
     })
   }
@@ -319,7 +321,7 @@ export default function ShowDetailPage() {
   // chip is its own label; this can't.
   if (network) details.push({ label: 'Network', value: network })
   if (show.status) details.push({ label: 'Status', value: limited ? 'Limited series' : show.status })
-  const lang = languageNameOf(show.original_language)
+  const lang = displayLanguageOf(show.original_language, show.spoken_languages)
   if (lang) details.push({ label: 'Language', value: lang })
   if (show.genres?.length) details.push({ label: 'Genres', value: genreLinks(show.genres, 'tv', ', ') })
   if (creators.length) details.push({ label: 'Created by', value: peopleLinks(creators) })

@@ -11,7 +11,7 @@ import Icon from '../../components/Icon'
 import DetailShell, { DetailShellSkeleton, type DetailPill, type DetailRow, type DetailTile } from '../detail/DetailShell'
 import { acrossReleases, DetailCast, DetailCastSkeleton, DetailTrailer, DetailTrailerSkeleton, FactTiles, filedOnLabel, genreLinks, peopleLinks, qualityFromName, sourceFromName, usePlexHref, useTitleRequests } from '../detail/DetailBits'
 import { usePageTitle } from '../../lib/chrome'
-import { certificationOf, languageNameOf, yearOf } from '../../lib/detailHelpers'
+import { certificationOf, displayLanguageOf, yearOf } from '../../lib/detailHelpers'
 import { originalServiceMatch } from '../../lib/providers'
 import { useMediaQuery } from '../../lib/hooks'
 import { useCertificationRegion } from '../auth/useSession'
@@ -112,10 +112,12 @@ export default function MovieDetailPage() {
     pills.push({
       star: true,
       text: (
-        <>
+        // One inline run, not two flex items: as items the pill's gap
+        // replaced the space before the bar and it sat off-centre.
+        <span>
           {movie.vote_average.toFixed(1)}
-          {movie.vote_count ? <small>| {movie.vote_count.toLocaleString()}</small> : null}
-        </>
+          {movie.vote_count ? <> <small>| {movie.vote_count.toLocaleString()}</small></> : null}
+        </span>
       ),
     })
   }
@@ -188,7 +190,7 @@ export default function MovieDetailPage() {
       value: new Date(`${movie.release_date}T00:00:00`).toLocaleDateString([], { day: 'numeric', month: 'short', year: 'numeric' }),
     })
   }
-  const lang = languageNameOf(movie.original_language)
+  const lang = displayLanguageOf(movie.original_language, movie.spoken_languages)
   if (lang) details.push({ label: 'Language', value: lang })
   if (movie.genres?.length) details.push({ label: 'Genres', value: genreLinks(movie.genres, 'movie', ', ') })
   if (directors.length) details.push({ label: 'Director', value: peopleLinks(directors) })

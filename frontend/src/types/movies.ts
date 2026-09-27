@@ -62,6 +62,8 @@ export interface MovieDetail extends Omit<TmdbListItem, 'genre_ids'> {
   logo_path?: string | null
   runtime: number | null
   original_language?: string
+  // What's actually spoken in it — see displayLanguageOf.
+  spoken_languages?: { iso_639_1: string }[]
   genres: Genre[]
   production_companies: ProductionCompany[]
   'watch/providers'?: { results?: { US?: { flatrate?: WatchProviderEntry[] } } }
