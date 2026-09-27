@@ -796,3 +796,134 @@ def apply_audio_default_fix(plan: AudioFixPlan) -> str | None:
     if result.returncode != 0:
         return (result.stderr or result.stdout or "mkvpropedit failed").strip()[-300:]
     return None
+
+
+# ---------------------------------------------------------------------------
+# MP4 -> MKV — a container change, never a re-encode.
+#
+# MKV is a superset of what MP4 can hold, so every video and audio stream
+# is copied through byte for byte. Worth doing beyond tidiness: mkvpropedit
+# can edit an MKV's header in place in milliseconds, which is what makes
+# the audio-default backfill above cheap, and MP4 has no equivalent — the
+# three MP4s in the live library were the only files that job had to skip.
+# ---------------------------------------------------------------------------
+
+# MP4 keeps text subtitles as mov_text, which Matroska will not take. They
+# transcode to SRT on the way through — text to text, nothing lost but the
+# positioning MP4 barely carried anyway. Image-based subtitles (PGS, VOBSUB)
+# copy across untouched.
+_MOV_TEXT = "mov_text"
+
+
+class ContainerPlan(NamedTuple):
+    source: Path
+    target: Path
+    # Stream counts to check the result against, so a truncated remux is
+    # never mistaken for a finished one.
+    video: int
+    audio: int
+    subtitles: int
+    skipped: str | None
+
+    @property
+    def summary(self) -> str:
+        return f"{self.video}v {self.audio}a {self.subtitles}s"
+
+
+def _streams(source: Path) -> list[dict] | None:
+    """Every stream ffprobe can see, or None if it can't read the file."""
+    try:
+        result = subprocess.run(
+            ["ffprobe", "-v", "error", "-print_format", "json", "-show_streams", str(source)],
+            capture_output=True,
+            text=True,
+            timeout=config.FFPROBE_TIMEOUT_SECONDS,
+        )
+        if result.returncode != 0:
+            return None
+        return json.loads(result.stdout or "{}").get("streams", [])
+    except (OSError, subprocess.TimeoutExpired, ValueError):
+        return None
+
+
+def plan_container_conversion(root: Path) -> list[ContainerPlan]:
+    """Which MP4s under `root` would become MKVs, and which wouldn't."""
+    plans: list[ContainerPlan] = []
+    for source in sorted(root.rglob("*")):
+        if source.suffix.lower() not in (".mp4", ".m4v"):
+            continue
+        target = source.with_suffix(".mkv")
+        streams = _streams(source)
+        if streams is None:
+            plans.append(ContainerPlan(source, target, 0, 0, 0, "ffprobe can't read it"))
+            continue
+        kinds = [s.get("codec_type") for s in streams]
+        # Cover art rides as a video stream; it isn't part of the film and
+        # the organiser already strips it from anything it files.
+        real_video = sum(
+            1
+            for s in streams
+            if s.get("codec_type") == "video" and not (s.get("disposition") or {}).get("attached_pic")
+        )
+        plan = ContainerPlan(
+            source, target, real_video, kinds.count("audio"), kinds.count("subtitle"), None
+        )
+        if target.exists():
+            plans.append(plan._replace(skipped="an .mkv of the same name is already there"))
+            continue
+        if not real_video or not plan.audio:
+            plans.append(plan._replace(skipped="no video or no audio stream"))
+            continue
+        plans.append(plan)
+    return plans
+
+
+def apply_container_conversion(plan: ContainerPlan) -> str | None:
+    """Remuxes one MP4 into an MKV beside it and removes the MP4.
+
+    Written to a temp name first and only moved into place once ffmpeg
+    exits clean *and* the result carries the streams it should — a
+    half-written file that merely exists is the one outcome worth
+    guarding against here, because the step after it deletes the
+    original.
+
+    Safe on a hardlinked file, unlike the in-place audio edit: this never
+    touches the source's bytes, and unlinking one of two hardlinks leaves
+    the torrent's own copy whole.
+    """
+    if plan.skipped is not None:
+        return plan.skipped
+    streams = _streams(plan.source) or []
+    subtitle_codec = "srt" if any(s.get("codec_name") == _MOV_TEXT for s in streams) else "copy"
+    tmp = plan.target.with_name(f".{plan.target.stem}.remuxing.tmp.mkv")
+    cmd = [
+        "ffmpeg", "-y", "-i", str(plan.source),
+        "-map", "0", "-map", "-0:v:m:attached_pic?",
+        "-c", "copy", "-c:s", subtitle_codec,
+        "-map_metadata", "0",
+        str(tmp),
+    ]
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=config.FFMPEG_STRIP_TIMEOUT_SECONDS)
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        tmp.unlink(missing_ok=True)
+        return str(exc)
+    if result.returncode != 0:
+        tmp.unlink(missing_ok=True)
+        return (result.stderr or "ffmpeg failed").strip()[-300:]
+
+    written = _streams(tmp)
+    if written is None:
+        tmp.unlink(missing_ok=True)
+        return "the remuxed file came back unreadable"
+    kinds = [s.get("codec_type") for s in written]
+    if kinds.count("video") < plan.video or kinds.count("audio") != plan.audio:
+        tmp.unlink(missing_ok=True)
+        return (
+            f"stream count changed ({plan.video}v {plan.audio}a in, "
+            f"{kinds.count('video')}v {kinds.count('audio')}a out) — left alone"
+        )
+
+    os.replace(tmp, plan.target)
+    plan.source.unlink(missing_ok=True)
+    return None

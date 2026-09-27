@@ -1144,3 +1144,126 @@ def test_a_missing_mkvpropedit_says_so_instead_of_crashing(monkeypatch, tmp_path
     monkeypatch.setattr(media_organizer.subprocess, "run", run)
 
     assert "mkvtoolnix" in media_organizer.apply_audio_default_fix(plan)
+
+
+# ---------------------------------------------------------------------------
+# MP4 -> MKV. A container change, never a re-encode — and the step after
+# it deletes the original, which is what these are really about.
+# ---------------------------------------------------------------------------
+
+
+def _streams_json(kinds, subtitle_codec=None):
+    out = []
+    for i, kind in enumerate(kinds):
+        stream = {"index": i, "codec_type": kind}
+        if kind == "subtitle" and subtitle_codec:
+            stream["codec_name"] = subtitle_codec
+        out.append(stream)
+    return json.dumps({"streams": out})
+
+
+def test_a_successful_rewrap_removes_the_mp4(monkeypatch, tmp_path):
+    source = tmp_path / "Show - s01e01.mp4"
+    source.write_bytes(b"mp4")
+
+    def run(cmd, **kwargs):
+        if cmd[0] == "ffprobe":
+            return subprocess.CompletedProcess(cmd, 0, stdout=_streams_json(["video", "audio", "audio"]), stderr="")
+        Path(cmd[-1]).write_bytes(b"mkv")
+        return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+
+    monkeypatch.setattr(media_organizer.subprocess, "run", run)
+    plan = media_organizer.plan_container_conversion(tmp_path)[0]
+
+    assert media_organizer.apply_container_conversion(plan) is None
+    assert plan.target.exists()
+    assert not source.exists()
+
+
+def test_a_failed_rewrap_leaves_the_mp4_exactly_as_it_was(monkeypatch, tmp_path):
+    source = tmp_path / "Show - s01e01.mp4"
+    source.write_bytes(b"mp4")
+
+    def run(cmd, **kwargs):
+        if cmd[0] == "ffprobe":
+            return subprocess.CompletedProcess(cmd, 0, stdout=_streams_json(["video", "audio"]), stderr="")
+        return subprocess.CompletedProcess(cmd, 1, stdout="", stderr="ffmpeg exploded")
+
+    monkeypatch.setattr(media_organizer.subprocess, "run", run)
+    plan = media_organizer.plan_container_conversion(tmp_path)[0]
+
+    assert media_organizer.apply_container_conversion(plan) is not None
+    assert source.read_bytes() == b"mp4"
+    assert not plan.target.exists()
+    assert list(tmp_path.iterdir()) == [source]
+
+
+def test_a_rewrap_that_lost_a_track_does_not_delete_the_original(monkeypatch, tmp_path):
+    """The guard that matters. ffmpeg can exit clean having written a
+    file that is missing a stream, and the step after this one deletes
+    the only other copy — so the result is counted, not trusted."""
+    source = tmp_path / "Show - s01e01.mp4"
+    source.write_bytes(b"mp4")
+    calls = {"n": 0}
+
+    def run(cmd, **kwargs):
+        if cmd[0] == "ffprobe":
+            calls["n"] += 1
+            # Two audio streams going in, one coming back out.
+            kinds = ["video", "audio", "audio"] if calls["n"] <= 2 else ["video", "audio"]
+            return subprocess.CompletedProcess(cmd, 0, stdout=_streams_json(kinds), stderr="")
+        Path(cmd[-1]).write_bytes(b"truncated")
+        return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+
+    monkeypatch.setattr(media_organizer.subprocess, "run", run)
+    plan = media_organizer.plan_container_conversion(tmp_path)[0]
+
+    error = media_organizer.apply_container_conversion(plan)
+
+    assert "stream count changed" in error
+    assert source.exists()
+    assert not plan.target.exists()
+
+
+def test_mov_text_subtitles_are_converted_rather_than_copied(monkeypatch, tmp_path):
+    """Matroska will not take mov_text, and -c copy on one aborts the
+    whole remux — so an MP4 with subtitles would simply never convert."""
+    (tmp_path / "Show - s01e01.mp4").write_bytes(b"mp4")
+    seen = {}
+
+    def run(cmd, **kwargs):
+        if cmd[0] == "ffprobe":
+            return subprocess.CompletedProcess(
+                cmd, 0, stdout=_streams_json(["video", "audio", "subtitle"], "mov_text"), stderr=""
+            )
+        seen["cmd"] = cmd
+        Path(cmd[-1]).write_bytes(b"mkv")
+        return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+
+    monkeypatch.setattr(media_organizer.subprocess, "run", run)
+    plan = media_organizer.plan_container_conversion(tmp_path)[0]
+    media_organizer.apply_container_conversion(plan)
+
+    assert "-c:s" in seen["cmd"]
+    assert seen["cmd"][seen["cmd"].index("-c:s") + 1] == "srt"
+
+
+def test_an_existing_mkv_of_the_same_name_stops_the_conversion(monkeypatch, tmp_path):
+    """Overwriting it would be destroying a file nobody asked about."""
+    (tmp_path / "Show - s01e01.mp4").write_bytes(b"mp4")
+    (tmp_path / "Show - s01e01.mkv").write_bytes(b"already here")
+
+    def run(cmd, **kwargs):
+        return subprocess.CompletedProcess(cmd, 0, stdout=_streams_json(["video", "audio"]), stderr="")
+
+    monkeypatch.setattr(media_organizer.subprocess, "run", run)
+    plan = media_organizer.plan_container_conversion(tmp_path)[0]
+
+    assert plan.skipped is not None
+    assert (tmp_path / "Show - s01e01.mkv").read_bytes() == b"already here"
+
+
+def test_mkvs_are_left_out_of_the_plan_entirely(monkeypatch, tmp_path):
+    (tmp_path / "Already Fine.mkv").write_bytes(b"mkv")
+
+    assert media_organizer.plan_container_conversion(tmp_path) == []

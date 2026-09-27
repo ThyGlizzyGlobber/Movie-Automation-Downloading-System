@@ -9,10 +9,12 @@ from app.db import RequestStore
 from app.media_organizer import (
     MediaOrganizerError,
     apply_audio_default_fix,
+    apply_container_conversion,
     organize_episode,
     organize_movie,
     organize_pack,
     plan_audio_default_fix,
+    plan_container_conversion,
     select_video_file,
 )
 from app.pipeline_settings import resolve_pipeline_settings
@@ -326,6 +328,59 @@ def cmd_cleanup_orphans(args: argparse.Namespace) -> int:
     return 0
 
 
+def _human(size: int) -> str:
+    for unit in ("B", "KiB", "MiB", "GiB", "TiB"):
+        if size < 1024 or unit == "TiB":
+            return f"{size:.1f} {unit}"
+        size /= 1024
+    return f"{size:.1f} TiB"
+
+
+def cmd_convert_to_mkv(args: argparse.Namespace) -> int:
+    """Rewraps MP4s in the library as MKVs. A container change, never a
+    re-encode: every video and audio stream is copied through byte for
+    byte, so nothing is lost and nothing is re-compressed.
+
+    Dry run unless --apply. It reports the total bytes it would rewrite,
+    because unlike the audio backfill this one genuinely moves the data
+    and the number is worth seeing before you agree to it."""
+    roots = [Path(r) for r in (args.root or [])] or [config.MOVIE_LIBRARY_ROOT, config.TV_LIBRARY_ROOT]
+
+    plans = []
+    for root in roots:
+        if not root.is_dir():
+            print(f"skipping {root}: not a directory")
+            continue
+        print(f"scanning {root}...")
+        plans += plan_container_conversion(root)
+
+    convertible = [p for p in plans if p.skipped is None]
+    skipped = [p for p in plans if p.skipped is not None]
+
+    for plan in skipped:
+        print(f"  SKIP  {plan.source.name[:70]}  — {plan.skipped}")
+    for plan in convertible:
+        print(f"  {'CONV ' if args.apply else 'WOULD'}  [{plan.summary}]  {plan.source.name[:70]}")
+
+    total = sum(p.source.stat().st_size for p in convertible if p.source.exists())
+    if not args.apply:
+        print(f"\n{len(convertible)} file(s) would be rewrapped, {len(skipped)} skipped.")
+        print(f"About {_human(total)} would be rewritten — a copy, not a re-encode, so nothing is re-compressed.")
+        print("Re-run with --apply to do it.")
+        return 0
+
+    failures = 0
+    for plan in convertible:
+        error = apply_container_conversion(plan)
+        if error:
+            failures += 1
+            print(f"  FAILED {plan.source.name[:70]}: {error}")
+    done = len(convertible) - failures
+    print(f"\n{done} file(s) rewrapped, {failures} failed, {len(skipped)} skipped.")
+    print("A failed file is left exactly as it was. Rescan the library in Plex so it picks up the new names.")
+    return 1 if failures else 0
+
+
 def cmd_fix_audio_defaults(args: argparse.Namespace) -> int:
     """Backfill: the organiser only sees a file on its way in, so
     everything filed before it learned this keeps whatever default its
@@ -479,6 +534,20 @@ def main(argv: list[str] | None = None) -> int:
         help="Directory to scan (repeatable). Defaults to the movie and TV library roots.",
     )
     audio_parser.set_defaults(func=cmd_fix_audio_defaults)
+
+    mkv_parser = subparsers.add_parser(
+        "convert-to-mkv",
+        help="Rewrap MP4s in the library as MKVs, copying every stream through (dry run unless --apply)",
+    )
+    mkv_parser.add_argument(
+        "--apply", action="store_true", help="Actually rewrap them; without this, only lists what would happen"
+    )
+    mkv_parser.add_argument(
+        "--root",
+        action="append",
+        help="Directory to scan (repeatable). Defaults to the movie and TV library roots.",
+    )
+    mkv_parser.set_defaults(func=cmd_convert_to_mkv)
 
     args = parser.parse_args(argv)
     return args.func(args)
