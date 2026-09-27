@@ -1361,3 +1361,105 @@ def test_a_failed_rewrap_files_the_mp4_under_its_own_name(tmp_path, monkeypatch)
     assert target.suffix == ".mp4"
     assert target.exists()
     assert not target.with_suffix(".mkv").exists()
+
+
+# ---------------------------------------------------------------------------
+# What Matroska will not take, and saying why when something fails.
+# ---------------------------------------------------------------------------
+
+
+def test_data_streams_are_dropped_because_matroska_refuses_them(monkeypatch, tmp_path):
+    """MP4 routinely carries a bin_data track — QuickTime's old text
+    shape, which ffmpeg cannot even decode. Mapping it makes the muxer
+    refuse to write a header, so the remux fails having read nothing:
+    "Only audio, video, and subtitles are supported for Matroska".
+
+    That was every Doctor Who episode and every Ben The Men release in
+    the live library — 28 of 28 failures."""
+    (tmp_path / "Doctor Who - s01e01.mp4").write_bytes(b"mp4")
+    seen = {}
+
+    def run(cmd, **kwargs):
+        if cmd[0] == "ffprobe":
+            payload = {"streams": [
+                {"index": 0, "codec_type": "video"},
+                {"index": 1, "codec_type": "audio"},
+                {"index": 2, "codec_type": "data", "codec_name": "bin_data"},
+            ]}
+            return subprocess.CompletedProcess(cmd, 0, stdout=json.dumps(payload), stderr="")
+        seen["cmd"] = cmd
+        Path(cmd[-1]).write_bytes(b"mkv")
+        return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+
+    monkeypatch.setattr(media_organizer.subprocess, "run", run)
+    plan = media_organizer.plan_container_conversion(tmp_path)[0]
+    media_organizer.apply_container_conversion(plan)
+
+    assert "-0:d?" in seen["cmd"]
+
+
+def test_cover_art_is_dropped_by_index_not_by_a_metadata_specifier(monkeypatch, tmp_path):
+    """`-0:v:m:attached_pic` matches a metadata *tag* of that name, not a
+    disposition. It silently matched nothing and let the art through,
+    and the `?` meant ffmpeg never complained. Indices come from the same
+    helper the organiser uses, so the two paths agree."""
+    (tmp_path / "Film.mp4").write_bytes(b"mp4")
+    seen = {}
+
+    def run(cmd, **kwargs):
+        if cmd[0] == "ffprobe":
+            payload = {"streams": [
+                {"index": 0, "codec_type": "video"},
+                {"index": 1, "codec_type": "audio"},
+                {"index": 2, "codec_type": "video", "disposition": {"attached_pic": 1}},
+            ]}
+            return subprocess.CompletedProcess(cmd, 0, stdout=json.dumps(payload), stderr="")
+        seen["cmd"] = cmd
+        Path(cmd[-1]).write_bytes(b"mkv")
+        return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+
+    monkeypatch.setattr(media_organizer.subprocess, "run", run)
+    plan = media_organizer.plan_container_conversion(tmp_path)[0]
+    media_organizer.apply_container_conversion(plan)
+
+    assert "-0:2" in seen["cmd"]
+    assert not any("attached_pic" in str(arg) for arg in seen["cmd"])
+
+
+def test_a_file_with_no_index_says_so_rather_than_ffprobe_cant_read_it(monkeypatch, tmp_path):
+    """"moov atom not found" means the MP4 has no index and will not
+    play anywhere — a download to redo, not a conversion to debug. Eight
+    episodes of one show in the live library were in this state and the
+    report said only that ffprobe couldn't read them."""
+    (tmp_path / "Broken.mp4").write_bytes(b"truncated")
+
+    def run(cmd, **kwargs):
+        return subprocess.CompletedProcess(
+            cmd, 1, stdout="", stderr="[mov,mp4 @ 0x1] moov atom not found\nBroken.mp4: Invalid data found"
+        )
+
+    monkeypatch.setattr(media_organizer.subprocess, "run", run)
+    plan = media_organizer.plan_container_conversion(tmp_path)[0]
+
+    assert "no moov atom" in plan.skipped
+    assert "will not play anywhere" in plan.skipped
+
+
+def test_the_failure_reason_is_the_line_that_explains_it():
+    """A blind tail of the last 300 characters produced "eturn code -22"
+    — the word cut in half — while the line naming the cause sat above
+    the progress spam and was never shown."""
+    stderr = (
+        "  Stream #0:2 -> #0:2 (copy)\n"
+        "[matroska @ 0x55d7] Only audio, video, and subtitles are supported for Matroska.\n"
+        "[out#0/matroska @ 0x55d7] Could not write header (incorrect codec parameters ?): Invalid argument\n"
+        "frame=    0 fps=0.0 q=-1.0 Lsize=       0KiB time=N/A bitrate=N/A speed=N/A\n"
+        "Conversion failed!\n"
+    )
+
+    assert "supported for Matroska" in media_organizer._ffmpeg_reason(stderr)
+
+
+def test_the_failure_reason_never_comes_back_empty():
+    assert media_organizer._ffmpeg_reason("") == "ffmpeg failed with no output"
+    assert media_organizer._ffmpeg_reason(None) == "ffmpeg failed with no output"

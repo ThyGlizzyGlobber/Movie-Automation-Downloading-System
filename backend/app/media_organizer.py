@@ -870,6 +870,31 @@ def _streams(source: Path) -> list[dict] | None:
         return None
 
 
+def _probe_failure(source: Path) -> str:
+    """Why ffprobe wouldn't read this file, in its own words.
+
+    Worth the second probe on this path alone. "ffprobe can't read it"
+    is a dead end; "moov atom not found" says the MP4 has no index and
+    is not a file at all, which is a download to redo rather than a
+    conversion to debug — and which Plex will fail on just as surely.
+    """
+    try:
+        result = subprocess.run(
+            ["ffprobe", "-v", "error", str(source)],
+            capture_output=True,
+            text=True,
+            timeout=config.FFPROBE_TIMEOUT_SECONDS,
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        return f"ffprobe failed ({exc})"
+    lines = [line.strip() for line in (result.stderr or "").splitlines() if line.strip()]
+    for line in lines:
+        if "moov atom not found" in line:
+            return "no moov atom — the file has no index and will not play anywhere"
+    detail = lines[-1] if lines else "no output"
+    return f"ffprobe can't read it: {detail[-160:]}"
+
+
 def plan_container_conversion(root: Path) -> list[ContainerPlan]:
     """Which MP4s under `root` would become MKVs, and which wouldn't."""
     plans: list[ContainerPlan] = []
@@ -879,7 +904,7 @@ def plan_container_conversion(root: Path) -> list[ContainerPlan]:
         target = source.with_suffix(".mkv")
         streams = _streams(source)
         if streams is None:
-            plans.append(ContainerPlan(source, target, 0, 0, 0, "ffprobe can't read it"))
+            plans.append(ContainerPlan(source, target, 0, 0, 0, _probe_failure(source)))
             continue
         kinds = [s.get("codec_type") for s in streams]
         # Cover art rides as a video stream; it isn't part of the film and
@@ -902,6 +927,23 @@ def plan_container_conversion(root: Path) -> list[ContainerPlan]:
     return plans
 
 
+def _ffmpeg_reason(stderr: str | None) -> str:
+    """The line of ffmpeg's output that actually says what went wrong.
+
+    A blind tail of the last 300 characters gave "eturn code -22" — the
+    word `return` cut in half — while the line naming the real cause
+    ("Only audio, video, and subtitles are supported for Matroska") sat
+    just above the progress spam and was never shown.
+    """
+    lines = [line.strip() for line in (stderr or "").splitlines() if line.strip()]
+    for needle in ("are supported for Matroska", "Unsupported codec", "Could not write header",
+                   "Invalid argument", "No space left", "Permission denied", "Error"):
+        for line in reversed(lines):
+            if needle in line:
+                return line[-200:]
+    return (lines[-1][-200:] if lines else "ffmpeg failed with no output")
+
+
 def apply_container_conversion(plan: ContainerPlan) -> str | None:
     """Remuxes one MP4 into an MKV beside it and removes the MP4.
 
@@ -922,7 +964,21 @@ def apply_container_conversion(plan: ContainerPlan) -> str | None:
     tmp = plan.target.with_name(f".{plan.target.stem}.remuxing.tmp.mkv")
     cmd = [
         "ffmpeg", "-y", "-i", str(plan.source),
-        "-map", "0", "-map", "-0:v:m:attached_pic?",
+        # Matroska takes video, audio, subtitles and attachments, and
+        # nothing else. MP4 routinely carries a `bin_data` track —
+        # QuickTime's old text/timecode shape, which ffmpeg cannot even
+        # decode ("Unsupported codec with id 98314") — and mapping it
+        # makes the muxer refuse to write a header at all, so the whole
+        # remux fails having read nothing. Seen on every Doctor Who
+        # episode and on each of the Ben The Men 2160p releases.
+        #
+        # Cover art goes by index, through the same helper the organiser
+        # uses. The obvious "-0:v:m:attached_pic" does not work and does
+        # not complain: `m:` matches a *metadata tag* of that name, not a
+        # disposition, so it silently matched nothing and the art came
+        # through. Found by checking the output rather than the exit code.
+        "-map", "0", "-map", "-0:d?",
+        *[arg for index in _embedded_artwork_stream_indices(plan.source) for arg in ("-map", f"-0:{index}")],
         "-c", "copy", "-c:s", subtitle_codec,
         "-map_metadata", "0",
         str(tmp),
@@ -934,7 +990,7 @@ def apply_container_conversion(plan: ContainerPlan) -> str | None:
         return str(exc)
     if result.returncode != 0:
         tmp.unlink(missing_ok=True)
-        return (result.stderr or "ffmpeg failed").strip()[-300:]
+        return _ffmpeg_reason(result.stderr)
 
     written = _streams(tmp)
     if written is None:
