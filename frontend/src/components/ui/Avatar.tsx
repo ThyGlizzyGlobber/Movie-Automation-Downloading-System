@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import Icon from './Icon'
 import { initialsOf } from '../../lib/format'
+import './Avatar.css'
 
 // The Plex account picture, re-requested every minute so a change made
 // on plex.tv shows up here without a sign-out; initials (or the user

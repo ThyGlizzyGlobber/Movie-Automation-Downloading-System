@@ -7,6 +7,8 @@ import { errorText, useToast } from '../../lib/toast'
 import Icon from '../../components/ui/Icon'
 import Img from '../../components/ui/Img'
 import { Skel, SkelText } from '../../components/ui/Skeleton'
+// Pills drawn here rather than through StatusPill, so its styles come in by hand.
+import '../../components/ui/StatusPill.css'
 import type { EpisodeStatus } from '../../types/features'
 
 // One season's episodes with what the household has of each (the

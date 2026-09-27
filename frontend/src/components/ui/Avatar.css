@@ -1,0 +1,31 @@
+/* The large avatar at the top of the account sheet (top bar) and the
+   Account page. Loaded with Avatar itself: the sheet is in the always-
+   loaded shell, the Account page is not. */
+.account-avatar-big.avatar-img {
+  width: 72px;
+  height: 72px;
+  border-radius: 50%;
+  object-fit: cover;
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.85);
+}
+.account-avatar-big.avatar-initials {
+  width: 72px;
+  height: 72px;
+  border-radius: 50%;
+  background: var(--avatar-gradient);
+  color: var(--on-light);
+  display: grid;
+  place-items: center;
+  font-size: 22px;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+}
+.account-avatar-big.icon {
+  font-size: 40px;
+  color: var(--text-dim);
+  width: 72px;
+  height: 72px;
+  padding: 16px;
+  border-radius: 50%;
+  background: var(--glass);
+}
