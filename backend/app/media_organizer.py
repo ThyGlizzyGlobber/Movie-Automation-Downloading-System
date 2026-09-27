@@ -784,6 +784,12 @@ def plan_audio_default_fix(root: Path, preferred: str) -> list[AudioFixPlan]:
         wanted = preferred_audio_track(tracks, preferred)
         if wanted is None:
             continue
+        if not is_filed(path):
+            # Same reasoning as the container conversion: a release
+            # folder under the library root is qBittorrent's, and
+            # mkvpropedit rewrites the header in place.
+            plans.append(AudioFixPlan(path, tracks, None, "not filed by Obsidian — a download, not a library copy"))
+            continue
         if path.suffix.lower() != ".mkv":
             plans.append(AudioFixPlan(path, tracks, None, "not an MKV; mkvpropedit can't edit it"))
             continue
@@ -895,6 +901,31 @@ def _probe_failure(source: Path) -> str:
     return f"ffprobe can't read it: {detail[-160:]}"
 
 
+# The organiser's own folder marker. Every path it files carries one —
+# build_movie_path and build_episode_path both append " {tmdb-<id>}" —
+# so it is an exact test for "this app filed this", which is not the
+# same question as "this is under the library root".
+_FILED_FOLDER_RE = re.compile(r"\{tmdb-\d+\}")
+
+
+def is_filed(path: Path) -> bool:
+    """True when `path` sits in a folder the organiser created.
+
+    qBittorrent downloads into the same dataset as the library — it has
+    to, because the organiser hardlinks and a hardlink cannot cross
+    filesystems — so a release's own folder sits right beside the filed
+    copies, under the same root. Walking the root therefore finds both,
+    and the difference matters enormously: a filed file is a hardlink
+    whose twin qBittorrent still holds, so replacing it costs nothing,
+    while a file in a release folder *is* the torrent's data.
+
+    Confirmed live 2026-09-27 on a season being downloaded at the time:
+    /tv-library/IT.Welcome.To.Derry.S01.COMPLETE...MP4-BEN.THE.MEN/ sat
+    under the TV root with eight half-written episodes in it.
+    """
+    return any(_FILED_FOLDER_RE.search(part) for part in path.parent.parts)
+
+
 def plan_container_conversion(root: Path) -> list[ContainerPlan]:
     """Which MP4s under `root` would become MKVs, and which wouldn't."""
     plans: list[ContainerPlan] = []
@@ -902,6 +933,11 @@ def plan_container_conversion(root: Path) -> list[ContainerPlan]:
         if source.suffix.lower() not in (".mp4", ".m4v"):
             continue
         target = source.with_suffix(".mkv")
+        if not is_filed(source):
+            plans.append(
+                ContainerPlan(source, target, 0, 0, 0, "not filed by Obsidian — a download, not a library copy")
+            )
+            continue
         streams = _streams(source)
         if streams is None:
             plans.append(ContainerPlan(source, target, 0, 0, 0, _probe_failure(source)))

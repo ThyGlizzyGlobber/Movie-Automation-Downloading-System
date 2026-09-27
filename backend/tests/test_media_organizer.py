@@ -1017,6 +1017,19 @@ def test_a_failed_probe_leaves_the_file_alone(monkeypatch, tmp_path):
 # ---------------------------------------------------------------------------
 
 
+def _filed(root: Path) -> Path:
+    """A folder shaped the way the organiser files things.
+
+    The planners deliberately only touch paths carrying the organiser's
+    own "{tmdb-<id>}" marker, because qBittorrent downloads into the
+    same dataset and a release folder under the library root is the
+    torrent's data, not a filed copy.
+    """
+    filed = root / "Lanterns (2026) {tmdb-95350}" / "Season 01"
+    filed.mkdir(parents=True, exist_ok=True)
+    return filed
+
+
 def _mkv(path: Path, tracks) -> Path:
     """A file that only has to exist and end in .mkv; the probe is faked."""
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -1039,7 +1052,7 @@ def _probe_returns(monkeypatch, by_name):
 
 
 def test_the_backfill_plans_the_same_change_the_organiser_would(monkeypatch, tmp_path):
-    _mkv(tmp_path / "French Release.mkv", None)
+    _mkv(_filed(tmp_path) / "French Release.mkv", None)
     _probe_returns(monkeypatch, {"French Release.mkv": [("fre", True), ("eng", False)]})
 
     plans = media_organizer.plan_audio_default_fix(tmp_path, "en")
@@ -1063,8 +1076,8 @@ def test_a_still_hardlinked_file_is_skipped_rather_than_edited(monkeypatch, tmp_
     hardlinks — so more than one link means qBittorrent is very likely
     seeding these exact bytes, and editing them fails its next re-check.
     This is the guard that makes the whole command safe to run."""
-    seeding = _mkv(tmp_path / "Seeding.mkv", None)
-    os.link(seeding, tmp_path / "torrent-copy.mkv")
+    seeding = _mkv(_filed(tmp_path) / "Seeding.mkv", None)
+    os.link(seeding, _filed(tmp_path) / "torrent-copy.mkv")
     _probe_returns(monkeypatch, {
         "Seeding.mkv": [("fre", True), ("eng", False)],
         "torrent-copy.mkv": [("fre", True), ("eng", False)],
@@ -1079,7 +1092,7 @@ def test_a_still_hardlinked_file_is_skipped_rather_than_edited(monkeypatch, tmp_
 def test_a_non_mkv_is_skipped_loudly_rather_than_dropped(monkeypatch, tmp_path):
     """mkvpropedit is Matroska-only. Saying so beats leaving the file out
     of the report, which would read as "this one was fine"."""
-    _mkv(tmp_path / "Movie.mp4", None)
+    _mkv(_filed(tmp_path) / "Movie.mp4", None)
     _probe_returns(monkeypatch, {"Movie.mp4": [("fre", True), ("eng", False)]})
 
     plans = media_organizer.plan_audio_default_fix(tmp_path, "en")
@@ -1093,7 +1106,7 @@ def test_the_backfill_and_the_organiser_cannot_disagree(monkeypatch, tmp_path):
     """Both read preferred_audio_track. The point of the split is that
     one file can't start being fixed one way on the way in and another
     way afterwards."""
-    source = _mkv(tmp_path / "Both.mkv", None)
+    source = _mkv(_filed(tmp_path) / "Both.mkv", None)
     _probe_returns(monkeypatch, {"Both.mkv": [("ita", True), ("eng", False)]})
 
     organiser = media_organizer._audio_default_disposition(source, "en")
@@ -1163,7 +1176,7 @@ def _streams_json(kinds, subtitle_codec=None):
 
 
 def test_a_successful_rewrap_removes_the_mp4(monkeypatch, tmp_path):
-    source = tmp_path / "Show - s01e01.mp4"
+    source = _filed(tmp_path) / "Show - s01e01.mp4"
     source.write_bytes(b"mp4")
 
     def run(cmd, **kwargs):
@@ -1181,7 +1194,7 @@ def test_a_successful_rewrap_removes_the_mp4(monkeypatch, tmp_path):
 
 
 def test_a_failed_rewrap_leaves_the_mp4_exactly_as_it_was(monkeypatch, tmp_path):
-    source = tmp_path / "Show - s01e01.mp4"
+    source = _filed(tmp_path) / "Show - s01e01.mp4"
     source.write_bytes(b"mp4")
 
     def run(cmd, **kwargs):
@@ -1195,14 +1208,14 @@ def test_a_failed_rewrap_leaves_the_mp4_exactly_as_it_was(monkeypatch, tmp_path)
     assert media_organizer.apply_container_conversion(plan) is not None
     assert source.read_bytes() == b"mp4"
     assert not plan.target.exists()
-    assert list(tmp_path.iterdir()) == [source]
+    assert list(source.parent.iterdir()) == [source]
 
 
 def test_a_rewrap_that_lost_a_track_does_not_delete_the_original(monkeypatch, tmp_path):
     """The guard that matters. ffmpeg can exit clean having written a
     file that is missing a stream, and the step after this one deletes
     the only other copy — so the result is counted, not trusted."""
-    source = tmp_path / "Show - s01e01.mp4"
+    source = _filed(tmp_path) / "Show - s01e01.mp4"
     source.write_bytes(b"mp4")
     calls = {"n": 0}
 
@@ -1228,7 +1241,7 @@ def test_a_rewrap_that_lost_a_track_does_not_delete_the_original(monkeypatch, tm
 def test_mov_text_subtitles_are_converted_rather_than_copied(monkeypatch, tmp_path):
     """Matroska will not take mov_text, and -c copy on one aborts the
     whole remux — so an MP4 with subtitles would simply never convert."""
-    (tmp_path / "Show - s01e01.mp4").write_bytes(b"mp4")
+    (_filed(tmp_path) / "Show - s01e01.mp4").write_bytes(b"mp4")
     seen = {}
 
     def run(cmd, **kwargs):
@@ -1250,8 +1263,8 @@ def test_mov_text_subtitles_are_converted_rather_than_copied(monkeypatch, tmp_pa
 
 def test_an_existing_mkv_of_the_same_name_stops_the_conversion(monkeypatch, tmp_path):
     """Overwriting it would be destroying a file nobody asked about."""
-    (tmp_path / "Show - s01e01.mp4").write_bytes(b"mp4")
-    (tmp_path / "Show - s01e01.mkv").write_bytes(b"already here")
+    (_filed(tmp_path) / "Show - s01e01.mp4").write_bytes(b"mp4")
+    (_filed(tmp_path) / "Show - s01e01.mkv").write_bytes(b"already here")
 
     def run(cmd, **kwargs):
         return subprocess.CompletedProcess(cmd, 0, stdout=_streams_json(["video", "audio"]), stderr="")
@@ -1260,7 +1273,7 @@ def test_an_existing_mkv_of_the_same_name_stops_the_conversion(monkeypatch, tmp_
     plan = media_organizer.plan_container_conversion(tmp_path)[0]
 
     assert plan.skipped is not None
-    assert (tmp_path / "Show - s01e01.mkv").read_bytes() == b"already here"
+    assert (_filed(tmp_path) / "Show - s01e01.mkv").read_bytes() == b"already here"
 
 
 def test_mkvs_are_left_out_of_the_plan_entirely(monkeypatch, tmp_path):
@@ -1376,7 +1389,7 @@ def test_data_streams_are_dropped_because_matroska_refuses_them(monkeypatch, tmp
 
     That was every Doctor Who episode and every Ben The Men release in
     the live library — 28 of 28 failures."""
-    (tmp_path / "Doctor Who - s01e01.mp4").write_bytes(b"mp4")
+    (_filed(tmp_path) / "Doctor Who - s01e01.mp4").write_bytes(b"mp4")
     seen = {}
 
     def run(cmd, **kwargs):
@@ -1403,7 +1416,7 @@ def test_cover_art_is_dropped_by_index_not_by_a_metadata_specifier(monkeypatch, 
     disposition. It silently matched nothing and let the art through,
     and the `?` meant ffmpeg never complained. Indices come from the same
     helper the organiser uses, so the two paths agree."""
-    (tmp_path / "Film.mp4").write_bytes(b"mp4")
+    (_filed(tmp_path) / "Film.mp4").write_bytes(b"mp4")
     seen = {}
 
     def run(cmd, **kwargs):
@@ -1431,7 +1444,7 @@ def test_a_file_with_no_index_says_so_rather_than_ffprobe_cant_read_it(monkeypat
     play anywhere — a download to redo, not a conversion to debug. Eight
     episodes of one show in the live library were in this state and the
     report said only that ffprobe couldn't read them."""
-    (tmp_path / "Broken.mp4").write_bytes(b"truncated")
+    (_filed(tmp_path) / "Broken.mp4").write_bytes(b"truncated")
 
     def run(cmd, **kwargs):
         return subprocess.CompletedProcess(
@@ -1463,3 +1476,62 @@ def test_the_failure_reason_is_the_line_that_explains_it():
 def test_the_failure_reason_never_comes_back_empty():
     assert media_organizer._ffmpeg_reason("") == "ffmpeg failed with no output"
     assert media_organizer._ffmpeg_reason(None) == "ffmpeg failed with no output"
+
+
+# ---------------------------------------------------------------------------
+# qBittorrent downloads into the same dataset as the library — it has to,
+# since hardlinks can't cross filesystems — so walking the library root
+# also finds torrents in progress. Those are not ours to rewrite.
+# ---------------------------------------------------------------------------
+
+
+def test_a_download_in_progress_is_not_converted(monkeypatch, tmp_path):
+    """A filed copy is a hardlink whose twin qBittorrent still holds, so
+    replacing it costs nothing. A file in a release folder *is* the
+    torrent's data, and the conversion deletes its source.
+
+    Found live: a season being downloaded at the time sat in
+    /tv-library/IT.Welcome.To.Derry.S01.COMPLETE...MP4-BEN.THE.MEN/ with
+    eight half-written episodes in it."""
+    release = tmp_path / "IT.Welcome.To.Derry.S01.COMPLETE.2160p.MP4-BEN.THE.MEN"
+    release.mkdir()
+    (release / "IT.S01E01.mp4").write_bytes(b"still downloading")
+
+    plans = media_organizer.plan_container_conversion(tmp_path)
+
+    assert len(plans) == 1
+    assert plans[0].skipped is not None
+    assert "not filed" in plans[0].skipped
+
+
+def test_a_filed_copy_is_converted(monkeypatch, tmp_path):
+    """The other half: the organiser's own folder marker is what tells
+    them apart, and every path it files carries one."""
+    filed = tmp_path / "Lanterns (2026) {tmdb-95350}" / "Season 01"
+    filed.mkdir(parents=True)
+    (filed / "Lanterns - s01e01.mp4").write_bytes(b"filed")
+
+    def run(cmd, **kwargs):
+        payload = {"streams": [{"index": 0, "codec_type": "video"}, {"index": 1, "codec_type": "audio"}]}
+        return subprocess.CompletedProcess(cmd, 0, stdout=json.dumps(payload), stderr="")
+
+    monkeypatch.setattr(media_organizer.subprocess, "run", run)
+    plans = media_organizer.plan_container_conversion(tmp_path)
+
+    assert len(plans) == 1
+    assert plans[0].skipped is None
+
+
+def test_the_audio_fix_also_leaves_downloads_alone(monkeypatch, tmp_path):
+    """mkvpropedit rewrites the header in place, so an in-progress
+    torrent is the last thing it should touch."""
+    release = tmp_path / "Some.Show.S01.COMPLETE.1080p-GROUP"
+    release.mkdir()
+    (release / "Some.Show.S01E01.mkv").write_bytes(b"downloading")
+    _probe_returns(monkeypatch, {"Some.Show.S01E01.mkv": [("fre", True), ("eng", False)]})
+
+    plans = media_organizer.plan_audio_default_fix(tmp_path, "en")
+
+    assert len(plans) == 1
+    assert plans[0].wanted is None
+    assert "not filed" in plans[0].skipped
