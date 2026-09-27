@@ -357,12 +357,23 @@ def cmd_convert_to_mkv(args: argparse.Namespace) -> int:
     convertible = [p for p in plans if p.skipped is None]
     skipped = [p for p in plans if p.skipped is not None]
 
+    # Every byte of an MP4 is read and written back, so a big library is
+    # a long sequential job. --limit turns it into batches that can be
+    # run between streams; it is safe to stop and resume because a
+    # converted file no longer looks like work and a failed one is left
+    # exactly as it was.
+    remaining = len(convertible)
+    if args.limit:
+        convertible = convertible[: args.limit]
+
     for plan in skipped:
         print(f"  SKIP  {plan.source.name[:70]}  — {plan.skipped}")
     for plan in convertible:
         print(f"  {'CONV ' if args.apply else 'WOULD'}  [{plan.summary}]  {plan.source.name[:70]}")
 
     total = sum(p.source.stat().st_size for p in convertible if p.source.exists())
+    if args.limit and remaining > len(convertible):
+        print(f"\n(limited to {len(convertible)} of {remaining}; re-run to continue)")
     if not args.apply:
         print(f"\n{len(convertible)} file(s) would be rewrapped, {len(skipped)} skipped.")
         print(f"About {_human(total)} would be rewritten — a copy, not a re-encode, so nothing is re-compressed.")
@@ -546,6 +557,12 @@ def main(argv: list[str] | None = None) -> int:
         "--root",
         action="append",
         help="Directory to scan (repeatable). Defaults to the movie and TV library roots.",
+    )
+    mkv_parser.add_argument(
+        "--limit",
+        type=int,
+        default=None,
+        help="Only do this many files. Safe to stop and resume — a converted file is no longer work.",
     )
     mkv_parser.set_defaults(func=cmd_convert_to_mkv)
 
