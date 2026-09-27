@@ -1,6 +1,7 @@
 import argparse
 import asyncio
 import sys
+import time
 from pathlib import Path
 
 from app import config
@@ -368,8 +369,9 @@ def cmd_convert_to_mkv(args: argparse.Namespace) -> int:
 
     for plan in skipped:
         print(f"  SKIP  {plan.source.name[:70]}  — {plan.skipped}")
-    for plan in convertible:
-        print(f"  {'CONV ' if args.apply else 'WOULD'}  [{plan.summary}]  {plan.source.name[:70]}")
+    if not args.apply:
+        for plan in convertible:
+            print(f"  WOULD  [{plan.summary}]  {plan.source.name[:70]}")
 
     total = sum(p.source.stat().st_size for p in convertible if p.source.exists())
     if args.limit and remaining > len(convertible):
@@ -380,12 +382,29 @@ def cmd_convert_to_mkv(args: argparse.Namespace) -> int:
         print("Re-run with --apply to do it.")
         return 0
 
+    # Printed as each one finishes, not as a list up front. This reads
+    # and writes every byte of every file, so it is a job someone sits
+    # and watches — and a list printed before any work started looked
+    # like it had already finished.
     failures = 0
-    for plan in convertible:
+    started = time.monotonic()
+    moved = 0
+    for i, plan in enumerate(convertible, start=1):
+        size = plan.source.stat().st_size if plan.source.exists() else 0
         error = apply_container_conversion(plan)
         if error:
             failures += 1
-            print(f"  FAILED {plan.source.name[:70]}: {error}")
+            print(f"  [{i}/{len(convertible)}] FAILED {plan.source.name[:60]}: {error}", flush=True)
+            continue
+        moved += size
+        elapsed = time.monotonic() - started
+        rate = moved / elapsed if elapsed > 0 else 0
+        left = (total - moved) / rate if rate > 0 else 0
+        print(
+            f"  [{i}/{len(convertible)}] {_human(size):>9}  {_human(int(rate))}/s  "
+            f"~{left / 60:.0f} min left  {plan.source.name[:50]}",
+            flush=True,
+        )
     done = len(convertible) - failures
     print(f"\n{done} file(s) rewrapped, {failures} failed, {len(skipped)} skipped.")
     print("A failed file is left exactly as it was. Rescan the library in Plex so it picks up the new names.")
