@@ -3,8 +3,8 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { getRegionSettings, setRegionSettings } from '../../api/settings'
 import { AUDIO_LANGUAGES, CERTIFICATION_REGIONS } from '../../lib/regions'
 import { SettingsCardSkeleton } from './SettingsSkeleton'
-import ErrorState from '../../components/ErrorState'
-import SettingRow from '../../components/SettingRow'
+import ErrorState from '../../components/ui/ErrorState'
+import SettingRow from './SettingRow'
 
 const REGION_SUB =
   "Ratings, streaming services and release dates all differ by country: the same show is TV-MA in the United States and MA15+ in Australia, and Stan exists in one of them and not the other. Pick where you are and Obsidian answers in that country everywhere."

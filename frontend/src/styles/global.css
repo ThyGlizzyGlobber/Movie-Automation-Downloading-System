@@ -6,7 +6,7 @@
   -webkit-tap-highlight-color: transparent;
 }
 
-/* Icons are inline SVG strokes (components/Icon.tsx), sized by
+/* Icons are inline SVG strokes (components/ui/Icon.tsx), sized by
    font-size like the icon font they replaced. */
 
 html,

@@ -1,12 +1,12 @@
 import { useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { listHousehold, removeHouseholdUser, setHouseholdUser } from '../../api/admin'
-import Avatar from '../../components/Avatar'
+import Avatar from '../../components/ui/Avatar'
 import { relativeTime } from '../../lib/format'
 import { errorText, useToast } from '../../lib/toast'
-import Toggle from '../../components/Toggle'
+import Toggle from '../../components/ui/Toggle'
 import { SettingsCardSkeleton } from './SettingsSkeleton'
-import Icon from '../../components/Icon'
+import Icon from '../../components/ui/Icon'
 
 // Settings › Household: everyone who has signed in, whether they can
 // request, and a way to remove someone who no longer should be here.

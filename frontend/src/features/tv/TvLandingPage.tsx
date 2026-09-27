@@ -1,8 +1,8 @@
 import { useQuery } from '@tanstack/react-query'
 import DiscoverLanding, { type DiscoverSource } from '../discover/DiscoverLanding'
 import { getTvDiscoverByGenre, getTvDiscoverByProvider, getTvDiscoverPopular, getTvDiscoverTrending, getTvComingSoon, listShows } from '../../api/tv'
-import MediaRow from '../../components/MediaRow'
-import { PosterCardSkeleton } from '../../components/Skeleton'
+import MediaRow from '../../components/media/MediaRow'
+import { PosterCardSkeleton } from '../../components/ui/Skeleton'
 
 // Same curated, row-based page as MoviesLandingPage, TV-only.
 //

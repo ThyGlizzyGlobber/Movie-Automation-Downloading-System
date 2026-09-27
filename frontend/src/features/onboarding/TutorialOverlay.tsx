@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { useSession } from '../auth/useSession'
 import { markTutorialSeen } from '../../api/auth'
-import '../../components/Modal.css'
+import '../../components/ui/Modal.css'
 import './TutorialOverlay.css'
 
 // A short slide-based intro, not element-anchored coach-marks — a

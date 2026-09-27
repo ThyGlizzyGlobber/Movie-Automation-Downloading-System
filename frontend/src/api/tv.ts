@@ -1,7 +1,6 @@
 import { postJson, request } from './client'
 import type { TmdbListItem, TmdbListResponse, MovieTrailer } from '../types/movies'
-import type { TvDetail } from '../types/tv'
-import type { ShowOut } from '../types/shows'
+import type { ShowOut, TvDetail } from '../types/tv'
 import type { BulkDownloadBody, RequestOut } from '../types/requests'
 import type { SeasonEpisodes } from '../types/features'
 

@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
 import { getStorageDetails } from '../../api/settings'
-import ProgressRing from '../../components/ProgressRing'
+import ProgressRing from './ProgressRing'
 import { SettingsCardSkeleton } from './SettingsSkeleton'
 import { formatBytes } from '../../lib/format'
 import LibraryRows from './LibraryRows'

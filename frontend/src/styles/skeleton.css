@@ -1,4 +1,4 @@
-/* Loading skeletons (components/Skeleton.tsx). A skeleton is the page's
+/* Loading skeletons (components/ui/Skeleton.tsx). A skeleton is the page's
    own markup with these classes on the parts still to come, so its size
    comes from the same layout rules as the loaded page. The shimmer wins
    over an element's own background (a button, a pill, a poster) while
@@ -58,7 +58,7 @@
   aspect-ratio: 2 / 3;
 }
 
-/* Images wait on the shimmer, then fade in (components/Img.tsx). */
+/* Images wait on the shimmer, then fade in (components/ui/Img.tsx). */
 .img.img-in {
   animation: img-in 0.35s ease;
 }

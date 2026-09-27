@@ -1,0 +1,97 @@
+import { Link } from 'react-router-dom'
+import type { ReactNode } from 'react'
+import { posterUrl } from '../../lib/tmdbImage'
+import Img from '../ui/Img'
+import { genresFor } from '../../lib/genres'
+import './PosterCard.css'
+
+export interface PosterCardItem {
+  id: number
+  title?: string | null
+  name?: string | null
+  original_title?: string | null
+  original_name?: string | null
+  poster_path?: string | null
+  release_date?: string | null
+  first_air_date?: string | null
+  genre_ids?: number[]
+  on_plex?: boolean
+}
+
+function cardTitle(item: PosterCardItem): string {
+  return item.title || item.name || item.original_title || item.original_name || 'Untitled'
+}
+
+// "2024 | Thriller" (or "2025 | Drama | Series" in a mixed row) under
+// the poster, the reference's card caption.
+function cardMeta(item: PosterCardItem, mediaType: 'movie' | 'tv', mixed = false): string {
+  const date = item.release_date || item.first_air_date || ''
+  const year = date.slice(0, 4)
+  const genre = item.genre_ids?.length ? genresFor(mediaType).find((g) => g.id === item.genre_ids![0])?.name : undefined
+  return [year, genre, mixed && mediaType === 'tv' ? 'Series' : null].filter(Boolean).join(' | ')
+}
+
+export default function PosterCard({
+  item,
+  mediaType = 'movie',
+  caption = true,
+  mixed = false,
+  posterSrc,
+  href,
+  chip,
+}: {
+  item: PosterCardItem
+  mediaType?: 'movie' | 'tv'
+  /* Title and "year | genre" under the poster (off for the Top 10 row). */
+  caption?: boolean
+  /* In a row that mixes movies and shows, shows say so in the caption. */
+  mixed?: boolean
+  /* Artwork from somewhere other than TMDB (a Plex poster). */
+  posterSrc?: string | null
+  href?: string
+  /* A status chip in the poster's top-right corner (the household
+     requests row); replaces the On Plex badge when given. */
+  chip?: ReactNode
+}) {
+  const isTv = mediaType === 'tv'
+  const title = cardTitle(item)
+  const to = href ?? (isTv ? `#/tv/${item.id}` : `#/movies/${item.id}`)
+  // A route of this app's own, or somewhere else entirely — a library
+  // item with no TMDB id links straight out to Plex (see
+  // RecentlyAddedRow), and that has to stay an anchor.
+  const internal = to.startsWith('#/')
+  const meta = caption ? cardMeta(item, mediaType, mixed) : ''
+  // <Link> rather than <a href="#/…"> for the app's own routes. Setting
+  // location.hash by hand means the router never initiates the
+  // navigation, only notices it afterwards, and it classifies that as a
+  // POP — the same thing a Back press produces. ScrollRestoration tops
+  // out a PUSH and restores a POP, so every poster click was asking to
+  // be put back where the last page left you: open a title from halfway
+  // down a row and the new page opened halfway down itself.
+  const body = (
+    <>
+      <div className="poster-art">
+        <Img src={posterSrc ?? posterUrl(item.poster_path)} alt={caption ? '' : title} loading="lazy" />
+        {chip ?? (item.on_plex && <div className="on-plex-badge">On Plex</div>)}
+      </div>
+      {caption && (
+        <div className="poster-caption">
+          <b>{title}</b>
+          {meta && <small>{meta}</small>}
+        </div>
+      )}
+    </>
+  )
+  return internal ? (
+    // to.slice(1) turns "#/movies/12" into the "/movies/12" the router
+    // wants, so every caller can keep handing this component the hash
+    // form it always has.
+    <Link className="poster-card" to={to.slice(1)}>
+      {body}
+    </Link>
+  ) : (
+    <a className="poster-card" href={to}>
+      {body}
+    </a>
+  )
+}

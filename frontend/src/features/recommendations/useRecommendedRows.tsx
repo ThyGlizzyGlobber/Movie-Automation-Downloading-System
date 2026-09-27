@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { getRecommendations } from '../../api/recommendations'
-import MediaRow from '../../components/MediaRow'
+import MediaRow from '../../components/media/MediaRow'
 import type { RecommendedRow } from '../../types/recommendations'
 
 /** A row the backend built: "Because you watched…", "Today's top picks",

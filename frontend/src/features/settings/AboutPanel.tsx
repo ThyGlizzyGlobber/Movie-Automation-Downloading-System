@@ -2,7 +2,7 @@ import { useQuery } from '@tanstack/react-query'
 import { getAbout } from '../../api/admin'
 import { formatBytes } from '../../lib/format'
 import { SettingsCardSkeleton } from './SettingsSkeleton'
-import SettingRow from '../../components/SettingRow'
+import SettingRow from './SettingRow'
 
 function uptime(seconds: number | null): string {
   if (seconds == null) return 'unknown'

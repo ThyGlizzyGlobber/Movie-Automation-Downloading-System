@@ -4,9 +4,9 @@ import { getSeasonEpisodes, requestEpisode } from '../../api/tv'
 import { stillUrl } from '../../lib/tmdbImage'
 import { statusMeta } from '../../lib/status'
 import { errorText, useToast } from '../../lib/toast'
-import Icon from '../../components/Icon'
-import Img from '../../components/Img'
-import { Skel, SkelText } from '../../components/Skeleton'
+import Icon from '../../components/ui/Icon'
+import Img from '../../components/ui/Img'
+import { Skel, SkelText } from '../../components/ui/Skeleton'
 import type { EpisodeStatus } from '../../types/features'
 
 // One season's episodes with what the household has of each (the

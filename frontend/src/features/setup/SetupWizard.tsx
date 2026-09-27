@@ -4,9 +4,9 @@ import SetupTokenStep from './SetupTokenStep'
 import TmdbStep from './TmdbStep'
 import QbittorrentStep from './QbittorrentStep'
 import PlexLinkStep from './PlexLinkStep'
-import ErrorState from '../../components/ErrorState'
+import ErrorState from '../../components/ui/ErrorState'
 import './SetupWizard.css'
-import AmbientGlow from '../../components/AmbientGlow'
+import AmbientGlow from '../../components/ui/AmbientGlow'
 
 type WizardStep = 'token' | 'tmdb' | 'qbittorrent' | 'plex'
 

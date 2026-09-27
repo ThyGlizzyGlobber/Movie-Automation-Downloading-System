@@ -1,6 +1,6 @@
 // Mirrors api.py's /api/recommendations.
 
-import type { PosterCardItem } from '../components/PosterCard'
+import type { PosterCardItem } from '../components/media/PosterCard'
 
 /** One row the backend decided this person should see today. */
 export interface RecommendedRow {

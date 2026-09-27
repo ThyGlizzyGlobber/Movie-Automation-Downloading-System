@@ -1,7 +1,7 @@
 import { useEndUserLogin } from './useEndUserLogin'
 import './LoginPage.css'
-import AmbientGlow from '../../components/AmbientGlow'
-import BootSkeleton from '../../components/BootSkeleton'
+import AmbientGlow from '../../components/ui/AmbientGlow'
+import BootSkeleton from '../../app/BootSkeleton'
 
 export default function LoginPage() {
   const { authUrl, starting, pending, probing, authenticated, error, begin } = useEndUserLogin()

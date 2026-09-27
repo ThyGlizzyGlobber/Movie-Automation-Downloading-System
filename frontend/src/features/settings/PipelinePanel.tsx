@@ -1,11 +1,11 @@
 import { useEffect, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { getPipelineSettings, setPipelineSettings } from '../../api/settings'
-import LanguageMultiSelect from '../../components/LanguageMultiSelect'
+import LanguageMultiSelect from './LanguageMultiSelect'
 import { SettingsCardSkeleton } from './SettingsSkeleton'
-import ErrorState from '../../components/ErrorState'
+import ErrorState from '../../components/ui/ErrorState'
 import { ApiError } from '../../api/client'
-import SettingRow from '../../components/SettingRow'
+import SettingRow from './SettingRow'
 import { useSaveFlash } from '../../lib/hooks'
 
 // Shared with the dashboard's quick settings so both read as one setting.

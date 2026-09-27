@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useSetupStatus } from '../setup/useSetupStatus'
 import { updateTmdbSettings, testQbtSettingsConnection, updateQbtSettings } from '../../api/settings'
 import { SettingsCardSkeleton } from './SettingsSkeleton'
-import ErrorState from '../../components/ErrorState'
+import ErrorState from '../../components/ui/ErrorState'
 import { ApiError } from '../../api/client'
 
 const TMDB_SUB = 'Titles, posters and details come from TMDB.'

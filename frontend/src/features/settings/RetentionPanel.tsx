@@ -3,7 +3,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { getRetention, setRetention } from '../../api/settings'
 import { RETENTION_OPTIONS } from '../../lib/retention'
 import { SettingsCardSkeleton } from './SettingsSkeleton'
-import ErrorState from '../../components/ErrorState'
+import ErrorState from '../../components/ui/ErrorState'
 import { ApiError } from '../../api/client'
 
 const RETENTION_SUB = 'Finished, cancelled and failed requests leave the list after this long. Downloads in progress are never removed.'

@@ -3,11 +3,11 @@ import { useParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { searchMovies } from '../../api/movies'
 import { searchTv } from '../../api/tv'
-import PosterCard from '../../components/PosterCard'
-import { PosterCardSkeleton } from '../../components/Skeleton'
-import EmptyState from '../../components/EmptyState'
+import PosterCard from '../../components/media/PosterCard'
+import { PosterCardSkeleton } from '../../components/ui/Skeleton'
+import EmptyState from '../../components/ui/EmptyState'
 import { usePageTitle } from '../../lib/chrome'
-import { pickBestMediaType, type SearchMediaType } from '../../lib/searchRank'
+import { pickBestMediaType, type SearchMediaType } from './searchRank'
 
 // Unified search — movies and TV shows in parallel, one side shown at a
 // time behind the same segmented toggle the Top 10 row uses, rather than
@@ -17,7 +17,7 @@ import { pickBestMediaType, type SearchMediaType } from '../../lib/searchRank'
 // with the show the household actually wanted a full page below.
 //
 // Which side opens is a guess from the results themselves (see
-// lib/searchRank), and only a guess — it picks the tab, it never hides
+// searchRank.ts), and only a guess — it picks the tab, it never hides
 // the other one, and the moment someone chooses for themselves their
 // choice sticks until the query changes.
 //

@@ -1,4 +1,4 @@
-import Icon, { type IconName } from '../../components/Icon'
+import Icon, { type IconName } from '../../components/ui/Icon'
 
 export interface SettingsSection {
   key: string

@@ -1,5 +1,5 @@
 import type { CSSProperties, ReactNode } from 'react'
-import { Skel, SkelText, SkelWords } from '../../components/Skeleton'
+import { Skel, SkelText, SkelWords } from '../../components/ui/Skeleton'
 
 const LABEL_WIDTHS = ['42%', '30%', '52%', '36%', '46%']
 const HINT_WIDTHS = ['68%', '54%', '74%', '60%', '48%']

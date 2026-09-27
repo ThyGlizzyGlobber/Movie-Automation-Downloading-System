@@ -2,9 +2,9 @@ import { lazy, Suspense } from 'react'
 import { RouterProvider } from 'react-router-dom'
 import { useSetupStatus } from './features/setup/useSetupStatus'
 import { useSession } from './features/auth/useSession'
-import BootSkeleton from './components/BootSkeleton'
-import ErrorState from './components/ErrorState'
-import { router } from './router/routes'
+import BootSkeleton from './app/BootSkeleton'
+import ErrorState from './components/ui/ErrorState'
+import { router } from './app/routes'
 
 // Seen once per install and once per sign-in, so neither rides in the
 // bundle every signed-in visit downloads.
