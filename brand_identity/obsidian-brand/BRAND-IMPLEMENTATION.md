@@ -200,4 +200,6 @@ obsidian-brand/
     ├── apple-touch-icon.png          designer's 1024 export (rounded, for reference)
     ├── icon-tile.svg, icon-1024.png  the app-icon composition
     └── build_icons.py                renders every icon in frontend/public/
+└── provider-originals/       source wordmarks the streaming-service tiles in
+                              frontend/public/icons/ were made from (not served)
 ```

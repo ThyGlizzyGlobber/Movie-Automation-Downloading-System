@@ -119,7 +119,7 @@ export default function EpisodeList({ tmdbId, season }: { tmdbId: number; season
   )
 }
 
-export function EpisodeListSkeleton({ count = 8 }: { count?: number }) {
+function EpisodeListSkeleton({ count = 8 }: { count?: number }) {
   return (
     <div className="episode-list" aria-hidden="true">
       <div className="episode-progress">

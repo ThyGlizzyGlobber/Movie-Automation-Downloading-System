@@ -1026,15 +1026,6 @@ def hero_slides(
     return _with_fresh_plex_state(_hero_slides_cached(kind, region, store, tmdb), store)
 
 
-@router.get("/api/discover/providers")
-def discover_providers(region: str = Depends(resolve_region), tmdb: TMDBClient = Depends(get_tmdb)) -> list[dict]:
-    try:
-        data = tmdb.get_watch_providers(region=region)
-    except TMDBError as exc:
-        raise HTTPException(status_code=502, detail=str(exc)) from exc
-    return data.get("results", [])
-
-
 @router.get("/api/discover/providers/{provider_id}")
 def discover_by_provider(
     provider_id: int,
@@ -1251,7 +1242,7 @@ def tv_discover_coming_soon(
 def get_tv_detail(tmdb_id: int, store: RequestStore = Depends(get_store), tmdb: TMDBClient = Depends(get_tmdb)) -> dict:
     """Full TMDB show detail — overview, seasons, status (Returning
     Series/Ended/Canceled), genres, poster/backdrop paths. Backs the show
-    detail view's subscribe/pause/resume/bulk-download controls."""
+    detail view's subscribe/unsubscribe/bulk-download controls."""
     try:
         show = tmdb.get_tv(tmdb_id)
     except TMDBError as exc:
@@ -1673,22 +1664,6 @@ def get_show(show_id: int, store: RequestStore = Depends(get_store)) -> ShowOut:
     return _show_out(store, row)
 
 
-@router.post("/api/shows/{show_id}/pause")
-def pause_show(show_id: int, store: RequestStore = Depends(get_store)) -> ShowOut:
-    if store.get_show(show_id) is None:
-        raise HTTPException(status_code=404, detail="show not found")
-    store.update_show_status(show_id, "paused")
-    return _show_out(store, store.get_show(show_id))
-
-
-@router.post("/api/shows/{show_id}/resume")
-def resume_show(show_id: int, store: RequestStore = Depends(get_store)) -> ShowOut:
-    if store.get_show(show_id) is None:
-        raise HTTPException(status_code=404, detail="show not found")
-    store.update_show_status(show_id, "watching")
-    return _show_out(store, store.get_show(show_id))
-
-
 @router.delete("/api/shows/{show_id}")
 def unsubscribe_show(show_id: int, store: RequestStore = Depends(get_store)) -> dict:
     """Unsubscribes — stops future checks. Every `requests`/`show_episodes`
@@ -1700,7 +1675,7 @@ def unsubscribe_show(show_id: int, store: RequestStore = Depends(get_store)) -> 
 
 
 # -- Stage 13: whole-season / complete-series bulk acquisition. A plain,
-#    explicit user action distinct from subscribe/pause/resume above —
+#    explicit user action distinct from subscribing above —
 #    usable regardless of a show's watching/paused status, and regardless
 #    of whether it's still airing, per the plan's "independent, not
 #    mutually exclusive" call. Goes through the same requests table/worker

@@ -210,11 +210,6 @@
   flex-wrap: wrap;
   gap: 10px;
 }
-
-.plex-connected {
-  font-size: 15px;
-  margin-bottom: 14px;
-}
 .plex-hint {
   color: var(--text-dim);
   font-size: 13px;
@@ -223,11 +218,6 @@
 }
 .plex-error {
   color: var(--status-nospace);
-  font-size: 13px;
-  margin-top: 10px;
-}
-.plex-success {
-  color: var(--status-complete);
   font-size: 13px;
   margin-top: 10px;
 }
@@ -273,32 +263,6 @@
 .settings-row .settings-field {
   flex: 1 1 160px;
   min-width: 0;
-}
-.settings-size-range {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-.settings-size-range input {
-  flex: 1;
-  min-width: 0;
-}
-.settings-size-range span {
-  color: var(--text-dim);
-  font-size: 14px;
-}
-.settings-checkbox-label {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  color: var(--text);
-  font-size: 15px;
-  cursor: pointer;
-}
-.settings-checkbox-label input[type='checkbox'] {
-  width: 18px;
-  height: 18px;
-  flex-shrink: 0;
 }
 .settings-hint {
   color: var(--text-dim);
@@ -444,74 +408,6 @@
   .storage-tiles {
     grid-template-columns: 1fr 1fr;
   }
-}
-
-/* Quality profiles panel */
-.profile-list {
-  display: grid;
-  gap: 12px;
-  margin: 12px 0 16px;
-}
-.profile-card {
-  padding: 16px 18px 6px;
-  border-radius: var(--radius-lg);
-  background: rgba(255, 255, 255, 0.03);
-  border: 1px solid var(--glass-border-soft);
-}
-.profile-card.default {
-  border-color: color-mix(in srgb, var(--accent) 45%, transparent);
-  background: var(--accent-soft);
-}
-.profile-card-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 10px;
-}
-.profile-default {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 12px;
-  font-weight: 700;
-  color: var(--text-dim);
-}
-.profile-card.default .profile-default {
-  color: var(--accent);
-}
-.profile-remove {
-  width: 32px;
-  height: 32px;
-  border-radius: 50%;
-  border: none;
-  background: var(--glass);
-  color: var(--status-failed);
-  display: grid;
-  place-items: center;
-  font-size: 15px;
-}
-.profile-remove:disabled {
-  opacity: 0.35;
-}
-
-/* Page title and one-line lead above the active panel (desktop), and the
-   one-line description under each card's heading. */
-.settings-heading {
-  margin: 0 0 22px;
-}
-.settings-title {
-  font-family: var(--font-display);
-  font-weight: 300;
-  font-size: clamp(40px, 4vw, 56px);
-  letter-spacing: var(--tracking-display);
-  line-height: 1;
-  margin: 0 0 8px;
-}
-.settings-lead {
-  margin: 0;
-  color: var(--text-dim);
-  font-weight: 600;
-  font-size: 14px;
 }
 .settings-sub {
   margin: -6px 0 18px;
@@ -695,55 +591,6 @@
   .setting-control-skel {
     width: 100%;
   }
-}
-/* Quality profile tiles (the card's default view; edit opens the form). */
-.profile-tiles {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-  gap: 10px;
-  margin-bottom: 16px;
-}
-.profile-tile {
-  border-radius: 18px;
-  padding: 16px 18px;
-  background: var(--glass);
-  border: 1px solid var(--glass-border);
-  position: relative;
-}
-.profile-tile.default {
-  border-color: rgba(156, 192, 255, 0.4);
-}
-.profile-tile .tag {
-  position: absolute;
-  top: 16px;
-  right: 18px;
-  font-size: 10px;
-  font-weight: 800;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--obsidian-ice);
-}
-.profile-tile small {
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--text-dim);
-}
-.profile-tile b {
-  display: block;
-  font-family: var(--font-display);
-  font-weight: 400;
-  font-size: 19px;
-  margin-top: 6px;
-  letter-spacing: -0.02em;
-}
-.profile-tile p {
-  margin: 8px 0 0;
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--text-dim);
-  line-height: 1.5;
 }
 
 /* Household rows and About values. */

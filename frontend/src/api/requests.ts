@@ -9,10 +9,6 @@ export function createRequest(body: CreateRequestBody) {
   return postJson<RequestOut>('/api/requests', body)
 }
 
-export function getRequest(id: number) {
-  return request<RequestOut>(`/api/requests/${id}`)
-}
-
 export function cancelRequest(id: number) {
   return request<RequestOut>(`/api/requests/${id}/cancel`, { method: 'POST' })
 }

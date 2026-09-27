@@ -838,26 +838,6 @@ class RequestStore:
         ).fetchall()
         return [RequestRow._from_row(r) for r in rows]
 
-    def library_tmdb_ids(self) -> set[tuple[str, int]]:
-        """Everything Obsidian has filed, as (media_type, tmdb_id).
-
-        Used to keep recommendations from offering something the household
-        already has. Incomplete on purpose for now: this knows what *this
-        app* downloaded and organized, not what was in Plex before it or
-        added by hand. Narrowing that gap means reading Plex's library
-        sections, which is its own piece of work — until then this is a
-        strict improvement over excluding nothing.
-
-        Episodes collapse to their show: `library_items` has a row per
-        episode file, and for "do we have this show" the answer is the same
-        for all of them."""
-        rows = self._conn.execute("SELECT DISTINCT media_type, tmdb_id FROM library_items").fetchall()
-        out: set[tuple[str, int]] = set()
-        for row in rows:
-            media_type = "movie" if row["media_type"] == "movie" else "tv"
-            out.add((media_type, int(row["tmdb_id"])))
-        return out
-
     def list_requests_page(self, limit: int, offset: int = 0) -> list[RequestRow]:
         """Frontend migration Part D — the Activity Dashboard's own paged
         view of the full requests history (every request, not just a
@@ -1579,12 +1559,6 @@ class RequestStore:
             self._conn.execute("DELETE FROM sessions WHERE id = ?", (session_id,))
             self._conn.commit()
 
-    def delete_sessions_for_user(self, plex_user_id: str) -> int:
-        with self._lock:
-            cur = self._conn.execute("DELETE FROM sessions WHERE plex_user_id = ?", (plex_user_id,))
-            self._conn.commit()
-            return cur.rowcount
-
     def delete_non_admin_sessions(self) -> int:
         """Called when the linked Plex server changes (switching servers
         in Settings, Part C3's `PUT /api/plex/server`) — every non-admin
@@ -1647,10 +1621,6 @@ class RequestStore:
             cur = self._conn.execute("DELETE FROM users WHERE plex_user_id = ?", (plex_user_id,))
             self._conn.commit()
             return cur.rowcount > 0
-
-    def count_requests(self) -> int:
-        row = self._conn.execute("SELECT COUNT(*) AS n FROM requests").fetchone()
-        return int(row["n"]) if row else 0
 
     def record_auth_event(
         self,

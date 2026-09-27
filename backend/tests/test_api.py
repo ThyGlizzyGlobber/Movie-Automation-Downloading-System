@@ -3,7 +3,6 @@ via FastAPI dependency overrides and a lifespan override that skips the
 real background worker — see the manual end-to-end run in project.md for
 the real-TMDB/real-qBittorrent validation this doesn't cover."""
 
-import asyncio
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
 
@@ -120,9 +119,6 @@ class FakeTMDBClient:
 
     def get_available_trending(self, time_window="week", region="US", page=1):
         return {"results": [MOVIE], "page": page}
-
-    def get_watch_providers(self, region="US"):
-        return {"results": [{"provider_id": 8, "provider_name": "Netflix", "logo_path": "/netflix.png"}]}
 
     def get_available_by_provider(self, provider_id, region="US", page=1):
         return {"results": [MOVIE], "page": page, "total_pages": 10, "provider_id": provider_id}
@@ -993,14 +989,6 @@ def test_discover_trending_passes_through_tmdb(client_and_deps):
 
     assert response.status_code == 200
     assert response.json()["results"] == [dict(MOVIE, on_plex=False)]
-
-
-def test_discover_providers_returns_results_list(client_and_deps):
-    client, _, _, _, _, _ = client_and_deps
-    response = client.get("/api/discover/providers")
-
-    assert response.status_code == 200
-    assert response.json() == [{"provider_id": 8, "provider_name": "Netflix", "logo_path": "/netflix.png"}]
 
 
 def test_discover_by_provider_passes_provider_id_through(client_and_deps):
@@ -2052,25 +2040,6 @@ def test_list_shows_filters_by_status(client_and_deps):
 def test_get_show_404s_when_missing(client_and_deps):
     client, _, _, _, _, _ = client_and_deps
     response = client.get("/api/shows/999")
-    assert response.status_code == 404
-
-
-def test_pause_and_resume_show(client_and_deps):
-    client, store, _, _, _, _ = client_and_deps
-    show = store.create_show(tmdb_id=1, title="A")
-
-    paused = client.post(f"/api/shows/{show.id}/pause")
-    assert paused.status_code == 200
-    assert paused.json()["status"] == "paused"
-
-    resumed = client.post(f"/api/shows/{show.id}/resume")
-    assert resumed.status_code == 200
-    assert resumed.json()["status"] == "watching"
-
-
-def test_pause_show_404s_when_missing(client_and_deps):
-    client, _, _, _, _, _ = client_and_deps
-    response = client.post("/api/shows/999/pause")
     assert response.status_code == 404
 
 

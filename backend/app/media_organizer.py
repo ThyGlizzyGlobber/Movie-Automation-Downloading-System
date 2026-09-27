@@ -29,12 +29,12 @@ from pathlib import Path, PurePosixPath
 
 from app import config
 from app.language import audio_quality_key, is_audio_language
-from app.normalize import has_token, normalize_text, tokenize
+from app.normalize import extract_episode_identity, has_token, normalize_text, tokenize
 from app.qbt import QBTClient
 from app.resolve import MediaIdentity
 from app.score import matches_any_variant
 from app.tv_resolve import ShowIdentity
-from app.tv_score import extract_episode_identity, has_episode_token
+from app.tv_score import has_episode_token
 
 logger = logging.getLogger("app.media_organizer")
 
@@ -675,7 +675,7 @@ def organize_pack(
     hardlink-or-copy), reused here unchanged for each file rather than
     reimplemented, per the plan's "reuse, don't duplicate" call. The only
     genuinely new logic is per-file: which (season, episode) a given file
-    represents (`tv_score.extract_episode_identity`, read from the file's
+    represents (`normalize.extract_episode_identity`, read from the file's
     own name, not from a single fixed request the way `organize_episode`
     is told its season/episode).
 

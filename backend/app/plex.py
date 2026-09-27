@@ -14,8 +14,8 @@ import asyncio
 import secrets
 import time
 import uuid
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Callable
 from urllib.parse import urlencode
 
 import logging
@@ -157,8 +157,7 @@ class PlexClient:
 
     def list_resources(self, token: str) -> list[dict]:
         """Every Plex Media Server resource this account can see — owned
-        *or* shared with them, unlike get_owned_server below, which stops
-        at the first owned one. Backs the frontend migration's end-user
+        *or* shared with them. Backs the frontend migration's end-user
         access check (does this account have access to *our* server —
         Part C1) and the admin's own multi-server picker (a person can
         own more than one Plex server, Part C1's "linking is a picker, not
@@ -192,22 +191,9 @@ class PlexClient:
             )
         return resources
 
-    def get_owned_server(self, token: str) -> dict | None:
-        """The first Plex Media Server this account owns, with a usable
-        connection URL and its own resource-level access token (what a PMS
-        actually expects, distinct from the plex.tv account token). A thin
-        filter over list_resources — kept as its own method/return shape
-        since it's still what admin unlink/relink-to-first-server callers
-        want, and changing its shape would break existing callers."""
-        for resource in self.list_resources(token):
-            if resource["owned"]:
-                return {"name": resource["name"], "url": resource["url"], "token": resource["token"]}
-        return None
-
     def get_account_identity(self, token: str) -> dict | None:
         """The signed-in account's own stable plex.tv id and username —
-        who is this, distinct from get_owned_server's server-linking
-        concern. Same /api/v2/user endpoint get_account_username already
+        who is this, as opposed to which server to link. Same /api/v2/user endpoint get_account_username already
         uses; None if the token is no longer valid."""
         response = self.session.get(f"{PLEX_TV_BASE}/api/v2/user", headers=self._headers(token), timeout=10)
         if not response.ok:

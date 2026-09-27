@@ -86,7 +86,7 @@ class QBTClient:
         1, 'success_count': 0}` and was genuinely present in qBittorrent
         moments later. Treating "pending" as a failure here would reject
         real successes — whether a pending add actually lands is verified
-        for real by pipeline.py's `_capture_new_hash` retry loop, not
+        for real by pipeline.py's `_capture_new_hashes` retry loop, not
         synchronously here."""
         result = self._client.torrents_add(urls=file_url, category=category)
         if isinstance(result, str):

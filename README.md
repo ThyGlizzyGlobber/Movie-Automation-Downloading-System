@@ -334,7 +334,7 @@ Rolling back is `git checkout` or `git revert` on the deployed copy.
 cd backend
 python -m venv .venv
 # Linux/macOS: source .venv/bin/activate    Windows: .venv\Scripts\activate
-pip install -r requirements.txt
+pip install -r requirements-dev.txt
 python -m pytest -q
 
 # Frontend

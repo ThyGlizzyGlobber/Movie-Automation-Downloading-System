@@ -105,8 +105,7 @@ def is_movie_coming_soon(movie: dict, release_dates_by_country: list[dict]) -> b
 def trailer_candidates(videos: list[dict]) -> list[dict]:
     """Every YouTube video worth considering as a hero preview, best
     type-guess first — official Trailer, any Trailer, official Teaser,
-    any Teaser, which is `best_trailer_key`'s order kept whole rather
-    than collapsed to one winner.
+    any Teaser.
 
     A list, because type is a poor guide to length and length is what
     the hero actually wants (trailers.pick_shortest_suitable measures
@@ -133,34 +132,6 @@ def trailer_candidates(videos: list[dict]) -> list[dict]:
                 if v not in ranked:
                     ranked.append(v)
     return ranked
-
-
-def best_trailer_key(videos: list[dict]) -> str | None:
-    """The single best YouTube trailer key from a /videos response's
-    `results` list, for the home hero carousel's background video — or
-    None if nothing suitable exists (a title with no trailer on file at
-    all, or only non-YouTube/non-trailer entries). Preference order:
-    an official Trailer, any Trailer, an official Teaser, any Teaser —
-    a Teaser is a real, if lesser, substitute when no full trailer has
-    been uploaded yet (common for a just-announced or still-airing
-    season), but never anything further afield (a clip, a featurette,
-    a bloopers reel) that wouldn't read as "the trailer" to a viewer.
-
-    The hero goes through `trailer_candidates` + trailers.py instead, to
-    pick on length; this remains the answer to "one key, no network",
-    and the fallback when nothing can be measured."""
-    youtube = [v for v in videos if v.get("site") == "YouTube" and v.get("key")]
-
-    def pick(video_type: str, official_only: bool) -> dict | None:
-        candidates = [v for v in youtube if v.get("type") == video_type and (not official_only or v.get("official"))]
-        return candidates[0] if candidates else None
-
-    for video_type in ("Trailer", "Teaser"):
-        for official_only in (True, False):
-            match = pick(video_type, official_only)
-            if match:
-                return match["key"]
-    return None
 
 
 def is_tv_upcoming(show: dict) -> bool:
@@ -255,10 +226,6 @@ class TMDBClient:
             },
         )
 
-    def get_alternative_titles(self, tmdb_id: int) -> list[dict]:
-        data = self._get(f"/movie/{tmdb_id}/alternative_titles")
-        return data.get("titles", [])
-
     def get_movie_videos(self, tmdb_id: int) -> list[dict]:
         return self._get(f"/movie/{tmdb_id}/videos").get("results", [])
 
@@ -275,10 +242,6 @@ class TMDBClient:
     @ttl_cache(POPULAR_DISCOVER_TTL_SECONDS)
     def get_trending(self, time_window: str = "week", page: int = 1) -> dict:
         return self._get(f"/trending/movie/{time_window}", {"page": page})
-
-    @ttl_cache(POPULAR_DISCOVER_TTL_SECONDS)
-    def get_watch_providers(self, region: str = "US") -> dict:
-        return self._get("/watch/providers/movie", {"watch_region": region})
 
     @ttl_cache(POPULAR_DISCOVER_TTL_SECONDS)
     def discover_by_provider(self, provider_id: int, region: str = "US", page: int = 1) -> dict:

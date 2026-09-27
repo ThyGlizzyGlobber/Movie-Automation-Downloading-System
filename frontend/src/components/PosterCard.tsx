@@ -18,13 +18,13 @@ export interface PosterCardItem {
   on_plex?: boolean
 }
 
-export function cardTitle(item: PosterCardItem): string {
+function cardTitle(item: PosterCardItem): string {
   return item.title || item.name || item.original_title || item.original_name || 'Untitled'
 }
 
 // "2024 | Thriller" (or "2025 | Drama | Series" in a mixed row) under
 // the poster, the reference's card caption.
-export function cardMeta(item: PosterCardItem, mediaType: 'movie' | 'tv', mixed = false): string {
+function cardMeta(item: PosterCardItem, mediaType: 'movie' | 'tv', mixed = false): string {
   const date = item.release_date || item.first_air_date || ''
   const year = date.slice(0, 4)
   const genre = item.genre_ids?.length ? genresFor(mediaType).find((g) => g.id === item.genre_ids![0])?.name : undefined

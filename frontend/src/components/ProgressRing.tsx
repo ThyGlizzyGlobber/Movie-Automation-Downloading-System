@@ -1,10 +1,7 @@
 import './ProgressRing.css'
 
-// A live download fraction as a glowing ring with the percentage inside
-// — the reference's progress treatment for the Requests list, where a
-// row is short and wide and a bar under the title read as clutter. Same
-// SVG dasharray technique as ScoreRing. ProgressBar remains the thin
-// inline form for places with vertical room.
+// A fraction as a glowing ring with the percentage inside — used for
+// disk usage in Settings → Storage. SVG dasharray technique.
 export default function ProgressRing({ progress, size = 44 }: { progress: number; size?: number }) {
   const pct = Math.round(Math.max(0, Math.min(1, progress)) * 100)
   const stroke = 3.5

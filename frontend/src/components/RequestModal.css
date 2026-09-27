@@ -116,9 +116,6 @@
   max-width: 30ch;
   line-height: 1.45;
 }
-.request-modal-note.warn {
-  color: var(--status-nomatch);
-}
 .request-modal-cancel {
   height: 46px;
   padding: 0 20px;

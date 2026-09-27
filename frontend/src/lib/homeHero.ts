@@ -85,7 +85,7 @@ function tvAiringBadge(show: TvBadgeSource): string | null {
 
 // When a movie reached digital: the region's digital release, else any
 // region's, else the theatrical date as a last resort.
-export function digitalReleaseDate(movie: MovieBadgeSource, region: string = FALLBACK_REGION): string | null {
+function digitalReleaseDate(movie: MovieBadgeSource, region: string = FALLBACK_REGION): string | null {
   const results = movie.release_dates?.results ?? []
   const pick = (r: typeof results[number]) => r.release_dates.find((d) => d.type === 4 && d.release_date)?.release_date?.slice(0, 10) ?? null
   const local = results.find((r) => r.iso_3166_1 === region)

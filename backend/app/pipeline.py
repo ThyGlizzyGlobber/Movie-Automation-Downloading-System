@@ -179,13 +179,11 @@ def _candidates_that_fit(ranked: list[tuple[dict, Score]], free_space_bytes: int
     ]
 
 
-def _capture_new_hash(qbt: QBTClient, hashes_before: set[str]) -> str | None:
-    """Stage 3 needs a way to track *this specific* add through to
-    completion (the API's "downloading" -> "complete" transition). Works
+def _capture_new_hashes(qbt: QBTClient, hashes_before: set[str]) -> set[str]:
+    """Every hash that appeared since `hashes_before`, once at least one
+    has. This is how an add is tracked through to completion: it works
     for both magnet and direct-.torrent-URL results, unlike parsing
-    `fileUrl` (only magnets carry an infohash). Ambiguous (more than one new
-    hash — e.g. a concurrent manual add) fails safe to untracked rather than
-    guessing which one is ours.
+    `fileUrl` (only magnets carry an infohash).
 
     Retries briefly: a magnet is indexed by qBittorrent essentially
     instantly, but a direct-.torrent-URL result (the majority of real
@@ -200,18 +198,10 @@ def _capture_new_hash(qbt: QBTClient, hashes_before: set[str]) -> str | None:
     result that's merely still indexing from one that will never land
     (confirmed live: qBittorrent's WebAPI 2.14+ metadata response reports a
     still-fetching direct-.torrent-URL as "pending", not "success" or
-    "failure", the instant the call returns). If zero new hashes ever show
-    up despite exhausting every retry, nothing was actually added — raises
+    "failure", the instant the call returns). If no new hash ever shows up
+    despite exhausting every retry, nothing was actually added — raises
     QBTError rather than reporting "added" with an untracked, nonexistent
-    torrent. The ambiguous case (more than one new hash) is different:
-    something was clearly added, so that still returns None as before."""
-    new_hashes = _capture_new_hashes(qbt, hashes_before)
-    return next(iter(new_hashes)) if len(new_hashes) == 1 else None
-
-
-def _capture_new_hashes(qbt: QBTClient, hashes_before: set[str]) -> set[str]:
-    """Every hash that appeared since `hashes_before`, once at least one
-    has; raises QBTError when none ever does (see `_capture_new_hash`)."""
+    torrent."""
     for _ in range(config.HASH_CAPTURE_ATTEMPTS):
         new_hashes = qbt.existing_torrent_hashes() - hashes_before
         if new_hashes:

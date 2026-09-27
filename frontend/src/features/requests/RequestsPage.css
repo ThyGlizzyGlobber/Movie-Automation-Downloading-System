@@ -43,7 +43,6 @@
   font-weight: 700;
 }
 
-
 .retention-menu-title {
   padding: 10px 14px 6px;
   font-size: 11px;
@@ -52,7 +51,6 @@
   text-transform: uppercase;
   color: var(--text-dim);
 }
-
 
 /* ---- Requests page ----
    The browse grid's layout and cards: a page title with the count, a

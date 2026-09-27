@@ -169,31 +169,6 @@
   margin: 10px 0 0;
 }
 
-.setup-server-list {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  margin-bottom: 14px;
-}
-.setup-server-option {
-  display: block;
-  width: 100%;
-  text-align: left;
-  padding: 14px 16px;
-  border-radius: var(--radius-md);
-  border: 1px solid var(--glass-border-soft);
-  background: var(--glass);
-  color: var(--text);
-  font-size: 15px;
-  font-weight: 600;
-  cursor: pointer;
-}
-.setup-server-option.selected {
-  border-color: color-mix(in srgb, var(--accent) 50%, transparent);
-  background: var(--accent-soft);
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 25%, transparent);
-}
-
 @media (min-width: 640px) {
   .setup-card {
     max-width: 480px;

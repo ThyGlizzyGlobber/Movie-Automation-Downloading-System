@@ -28,7 +28,6 @@
   --obsidian-black: #050508;
   --obsidian-ink: #f5f7fa;
   --obsidian-ink-muted: rgba(245, 247, 250, 0.55);
-  --obsidian-ink-faint: rgba(245, 247, 250, 0.3);
 
   /* ---- Primitives: color ----
      One cool accent (ice) carries interactive/downloading; the others
@@ -49,7 +48,6 @@
      pill) and need to stay legible over bright art. */
   --glass: rgba(255, 255, 255, 0.06);
   --glass-strong: rgba(255, 255, 255, 0.1);
-  --glass-hover: rgba(255, 255, 255, 0.09);
   --glass-border: rgba(255, 255, 255, 0.1);
   --glass-border-soft: rgba(255, 255, 255, 0.07);
   --glass-overlay: rgba(16, 16, 24, 0.72);
@@ -73,7 +71,6 @@
   --radius-lg: 22px;
   --radius-xl: 30px;
   --radius-pill: 999px;
-  --shadow-card: 0 24px 44px rgba(0, 0, 0, 0.55);
   --shadow-float: 0 20px 60px rgba(0, 0, 0, 0.5);
   --shadow-primary: 0 12px 40px rgba(255, 255, 255, 0.18);
 
@@ -93,12 +90,9 @@
   --text-hero: clamp(56px, 8.3vw, 120px);
   --text-page: clamp(40px, 5vw, 72px);
   --text-section: clamp(20px, 1.8vw, 26px);
-  --text-card: 15px;
   --text-body: 17px;
-  --text-label: 12px;
   --tracking-display: -0.045em;
   --tracking-title: -0.02em;
-  --leading-display: 1;
   --leading-body: 1.65;
 
   /* ---- Semantic aliases (consumed by components) ---- */
@@ -130,10 +124,6 @@
   /* Side inset of the floating nav pill: the page edge inset, or centred
      at 1180px wide once the viewport is wider than that. */
   --nav-side: max(var(--edge-inset), calc(50% - 590px));
-  /* Storage-used fill and the one detail chip that must read as
-     distinct from --accent. Amber is what the reference uses for
-     storage. */
-  --accent-secondary: var(--obsidian-amber);
   --border: var(--glass-border);
 
   /* Status colors — one per real request state, matching the pills and
@@ -157,7 +147,6 @@
   --tabbar-bottom: max(14px, calc(var(--safe-bottom) - 12px));
   --tabbar-h: 66px;
   --above-tabbar: calc(var(--tabbar-bottom) + var(--tabbar-h) + 12px);
-  --row-gap: 10px;
   /* Left-aligns a row's title and first poster with the header/hero
      column at --edge-inset, on top of #app's own 14px edge padding
      this sits inside of (so the two track together if --edge-inset
@@ -181,10 +170,6 @@
      .grid. Scaled down slightly from an earlier 140/275px pass per
      feedback that the cards were reading a touch too large. */
   --poster-w: clamp(120px, 14vw, 240px);
-  /* Same continuous-scaling idea as --poster-w, just a smaller range —
-     a circular cast photo reads fine noticeably smaller than a poster,
-     and the row would otherwise dominate the page at desktop widths. */
-  --cast-w: clamp(64px, 7vw, 104px);
   /* Shared horizontal inset for the app's own "chrome" — the header
      logo/icons, the home hero's text column, and the floating
      downloads/storage pills — so they all line up on the same edge.
