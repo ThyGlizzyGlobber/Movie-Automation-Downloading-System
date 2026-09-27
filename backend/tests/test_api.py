@@ -3570,6 +3570,25 @@ def test_recommendations_mark_what_the_household_already_has(client_and_deps):
     assert all("on_plex" in item for row in body["rows"] for item in row["items"])
 
 
+def test_recommended_shows_are_looked_up_in_plexs_show_library(client_and_deps, monkeypatch):
+    """Rows carry TMDB's "tv"; Plex only knows "movie" and "show". Passing
+    "tv" through raised a KeyError once Plex was linked, and the whole
+    endpoint 500'd."""
+    client, _, tmdb, _, _, _ = client_and_deps
+    _stub_recommendation_sources(tmdb)
+    asked = set()
+
+    def lookup(store, media_type):
+        assert media_type in ("movie", "show"), media_type
+        asked.add(media_type)
+        return lambda *a, **k: False
+
+    monkeypatch.setattr(api, "plex_library_lookup", lookup)
+
+    assert client.get("/api/recommendations", params={"page": "tv"}).status_code == 200
+    assert "show" in asked
+
+
 def test_an_unknown_page_falls_back_to_home_rather_than_erroring(client_and_deps):
     client, _, tmdb, _, _, _ = client_and_deps
     _stub_recommendation_sources(tmdb)

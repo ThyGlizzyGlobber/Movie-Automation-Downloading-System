@@ -304,11 +304,12 @@ class Worker:
                 # best copy that exists" — but a row that carries one is
                 # still honoured.
                 settings = dataclasses.replace(settings, min_resolution=row.min_resolution)
-            # Stage 15: torrents explicitly rejected as genuinely defective
-            # on a prior attempt for this same movie/show — excluded from
-            # this fresh search so it never re-selects the exact same bad
-            # release (see api.py's POST /api/requests/{id}/reject).
-            rejected_hashes = await asyncio.to_thread(self.store.get_rejected_torrent_hashes, row.tmdb_id)
+            # Stage 15: copies explicitly rejected as genuinely defective (or
+            # abandoned as stalled) on a prior attempt for this same
+            # movie/show — excluded from this fresh search so it never
+            # re-selects the exact same bad release (see api.py's POST
+            # /api/requests/{id}/reject).
+            rejected_hashes, rejected_releases = await asyncio.to_thread(self._rejected_copies, row.tmdb_id)
             if row.media_type == "episode":
                 identity = await asyncio.to_thread(resolve_show, row.tmdb_id, self.tmdb)
                 result = await asyncio.to_thread(
@@ -319,6 +320,7 @@ class Worker:
                     self.qbt,
                     settings,
                     rejected_hashes,
+                    rejected_releases,
                 )
             elif row.media_type == "pack":
                 identity = await asyncio.to_thread(resolve_show, row.tmdb_id, self.tmdb)
@@ -337,9 +339,9 @@ class Worker:
                     row.season_number,
                     row.season_range_end,
                     rejected_hashes,
+                    rejected_releases,
                 )
             else:
-                rejected_releases = await asyncio.to_thread(self.store.get_rejected_releases, row.tmdb_id)
                 result = await asyncio.to_thread(
                     download, row.tmdb_id, self.tmdb, self.qbt, settings, rejected_hashes, rejected_releases
                 )
@@ -1667,9 +1669,20 @@ class Worker:
             else:
                 await self._recheck_upgrade(show, episode_row, current, identity, pipeline_settings, label)
 
+    def _rejected_copies(self, tmdb_id: int) -> tuple[set[str], list[dict]]:
+        return self.store.get_rejected_torrent_hashes(tmdb_id), self.store.get_rejected_releases(tmdb_id)
+
     async def _recheck_retry(self, show, episode_row, identity, pipeline_settings, label: str) -> None:
+        rejected_hashes, rejected_releases = await asyncio.to_thread(self._rejected_copies, show.tmdb_id)
         result = await asyncio.to_thread(
-            download_episode, identity, episode_row.season_number, episode_row.episode_number, self.qbt, pipeline_settings
+            download_episode,
+            identity,
+            episode_row.season_number,
+            episode_row.episode_number,
+            self.qbt,
+            pipeline_settings,
+            rejected_hashes,
+            rejected_releases,
         )
         if result.status != "added":
             await asyncio.to_thread(self.store.record_episode_recheck, episode_row.id)
@@ -1689,6 +1702,7 @@ class Worker:
 
     async def _recheck_upgrade(self, show, episode_row, current, identity, pipeline_settings, label: str) -> None:
         current_composite = ((current.result or {}).get("score") or {}).get("composite")
+        rejected_hashes, rejected_releases = await asyncio.to_thread(self._rejected_copies, show.tmdb_id)
         best = await asyncio.to_thread(
             find_best_episode_candidate,
             identity,
@@ -1696,6 +1710,8 @@ class Worker:
             episode_row.episode_number,
             self.qbt,
             pipeline_settings,
+            rejected_hashes,
+            rejected_releases,
         )
         if best is None or (current_composite is not None and best[1].composite <= current_composite):
             await asyncio.to_thread(self.store.record_episode_recheck, episode_row.id)
@@ -1703,7 +1719,14 @@ class Worker:
 
         old_hash = (current.result or {}).get("torrent_hash")
         result = await asyncio.to_thread(
-            download_episode, identity, episode_row.season_number, episode_row.episode_number, self.qbt, pipeline_settings
+            download_episode,
+            identity,
+            episode_row.season_number,
+            episode_row.episode_number,
+            self.qbt,
+            pipeline_settings,
+            rejected_hashes,
+            rejected_releases,
         )
         if result.status != "added":
             # The peek found something better a moment ago, but it didn't

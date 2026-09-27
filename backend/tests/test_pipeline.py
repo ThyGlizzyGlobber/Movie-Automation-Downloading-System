@@ -1284,6 +1284,43 @@ def test_download_excludes_a_rejected_release_listed_as_a_direct_torrent_link(_f
     assert [url for url, _ in qbt2.added] == ["magnet:?xt=urn:btih:BBBB"]
 
 
+def test_download_episode_skips_a_rejected_release():
+    """Episodes are blacklisted the same way movies are (a stalled or
+    rejected copy is recorded by name), and the episode search has to read
+    that list too, or a stalled direct .torrent link is picked again."""
+    qbt = FakeQBTClient(
+        results_by_variant={
+            "Lanterns S01E04": [
+                _episode_result(fileName="Lanterns.S01E04.2160p.WEB-DL.mkv", fileUrl="magnet:?xt=urn:btih:AAAA", nbSeeders=90),
+                _episode_result(fileName="Lanterns.S01E04.1080p.WEB-DL.mkv", fileUrl="magnet:?xt=urn:btih:BBBB", nbSeeders=90),
+            ]
+        }
+    )
+
+    result = download_episode(
+        LANTERNS, 1, 4, qbt, excluded_releases=[{"name": "Lanterns.S01E04.2160p.WEB-DL.mkv", "size_bytes": None}]
+    )
+
+    assert result.winner["fileName"] == "Lanterns.S01E04.1080p.WEB-DL.mkv"
+
+
+def test_download_pack_skips_a_rejected_release():
+    qbt = FakeQBTClient(
+        results_by_variant={
+            "Lanterns S01": [
+                _pack_result(fileName="Lanterns.S01.2160p.WEB-DL.x265", fileUrl="magnet:?xt=urn:btih:AAAA"),
+                _pack_result(fileName="Lanterns.S01.1080p.WEB-DL.x265", fileUrl="magnet:?xt=urn:btih:BBBB"),
+            ]
+        }
+    )
+
+    result = download_pack(
+        LANTERNS, "season", qbt, season=1, excluded_releases=[{"name": "Lanterns.S01.2160p.WEB-DL.x265", "size_bytes": None}]
+    )
+
+    assert result.winner["fileName"] == "Lanterns.S01.1080p.WEB-DL.x265"
+
+
 # ---------------------------------------------------------------------------
 # Concurrency: searches overlap, adds don't.
 # ---------------------------------------------------------------------------

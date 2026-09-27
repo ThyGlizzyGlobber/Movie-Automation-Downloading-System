@@ -17,22 +17,25 @@ interface StatusMeta {
   /* Icon drawn inside the pill — one per state so the state reads even
      before the color does. */
   icon: IconName
+  // Text colour for the poster-corner chip (Home's "On the way" row and
+  // the Requests grid).
+  tone: string
 }
 
 const STATUS_META: Record<string, StatusMeta> = {
-  queued: { label: 'Queued', cls: 'status-queued', icon: 'clock' },
-  searching: { label: 'Searching', cls: 'status-searching', icon: 'scan' },
-  downloading: { label: 'Downloading', cls: 'status-downloading', icon: 'download' },
-  complete: { label: 'On Plex', cls: 'status-complete', icon: 'check-circle' },
+  queued: { label: 'Queued', cls: 'status-queued', icon: 'clock', tone: 'var(--text)' },
+  searching: { label: 'Searching', cls: 'status-searching', icon: 'scan', tone: 'var(--status-searching)' },
+  downloading: { label: 'Downloading', cls: 'status-downloading', icon: 'download', tone: 'var(--status-downloading)' },
+  complete: { label: 'On Plex', cls: 'status-complete', icon: 'check-circle', tone: 'var(--status-complete)' },
   // Not a step on the way to "On Plex", however much the name sounds
   // like one: the backend lists this with the failures, nothing retries
   // it on its own, and it sat here as a green "Importing" pill while a
   // season that would never arrive looked like it was almost there.
-  'downloaded, not filed': { label: 'Not filed', cls: 'status-nomatch', icon: 'alert' },
-  'no qualifying results': { label: 'No match', cls: 'status-nomatch', icon: 'info' },
-  'insufficient free space': { label: 'No space', cls: 'status-nospace', icon: 'alert' },
-  failed: { label: 'Failed', cls: 'status-failed', icon: 'alert-circle' },
-  cancelled: { label: 'Cancelled', cls: 'status-queued', icon: 'block' },
+  'downloaded, not filed': { label: 'Not filed', cls: 'status-nomatch', icon: 'alert', tone: 'var(--status-nomatch)' },
+  'no qualifying results': { label: 'No match', cls: 'status-nomatch', icon: 'info', tone: 'var(--status-nomatch)' },
+  'insufficient free space': { label: 'No space', cls: 'status-nospace', icon: 'alert', tone: 'var(--status-nospace)' },
+  failed: { label: 'Failed', cls: 'status-failed', icon: 'alert-circle', tone: 'var(--status-failed)' },
+  cancelled: { label: 'Cancelled', cls: 'status-queued', icon: 'block', tone: 'var(--text-dim)' },
 }
 
 export const NON_TERMINAL = new Set(['queued', 'searching', 'downloading'])
@@ -41,7 +44,7 @@ export const CANCELLABLE = new Set(['queued', 'downloading', 'complete'])
 export const FAILED_STATES = new Set(['failed', 'no qualifying results', 'insufficient free space'])
 
 export function statusMeta(status: string): StatusMeta {
-  return STATUS_META[status] || { label: status, cls: 'status-queued', icon: 'clock' }
+  return STATUS_META[status] || { label: status, cls: 'status-queued', icon: 'clock', tone: 'var(--text-dim)' }
 }
 
 // One plain line under the pill on the Requests page: what the state

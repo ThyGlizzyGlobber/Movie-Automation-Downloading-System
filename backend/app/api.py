@@ -2726,7 +2726,8 @@ def _with_on_plex(rows: list[taste.Row], store: RequestStore) -> list[taste.Row]
         for media_type, items in by_type.items():
             for item in _annotate_on_plex(
                 items,
-                media_type,
+                # TMDB calls it "tv"; Plex's library type is "show".
+                "movie" if media_type == "movie" else "show",
                 store,
                 title_key="title" if media_type == "movie" else "name",
                 date_key="release_date" if media_type == "movie" else "first_air_date",

@@ -5,17 +5,6 @@ import PosterCard from './PosterCard'
 import Icon from './Icon'
 import { useRequests } from '../lib/useRequests'
 
-const STATUS_TONE: Record<string, string> = {
-  downloading: 'var(--status-downloading)',
-  queued: 'var(--text)',
-  searching: 'var(--status-searching)',
-  failed: 'var(--status-failed)',
-  complete: 'var(--status-complete)',
-  'downloaded, not filed': 'var(--status-complete)',
-  'no qualifying results': 'var(--status-nomatch)',
-  'insufficient free space': 'var(--status-nospace)',
-}
-
 // "Requested by the household": the newest request per title as a
 // poster row with a status chip (progress while downloading).
 export default function RequestedRow() {
@@ -53,7 +42,7 @@ export default function RequestedRow() {
             mediaType={isTv ? 'tv' : 'movie'}
             mixed
             chip={
-              <span className="poster-chip" style={{ color: STATUS_TONE[r.status] ?? 'var(--text-dim)' }}>
+              <span className="poster-chip" style={{ color: meta.tone }}>
                 <Icon name={meta.icon} />
                 {label}
               </span>

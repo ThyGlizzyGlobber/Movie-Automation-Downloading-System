@@ -162,7 +162,13 @@ export default function WatchingPage() {
   usePageTitle('Following')
   const queryClient = useQueryClient()
   // Polled like Requests, so a card's download bar moves while it's open.
-  const showsQuery = useQuery({ queryKey: ['shows'], queryFn: () => listShows('watching'), refetchInterval: 5000 })
+  const showsQuery = useQuery({
+    // Its own key: ['shows'] is every followed show, and sharing it handed
+    // the other pages this filtered list until they refetched.
+    queryKey: ['shows', 'watching'],
+    queryFn: () => listShows('watching'),
+    refetchInterval: 5000,
+  })
   const [openId, setOpenId] = useState<number | null>(null)
   const closeSheet = useCallback(() => setOpenId(null), [])
 

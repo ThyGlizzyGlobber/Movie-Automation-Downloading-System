@@ -5,7 +5,6 @@ import time
 from pathlib import Path
 
 from app import config
-from app.config import QBIT_HOST, QBIT_PASSWORD, QBIT_PORT, QBIT_USERNAME, TMDB_API_KEY
 from app.db import RequestStore
 from app.media_organizer import (
     MediaOrganizerError,
@@ -24,6 +23,32 @@ from app.tv_resolve import resolve_show
 from app.worker import Worker
 
 
+def _store() -> RequestStore:
+    """The app's database, with the library folders saved in Settings
+    applied the way the API's startup applies them (env still wins)."""
+    store = RequestStore(config.DB_PATH)
+    config.apply_library_overrides(store)
+    return store
+
+
+# The key and connection the setup wizard saved, not only the env: an
+# install configured through the app has nothing in the env to read.
+def _tmdb(store: RequestStore) -> TMDBClient:
+    return TMDBClient(config.resolve_tmdb_api_key(store) or "")
+
+
+def _qbt(store: RequestStore) -> QBTClient:
+    conn = config.resolve_qbt_config(store)
+    return QBTClient(conn.host, conn.port, conn.username, conn.password)
+
+
+def _roots(args: argparse.Namespace) -> list[Path]:
+    if args.root:
+        return [Path(r) for r in args.root]
+    _store().close()
+    return [config.MOVIE_LIBRARY_ROOT, config.TV_LIBRARY_ROOT]
+
+
 def cmd_organize_pack(args: argparse.Namespace) -> int:
     """Place every recognizable episode file from a real, already-completed
     pack torrent, by its hash.
@@ -33,8 +58,9 @@ def cmd_organize_pack(args: argparse.Namespace) -> int:
     download's folder on disk by name instead. Note this command only
     touches the filesystem — see `retry-parked-packs` for the one that
     also settles the request rows."""
-    tmdb_client = TMDBClient(TMDB_API_KEY)
-    qbt = QBTClient(QBIT_HOST, QBIT_PORT, QBIT_USERNAME, QBIT_PASSWORD)
+    store = _store()
+    tmdb_client, qbt = _tmdb(store), _qbt(store)
+    store.close()
     identity = resolve_show(args.tmdb_id, tmdb_client)
 
     try:
@@ -72,7 +98,7 @@ def cmd_retry_parked_packs(args: argparse.Namespace) -> int:
     is safe. The pack's own row is only moved off "downloaded, not
     filed" by the retry succeeding; a still-failing one keeps its status
     and gets a fresh error_message."""
-    store = RequestStore(config.DB_PATH)
+    store = _store()
     rows = [r for r in store.list_requests(status="downloaded, not filed") if r.media_type == "pack"]
     if not rows:
         print("no packs are parked on 'downloaded, not filed'")
@@ -85,7 +111,7 @@ def cmd_retry_parked_packs(args: argparse.Namespace) -> int:
         print("\ndry run; pass --apply to retry them")
         return 0
 
-    worker = Worker(store, TMDBClient(TMDB_API_KEY), QBTClient(QBIT_HOST, QBIT_PORT, QBIT_USERNAME, QBIT_PASSWORD))
+    worker = Worker(store, _tmdb(store), _qbt(store))
     failed = 0
     for row in rows:
         print(f"\nretrying #{row.id} {row.title} S{row.season_number}...")
@@ -108,8 +134,8 @@ def cmd_cleanup_orphans(args: argparse.Namespace) -> int:
     reconcile.py). Dry run unless --apply: this deletes files, and the
     whole reason these are here is that a delete happened at the wrong
     time before."""
-    store = RequestStore(config.DB_PATH)
-    qbt = QBTClient(QBIT_HOST, QBIT_PORT, QBIT_USERNAME, QBIT_PASSWORD)
+    store = _store()
+    qbt = _qbt(store)
 
     total = 0
     failures = 0
@@ -170,7 +196,7 @@ def cmd_convert_to_mkv(args: argparse.Namespace) -> int:
     Dry run unless --apply. It reports the total bytes it would rewrite,
     because unlike the audio backfill this one genuinely moves the data
     and the number is worth seeing before you agree to it."""
-    roots = [Path(r) for r in (args.root or [])] or [config.MOVIE_LIBRARY_ROOT, config.TV_LIBRARY_ROOT]
+    roots = _roots(args)
 
     plans = []
     for root in roots:
@@ -245,7 +271,7 @@ def cmd_fix_plex_audio(args: argparse.Namespace) -> int:
     keeps it, and neither Refresh Metadata nor Analyze revisits that.
     So every file fixed after Plex had already seen it still plays the
     old track, which is precisely what happened here."""
-    store = RequestStore(config.DB_PATH)
+    store = _store()
     try:
         language = args.language or resolve_pipeline_settings(store).preferred_audio_language
         client = PlexClient(store.get_settings().get("plex_client_id") or "obsidian-cli")
@@ -288,12 +314,12 @@ def cmd_fix_audio_defaults(args: argparse.Namespace) -> int:
     for."""
     language = args.language
     if language is None:
-        store = RequestStore(config.DB_PATH)
+        store = _store()
         try:
             language = resolve_pipeline_settings(store).preferred_audio_language
         finally:
             store.close()
-    roots = [Path(r) for r in (args.root or [])] or [config.MOVIE_LIBRARY_ROOT, config.TV_LIBRARY_ROOT]
+    roots = _roots(args)
 
     plans = []
     for root in roots:
