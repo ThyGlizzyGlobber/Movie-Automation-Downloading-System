@@ -3,9 +3,9 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { getPlexStatus, listPlexServers, selectPlexServer, startPlexLink, unlinkPlex } from '../../api/plex'
 import type { PlexServerSummary } from '../../types/auth'
 import { SettingsCardSkeleton } from './SettingsSkeleton'
-import ErrorState from '../../components/ErrorState'
+import ErrorState from '../../components/ui/ErrorState'
 import { ApiError } from '../../api/client'
-import Icon from '../../components/Icon'
+import Icon from '../../components/ui/Icon'
 import LibraryRows from './LibraryRows'
 
 const POLL_INTERVAL_MS = 2500

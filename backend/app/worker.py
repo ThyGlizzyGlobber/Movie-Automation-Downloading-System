@@ -12,7 +12,7 @@ Two independent loops:
   actual bittorrent transfer happens inside qBittorrent, independent of
   this backend, so watching it shouldn't block the next queued request.
 
-"cancelled" is also reachable directly from the API (api.py's
+"cancelled" is also reachable directly from the API (api/requests.py's
 `POST /api/requests/{id}/cancel`), which deletes the torrent (and its
 files) from qBittorrent itself rather than waiting to notice it's gone.
 Either path keeps the request row — "download history", not a queue —
@@ -37,7 +37,7 @@ enqueues a normal episode `requests` row for every already-aired episode
 not yet handled — reusing `_process_queue`'s single pipeline lock and
 `_check_downloading`'s watcher completely unchanged, per the plan's
 "no second lock, no distributed queue" call. `check_show()` is the same
-code path api.py's `POST /api/shows` calls synchronously for the
+code path api/shows.py's `POST /api/shows` calls synchronously for the
 immediate post-subscribe catch-up — "add show mid-season" and "scheduled
 recheck" are one function, not two. Its wake-up interval is a real
 Settings-panel value (`tv_settings.TVScheduleSettings.show_check_interval_hours`),
@@ -103,7 +103,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from app import config, plex, reconcile
-from app.db import NON_TERMINAL_STATUSES, RequestStore, ShowEpisodeRow, ShowRow
+from app.db import FAILURE_STATUSES, NON_TERMINAL_STATUSES, RequestStore, ShowEpisodeRow, ShowRow
 from app.media_organizer import (
     MediaOrganizerError,
     NoVideoFileError,
@@ -123,6 +123,7 @@ from app.tv_resolve import (
     aired_episode_numbers,
     episode_placement_lookup,
     episode_title_lookup,
+    identity_from_show,
     resolve_show,
     season_is_complete,
 )
@@ -303,11 +304,12 @@ class Worker:
                 # best copy that exists" — but a row that carries one is
                 # still honoured.
                 settings = dataclasses.replace(settings, min_resolution=row.min_resolution)
-            # Stage 15: torrents explicitly rejected as genuinely defective
-            # on a prior attempt for this same movie/show — excluded from
-            # this fresh search so it never re-selects the exact same bad
-            # release (see api.py's POST /api/requests/{id}/reject).
-            rejected_hashes = await asyncio.to_thread(self.store.get_rejected_torrent_hashes, row.tmdb_id)
+            # Stage 15: copies explicitly rejected as genuinely defective (or
+            # abandoned as stalled) on a prior attempt for this same
+            # movie/show — excluded from this fresh search so it never
+            # re-selects the exact same bad release (see api/requests.py's POST
+            # /api/requests/{id}/reject).
+            rejected_hashes, rejected_releases = await asyncio.to_thread(self._rejected_copies, row.tmdb_id)
             if row.media_type == "episode":
                 identity = await asyncio.to_thread(resolve_show, row.tmdb_id, self.tmdb)
                 result = await asyncio.to_thread(
@@ -318,6 +320,7 @@ class Worker:
                     self.qbt,
                     settings,
                     rejected_hashes,
+                    rejected_releases,
                 )
             elif row.media_type == "pack":
                 identity = await asyncio.to_thread(resolve_show, row.tmdb_id, self.tmdb)
@@ -336,9 +339,9 @@ class Worker:
                     row.season_number,
                     row.season_range_end,
                     rejected_hashes,
+                    rejected_releases,
                 )
             else:
-                rejected_releases = await asyncio.to_thread(self.store.get_rejected_releases, row.tmdb_id)
                 result = await asyncio.to_thread(
                     download, row.tmdb_id, self.tmdb, self.qbt, settings, rejected_hashes, rejected_releases
                 )
@@ -548,7 +551,7 @@ class Worker:
         re-queueing is the whole retry. Both are blacklisted, not just
         the hash — most winners are direct .torrent links that carry no
         hash to compare, so the name is what actually rules the release
-        out on the next pass (the same reason api.py's reject route does
+        out on the next pass (the same reason api/requests.py's reject route does
         both)."""
         result = dict(row.result or {})
         attempts = int(result.get("stall_attempts") or 1) + 1
@@ -582,11 +585,15 @@ class Worker:
         await asyncio.to_thread(self.store.update_status, row.id, "queued", None, result)
 
     async def _check_downloading(self) -> None:
+        tracked = []
         for row in await asyncio.to_thread(self.store.list_requests, "downloading"):
             torrent_hash = (row.result or {}).get("torrent_hash") or await self._adopt_untracked_torrent(row)
-            if not torrent_hash:
-                continue
-            info = await asyncio.to_thread(self.qbt.torrent_info, torrent_hash)
+            if torrent_hash:
+                tracked.append((row, torrent_hash))
+        # One qBittorrent round trip for the whole poll, not one per row.
+        infos = await asyncio.to_thread(self.qbt.torrents_info_many, [h for _, h in tracked]) if tracked else {}
+        for row, torrent_hash in tracked:
+            info = infos.get(torrent_hash.lower())
             if info is None:
                 if row.media_type in ("episode", "pack"):
                     # plex.has_in_library only supports a movie lookup
@@ -601,7 +608,7 @@ class Worker:
                     await asyncio.to_thread(self.store.update_status, row.id, "cancelled", error_message=message)
                     continue
                 # Gone from qBittorrent without this app deleting it itself
-                # (api.py's cancel route sets "cancelled" directly and never
+                # (api/requests.py's cancel route sets "cancelled" directly and never
                 # reaches this branch). Two real causes look identical here:
                 # someone deleted it, or qBittorrent's own "remove torrent
                 # after completion" setting just cleaned up a *finished*
@@ -633,12 +640,12 @@ class Worker:
             else:
                 # Frontend migration Part J2 — the same live fraction this
                 # branch's own `>= 1` check above already reads, just no
-                # longer discarded once it's less than that. Persisted on
-                # every poll so the Requests queue can show a real
+                # longer discarded once it's less than that. Persisted
+                # whenever it moves so the Requests queue can show a real
                 # progress bar instead of an indeterminate "downloading"
-                # spinner.
+                # spinner — a paused or stalled torrent costs no write.
                 progress = info.get("progress")
-                if progress is not None:
+                if progress is not None and progress != row.download_progress:
                     await asyncio.to_thread(self.store.update_download_progress, row.id, progress)
 
     async def _adopt_untracked_torrent(self, row) -> str | None:
@@ -1308,9 +1315,7 @@ class Worker:
         return created
 
     def _pack_in_flight_for(self, show: ShowRow, season_number: int) -> bool:
-        for row in self.store.list_requests():
-            if row.media_type != "pack" or row.show_id != show.id or row.status not in NON_TERMINAL_STATUSES:
-                continue
+        for row in self.store.list_live_packs_for_show(show.id):
             if row.season_number is None:
                 return True  # whole series
             end = row.season_range_end if row.season_range_end is not None else row.season_number
@@ -1419,7 +1424,7 @@ class Worker:
         normal episode request for every already-aired episode not yet
         handled. The *same* function backs both the scheduled recheck
         (`_check_all_watching_shows`, run every `show_check_interval_hours`
-        per `tv_settings.TVScheduleSettings`) and api.py's `POST /api/shows`
+        per `tv_settings.TVScheduleSettings`) and api/shows.py's `POST /api/shows`
         immediate post-subscribe catch-up —
         "add show mid-season" and "scheduled recheck" are one code path,
         per the plan. Specials (season 0) are excluded for free —
@@ -1494,8 +1499,8 @@ class Worker:
         `show_episodes` marker — the ledger's job is knowing an episode is
         handled, not knowing how it got that way."""
         try:
-            identity = resolve_show(show.tmdb_id, self.tmdb)
             show_data = self.tmdb.get_tv(show.tmdb_id)
+            identity = identity_from_show(show.tmdb_id, show_data)
             latest_season = show_data.get("number_of_seasons")
         except TMDBError:
             logger.exception("show check: couldn't fetch TMDB data for show %d (%s)", show.id, show.title)
@@ -1589,12 +1594,6 @@ class Worker:
     # -- Stage 12.x: episode auto-recheck (retry a stuck episode, or look
     #    for a better release once one's already downloaded). --
 
-    # Terminal statuses worth retrying — never "cancelled" (a deliberate
-    # stop, whether from the API or from someone deleting the torrent
-    # directly), and never the non-terminal ones (queued/searching/
-    # downloading are already active, not stuck).
-    _RECHECK_RETRY_STATUSES = frozenset({"no qualifying results", "insufficient free space", "failed", "downloaded, not filed"})
-
     async def _watch_episode_rechecks(self) -> None:
         while True:
             await asyncio.sleep(config.EPISODE_RECHECK_POLL_INTERVAL_SECONDS)
@@ -1651,7 +1650,7 @@ class Worker:
         SEARCH_CONCURRENCY; the add itself is serialised further down by
         pipeline._ADD_LOCK."""
         current = await asyncio.to_thread(self.store.get_request, episode_row.request_id)
-        if current is not None and current.status != "complete" and current.status not in self._RECHECK_RETRY_STATUSES:
+        if current is not None and current.status != "complete" and current.status not in FAILURE_STATUSES:
             return  # actively in progress, or a deliberate cancel — don't burn an attempt on it
 
         identity = await asyncio.to_thread(resolve_show, show.tmdb_id, self.tmdb)
@@ -1664,9 +1663,20 @@ class Worker:
             else:
                 await self._recheck_upgrade(show, episode_row, current, identity, pipeline_settings, label)
 
+    def _rejected_copies(self, tmdb_id: int) -> tuple[set[str], list[dict]]:
+        return self.store.get_rejected_torrent_hashes(tmdb_id), self.store.get_rejected_releases(tmdb_id)
+
     async def _recheck_retry(self, show, episode_row, identity, pipeline_settings, label: str) -> None:
+        rejected_hashes, rejected_releases = await asyncio.to_thread(self._rejected_copies, show.tmdb_id)
         result = await asyncio.to_thread(
-            download_episode, identity, episode_row.season_number, episode_row.episode_number, self.qbt, pipeline_settings
+            download_episode,
+            identity,
+            episode_row.season_number,
+            episode_row.episode_number,
+            self.qbt,
+            pipeline_settings,
+            rejected_hashes,
+            rejected_releases,
         )
         if result.status != "added":
             await asyncio.to_thread(self.store.record_episode_recheck, episode_row.id)
@@ -1686,6 +1696,7 @@ class Worker:
 
     async def _recheck_upgrade(self, show, episode_row, current, identity, pipeline_settings, label: str) -> None:
         current_composite = ((current.result or {}).get("score") or {}).get("composite")
+        rejected_hashes, rejected_releases = await asyncio.to_thread(self._rejected_copies, show.tmdb_id)
         best = await asyncio.to_thread(
             find_best_episode_candidate,
             identity,
@@ -1693,6 +1704,8 @@ class Worker:
             episode_row.episode_number,
             self.qbt,
             pipeline_settings,
+            rejected_hashes,
+            rejected_releases,
         )
         if best is None or (current_composite is not None and best[1].composite <= current_composite):
             await asyncio.to_thread(self.store.record_episode_recheck, episode_row.id)
@@ -1700,7 +1713,14 @@ class Worker:
 
         old_hash = (current.result or {}).get("torrent_hash")
         result = await asyncio.to_thread(
-            download_episode, identity, episode_row.season_number, episode_row.episode_number, self.qbt, pipeline_settings
+            download_episode,
+            identity,
+            episode_row.season_number,
+            episode_row.episode_number,
+            self.qbt,
+            pipeline_settings,
+            rejected_hashes,
+            rejected_releases,
         )
         if result.status != "added":
             # The peek found something better a moment ago, but it didn't

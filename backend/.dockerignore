@@ -1,0 +1,11 @@
+# The Dockerfile only COPYs requirements.txt and app/; keep everything else
+# (venvs, the SQLite data dir, .env secrets) out of the build context.
+.venv
+venv
+data
+tests
+.env
+*.env
+.pytest_cache
+.ruff_cache
+__pycache__

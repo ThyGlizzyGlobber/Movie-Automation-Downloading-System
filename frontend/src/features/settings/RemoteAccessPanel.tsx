@@ -2,14 +2,13 @@ import { useEffect, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { getAuditLog, getRemoteAccess, revokeAllSessions, setRemoteAccess } from '../../api/settings'
 import { SettingsCardSkeleton } from './SettingsSkeleton'
-import ErrorState from '../../components/ErrorState'
-import EmptyState from '../../components/EmptyState'
+import ErrorState from '../../components/ui/ErrorState'
+import EmptyState from '../../components/ui/EmptyState'
 import { ApiError } from '../../api/client'
-import SettingRow from '../../components/SettingRow'
-import Toggle from '../../components/Toggle'
+import SettingRow from './SettingRow'
+import { useSaveFlash } from '../../lib/hooks'
+import Toggle from '../../components/ui/Toggle'
 import './RemoteAccessPanel.css'
-
-type SaveState = 'idle' | 'saving' | 'saved' | 'error'
 
 const REMOTE_SUB =
   'A record of where Obsidian is published — for example through a Cloudflare Tunnel. Sign-ins protect themselves per request, so nothing here decides whether you can sign in.'
@@ -20,7 +19,7 @@ function RemoteAccessSettingsSection() {
   const query = useQuery({ queryKey: ['settings', 'remote-access'], queryFn: getRemoteAccess })
   const [enabled, setEnabled] = useState(false)
   const [domain, setDomain] = useState('')
-  const [saveState, setSaveState] = useState<SaveState>('idle')
+  const [saveState, setSaveState, flashSaveState] = useSaveFlash()
   const [saveError, setSaveError] = useState<string | null>(null)
 
   useEffect(() => {
@@ -44,8 +43,7 @@ function RemoteAccessSettingsSection() {
       // "remote_access_toggled") — refresh the log below so it shows up
       // without needing to leave and come back to this same panel.
       queryClient.invalidateQueries({ queryKey: ['audit-log'] })
-      setSaveState('saved')
-      setTimeout(() => setSaveState('idle'), 1200)
+      flashSaveState('saved')
     } catch (err) {
       setSaveError(err instanceof ApiError ? err.message : 'Something went wrong.')
       setSaveState('error')

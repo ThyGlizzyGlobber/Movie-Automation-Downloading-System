@@ -42,7 +42,7 @@ export const ROW_PROVIDERS = CURATED_PROVIDERS.slice(0, 4) // Netflix, Prime Vid
 // — a network/company id can't be verified without a live TMDB lookup.
 // Reuses CURATED_PROVIDERS' own plain app-icon files rather than a
 // separate asset set.
-export const ORIGINAL_SERVICE_MATCH: { names: string[]; icon: string; label: string }[] = [
+const ORIGINAL_SERVICE_MATCH: { names: string[]; icon: string; label: string }[] = [
   { names: ['Netflix'], icon: 'netflix.png', label: 'Netflix Original' },
   { names: ['Prime Video', 'Amazon Studios', 'Amazon MGM Studios'], icon: 'prime-video.png', label: 'Prime Video Original' },
   { names: ['Apple TV', 'Apple TV+', 'Apple TV Plus', 'Apple Original Films', 'Apple Studios'], icon: 'apple-tv.png', label: 'Apple TV+ Original' },

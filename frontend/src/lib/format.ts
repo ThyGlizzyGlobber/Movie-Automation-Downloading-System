@@ -27,3 +27,19 @@ export function relativeTime(iso: string | null): string {
   if (hours < 24) return `${hours}h ago`
   return `${Math.round(hours / 24)}d ago`
 }
+
+// Up to two initials from a Plex username, for the avatar circle.
+export function initialsOf(username: string | null | undefined): string {
+  if (!username) return ''
+  const parts = username
+    .replace(/[_.-]+/g, ' ')
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean)
+  if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase()
+  const word = parts[0] ?? ''
+  // A single camel-cased handle ("BejaySmith") still yields two letters.
+  const camel = word.match(/[A-Z]/g)
+  if (camel && camel.length >= 2) return (camel[0] + camel[1]).toUpperCase()
+  return word.slice(0, 2).toUpperCase()
+}

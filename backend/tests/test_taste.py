@@ -73,21 +73,6 @@ def test_a_request_row_with_nothing_to_seed_is_skipped():
     assert [s.tmdb_id for s in seeds] == [6]
 
 
-def test_watching_and_asking_for_the_same_thing_counts_for_more():
-    """The strongest statement someone can make about a title is to ask for
-    it and then actually watch it, and that should be what their page leans
-    on."""
-    requested = [taste.Seed(1, "movie", "Dune", 0.8, "requested")]
-    watched = [taste.Seed(1, "movie", "Dune", 1.0, "watched")]
-
-    merged = taste.merge_seeds(requested, watched)
-
-    assert len(merged) == 1
-    assert merged[0].weight > 1.0
-    # "Because you watched" is the more honest sentence of the two.
-    assert merged[0].source == "watched"
-
-
 def test_the_same_person_sees_the_same_rows_all_day():
     """Two page loads a minute apart must agree. Rotation that reshuffled
     per request would be worse than no rotation — a row that moves while

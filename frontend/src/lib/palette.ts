@@ -124,7 +124,7 @@ function dominantColours(img: HTMLImageElement): Swatch[] {
   return chosen.slice(0, 3)
 }
 
-export function posterPalette(posterPath: string | null | undefined): Promise<Swatch[] | null> {
+function posterPalette(posterPath: string | null | undefined): Promise<Swatch[] | null> {
   if (!posterPath) return Promise.resolve(null)
   const url = sampleUrl(posterPath)
   let cached = paletteCache.get(url)
@@ -157,7 +157,7 @@ function glow(sw: Swatch): string {
   return `hsl(${h} ${s}% ${l}%)`
 }
 
-export function glowVarsForPalette(swatches: Swatch[]): CSSProperties {
+function glowVarsForPalette(swatches: Swatch[]): CSSProperties {
   const [a, b, c] = swatches
   const second = b ?? { ...a, h: a.h + 36 }
   const third = c ?? { ...a, h: a.h - 36, s: a.s * 0.8 }

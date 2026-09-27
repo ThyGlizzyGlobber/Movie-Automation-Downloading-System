@@ -1,17 +1,7 @@
 /* First-run setup, in the Obsidian language: a glass card centred on the
    blue-black ground with the house ambient glow behind it (no poster to
-   derive from yet), step progress as a glowing ice line, glass inputs. */
-.setup-page {
-  position: relative;
-  overflow: hidden;
-  min-height: 100vh;
-  min-height: 100dvh;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 24px calc(20px + env(safe-area-inset-right)) calc(24px + env(safe-area-inset-bottom))
-    calc(20px + env(safe-area-inset-left));
-}
+   derive from yet), step progress as a glowing ice line, glass inputs.
+   The page's ground is global.css's. */
 .setup-page .ambient-glow i {
   opacity: 0.3;
 }
@@ -167,31 +157,6 @@
   font-size: 13.5px;
   font-weight: 600;
   margin: 10px 0 0;
-}
-
-.setup-server-list {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  margin-bottom: 14px;
-}
-.setup-server-option {
-  display: block;
-  width: 100%;
-  text-align: left;
-  padding: 14px 16px;
-  border-radius: var(--radius-md);
-  border: 1px solid var(--glass-border-soft);
-  background: var(--glass);
-  color: var(--text);
-  font-size: 15px;
-  font-weight: 600;
-  cursor: pointer;
-}
-.setup-server-option.selected {
-  border-color: color-mix(in srgb, var(--accent) 50%, transparent);
-  background: var(--accent-soft);
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 25%, transparent);
 }
 
 @media (min-width: 640px) {

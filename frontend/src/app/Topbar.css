@@ -1,0 +1,386 @@
+/* The top bar is a floating glass pill (the reference's nav), not a
+   full-width band: #topbar itself stays a full-width fixed box so
+   --topbar-h (measured from its offsetHeight by Topbar.tsx) still
+   reserves the right space in main, and the pill is drawn by ::before
+   inset from the box's edges. Same treatment on every page, hero or
+   not — the pill floats over hero art by design. */
+#topbar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: calc(66px + var(--safe-top));
+  /* The wordmark starts where the pill's left corner stops curving:
+     one radius (half the pill height) in from its edge. */
+  padding: calc(12px + var(--safe-top)) 20px 0 calc(14px + 27px);
+}
+/* The pill used to fade to 22% while a hero trailer played, so it
+   stopped sitting on the video, and fade back on scroll or hover.
+   The hero is an inset pane now and never runs under the bar, so there
+   is no video beneath it to get out of the way of — the bar just stays
+   solid. */
+#topbar::before {
+  content: '';
+  position: absolute;
+  z-index: -1;
+  top: calc(12px + var(--safe-top));
+  left: 14px;
+  right: 14px;
+  bottom: 0;
+  border-radius: var(--radius-pill);
+  background: var(--glass-overlay);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  border: 1px solid var(--glass-border);
+  box-shadow: var(--shadow-float), var(--glass-highlight);
+  transition: opacity 0.2s ease;
+}
+/* The search palette and the phone account sheet have their own glass;
+   the nav pill fades out under them. */
+body.search-open #topbar::before,
+body.account-open #topbar::before {
+  opacity: 0;
+}
+
+#topbarLogo {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  margin-right: 18px;
+}
+#topbarLogo .brand-wordmark {
+  display: inline-flex;
+  align-items: center;
+  font-family: var(--font-display);
+  font-weight: 500;
+  font-size: 24px;
+  line-height: 1;
+  letter-spacing: -0.02em;
+  color: var(--text);
+}
+@media (min-width: 860px) {
+  #topbarLogo .brand-wordmark {
+    font-size: 27px;
+  }
+  #topbarLogo {
+    margin-right: 22px;
+  }
+}
+
+/* Right-hand cluster: search, settings (admins), account. */
+.top-nav-right {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+#searchToggleBtn,
+#accountToggle {
+  flex: 0 0 auto;
+  background: var(--glass);
+  border: none;
+  color: var(--text);
+  font-size: 18px;
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 0;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+#searchToggleBtn:active,
+#accountToggle:active {
+  background: var(--glass-strong);
+}
+#searchToggleBtn:hover,
+body.search-open #searchToggleBtn {
+  background: var(--btn-primary-bg);
+  color: var(--on-light);
+}
+/* Avatar: the account button shows the signed-in user's initials on the
+   reference's warm gradient; the user icon is the fallback when there is
+   no username to draw from. */
+#accountToggle.has-initials {
+  background: var(--avatar-gradient);
+  color: var(--on-light);
+  font-family: var(--font-body);
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+}
+#accountToggle:not(.has-initials):hover,
+#accountToggle:not(.has-initials).active {
+  background: var(--btn-primary-bg);
+  color: var(--on-light);
+}
+#accountToggle.has-initials.active,
+#accountToggle.has-initials:hover {
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.85);
+}
+
+.top-nav-links {
+  display: none;
+}
+.top-nav-link {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 18px;
+  border-radius: var(--radius-pill);
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text-dim);
+  background: none;
+  border: none;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+.top-nav-link:hover {
+  color: var(--text);
+}
+.top-nav-link.active {
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.13);
+  box-shadow: var(--glass-highlight);
+}
+/* Live count of in-flight requests next to the Requests link. */
+.top-nav-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 6px;
+  border-radius: var(--radius-pill);
+  background: var(--accent);
+  color: var(--accent-text);
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 1;
+}
+
+@media (min-width: 860px) {
+  #topbar {
+    height: calc(88px + var(--safe-top));
+    padding: calc(24px + var(--safe-top)) calc(var(--nav-side) + 12px) 0 calc(var(--nav-side) + 32px);
+  }
+  #topbar::before {
+    top: calc(24px + var(--safe-top));
+    left: var(--nav-side);
+    right: var(--nav-side);
+  }
+  /* Segmented pill of links, centred between the wordmark and the
+     right-hand cluster (auto margins on both split the free space). */
+  /* Links sit right after the wordmark; the tools cluster at the right. */
+  .top-nav-links {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    flex: 0 0 auto;
+    margin: 0 0 0 4px;
+    padding: 4px;
+    border-radius: var(--radius-pill);
+    background: rgba(255, 255, 255, 0.04);
+  }
+  #accountToggle,
+  #searchToggleBtn {
+    width: 40px;
+    height: 40px;
+  }
+}
+
+/* Plex account picture in the account button. */
+#accountToggle.has-picture {
+  background: var(--glass);
+  overflow: hidden;
+  padding: 0;
+}
+#accountToggle .avatar-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 50%;
+  display: block;
+}
+
+/* Avatar menu: the account sheet below opens from here. */
+.account-menu {
+  position: relative;
+}
+
+/* Phones: wordmark centred, avatar on the right;
+   search lives in the tab bar. */
+@media (max-width: 859px) {
+  #topbar {
+    padding-left: 22px;
+    padding-right: 22px;
+    justify-content: space-between;
+  }
+  #searchToggleBtn {
+    display: none;
+  }
+  /* The right cluster dissolves so the avatar sits at the far right. */
+  .top-nav-right {
+    display: contents;
+  }
+  #accountToggle {
+    margin-left: auto;
+  }
+  #topbarLogo {
+    position: absolute;
+    left: 50%;
+    top: calc(12px + var(--safe-top));
+    bottom: 0;
+    transform: translateX(-50%);
+    margin: 0;
+  }
+}
+
+/* The account sheet. The same blurred page behind as the search
+   palette (SearchOverlay.css), and the same glass panel under the top
+   bar, holding who's signed in and one row per place to go: full width
+   on a phone, under the avatar on desktop (below). */
+#accountOverlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9;
+  background: rgba(5, 5, 8, 0.62);
+  backdrop-filter: blur(18px) saturate(120%);
+  -webkit-backdrop-filter: blur(18px) saturate(120%);
+  padding: calc(var(--topbar-h, 64px) + 10px) 14px 0;
+  animation: account-fade 0.2s ease;
+}
+.account-sheet {
+  padding: 8px;
+  border-radius: var(--radius-xl);
+  background: var(--glass-overlay);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  border: 1px solid var(--glass-border);
+  box-shadow: var(--shadow-float), var(--glass-highlight);
+  animation: account-drop 0.28s cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+.account-sheet-who {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 16px 14px 18px;
+  margin-bottom: 6px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+}
+.account-sheet-who b {
+  display: block;
+  font-family: var(--font-display);
+  font-weight: 300;
+  font-size: 30px;
+  letter-spacing: var(--tracking-display);
+  line-height: 1;
+}
+.account-sheet-who small {
+  display: block;
+  margin-top: 8px;
+  color: var(--text-dim);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.account-sheet-item {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+  min-height: 64px;
+  padding: 10px 12px;
+  border: none;
+  border-radius: 18px;
+  background: none;
+  color: var(--text);
+  font-size: 16px;
+  font-weight: 700;
+  text-align: left;
+}
+.account-sheet-item > span:nth-child(2) {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.account-sheet-item small {
+  display: block;
+  margin-top: 3px;
+  color: var(--text-dim);
+  font-size: 12.5px;
+  font-weight: 600;
+}
+.account-sheet-item:active,
+.account-sheet-item.on {
+  background: rgba(255, 255, 255, 0.07);
+}
+.account-sheet-icon {
+  flex: 0 0 auto;
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  background: var(--glass);
+  border: 1px solid var(--glass-border-soft);
+  display: grid;
+  place-items: center;
+  font-size: 19px;
+}
+.account-sheet-go {
+  flex: 0 0 auto;
+  font-size: 18px;
+  color: var(--text-dim);
+}
+.account-sheet-item.danger {
+  color: var(--status-failed);
+}
+.account-sheet-item.danger .account-sheet-icon {
+  background: color-mix(in srgb, var(--status-failed) 10%, transparent);
+  border-color: color-mix(in srgb, var(--status-failed) 20%, transparent);
+}
+/* Desktop: a column under the avatar, its right edge on the nav pill's
+   and its top the same gap under the pill as the search palette's. */
+@media (min-width: 860px) {
+  #accountOverlay {
+    display: flex;
+    justify-content: flex-end;
+    align-items: flex-start;
+    padding: calc(var(--topbar-h, 88px) + 14px) var(--nav-side) 0;
+  }
+  .account-sheet {
+    width: 380px;
+    transform-origin: top right;
+  }
+  .account-sheet-item {
+    cursor: pointer;
+  }
+  .account-sheet-item:hover {
+    background: rgba(255, 255, 255, 0.07);
+  }
+}
+@keyframes account-fade {
+  from {
+    opacity: 0;
+  }
+}
+@keyframes account-drop {
+  from {
+    opacity: 0;
+    transform: translateY(-10px) scale(0.98);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  #accountOverlay,
+  .account-sheet {
+    animation: none;
+  }
+}

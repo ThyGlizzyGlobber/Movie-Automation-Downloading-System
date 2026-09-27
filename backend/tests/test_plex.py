@@ -93,38 +93,6 @@ def test_check_pin_returns_none_while_still_pending():
     assert client.check_pin(42) is None
 
 
-def test_get_owned_server_picks_local_non_relay_connection():
-    resources = [
-        {
-            "provides": "server",
-            "owned": True,
-            "name": "Living Room NAS",
-            "accessToken": "server-token",
-            "connections": [
-                {"uri": "https://relay.example", "local": False, "relay": True},
-                {"uri": "http://192.168.0.133:32400", "local": True, "relay": False},
-            ],
-        }
-    ]
-    session = FakeSession(get_responses=[FakeResponse(json_data=resources)])
-    client = PlexClient("client-1", session=session)
-
-    server = client.get_owned_server("account-token")
-
-    assert server == {"name": "Living Room NAS", "url": "http://192.168.0.133:32400", "token": "server-token"}
-
-
-def test_get_owned_server_skips_unowned_and_non_server_resources():
-    resources = [
-        {"provides": "player", "owned": True, "connections": [{"uri": "x", "local": True, "relay": False}]},
-        {"provides": "server", "owned": False, "connections": [{"uri": "y", "local": True, "relay": False}]},
-    ]
-    session = FakeSession(get_responses=[FakeResponse(json_data=resources)])
-    client = PlexClient("client-1", session=session)
-
-    assert client.get_owned_server("account-token") is None
-
-
 def test_list_resources_includes_owned_and_shared_servers():
     resources = [
         {
@@ -166,6 +134,28 @@ def test_list_resources_includes_owned_and_shared_servers():
             "machine_identifier": "machine-shared",
         },
     ]
+
+
+def test_list_resources_prefers_a_local_non_relay_connection():
+    resources = [
+        {
+            "provides": "server",
+            "owned": True,
+            "name": "Living Room NAS",
+            "clientIdentifier": "machine-owned",
+            "accessToken": "server-token",
+            "connections": [
+                {"uri": "https://relay.example", "local": False, "relay": True},
+                {"uri": "http://192.168.0.133:32400", "local": True, "relay": False},
+            ],
+        }
+    ]
+    session = FakeSession(get_responses=[FakeResponse(json_data=resources)])
+    client = PlexClient("client-1", session=session)
+
+    [server] = client.list_resources("account-token")
+
+    assert server["url"] == "http://192.168.0.133:32400"
 
 
 def test_check_server_access_matches_by_machine_identifier():

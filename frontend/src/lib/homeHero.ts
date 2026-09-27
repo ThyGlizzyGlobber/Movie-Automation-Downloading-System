@@ -85,7 +85,7 @@ function tvAiringBadge(show: TvBadgeSource): string | null {
 
 // When a movie reached digital: the region's digital release, else any
 // region's, else the theatrical date as a last resort.
-export function digitalReleaseDate(movie: MovieBadgeSource, region: string = FALLBACK_REGION): string | null {
+function digitalReleaseDate(movie: MovieBadgeSource, region: string = FALLBACK_REGION): string | null {
   const results = movie.release_dates?.results ?? []
   const pick = (r: typeof results[number]) => r.release_dates.find((d) => d.type === 4 && d.release_date)?.release_date?.slice(0, 10) ?? null
   const local = results.find((r) => r.iso_3166_1 === region)
@@ -141,10 +141,3 @@ export function showPill(show: TvDetail): BannerPill | null {
   if (last?.episode_number === 1 && lastAge != null && lastAge >= 0 && lastAge <= 30) return { text: 'New season', tone: 'hot' }
   return null
 }
-
-// The hero's certification lookups used to live here, reading a
-// hardcoded 'AU' while detailHelpers read a hardcoded 'US' — the same
-// title rated two ways on two pages of the same app. There is one
-// lookup now, in detailHelpers, and it takes the household's region.
-// Re-exported so the carousel's imports stay in one place.
-export { certificationOf as movieCertOf, tvCertificationOf as tvCertOf } from './detailHelpers'

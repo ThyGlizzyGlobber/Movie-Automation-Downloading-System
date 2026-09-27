@@ -64,7 +64,7 @@ def _lacks_digital_release(release_dates_by_country: list[dict]) -> bool:
     point of it. A digital release is a worldwide event as far as this
     app is concerned: once a copy exists it is on the indexers, whatever
     a territory's own paperwork says. The same reasoning already runs in
-    releaseWindow.ts's cascade and in api.py's _arriving_soon.
+    releaseWindow.ts's cascade and in api/hero.py's _arriving_soon.
 
     It used to ask one region and treat that region having no entry as
     evidence of no release, which is only safe where TMDB's coverage is
@@ -105,8 +105,7 @@ def is_movie_coming_soon(movie: dict, release_dates_by_country: list[dict]) -> b
 def trailer_candidates(videos: list[dict]) -> list[dict]:
     """Every YouTube video worth considering as a hero preview, best
     type-guess first — official Trailer, any Trailer, official Teaser,
-    any Teaser, which is `best_trailer_key`'s order kept whole rather
-    than collapsed to one winner.
+    any Teaser.
 
     A list, because type is a poor guide to length and length is what
     the hero actually wants (trailers.pick_shortest_suitable measures
@@ -135,34 +134,6 @@ def trailer_candidates(videos: list[dict]) -> list[dict]:
     return ranked
 
 
-def best_trailer_key(videos: list[dict]) -> str | None:
-    """The single best YouTube trailer key from a /videos response's
-    `results` list, for the home hero carousel's background video — or
-    None if nothing suitable exists (a title with no trailer on file at
-    all, or only non-YouTube/non-trailer entries). Preference order:
-    an official Trailer, any Trailer, an official Teaser, any Teaser —
-    a Teaser is a real, if lesser, substitute when no full trailer has
-    been uploaded yet (common for a just-announced or still-airing
-    season), but never anything further afield (a clip, a featurette,
-    a bloopers reel) that wouldn't read as "the trailer" to a viewer.
-
-    The hero goes through `trailer_candidates` + trailers.py instead, to
-    pick on length; this remains the answer to "one key, no network",
-    and the fallback when nothing can be measured."""
-    youtube = [v for v in videos if v.get("site") == "YouTube" and v.get("key")]
-
-    def pick(video_type: str, official_only: bool) -> dict | None:
-        candidates = [v for v in youtube if v.get("type") == video_type and (not official_only or v.get("official"))]
-        return candidates[0] if candidates else None
-
-    for video_type in ("Trailer", "Teaser"):
-        for official_only in (True, False):
-            match = pick(video_type, official_only)
-            if match:
-                return match["key"]
-    return None
-
-
 def is_tv_upcoming(show: dict) -> bool:
     """The TV equivalent of a movie lacking a digital release: no episode
     has aired yet. Unlike movies, this needs no extra per-title request —
@@ -173,6 +144,11 @@ def is_tv_upcoming(show: dict) -> bool:
         return True
     aired_at = datetime.fromisoformat(first_air_date).replace(tzinfo=timezone.utc)
     return aired_at > datetime.now(timezone.utc)
+
+
+def _aired_only(data: dict) -> dict:
+    """A TMDB results page with every not-yet-aired show dropped."""
+    return {**data, "results": [show for show in data.get("results", []) if not is_tv_upcoming(show)]}
 
 
 # Browse-page sort keys as the frontend sends them, mapped to TMDB's own
@@ -255,10 +231,6 @@ class TMDBClient:
             },
         )
 
-    def get_alternative_titles(self, tmdb_id: int) -> list[dict]:
-        data = self._get(f"/movie/{tmdb_id}/alternative_titles")
-        return data.get("titles", [])
-
     def get_movie_videos(self, tmdb_id: int) -> list[dict]:
         return self._get(f"/movie/{tmdb_id}/videos").get("results", [])
 
@@ -275,10 +247,6 @@ class TMDBClient:
     @ttl_cache(POPULAR_DISCOVER_TTL_SECONDS)
     def get_trending(self, time_window: str = "week", page: int = 1) -> dict:
         return self._get(f"/trending/movie/{time_window}", {"page": page})
-
-    @ttl_cache(POPULAR_DISCOVER_TTL_SECONDS)
-    def get_watch_providers(self, region: str = "US") -> dict:
-        return self._get("/watch/providers/movie", {"watch_region": region})
 
     @ttl_cache(POPULAR_DISCOVER_TTL_SECONDS)
     def discover_by_provider(self, provider_id: int, region: str = "US", page: int = 1) -> dict:
@@ -348,29 +316,28 @@ class TMDBClient:
         data = self._get(f"/movie/{tmdb_id}/release_dates")
         return data.get("results", [])
 
-    def get_available_popular(self, page: int = 1, region: str = "US") -> dict:
-        """Popular titles TMDB already has a Digital/Physical release date
-        for in `region` — Discover excludes theatrical-only titles now that
-        Coming Soon is the dedicated place for those. One extra (TTL-cached)
-        release_dates call per candidate."""
-        popular = self.get_popular(page=page)
+    def _digitally_released(self, data: dict) -> dict:
+        """A TMDB results page with every theatrical-only title dropped —
+        one extra (TTL-cached) release_dates call per candidate."""
         filtered = [
             movie
-            for movie in popular.get("results", [])
+            for movie in data.get("results", [])
             if not _lacks_digital_release(self.get_release_dates(movie["id"]))
         ]
-        return {**popular, "results": filtered}
+        return {**data, "results": filtered}
+
+    def get_available_popular(self, page: int = 1, region: str = "US") -> dict:
+        """Popular titles TMDB already has a Digital/Physical release date
+        for anywhere — Discover excludes theatrical-only titles now that
+        Coming Soon is the dedicated place for those. One extra (TTL-cached)
+        release_dates call per candidate. `region` is accepted but unused:
+        _lacks_digital_release deliberately asks every country."""
+        return self._digitally_released(self.get_popular(page=page))
 
     def get_available_trending(self, time_window: str = "week", region: str = "US", page: int = 1) -> dict:
         """Same digital-availability filter as get_available_popular,
-        applied to the Trending row."""
-        trending = self.get_trending(time_window=time_window, page=page)
-        filtered = [
-            movie
-            for movie in trending.get("results", [])
-            if not _lacks_digital_release(self.get_release_dates(movie["id"]))
-        ]
-        return {**trending, "results": filtered}
+        applied to the Trending row. `region` is unused, as there."""
+        return self._digitally_released(self.get_trending(time_window=time_window, page=page))
 
     @ttl_cache(POPULAR_DISCOVER_TTL_SECONDS)
     def get_movie_watch_providers(self, tmdb_id: int) -> dict:
@@ -478,24 +445,16 @@ class TMDBClient:
     #    call). --
 
     def get_available_tv_popular(self, page: int = 1) -> dict:
-        popular = self.get_tv_popular(page=page)
-        filtered = [show for show in popular.get("results", []) if not is_tv_upcoming(show)]
-        return {**popular, "results": filtered}
+        return _aired_only(self.get_tv_popular(page=page))
 
     def get_available_tv_trending(self, time_window: str = "week", page: int = 1) -> dict:
-        trending = self.get_tv_trending(time_window=time_window, page=page)
-        filtered = [show for show in trending.get("results", []) if not is_tv_upcoming(show)]
-        return {**trending, "results": filtered}
+        return _aired_only(self.get_tv_trending(time_window=time_window, page=page))
 
     def get_available_tv_by_genre(self, genre_id: int, region: str = "US", page: int = 1) -> dict:
-        discover = self.discover_tv_by_genre(genre_id, region=region, page=page)
-        filtered = [show for show in discover.get("results", []) if not is_tv_upcoming(show)]
-        return {**discover, "results": filtered}
+        return _aired_only(self.discover_tv_by_genre(genre_id, region=region, page=page))
 
     def get_available_tv_by_provider(self, provider_id: int, region: str = "US", page: int = 1) -> dict:
-        discover = self.discover_tv_by_provider(provider_id, region=region, page=page)
-        filtered = [show for show in discover.get("results", []) if not is_tv_upcoming(show)]
-        return {**discover, "results": filtered}
+        return _aired_only(self.discover_tv_by_provider(provider_id, region=region, page=page))
 
     @ttl_cache(POPULAR_DISCOVER_TTL_SECONDS)
     def _discover_tv_upcoming(self, region: str = "US", page: int = 1) -> dict:
@@ -591,23 +550,11 @@ class TMDBClient:
         get_available_trending, applied to a genre row — without this, a
         genre row can surface a theatrical-only title Coming Soon is
         already responsible for."""
-        discover = self.discover_by_genre(genre_id, region=region, page=page)
-        filtered = [
-            movie
-            for movie in discover.get("results", [])
-            if not _lacks_digital_release(self.get_release_dates(movie["id"]))
-        ]
-        return {**discover, "results": filtered}
+        return self._digitally_released(self.discover_by_genre(genre_id, region=region, page=page))
 
     def get_available_by_provider(self, provider_id: int, region: str = "US", page: int = 1) -> dict:
         """Same digital-availability filter, applied to a provider row."""
-        discover = self.discover_by_provider(provider_id, region=region, page=page)
-        filtered = [
-            movie
-            for movie in discover.get("results", [])
-            if not _lacks_digital_release(self.get_release_dates(movie["id"]))
-        ]
-        return {**discover, "results": filtered}
+        return self._digitally_released(self.discover_by_provider(provider_id, region=region, page=page))
 
     # -- Browse page: one Discover call that takes every filter the browse
     #    page offers at once (genre, streaming service, year, sort), so a
@@ -649,13 +596,7 @@ class TMDBClient:
         return self._get("/discover/movie", params)
 
     def browse_movies(self, *, region: str = "US", **filters) -> dict:
-        discover = self.discover_movies(region=region, **filters)
-        filtered = [
-            movie
-            for movie in discover.get("results", [])
-            if not _lacks_digital_release(self.get_release_dates(movie["id"]))
-        ]
-        return {**discover, "results": filtered}
+        return self._digitally_released(self.discover_movies(region=region, **filters))
 
     @ttl_cache(POPULAR_DISCOVER_TTL_SECONDS)
     def discover_tv(
@@ -688,6 +629,4 @@ class TMDBClient:
         return self._get("/discover/tv", params)
 
     def browse_tv(self, *, region: str = "US", **filters) -> dict:
-        discover = self.discover_tv(region=region, **filters)
-        filtered = [show for show in discover.get("results", []) if not is_tv_upcoming(show)]
-        return {**discover, "results": filtered}
+        return _aired_only(self.discover_tv(region=region, **filters))

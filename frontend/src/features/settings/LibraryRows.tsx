@@ -2,9 +2,9 @@ import { useEffect, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { getLibrarySettings, setLibrarySettings } from '../../api/settings'
 import { errorText, useToast } from '../../lib/toast'
-import SettingRow from '../../components/SettingRow'
-import Toggle from '../../components/Toggle'
-import { Skel, SkelText } from '../../components/Skeleton'
+import SettingRow from './SettingRow'
+import Toggle from '../../components/ui/Toggle'
+import { Skel, SkelText } from '../../components/ui/Skeleton'
 
 // The rows' real labels with placeholder values while the settings load.
 function LibraryRowsSkeleton({ part }: { part: 'library' | 'storage' }) {

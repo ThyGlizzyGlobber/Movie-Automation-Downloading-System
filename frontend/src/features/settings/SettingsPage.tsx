@@ -16,7 +16,7 @@ import StoragePanel from './StoragePanel'
 import HouseholdPanel from './HouseholdPanel'
 import AboutPanel from './AboutPanel'
 import './SettingsPage.css'
-import Icon from '../../components/Icon'
+import Icon from '../../components/ui/Icon'
 
 function renderPanel(key: string, jump: (key: string) => void) {
   switch (key) {

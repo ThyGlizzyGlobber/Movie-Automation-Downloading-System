@@ -32,17 +32,6 @@ export function requestLabelAndHref(r: RequestOut): { label: string; href: strin
   return { label: `${r.title}${r.release_year ? ` (${r.release_year})` : ''}`, href: `#/movies/${r.tmdb_id}` }
 }
 
-// A leaf row's label under a season group — omits the show title (the
-// show-group header above it) and the season (the season-group header
-// above *that*), leaving just the episode, or the pack's own scope for a
-// season that only has a pack row so far.
-export function episodeLabelAndHref(r: RequestOut): { label: string; href: string } {
-  if (r.media_type === 'episode') {
-    return { label: `E${pad2(r.episode_number!)}`, href: `#/tv/${r.tmdb_id}` }
-  }
-  return { label: packScopeLabel(r), href: `#/tv/${r.tmdb_id}` }
-}
-
 // Which single status best represents a whole group at a glance —
 // anything still actively in motion (downloading/searching/queued)
 // outranks a terminal one, so "one episode is still downloading" never

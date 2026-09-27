@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { getPipelineSettings, setPipelineSettings } from '../../api/settings'
-import LanguageMultiSelect from '../../components/LanguageMultiSelect'
+import LanguageMultiSelect from './LanguageMultiSelect'
 import { SettingsCardSkeleton } from './SettingsSkeleton'
-import ErrorState from '../../components/ErrorState'
+import ErrorState from '../../components/ui/ErrorState'
 import { ApiError } from '../../api/client'
-import SettingRow from '../../components/SettingRow'
+import SettingRow from './SettingRow'
+import { useSaveFlash } from '../../lib/hooks'
 
 // Shared with the dashboard's quick settings so both read as one setting.
 export const RESOLUTION_OPTIONS = [
@@ -14,8 +15,6 @@ export const RESOLUTION_OPTIONS = [
   { value: '720p', label: '720p' },
   { value: '480p', label: '480p' },
 ]
-
-type SaveState = 'idle' | 'saving' | 'saved' | 'error'
 
 const DOWNLOADS_SUB = 'What counts as a good enough copy.'
 
@@ -33,7 +32,7 @@ export default function PipelinePanel() {
   // omitting it on save would silently reset any previously-customized
   // qBittorrent category — stashed on load, sent back unchanged.
   const [category, setCategory] = useState<string | null>(null)
-  const [saveState, setSaveState] = useState<SaveState>('idle')
+  const [saveState, setSaveState, flashSaveState] = useSaveFlash()
   const [saveError, setSaveError] = useState<string | null>(null)
 
   useEffect(() => {
@@ -72,8 +71,7 @@ export default function PipelinePanel() {
         language_blocklist: blocklist,
         language_required: required,
       })
-      setSaveState('saved')
-      setTimeout(() => setSaveState('idle'), 1200)
+      flashSaveState('saved')
     } catch (err) {
       setSaveError(err instanceof ApiError ? err.message : 'Something went wrong.')
       setSaveState('error')

@@ -5,9 +5,9 @@ from app.tmdb import (
     _available_on_provider,
     _is_recent_release,
     _lacks_digital_release,
-    best_trailer_key,
     is_movie_coming_soon,
     is_tv_upcoming,
+    trailer_candidates,
 )
 
 
@@ -467,41 +467,45 @@ def test_get_tv_requests_credits_and_content_ratings_append():
 
 
 # ---------------------------------------------------------------------------
-# best_trailer_key — preference order: official Trailer, any Trailer,
-# official Teaser, any Teaser, then None.
+# trailer_candidates — ranked: official Trailer, any Trailer, official
+# Teaser, any Teaser; nothing else qualifies.
 # ---------------------------------------------------------------------------
 
 
-def test_best_trailer_key_prefers_official_trailer_over_everything_else():
+def test_trailer_candidates_ranks_official_trailer_first():
     videos = [
         {"site": "YouTube", "type": "Teaser", "official": True, "key": "teaser-key"},
         {"site": "YouTube", "type": "Trailer", "official": False, "key": "unofficial-trailer-key"},
         {"site": "YouTube", "type": "Trailer", "official": True, "key": "official-trailer-key"},
     ]
-    assert best_trailer_key(videos) == "official-trailer-key"
+    assert [v["key"] for v in trailer_candidates(videos)] == [
+        "official-trailer-key",
+        "unofficial-trailer-key",
+        "teaser-key",
+    ]
 
 
-def test_best_trailer_key_falls_back_to_unofficial_trailer():
+def test_trailer_candidates_falls_back_to_unofficial_trailer():
     videos = [{"site": "YouTube", "type": "Trailer", "official": False, "key": "unofficial-trailer-key"}]
-    assert best_trailer_key(videos) == "unofficial-trailer-key"
+    assert [v["key"] for v in trailer_candidates(videos)] == ["unofficial-trailer-key"]
 
 
-def test_best_trailer_key_falls_back_to_teaser_when_no_trailer_exists():
+def test_trailer_candidates_falls_back_to_teaser_when_no_trailer_exists():
     videos = [{"site": "YouTube", "type": "Teaser", "official": True, "key": "teaser-key"}]
-    assert best_trailer_key(videos) == "teaser-key"
+    assert [v["key"] for v in trailer_candidates(videos)] == ["teaser-key"]
 
 
-def test_best_trailer_key_ignores_non_youtube_and_non_trailer_video_types():
+def test_trailer_candidates_ignores_non_youtube_and_non_trailer_video_types():
     videos = [
         {"site": "Vimeo", "type": "Trailer", "official": True, "key": "vimeo-key"},
         {"site": "YouTube", "type": "Featurette", "official": True, "key": "featurette-key"},
         {"site": "YouTube", "type": "Bloopers", "official": True, "key": "bloopers-key"},
     ]
-    assert best_trailer_key(videos) is None
+    assert trailer_candidates(videos) == []
 
 
-def test_best_trailer_key_returns_none_for_no_videos():
-    assert best_trailer_key([]) is None
+def test_trailer_candidates_is_empty_for_no_videos():
+    assert trailer_candidates([]) == []
 
 
 def test_get_movie_videos_returns_results_list():

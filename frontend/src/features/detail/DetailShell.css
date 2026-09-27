@@ -441,12 +441,6 @@
 .detail-tile.dim b {
   color: var(--text-dim);
 }
-.detail-tile img.detail-tile-icon {
-  width: 24px;
-  height: 24px;
-  border-radius: 6px;
-  object-fit: cover;
-}
 /* Sections under the card (episodes on a show page). */
 .detail-section {
   --section-inset: var(--row-inset);
@@ -674,60 +668,11 @@
   box-shadow: 0 24px 44px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.12);
   object-fit: cover;
 }
-/* Key rows (creators) inside the card. */
-.detail-krow {
-  display: grid;
-  grid-template-columns: 120px minmax(0, 1fr);
-  gap: 16px;
-  padding: 10px 0;
-  border-top: 1px solid rgba(255, 255, 255, 0.07);
-  font-size: 13px;
-}
-.detail-krow:first-of-type {
-  border-top: 0;
-}
-.detail-krow span:first-child {
-  color: var(--text-dim);
-  font-weight: 700;
-}
-.detail-krow a {
-  font-weight: 600;
-}
-.detail-krow a:hover {
-  color: var(--obsidian-ice);
-}
-/* Seasons: the picker and progress line above the episode list. */
-.detail-seasons {
-  display: flex;
-  gap: 8px;
-  align-items: center;
-  flex-wrap: wrap;
-  margin: 26px 0 14px;
-}
-.detail-seasons .seg {
-  margin: 0;
-}
-.detail-seasons .detail-season-actions {
-  margin-left: auto;
-  display: flex;
-  gap: 8px;
-}
 /* A requested title's primary button becomes its live status (the scan
    icon animates on its own, see Icon.css), keeping the primary look so
    it still reads as the main action. */
 .detail-live .icon {
   font-size: 18px;
-}
-/* Live request state under the actions (inside the actions row). */
-.detail-status {
-  flex: 1 1 100%;
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  margin-top: 8px;
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--text-dim);
 }
 /* Rows below the frame sit at the normal page inset. After the episodes
    section they keep the same gap the frame leaves above the episodes. */

@@ -6,7 +6,7 @@ ones. `worker.py`'s `_watch_shows`/`_watch_episode_rechecks` loops resolve
 this fresh every cycle, so a Settings-panel edit takes effect on the very
 next wake-up — no restart, no deploy, same as pipeline settings."""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, fields, replace
 from typing import TYPE_CHECKING
 
 from app import config
@@ -43,32 +43,9 @@ def settings_from_raw(saved: dict) -> TVScheduleSettings:
     `episode_recheck_enabled=False` and `episode_recheck_max_attempts=0`
     (infinite) are both meaningful, deliberately-set values, not "unset"."""
     defaults = TVScheduleSettings.from_config()
-    return TVScheduleSettings(
-        show_check_interval_hours=(
-            saved.get("show_check_interval_hours")
-            if saved.get("show_check_interval_hours") is not None
-            else defaults.show_check_interval_hours
-        ),
-        episode_recheck_enabled=(
-            saved.get("episode_recheck_enabled")
-            if saved.get("episode_recheck_enabled") is not None
-            else defaults.episode_recheck_enabled
-        ),
-        episode_recheck_interval_hours=(
-            saved.get("episode_recheck_interval_hours")
-            if saved.get("episode_recheck_interval_hours") is not None
-            else defaults.episode_recheck_interval_hours
-        ),
-        episode_recheck_max_attempts=(
-            saved.get("episode_recheck_max_attempts")
-            if saved.get("episode_recheck_max_attempts") is not None
-            else defaults.episode_recheck_max_attempts
-        ),
-        episode_air_buffer_hours=(
-            saved.get("episode_air_buffer_hours")
-            if saved.get("episode_air_buffer_hours") is not None
-            else defaults.episode_air_buffer_hours
-        ),
+    return replace(
+        defaults,
+        **{f.name: saved[f.name] for f in fields(TVScheduleSettings) if saved.get(f.name) is not None},
     )
 
 

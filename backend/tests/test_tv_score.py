@@ -1,8 +1,8 @@
 from app import config
-from app.normalize import tokenize
+from app.normalize import extract_episode_identity, tokenize
 from app.pipeline_settings import PipelineSettings
 from app.tv_resolve import ShowIdentity
-from app.tv_score import extract_episode_identity, passes_episode_relevance_gate
+from app.tv_score import passes_episode_relevance_gate
 
 LANTERNS = ShowIdentity(
     tmdb_id=95350,

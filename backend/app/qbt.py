@@ -17,7 +17,7 @@ class QBTError(RuntimeError):
 class QBTClient:
     def __init__(self, host: str, port: int, username: str = "", password: str = ""):
         # Stored alongside the real qbittorrentapi client (frontend
-        # migration Part E) so api.py's get_qbt dependency can tell
+        # migration Part E) so api/deps.py's get_qbt dependency can tell
         # whether the resolved config actually changed since this
         # instance was built, without needing its own separate tracking.
         self.host = host
@@ -86,7 +86,7 @@ class QBTClient:
         1, 'success_count': 0}` and was genuinely present in qBittorrent
         moments later. Treating "pending" as a failure here would reject
         real successes — whether a pending add actually lands is verified
-        for real by pipeline.py's `_capture_new_hash` retry loop, not
+        for real by pipeline.py's `_capture_new_hashes` retry loop, not
         synchronously here."""
         result = self._client.torrents_add(urls=file_url, category=category)
         if isinstance(result, str):
@@ -100,6 +100,15 @@ class QBTClient:
         watcher. `None` if it's gone (e.g. removed manually)."""
         results = self._client.torrents_info(torrent_hashes=torrent_hash)
         return dict(results[0]) if results else None
+
+    def torrents_info_many(self, torrent_hashes: list[str]) -> dict[str, dict]:
+        """`torrent_info` for several torrents in one WebUI call, keyed by
+        lowercased hash — the watcher polls every downloading row at once.
+        A hash qBittorrent no longer holds is simply absent."""
+        if not torrent_hashes:
+            return {}
+        results = self._client.torrents_info(torrent_hashes=list(torrent_hashes))
+        return {t.hash.lower(): dict(t) for t in results}
 
     def torrent_files(self, torrent_hash: str) -> list[dict]:
         """A completed (or in-progress) torrent's file list — name (relative

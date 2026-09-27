@@ -1,16 +1,16 @@
 import { Link } from 'react-router-dom'
 import { useCallback, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { listRequests, clearRequests } from '../../api/requests'
+import { clearRequests } from '../../api/requests'
 import { getRetention, setRetention } from '../../api/settings'
 import { useSession } from '../auth/useSession'
-import Icon from '../../components/Icon'
-import PosterCard from '../../components/PosterCard'
-import DownloadBar from '../../components/DownloadBar'
-import RequestStatusChip from '../../components/RequestStatusChip'
-import { PosterCardSkeleton, Skel, SkelWords } from '../../components/Skeleton'
-import ErrorState from '../../components/ErrorState'
-import EmptyState from '../../components/EmptyState'
+import Icon from '../../components/ui/Icon'
+import PosterCard from '../../components/media/PosterCard'
+import DownloadBar from '../../components/media/DownloadBar'
+import RequestStatusChip from '../../components/media/RequestStatusChip'
+import { PosterCardSkeleton, Skel, SkelWords } from '../../components/ui/Skeleton'
+import ErrorState from '../../components/ui/ErrorState'
+import EmptyState from '../../components/ui/EmptyState'
 import { usePageTitle } from '../../lib/chrome'
 import { relativeTime } from '../../lib/format'
 import { FAILED_STATES, NON_TERMINAL, statusDetail } from '../../lib/status'
@@ -20,6 +20,7 @@ import { errorText, useToast } from '../../lib/toast'
 import type { RequestOut } from '../../types/requests'
 import RequestSheet from './RequestSheet'
 import './RequestsPage.css'
+import { useRequests } from '../../lib/useRequests'
 
 type Filter = 'all' | 'active' | 'plex' | 'failed'
 const FILTERS: { id: Filter; label: string }[] = [
@@ -152,7 +153,7 @@ export default function RequestsPage() {
   const isAdmin = !!session.data?.is_admin
   const { toast } = useToast()
 
-  const requestsQuery = useQuery({ queryKey: ['requests'], queryFn: () => listRequests(), refetchInterval: 5000 })
+  const requestsQuery = useRequests()
   // Auto-clear is an admin-only policy; everyone else just gets Clear.
   const retentionQuery = useQuery({ queryKey: ['retention'], queryFn: () => getRetention(), enabled: isAdmin })
 

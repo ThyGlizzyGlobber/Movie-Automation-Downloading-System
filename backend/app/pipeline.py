@@ -4,6 +4,7 @@ is what makes this CLI-testable."""
 
 import threading
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
 
 from app import config
@@ -109,17 +110,36 @@ def _search_variant(
     # gate (title/year/token matching) is what actually decides relevance,
     # not qBittorrent's per-plugin category tagging, which turned out to be
     # an unreliable pre-filter to trust.
-    raw_results = qbt.search(variant, category="all")
+    return _filter_results(
+        qbt.search(variant, category="all"),
+        lambda name: passes_relevance_gate(name, identity, settings),
+        settings,
+        existing_hashes,
+        excluded_releases,
+    )
+
+
+def _filter_results(
+    raw_results: list[dict],
+    gate: Callable[[str], bool],
+    settings: PipelineSettings,
+    existing_hashes: set[str],
+    excluded_releases: list[dict] | None,
+) -> list[dict]:
+    """What every search does with qBittorrent's raw rows: trusted
+    sources only, relevant by `gate` (called with the release name), not a
+    rejected copy, viable, deduped, and not a torrent already present or
+    blacklisted by hash."""
     trustworthy = [r for r in raw_results if is_trustworthy(r)]
-    relevant = [r for r in trustworthy if passes_relevance_gate(r.get("fileName", ""), identity, settings)]
+    relevant = [r for r in trustworthy if gate(r.get("fileName", ""))]
     if excluded_releases:
-        # A copy rejected without a hash (this app never added it) is
-        # skipped however it's listed — matched by size, or by a name
-        # that still says which release it was.
+        # A copy rejected without a hash (most winners are direct .torrent
+        # links, which carry none) is skipped however it's listed —
+        # matched by size, or by a name that still says which release it
+        # was.
         relevant = [r for r in relevant if not any(_is_rejected_release(r, rej) for rej in excluded_releases)]
     viable = [r for r in relevant if passes_viability_gate(r, settings)]
-    deduped = dedup_candidates(viable)
-    return exclude_existing(deduped, existing_hashes)
+    return exclude_existing(dedup_candidates(viable), existing_hashes)
 
 
 def _merge_variant_candidates(variants: list[str], search_one_variant) -> list[dict]:
@@ -179,13 +199,11 @@ def _candidates_that_fit(ranked: list[tuple[dict, Score]], free_space_bytes: int
     ]
 
 
-def _capture_new_hash(qbt: QBTClient, hashes_before: set[str]) -> str | None:
-    """Stage 3 needs a way to track *this specific* add through to
-    completion (the API's "downloading" -> "complete" transition). Works
+def _capture_new_hashes(qbt: QBTClient, hashes_before: set[str]) -> set[str]:
+    """Every hash that appeared since `hashes_before`, once at least one
+    has. This is how an add is tracked through to completion: it works
     for both magnet and direct-.torrent-URL results, unlike parsing
-    `fileUrl` (only magnets carry an infohash). Ambiguous (more than one new
-    hash — e.g. a concurrent manual add) fails safe to untracked rather than
-    guessing which one is ours.
+    `fileUrl` (only magnets carry an infohash).
 
     Retries briefly: a magnet is indexed by qBittorrent essentially
     instantly, but a direct-.torrent-URL result (the majority of real
@@ -200,18 +218,10 @@ def _capture_new_hash(qbt: QBTClient, hashes_before: set[str]) -> str | None:
     result that's merely still indexing from one that will never land
     (confirmed live: qBittorrent's WebAPI 2.14+ metadata response reports a
     still-fetching direct-.torrent-URL as "pending", not "success" or
-    "failure", the instant the call returns). If zero new hashes ever show
-    up despite exhausting every retry, nothing was actually added — raises
+    "failure", the instant the call returns). If no new hash ever shows up
+    despite exhausting every retry, nothing was actually added — raises
     QBTError rather than reporting "added" with an untracked, nonexistent
-    torrent. The ambiguous case (more than one new hash) is different:
-    something was clearly added, so that still returns None as before."""
-    new_hashes = _capture_new_hashes(qbt, hashes_before)
-    return next(iter(new_hashes)) if len(new_hashes) == 1 else None
-
-
-def _capture_new_hashes(qbt: QBTClient, hashes_before: set[str]) -> set[str]:
-    """Every hash that appeared since `hashes_before`, once at least one
-    has; raises QBTError when none ever does (see `_capture_new_hash`)."""
+    torrent."""
     for _ in range(config.HASH_CAPTURE_ATTEMPTS):
         new_hashes = qbt.existing_torrent_hashes() - hashes_before
         if new_hashes:
@@ -405,22 +415,20 @@ def _search_episode_variant(
     episode: int,
     existing_hashes: set[str],
     settings: PipelineSettings,
+    excluded_releases: list[dict] | None = None,
 ) -> list[dict]:
     query = episode_query(variant, season, episode)
     # See `_search_variant`'s comment above — searching "all" rather than
     # `config.TV_CATEGORY` for the same reason (a real plugin returning zero
     # results when category-filtered). `config.TV_CATEGORY` is still what
     # the torrent gets labeled as once added, in `_rank_and_add` below.
-    raw_results = qbt.search(query, category="all")
-    trustworthy = [r for r in raw_results if is_trustworthy(r)]
-    relevant = [
-        r
-        for r in trustworthy
-        if passes_episode_relevance_gate(r.get("fileName", ""), identity, season, episode, settings)
-    ]
-    viable = [r for r in relevant if passes_viability_gate(r, settings)]
-    deduped = dedup_candidates(viable)
-    return exclude_existing(deduped, existing_hashes)
+    return _filter_results(
+        qbt.search(query, category="all"),
+        lambda name: passes_episode_relevance_gate(name, identity, season, episode, settings),
+        settings,
+        existing_hashes,
+        excluded_releases,
+    )
 
 
 def find_best_episode_candidate(
@@ -430,6 +438,7 @@ def find_best_episode_candidate(
     qbt: QBTClient,
     settings: PipelineSettings | None = None,
     excluded_hashes: set[str] | None = None,
+    excluded_releases: list[dict] | None = None,
 ) -> tuple[dict, Score] | None:
     """Read-only peek at what `download_episode()` would add right now,
     without actually adding it — Stage 12.x's auto-recheck loop uses this
@@ -440,15 +449,17 @@ def find_best_episode_candidate(
     added" never quietly disagree. `None` if nothing fitting turns up
     across every variant.
 
-    `excluded_hashes` (Stage 15): same rejected-torrent exclusion as
-    `download()` — see its own docstring."""
+    `excluded_hashes`/`excluded_releases` (Stage 15): same rejected-copy
+    exclusion as `download()` — see its own docstring."""
     settings = settings or PipelineSettings.from_config()
     existing_hashes = qbt.existing_torrent_hashes() | (excluded_hashes or set())
     free_space_bytes = usable_free_space(qbt, settings)
 
     candidates = _merge_variant_candidates(
         identity.variants,
-        lambda variant: _search_episode_variant(qbt, variant, identity, season, episode, existing_hashes, settings),
+        lambda variant: _search_episode_variant(
+            qbt, variant, identity, season, episode, existing_hashes, settings, excluded_releases
+        ),
     )
     if not candidates:
         return None
@@ -464,6 +475,7 @@ def download_episode(
     qbt: QBTClient,
     settings: PipelineSettings | None = None,
     excluded_hashes: set[str] | None = None,
+    excluded_releases: list[dict] | None = None,
 ) -> EpisodeDownloadResult:
     """The Stage 10 equivalent of `download()`, for one specific episode.
     Takes an already-resolved `ShowIdentity` rather than a tmdb_id + TMDB
@@ -474,15 +486,17 @@ def download_episode(
     it (episode identity instead of title+year, `config.TV_CATEGORY`
     instead of `settings.category`) differs from `download()`.
 
-    `excluded_hashes` (Stage 15): same rejected-torrent exclusion as
-    `download()` — see its own docstring."""
+    `excluded_hashes`/`excluded_releases` (Stage 15): same rejected-copy
+    exclusion as `download()` — see its own docstring."""
     settings = settings or PipelineSettings.from_config()
     existing_hashes = qbt.existing_torrent_hashes() | (excluded_hashes or set())
     free_space_bytes = usable_free_space(qbt, settings)
 
     candidates = _merge_variant_candidates(
         identity.variants,
-        lambda variant: _search_episode_variant(qbt, variant, identity, season, episode, existing_hashes, settings),
+        lambda variant: _search_episode_variant(
+            qbt, variant, identity, season, episode, existing_hashes, settings, excluded_releases
+        ),
     )
     if not candidates:
         return EpisodeDownloadResult(status="no qualifying results", identity=identity, season=season, episode=episode)
@@ -526,6 +540,7 @@ def _search_pack_queries(
     gate,
     existing_hashes: set[str],
     settings: PipelineSettings,
+    excluded_releases: list[dict] | None = None,
 ) -> list[dict]:
     """Searches every query string for one variant — not stopping at the
     first with results — and returns the combined, deduped pool, each
@@ -540,12 +555,13 @@ def _search_pack_queries(
     pack gate (`gate`) applies."""
     combined: list[dict] = []
     for query in queries:
-        raw_results = qbt.search(query, category="all")
-        trustworthy = [r for r in raw_results if is_trustworthy(r)]
-        relevant = [r for r in trustworthy if gate(r.get("fileName", ""), settings)]
-        viable = [r for r in relevant if passes_viability_gate(r, settings)]
-        deduped = dedup_candidates(viable)
-        candidates = exclude_existing(deduped, existing_hashes)
+        candidates = _filter_results(
+            qbt.search(query, category="all"),
+            lambda name: gate(name, settings),
+            settings,
+            existing_hashes,
+            excluded_releases,
+        )
         for candidate in candidates:
             tagged = dict(candidate)
             tagged["_query_used"] = query
@@ -553,7 +569,13 @@ def _search_pack_queries(
     return dedup_candidates(combined)
 
 
-def _best_season_pack_tier(qbt: QBTClient, identity: ShowIdentity, existing_hashes: set[str], settings: PipelineSettings) -> int:
+def _best_season_pack_tier(
+    qbt: QBTClient,
+    identity: ShowIdentity,
+    existing_hashes: set[str],
+    settings: PipelineSettings,
+    excluded_releases: list[dict] | None = None,
+) -> int:
     """The best resolution tier a season pack offers, probing season 1
     with the show's main title only — enough to tell whether the seasons
     are better than a whole-series pack, without a full second search."""
@@ -561,7 +583,9 @@ def _best_season_pack_tier(qbt: QBTClient, identity: ShowIdentity, existing_hash
     def gate(file_name: str, s: PipelineSettings) -> bool:
         return passes_season_pack_gate(file_name, identity, 1, s)
 
-    found = _search_pack_queries(qbt, season_pack_queries(identity.variants[0], 1), gate, existing_hashes, settings)
+    found = _search_pack_queries(
+        qbt, season_pack_queries(identity.variants[0], 1), gate, existing_hashes, settings, excluded_releases
+    )
     if not found:
         return 0
     return rank_candidates(found)[0][1].resolution_score
@@ -582,6 +606,7 @@ def download_pack(
     season: int | None = None,
     season_range_end: int | None = None,
     excluded_hashes: set[str] | None = None,
+    excluded_releases: list[dict] | None = None,
 ) -> PackDownloadResult:
     """Stage 13 (+ Stage 14.x's season-range scope): search/score/add for a
     whole-season, multi-season-range, or complete-series pack. Reuses
@@ -597,11 +622,8 @@ def download_pack(
     `download_episode`: a bulk-download request is always issued against a
     show the caller has already resolved.
 
-    `excluded_hashes` (Stage 15): same rejected-torrent exclusion as
-    `download()` — see its own docstring. Added as the last parameter
-    (rather than alongside `settings`) so existing positional callers
-    (worker.py's `download_pack(identity, scope, qbt, settings, season,
-    season_range_end)`) keep working unchanged."""
+    `excluded_hashes`/`excluded_releases` (Stage 15): same rejected-copy
+    exclusion as `download()` — see its own docstring."""
     if scope not in ("season", "season_range", "series"):
         raise ValueError(f"scope must be 'season', 'season_range', or 'series', got {scope!r}")
     if scope == "season" and season is None:
@@ -631,7 +653,7 @@ def download_pack(
             def gate(file_name: str, s: PipelineSettings) -> bool:
                 return passes_series_pack_gate(file_name, identity, s)
 
-        for candidate in _search_pack_queries(qbt, queries, gate, existing_hashes, settings):
+        for candidate in _search_pack_queries(qbt, queries, gate, existing_hashes, settings, excluded_releases):
             tagged = dict(candidate)
             tagged.setdefault("_variant_used", variant)
             combined.append(tagged)
@@ -651,7 +673,7 @@ def download_pack(
         # worker's fallback ask for each season instead.
         best_result, best_score = rank_candidates(candidates)[0]
         best_series = best_score.resolution_score
-        best_season = _best_season_pack_tier(qbt, identity, existing_hashes, settings)
+        best_season = _best_season_pack_tier(qbt, identity, existing_hashes, settings, excluded_releases)
         # Only on stated evidence. A pack naming no resolution sits at the
         # SD tier because its source implies at least that much — an
         # understatement on purpose (config.RESOLUTION_TIERS) — and

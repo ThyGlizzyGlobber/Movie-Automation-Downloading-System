@@ -1,0 +1,195 @@
+"""One title's detail pages — movie and show — and the hero trailers
+cached for them."""
+
+import re
+
+from fastapi import Depends, HTTPException
+from fastapi.responses import FileResponse, Response as RawResponse
+
+from app import config, trailers
+from app.db import RequestStore
+from app.plex import local_file_for_title, plex_show_episodes
+from app.tmdb import TMDBClient, TMDBError, best_logo_path, is_movie_coming_soon, is_tv_upcoming, trailer_candidates
+from app.api.deps import get_store, get_tmdb, router
+from app.api.helpers import _on_plex_for
+
+
+# Cache filenames are always trailers.cached_trailer_path()'s own
+# "{media_type}-{tmdb_id}-{key}.mp4" shape — validated before ever touching
+# the filesystem so a crafted filename can't path-traverse out of
+# TRAILER_CACHE_DIR.
+_TRAILER_FILENAME_RE = re.compile(r"^[a-z]+-\d+-[\w-]+\.mp4$")
+
+
+def _aired_episode_count(show: dict) -> int:
+    """Episodes TMDB says have aired: every season before the one the
+    last-aired episode is in, in full, plus that episode's number.
+    Specials (season 0) don't count."""
+    last = show.get("last_episode_to_air") or {}
+    last_season = last.get("season_number")
+    last_episode = last.get("episode_number")
+    if not last_season or not last_episode:
+        return 0
+    before = sum(
+        int(s.get("episode_count") or 0)
+        for s in show.get("seasons") or []
+        if 1 <= int(s.get("season_number") or 0) < last_season
+    )
+    return before + int(last_episode)
+
+
+def _plex_episode_count(store: RequestStore, title: str, year: int | None, tmdb_id: int | None = None) -> int | None:
+    """How many episodes of this show Plex has, or None when Plex isn't
+    linked or can't find the show.
+
+    Distinct (season, episode) pairs from Plex's own episode listing —
+    the same thing the episode list counts — rather than a tally of
+    files: an episode re-downloaded at a better quality replaces the one
+    that was there, so it is still one episode however many releases it
+    took to get it. Specials are left out for the same reason
+    `_aired_episode_count` leaves them out: nothing else on the show page
+    counts them as episodes of a season."""
+    episodes = plex_show_episodes(store, title, year, tmdb_id)
+    if episodes is None:
+        return None
+    return sum(1 for season, _episode in episodes if season >= 1)
+
+
+@router.get("/api/movies/{tmdb_id}")
+def get_movie_detail(
+    tmdb_id: int, store: RequestStore = Depends(get_store), tmdb: TMDBClient = Depends(get_tmdb)
+) -> dict:
+    """Full TMDB detail for the detail view — overview, runtime, genres,
+    poster/backdrop paths. The frontend hotlinks poster/backdrop images
+    straight from TMDB's CDN using the paths returned here."""
+    try:
+        movie = tmdb.get_movie(tmdb_id)
+    except TMDBError as exc:
+        raise HTTPException(status_code=404, detail=f"tmdb_id {tmdb_id} not found") from exc
+    year_str = (movie.get("release_date") or "")[:4]
+    year = int(year_str) if year_str.isdigit() else None
+    # get_movie's append_to_response=release_dates already fetched exactly
+    # the data is_movie_coming_soon needs — no second TMDB call. Coming
+    # Soon titles use this to grey out their own Add to Plex button.
+    release_dates = movie.get("release_dates", {}).get("results", [])
+    is_coming_soon = is_movie_coming_soon(movie, release_dates)
+    on_plex = _on_plex_for(movie.get("title") or "", year, "movie", store, tmdb_id)
+    tracked = bool(store.get_library_items(tmdb_id, "movie")) or store.get_latest_organized_request(tmdb_id, ("movie",)) is not None
+    return {
+        **movie,
+        "on_plex": on_plex,
+        # A file this app didn't add, but Plex can point at from here: enough
+        # to offer "Replace it" and "This copy is broken" for it.
+        "plex_file_available": bool(on_plex and not tracked and local_file_for_title(store, "movie", movie.get("title") or "", year, tmdb_id) is not None),
+        "is_coming_soon": is_coming_soon,
+        "logo_path": best_logo_path(movie.get("images")),
+        # Frontend migration Part K2 — true only when this app has a
+        # confirmed record of having organized a file for this title
+        # itself, never derived from the same fuzzy on_plex title/year
+        # match above. Drives whether "Overwrite existing" is even
+        # offered in the redownload confirmation modal.
+        "on_plex_tracked": tracked,
+        # The "On disk" tiles. Read from the library ledger rather than a
+        # completed request's recorded winner, which is what the page used
+        # to do: a request row is deleted by "Clear My Requests" and by
+        # retention, so the tiles vanished while the file was still very
+        # much on disk. The ledger outlives history, and its size is the
+        # real on-disk one rather than the torrent's advertised size.
+        "library": store.library_summary(tmdb_id, ("movie",)),
+    }
+
+
+@router.get("/api/movies/{tmdb_id}/trailer")
+def get_movie_trailer(tmdb_id: int, tmdb: TMDBClient = Depends(get_tmdb)) -> dict:
+    """Backs the hero carousel's background video — a separate call from
+    get_movie_detail rather than another append_to_response, since it is
+    only ever fetched for the handful of titles in a hero, not every
+    movie the frontend touches. `url: null`
+    (never a 404) when nothing suitable is on file or the download fails —
+    a title with no trailer is a normal, expected case, not an error the
+    caller needs to handle specially; it just falls back to a plain
+    poster/backdrop. Downloads and serves the clip from our own cache
+    (trailers.py) rather than embedding YouTube's player — see that
+    module's docstring for why, and `trailers.resolve` for which of a
+    title's clips gets picked."""
+    try:
+        videos = tmdb.get_movie_videos(tmdb_id)
+    except TMDBError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    path = trailers.resolve("movie", tmdb_id, trailer_candidates(videos))
+    return {"url": f"/api/trailers/{path.name}" if path else None}
+
+
+@router.get("/api/tv/{tmdb_id}")
+def get_tv_detail(tmdb_id: int, store: RequestStore = Depends(get_store), tmdb: TMDBClient = Depends(get_tmdb)) -> dict:
+    """Full TMDB show detail — overview, seasons, status (Returning
+    Series/Ended/Canceled), genres, poster/backdrop paths. Backs the show
+    detail view's subscribe/unsubscribe/bulk-download controls."""
+    try:
+        show = tmdb.get_tv(tmdb_id)
+    except TMDBError as exc:
+        raise HTTPException(status_code=404, detail=f"tmdb_id {tmdb_id} not found") from exc
+    year_str = (show.get("first_air_date") or "")[:4]
+    year = int(year_str) if year_str.isdigit() else None
+    on_plex = _on_plex_for(show.get("name") or "", year, "show", store, tmdb_id)
+    # Every aired episode is already on Plex: the show page hides "Add
+    # all to Plex" rather than offering a download that would add nothing.
+    aired = _aired_episode_count(show)
+    have = _plex_episode_count(store, show.get("name") or "", year, tmdb_id) if on_plex else None
+    return {
+        **show,
+        "on_plex": on_plex,
+        "plex_complete": bool(have is not None and have >= aired > 0),
+        # How many episodes the household actually has, for the "On disk"
+        # tiles. The ledger below counts files, which counts a
+        # re-downloaded episode twice; this counts episodes.
+        "plex_episode_count": have,
+        "is_coming_soon": is_tv_upcoming(show),
+        "logo_path": best_logo_path(show.get("images")),
+        # Frontend migration Part K3 — TV parity with the movie route
+        # above. A show's organized history is episode/pack rows, never
+        # a single fixed media_type the way a movie's always is.
+        "on_plex_tracked": store.get_latest_organized_request(tmdb_id, ("episode", "pack")) is not None,
+        # The show-level equivalent of the movie page's "File" tiles.
+        # Rolled up here rather than per-episode: a show's quality and
+        # disk footprint are properties of the whole run, and episode
+        # rows are both media types a show can be filed under.
+        "library": store.library_summary(tmdb_id, ("episode", "pack")),
+    }
+
+
+@router.get("/api/tv/{tmdb_id}/trailer")
+def get_tv_trailer(tmdb_id: int, tmdb: TMDBClient = Depends(get_tmdb)) -> dict:
+    """The TV equivalent of get_movie_trailer above — same reasoning."""
+    try:
+        videos = tmdb.get_tv_videos(tmdb_id)
+    except TMDBError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    path = trailers.resolve("tv", tmdb_id, trailer_candidates(videos))
+    return {"url": f"/api/trailers/{path.name}" if path else None}
+
+
+@router.get("/api/trailers/{filename}")
+def get_trailer_file(filename: str) -> FileResponse:
+    """Serves a cached hero-carousel trailer downloaded by trailers.py.
+    Filename is regex-whitelisted before it ever reaches the filesystem —
+    it's a path segment taken straight from the URL."""
+    if not _TRAILER_FILENAME_RE.match(filename):
+        raise HTTPException(status_code=404, detail="trailer not found")
+    path = config.TRAILER_CACHE_DIR / filename
+    if not path.is_file():
+        raise HTTPException(status_code=404, detail="trailer not found")
+    if config.TRAILER_X_ACCEL_PREFIX:
+        # Everything above still runs — the session gate on this router,
+        # the filename whitelist, the existence check — and only then is
+        # the file handed to nginx to actually send. A hero playing five
+        # of these otherwise has uvicorn streaming video while it is
+        # also the thing answering the API, and it serves ranges worse
+        # than nginx does besides. The body is empty on purpose: nginx
+        # discards it and sends the file named by the header.
+        return RawResponse(
+            status_code=200,
+            media_type="video/mp4",
+            headers={"X-Accel-Redirect": f"{config.TRAILER_X_ACCEL_PREFIX.rstrip('/')}/{filename}"},
+        )
+    return FileResponse(path, media_type="video/mp4")

@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { useSession } from '../auth/useSession'
 import { markTutorialSeen } from '../../api/auth'
+import '../../components/ui/Modal.css'
 import './TutorialOverlay.css'
 
 // A short slide-based intro, not element-anchored coach-marks — a
@@ -36,8 +37,10 @@ export default function TutorialOverlay() {
   const isLast = slide === SLIDES.length - 1
   const current = SLIDES[slide]
 
+  // Modal's backdrop without its Escape and backdrop click: leaving is
+  // Skip or Got it, the two ways that mark the tutorial seen.
   return (
-    <div className="tutorial-overlay">
+    <div className="modal-overlay">
       <div className="tutorial-card">
         <button className="tutorial-skip" onClick={finish}>
           Skip

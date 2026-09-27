@@ -13,10 +13,6 @@ export function getDiscoverTrending(page = 1) {
   return request<TmdbListResponse>(`/api/discover/trending?page=${page}`)
 }
 
-export function getDiscoverProviders() {
-  return request<Record<string, unknown>[]>('/api/discover/providers')
-}
-
 export function getDiscoverByProvider(providerId: number, page = 1) {
   return request<TmdbListResponse>(`/api/discover/providers/${providerId}?page=${page}`)
 }

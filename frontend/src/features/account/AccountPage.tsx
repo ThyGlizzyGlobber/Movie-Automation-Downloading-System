@@ -5,7 +5,7 @@ import { useSession } from '../auth/useSession'
 import { logout } from '../../api/auth'
 import { usePageTitle } from '../../lib/chrome'
 import './AccountPage.css'
-import Avatar from '../../components/Avatar'
+import Avatar from '../../components/ui/Avatar'
 
 // Deliberately small — this app has almost no per-user preferences to
 // hold (dark-only theme, no notifications system, the request queue is

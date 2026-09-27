@@ -1,0 +1,147 @@
+import { useEffect, useRef, useState } from 'react'
+import { useInfiniteQuery } from '@tanstack/react-query'
+import PosterCard from '../../components/media/PosterCard'
+import ErrorState from '../../components/ui/ErrorState'
+import EmptyState from '../../components/ui/EmptyState'
+import { PosterCardSkeleton } from '../../components/ui/Skeleton'
+import type { TmdbListItem, TmdbListResponse } from '../../types/movies'
+import './InfiniteGrid.css'
+
+// Auto-loads more pages as the user scrolls near the bottom, via an
+// IntersectionObserver on an invisible sentinel — no "Load more" button.
+// The first page, and each page after it while it loads, shows as
+// skeleton cards in the grid itself.
+// A short/wide viewport where the sentinel starts already on-screen
+// self-corrects naturally: the observer fires immediately, which fetches
+// the next page, which re-renders with the sentinel now further down,
+// repeating until it's genuinely out of range — same end result as the
+// old app's explicit "front-load enough pages to fill 4 rows" pass,
+// without needing separate code for it.
+// A TMDB page is 20 titles; the placeholders fill a couple of rows.
+const FIRST_PAGE_SKELETONS = 20
+const NEXT_PAGE_SKELETONS = 14
+
+export default function InfiniteGrid({
+  queryKey,
+  fetchPage,
+  mediaType,
+  emptyMessage,
+  filterItem,
+  onTotal,
+}: {
+  queryKey: unknown[]
+  fetchPage: (page: number) => Promise<TmdbListResponse>
+  mediaType: 'movie' | 'tv' | ((item: TmdbListItem) => 'movie' | 'tv')
+  emptyMessage: string
+  /* Client-side filter (the browse page's On Plex / On the way / Not yet
+     switch). Pages keep loading while the sentinel stays in view, so a
+     sparse filter fills in on its own. */
+  filterItem?: (item: TmdbListItem) => boolean
+  /* TMDB's total for the whole list, from the first page. */
+  onTotal?: (total: number) => void
+}) {
+  const query = useInfiniteQuery({
+    queryKey,
+    queryFn: ({ pageParam }) => fetchPage(pageParam),
+    initialPageParam: 1,
+    getNextPageParam: (lastPage) => (lastPage.page < lastPage.total_pages ? lastPage.page + 1 : undefined),
+  })
+
+  // With a client-side filter a page can come back with nothing to show;
+  // after a handful of such pages in a row the auto-loading stops and a
+  // "Keep looking" button takes over, so a sparse filter never fetches
+  // the whole catalogue on its own.
+  const MAX_EMPTY_PAGES = 5
+  const pages = query.data?.pages ?? []
+  const seenAll = new Set<number>()
+  const visibleAll = pages.map((p) =>
+    p.results.filter((item) => {
+      if (seenAll.has(item.id)) return false
+      seenAll.add(item.id)
+      return filterItem ? filterItem(item) : true
+    }).length,
+  )
+  let emptyStreak = 0
+  for (let i = visibleAll.length - 1; i >= 0 && visibleAll[i] === 0; i--) emptyStreak++
+  const [manualPages, setManualPages] = useState(0)
+  const autoPaused = !!filterItem && emptyStreak >= MAX_EMPTY_PAGES + manualPages * MAX_EMPTY_PAGES
+
+  const sentinelRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    const el = sentinelRef.current
+    if (!el || !query.hasNextPage || autoPaused) return
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((e) => e.isIntersecting) && !query.isFetchingNextPage) {
+          query.fetchNextPage()
+        }
+      },
+      { rootMargin: '800px 0px' },
+    )
+    observer.observe(el)
+    return () => observer.disconnect()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [query.hasNextPage, query.isFetchingNextPage, autoPaused])
+
+  const total = query.data?.pages[0]?.total_results
+  useEffect(() => {
+    if (onTotal && typeof total === 'number') onTotal(total)
+  }, [onTotal, total])
+
+  if (query.isLoading) {
+    return (
+      <div className="grid category-grid" aria-busy="true">
+        {Array.from({ length: FIRST_PAGE_SKELETONS }, (_, i) => (
+          <PosterCardSkeleton key={i} />
+        ))}
+      </div>
+    )
+  }
+  if (query.isError) {
+    return <ErrorState message={query.error instanceof Error ? query.error.message : undefined} />
+  }
+
+  // TMDB's own discover/provider results can repeat an item across
+  // consecutive pages (confirmed live against the real API, provider-
+  // filtered results especially) — deduped by id so React never sees two
+  // children with the same key, rather than trusting each page to be a
+  // disjoint slice.
+  const seen = new Set<number>()
+  const items = (query.data?.pages.flatMap((p) => p.results) ?? []).filter((item) => {
+    if (seen.has(item.id)) return false
+    seen.add(item.id)
+    return filterItem ? filterItem(item) : true
+  })
+  if (!items.length && (!query.hasNextPage || autoPaused)) {
+    return (
+      <EmptyState
+        message={autoPaused ? `${emptyMessage} Checked the first ${pages.length * 20} titles.` : emptyMessage}
+        action={
+          autoPaused && query.hasNextPage ? (
+            <button className="retry" disabled={query.isFetchingNextPage} onClick={() => setManualPages((n) => n + 1)}>
+              {query.isFetchingNextPage ? 'Looking…' : 'Keep looking'}
+            </button>
+          ) : undefined
+        }
+      />
+    )
+  }
+
+  return (
+    <>
+      <div className="grid category-grid" aria-busy={query.isFetchingNextPage || undefined}>
+        {items.map((item) => (
+          <PosterCard key={item.id} item={item} mediaType={typeof mediaType === 'function' ? mediaType(item) : mediaType} mixed={typeof mediaType === 'function'} />
+        ))}
+        {query.isFetchingNextPage && Array.from({ length: NEXT_PAGE_SKELETONS }, (_, i) => <PosterCardSkeleton key={`skel-${i}`} />)}
+      </div>
+      <div className="grid-sentinel" ref={sentinelRef}>
+        {autoPaused && query.hasNextPage && !query.isFetchingNextPage && (
+          <button className="retry" onClick={() => setManualPages((n) => n + 1)}>
+            Keep looking
+          </button>
+        )}
+      </div>
+    </>
+  )
+}

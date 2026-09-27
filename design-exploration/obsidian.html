@@ -118,7 +118,7 @@ svg.ico{width:1em;height:1em;fill:none;stroke:currentColor;flex:none;display:inl
 </svg>
 
 <style>
-.ob{--bg:#050508;--ink:#f5f7fa;--mute:rgba(245,247,250,.55);--ice:#9cc0ff;--mint:#6fe3c1;--coral:#ff8a80;--vio:#c39cff;--glass:rgba(255,255,255,.06);--glass-b:rgba(255,255,255,.10)}
+.ob{--bg:#050508;--ink:#f5f7fa;--mute:rgba(245,247,250,.55);--ice:#9cc0ff;--mint:#6fe3c1;--coral:#ff8a80;--vio:#c39cff;--glass:rgba(255,255,255,.06);--glass-b:rgba(255,255,255,.10);--avatar-gradient:linear-gradient(135deg,#ffb88c,#ea6a8b)}
 .ob .frame{background:var(--bg);color:var(--ink);font-family:'Manrope',sans-serif}
 .ob .ico{stroke-width:1.75;stroke-linecap:round;stroke-linejoin:round}
 .ob .disp{font-family:'Outfit',sans-serif;font-weight:300;letter-spacing:-.04em}
@@ -144,7 +144,7 @@ svg.ico{width:1em;height:1em;fill:none;stroke:currentColor;flex:none;display:inl
 .ob-search .ico{font-size:18px;color:#fff}
 .ob-search kbd{margin-left:auto;font:600 11px 'Manrope';padding:2px 7px;border-radius:6px;background:rgba(255,255,255,.08);color:var(--mute)}
 .ob-circ{width:40px;height:40px;border-radius:50%;background:rgba(255,255,255,.06);border:0;display:grid;place-items:center;color:#fff;font-size:18px;position:relative}
-.ob-avatar{width:40px;height:40px;border-radius:50%;background:linear-gradient(135deg,#ffb88c,#ea6a8b);color:#050508;display:grid;place-items:center;font-weight:800;font-size:13px}
+.ob-avatar{width:40px;height:40px;border-radius:50%;background:var(--avatar-gradient);color:#050508;display:grid;place-items:center;font-weight:800;font-size:13px}
 
 /* hero */
 .ob-hero{position:relative;height:740px;overflow:hidden;display:flex;align-items:flex-end;padding:0 72px 64px}
@@ -985,6 +985,7 @@ svg.ico{width:1em;height:1em;fill:none;stroke:currentColor;flex:none;display:inl
             <div style="background:#ff8a80;color:#050508"><b>#FF8A80</b>failed</div>
             <div style="background:#ffd166;color:#050508"><b>#FFD166</b>rating star</div>
             <div style="background:linear-gradient(135deg,#3644d6,#1aa79c)"><b>ambient</b>glow gradient</div>
+            <div style="background:var(--avatar-gradient);color:#050508"><b>avatar</b>initials gradient</div>
           </div>
           <h3 style="margin-top:36px">Spacing rhythm</h3>
           <p style="font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--mute);line-height:1.9;margin:0">page gutter 72 · row gap 28 · card gap 18 · card padding 20<br>nav pill 64h / 1180w, floats 24 from top · hero 720–740h<br>section head → track 20 · glass card padding 44/48 · settings card 26/28</p>

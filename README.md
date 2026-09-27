@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="brand_identity/obsidian-brand/icons/icon-mark-only.png" width="96" alt="Obsidian">
+<img src="brand_identity/obsidian-brand/icons/icon-1024.png" width="96" alt="Obsidian">
 
 # Obsidian
 
@@ -72,6 +72,8 @@ design goal: **the household gets a streaming app; the admin gets an automation 
 | **Follow a show** | Subscribe to a series and new episodes are fetched as they air, on a schedule, per episode. |
 | **Whole seasons at once** | "Get this whole season" / "Get the complete series" as an explicit, separate action from a standing subscription. |
 | **Trailers** | Played inline on detail pages. |
+| **Picked for you** | Home, Movies and TV carry rows drawn from what each person has asked for, plus rotating mood rows, dealt once a day so a reload never reshuffles the page. |
+| **Continue watching** | Plex's On Deck, with playback progress, straight from the home page. |
 | **Built for whatever's in your hand** | A real layout pass per tier rather than one design stretched: bottom tab bar and single-column on phones, wider spacing on tablets, top-bar navigation and full-width grids from 860px up. Hover affordances only where there's a pointer. |
 | **Install it like an app** | A PWA with a proper manifest and icons — installable from the browser on desktop, or "Add to Home Screen" on mobile, where it runs standalone. |
 
@@ -83,6 +85,7 @@ design goal: **the household gets a streaming app; the admin gets an automation 
 | **Per-person permissions** | Household panel with per-user request permissions and a full audit log of sign-ins and actions. |
 | **Quality pipeline you control** | Resolution floor, source/codec/container preference tiers, seeder minimums and size bounds — all adjustable from Settings, not hardcoded. |
 | **Automatic file organisation** | Completed downloads are hardlinked into a Plex-shaped library layout, with embedded cover art stripped from the video stream. |
+| **The right audio track** | Picks the best copy in the household's language, marks that track as the default in the file, and tells Plex to use it. |
 | **Plex refresh on import** | The relevant library section is scanned — partially, when the path allows — as soon as a file lands. |
 | **Storage and retention** | Disk usage visibility, request-history retention, and automatic source cleanup after import. |
 | **Activity dashboard** | What's searching, downloading, stuck, or failed — with the reason. |
@@ -244,6 +247,7 @@ deployment-level wiring, and where both exist, **the environment wins**.
 | `MOVIE_LIBRARY_ROOT` | `/movie-library` | Where organised films are placed. |
 | `TV_LIBRARY_ROOT` | `/tv-library` | Where organised episodes are placed. |
 | `DB_PATH` | `backend/data/app.db` | SQLite database. Put this on a volume. |
+| `PREFERRED_AUDIO_LANGUAGE` | `en` | Audio track marked as default in filed copies. Settings › Region overrides it. |
 
 ### Path translation
 
@@ -261,6 +265,7 @@ deployment-level wiring, and where both exist, **the environment wins**.
 | `RETENTION_CLEANUP_INTERVAL_SECONDS` | `3600` | How often request-history retention runs. |
 | `EPISODE_RECHECK_POLL_INTERVAL_SECONDS` | `900` | How often episode auto-recheck runs. |
 | `TRAILER_CACHE_MAX_FILES` | `20` | Cached trailer cap. |
+| `TRAILER_X_ACCEL_PREFIX` | unset | nginx `internal` location that serves cached trailers instead of uvicorn. Both compose files set `/internal-trailers/`. |
 | `FFPROBE_TIMEOUT_SECONDS` | `15` | Media inspection timeout. |
 
 ### Self-update
@@ -334,7 +339,7 @@ Rolling back is `git checkout` or `git revert` on the deployed copy.
 cd backend
 python -m venv .venv
 # Linux/macOS: source .venv/bin/activate    Windows: .venv\Scripts\activate
-pip install -r requirements.txt
+pip install -r requirements-dev.txt
 python -m pytest -q
 
 # Frontend
@@ -355,41 +360,58 @@ Plex are all faked at the boundary.
 ```
 backend/
   app/
-    api.py              FastAPI routes; the only place auth is enforced
-    worker.py           the background loop: watch, download, organise
+    api/                FastAPI app, one module per area; the only place auth is enforced
+      main.py           app, lifespan, rate limiter
+      deps.py           sessions, require_* gates, the default-deny routers
+      discover.py, titles.py, hero.py, requests.py, shows.py, plex.py, auth.py,
+      setup.py, settings.py, household.py, recommendations.py, system.py
+    worker.py           the background loop: watch, download, organise, schedule
     pipeline.py         search → score → download
-    score.py            movie release scoring
+    score.py            movie release scoring (and the shared quality filters)
     tv_score.py         episode scoring
     pack_score.py       whole-season / complete-series scoring
     resolve.py          movie resolution
     tv_resolve.py       show + episode resolution
-    media_organizer.py  post-download file placement
+    normalize.py        the one token normaliser
+    language.py         which language a title and a household speak
+    media_organizer.py  post-download file placement, audio defaults, MKV rewrap
+    reconcile.py        leftover-source cleanup
+    taste.py, moods.py  recommendation rows
     plex.py             Plex sign-in, library lookup, refresh
-    tmdb.py             metadata and browse
+    tmdb.py, tvmaze.py  metadata and browse; exact episode air times
     qbt.py              qBittorrent client
-    db.py               SQLite store and migrations
+    trailers.py         trailer download and cache
+    db.py               SQLite store (rows in db_rows.py, schema in db_schema.py)
     config.py           environment and defaults
+    cli.py              recovery commands (python -m app.cli --help)
   tests/                pytest suite
 frontend/
   src/
-    features/           one folder per area (home, movies, tv, settings, auth, setup)
-    components/         shared UI
+    app/                the shell: AppShell, top bar, tab bar, toasts, routes
+    features/           one folder per area (home, movies, tv, discover, browse,
+                        search, detail, person, requests, account, settings,
+                        setup, auth, onboarding, recommendations)
+    components/ui/      primitives: Icon, Img, Skeleton, Modal, Toggle, …
+    components/media/   shared poster rows and cards: MediaRow, PosterCard, HeroCarousel, …
+    lib/                hooks and helpers used by several features
     api/                typed fetch wrappers
+    types/              API response types
     styles/tokens.css   the design system, single source of truth
-  nginx.conf            static serving, /api proxy, security headers, LAN gate
+  nginx.conf            static serving, /api proxy, image cache, security headers, LAN gate
 brand_identity/         brand kit and icons
-design-exploration/     standalone HTML design references
+design-exploration/     obsidian.html, the visual spec the app is built to
+docs/history/           the full build plan and decision log, and retired design explorations
 truenas/                TrueNAS SCALE Custom App config
-project.md              full design history and decision log
+project.md              the short current picture: status, architecture, principles
 ```
 
 ---
 
 ## Status and scope
 
-Obsidian runs in production for one household on TrueNAS SCALE. It is actively developed
-and the design history — every decision and why — is recorded in
-[`project.md`](project.md).
+Obsidian runs in production for one household on TrueNAS SCALE. It is actively developed.
+[`project.md`](project.md) is the short current picture; the full design history — every
+decision and why — is in [`docs/history/project-plan.md`](docs/history/project-plan.md).
 
 Things worth knowing before you adopt it:
 
@@ -398,7 +420,6 @@ Things worth knowing before you adopt it:
 - Search quality depends entirely on **your** qBittorrent search plugins. Obsidian scores
   what they return; it cannot find what they don't.
 - There is **no multi-tenancy**. One household, one Plex server, one shared settings panel.
-- The brand mark is mid-replacement and currently still shows the old wordmark letter.
 
 ---
 

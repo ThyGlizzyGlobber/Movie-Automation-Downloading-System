@@ -3,21 +3,22 @@ import { useEffect, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { getPipelineSettings, getStorageDetails, setPipelineSettings } from '../../api/settings'
 import { listHousehold } from '../../api/admin'
-import { listRequests } from '../../api/requests'
 import { getRecentlyAdded } from '../../api/plex'
-import Avatar from '../../components/Avatar'
-import Icon from '../../components/Icon'
-import PosterCard from '../../components/PosterCard'
-import Img from '../../components/Img'
-import { PosterCardSkeleton, Skel, SkelText, SkelWords } from '../../components/Skeleton'
-import StatusPill from '../../components/StatusPill'
+import Avatar from '../../components/ui/Avatar'
+import Icon from '../../components/ui/Icon'
+import PosterCard from '../../components/media/PosterCard'
+import Img from '../../components/ui/Img'
+import { PosterCardSkeleton, Skel, SkelText, SkelWords } from '../../components/ui/Skeleton'
+import StatusPill from '../../components/ui/StatusPill'
 import { formatBytes, plexWebUrl, relativeTime } from '../../lib/format'
 import { posterUrl } from '../../lib/tmdbImage'
 import { NON_TERMINAL, statusDetail } from '../../lib/status'
 import { requestLabelAndHref } from '../../lib/requestGrouping'
+import { useFlash } from '../../lib/hooks'
 import type { RequestOut } from '../../types/requests'
 import { RESOLUTION_OPTIONS } from './PipelinePanel'
 import './DashboardPanel.css'
+import { useRequests } from '../../lib/useRequests'
 
 // Settings opens here: the household at a glance. Four numbers, the
 // library drive, who is downloading what right now, what Plex added
@@ -121,7 +122,7 @@ function QuickSettings() {
   const pipeline = useQuery({ queryKey: ['settings', 'pipeline'], queryFn: getPipelineSettings })
   const [floor, setFloor] = useState<string | null>(null)
   const [maxSize, setMaxSize] = useState<string | null>(null)
-  const [flash, setFlash] = useState<'saved' | 'error' | null>(null)
+  const [flash, , showFlash] = useFlash<'saved' | 'error' | null>(null, 1400)
   useEffect(() => {
     if (!pipeline.data) return
     setFloor(pipeline.data.min_resolution)
@@ -129,8 +130,7 @@ function QuickSettings() {
   }, [pipeline.data])
 
   function done(ok: boolean) {
-    setFlash(ok ? 'saved' : 'error')
-    window.setTimeout(() => setFlash(null), 1400)
+    showFlash(ok ? 'saved' : 'error')
   }
   async function saveFloor(value: string) {
     const s = pipeline.data
@@ -214,7 +214,7 @@ function QuickSettings() {
 
 export default function DashboardPanel({ onOpen }: { onOpen: (key: string) => void }) {
   const storage = useQuery({ queryKey: ['storage-details'], queryFn: getStorageDetails, refetchInterval: 30_000 })
-  const requests = useQuery({ queryKey: ['requests'], queryFn: () => listRequests(), refetchInterval: 5000 })
+  const requests = useRequests()
   const household = useQuery({ queryKey: ['household'], queryFn: listHousehold, staleTime: 60_000 })
   const recent = useQuery({ queryKey: ['plex-recently-added'], queryFn: getRecentlyAdded, staleTime: 120_000 })
 

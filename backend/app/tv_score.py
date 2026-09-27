@@ -11,22 +11,13 @@ episode. Pass two (quality score) needs no TV-specific version at all:
 `score.py`'s `rank_candidates`/`score_candidate` are reused completely
 unchanged by pipeline.py's `download_episode()`."""
 
-from app.normalize import extract_episode_identity, normalize_text, tokenize
+from app.normalize import normalize_text, tokenize
 from app.pipeline_settings import PipelineSettings
 from app.score import (
     matches_any_variant,
-    passes_cam_filter,
-    passes_language_filter,
-    passes_non_video_filter,
-    passes_resolution_floor,
+    passes_quality_filters,
 )
 from app.tv_resolve import ShowIdentity
-
-# extract_episode_identity now lives in normalize.py (score.py needs it
-# too, for passes_not_a_tv_episode_filter, and importing it from here
-# would be circular since this module imports from score.py) — re-
-# exported under this same name so existing callers (media_organizer.py's
-# `from app.tv_score import extract_episode_identity`) are unaffected.
 
 
 def has_episode_token(tokens: list[str], season: int, episode: int) -> bool:
@@ -57,10 +48,5 @@ def passes_episode_relevance_gate(
     return (
         matches_any_variant(tokens, identity.variants, identity.first_air_year)
         and has_episode_token(tokens, season, episode)
-        and passes_resolution_floor(tokens, settings.min_resolution)
-        and passes_language_filter(
-            tokens, settings.language_allowlist, settings.language_blocklist, settings.language_required
-        )
-        and passes_cam_filter(tokens)
-        and passes_non_video_filter(tokens)
+        and passes_quality_filters(tokens, settings)
     )

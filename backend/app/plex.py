@@ -14,8 +14,8 @@ import asyncio
 import secrets
 import time
 import uuid
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Callable
 from urllib.parse import urlencode
 
 import logging
@@ -130,7 +130,7 @@ class PlexClient:
         just tells the user to "return to the app" by hand, which is the
         step that used to lose people — see LoginSession for what that
         cost. Optional because the caller can only supply it when it
-        knows the browser's own origin (api.py's `_return_url`)."""
+        knows the browser's own origin (api/auth.py's `_return_url`)."""
         params = {
             "clientID": self.client_id,
             "code": code,
@@ -157,8 +157,7 @@ class PlexClient:
 
     def list_resources(self, token: str) -> list[dict]:
         """Every Plex Media Server resource this account can see — owned
-        *or* shared with them, unlike get_owned_server below, which stops
-        at the first owned one. Backs the frontend migration's end-user
+        *or* shared with them. Backs the frontend migration's end-user
         access check (does this account have access to *our* server —
         Part C1) and the admin's own multi-server picker (a person can
         own more than one Plex server, Part C1's "linking is a picker, not
@@ -192,22 +191,9 @@ class PlexClient:
             )
         return resources
 
-    def get_owned_server(self, token: str) -> dict | None:
-        """The first Plex Media Server this account owns, with a usable
-        connection URL and its own resource-level access token (what a PMS
-        actually expects, distinct from the plex.tv account token). A thin
-        filter over list_resources — kept as its own method/return shape
-        since it's still what admin unlink/relink-to-first-server callers
-        want, and changing its shape would break existing callers."""
-        for resource in self.list_resources(token):
-            if resource["owned"]:
-                return {"name": resource["name"], "url": resource["url"], "token": resource["token"]}
-        return None
-
     def get_account_identity(self, token: str) -> dict | None:
         """The signed-in account's own stable plex.tv id and username —
-        who is this, distinct from get_owned_server's server-linking
-        concern. Same /api/v2/user endpoint get_account_username already
+        who is this, as opposed to which server to link. Same /api/v2/user endpoint get_account_username already
         uses; None if the token is no longer valid."""
         response = self.session.get(f"{PLEX_TV_BASE}/api/v2/user", headers=self._headers(token), timeout=10)
         if not response.ok:
@@ -259,7 +245,7 @@ class PlexClient:
         """Plex's own "Continue Watching" list for the linked server —
         `/library/onDeck`, every in-progress movie/episode with its
         `viewOffset`/`duration`. Backs the Home page's Continue watching
-        row. Raw Metadata dicts; api.py shapes them."""
+        row. Raw Metadata dicts; api/plex.py shapes them."""
         response = self.session.get(
             f"{server_url}/library/onDeck",
             headers={"Accept": "application/json", "X-Plex-Token": server_token},
@@ -493,6 +479,22 @@ class PlexClient:
         )
 
 
+def client_from_settings(settings: dict) -> PlexClient:
+    """A client for server reads, under the saved client id — or a
+    throwaway one, not persisted, if no sign-in has saved one yet."""
+    return PlexClient(settings.get("plex_client_id") or new_client_identifier())
+
+
+def _persisted_client(store) -> PlexClient:
+    """A client for plex.tv sign-in, whose client id has to stay the same
+    across requests: generated and saved on first use."""
+    client_id = store.get_settings().get("plex_client_id")
+    if not client_id:
+        client_id = new_client_identifier()
+        store.update_settings({"plex_client_id": client_id})
+    return PlexClient(client_id)
+
+
 # One cache per (server_url, server_token, media_type) — a fresh PlexClient
 # is constructed per call below (matching has_in_library's existing
 # pattern), so `app.cache.ttl_cache`'s self-keying decorator would never
@@ -512,7 +514,7 @@ def _cached_library_index(store, media_type: str) -> LibraryIndex | None:
     cache_key = (server_url, server_token, media_type)
     index, hit = _library_index_cache.get(cache_key)
     if not hit:
-        client = PlexClient(settings.get("plex_client_id") or new_client_identifier())
+        client = client_from_settings(settings)
         try:
             index = client.library_index(server_url, server_token, media_type)
         except PlexError:
@@ -549,7 +551,7 @@ def has_in_library(store, title: str, year: int | None, tmdb_id: int | None = No
     server_token = settings.get("plex_server_token")
     if not server_url or not server_token:
         return None
-    client = PlexClient(settings.get("plex_client_id") or new_client_identifier())
+    client = client_from_settings(settings)
     if tmdb_id is not None:
         # A fresh whole-library read: the title-filtered search can't find
         # a movie Plex spells differently, and a cached one may predate it.
@@ -562,7 +564,7 @@ class PlexLinker:
     the frontend a URL to open, then polls plex.tv itself until the
     browser-side login completes, resolves the account's owned server, and
     persists everything to settings. The frontend only ever polls this
-    app's own `/api/plex/status` — see api.py."""
+    app's own `/api/plex/status` — see api/plex.py."""
 
     def __init__(self, store):
         self.store = store
@@ -570,12 +572,7 @@ class PlexLinker:
         self._error: str | None = None
 
     def _client(self) -> PlexClient:
-        settings = self.store.get_settings()
-        client_id = settings.get("plex_client_id")
-        if not client_id:
-            client_id = new_client_identifier()
-            self.store.update_settings({"plex_client_id": client_id})
-        return PlexClient(client_id)
+        return _persisted_client(self.store)
 
     async def start(self) -> str:
         client = self._client()
@@ -700,12 +697,7 @@ class LoginSession:
         self._attempts: dict[str, _LoginAttempt] = {}
 
     def _client(self) -> PlexClient:
-        settings = self.store.get_settings()
-        client_id = settings.get("plex_client_id")
-        if not client_id:
-            client_id = new_client_identifier()
-            self.store.update_settings({"plex_client_id": client_id})
-        return PlexClient(client_id)
+        return _persisted_client(self.store)
 
     def _discard(self, attempt_id: str) -> None:
         attempt = self._attempts.pop(attempt_id, None)
@@ -898,7 +890,7 @@ def refresh_after_import(store, media_type: str, organized_path: str | None) -> 
     url, token = settings.get("plex_server_url"), settings.get("plex_server_token")
     if not url or not token:
         return False
-    client = PlexClient(settings.get("plex_client_id") or new_client_identifier())
+    client = client_from_settings(settings)
     wanted = "movie" if media_type == "movie" else "show"
     try:
         sections = [s for s in client.sections(url, token) if s.get("type") == wanted]
@@ -936,7 +928,7 @@ def plex_show_episodes(store, title: str, year: int | None, tmdb_id: int | None 
     now = time.monotonic()
     if hit and now - hit[0] < _SHOW_EPISODES_TTL_SECONDS:
         return hit[1]
-    client = PlexClient(settings.get("plex_client_id") or new_client_identifier())
+    client = client_from_settings(settings)
     try:
         item = locate_title(store, client, "show", title, year, tmdb_id)
         episodes = client.show_episodes(server_url, server_token, item["rating_key"]) if item else None
@@ -967,7 +959,7 @@ def plex_title_files(store, media_type: str, title: str, year: int | None, tmdb_
     server_url, server_token = settings.get("plex_server_url"), settings.get("plex_server_token")
     if not server_url or not server_token:
         return None
-    client = PlexClient(settings.get("plex_client_id") or new_client_identifier())
+    client = client_from_settings(settings)
     try:
         item = locate_title(store, client, media_type, title, year, tmdb_id)
         return client.file_paths(server_url, server_token, item["rating_key"]) if item else None

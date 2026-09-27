@@ -3,14 +3,16 @@ via FastAPI dependency overrides and a lifespan override that skips the
 real background worker — see the manual end-to-end run in project.md for
 the real-TMDB/real-qBittorrent validation this doesn't cover."""
 
-import asyncio
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
 
 import pytest
 from fastapi.testclient import TestClient
 
-from app import api, config
+from app import api, config, trailers
+from app.api import deps, helpers, hero, recommendations, setup, shows, system, titles
+from app.api import requests as api_requests
+from app.deploy import DeployError
 from app.pipeline_settings import resolve_pipeline_settings
 from app.db import RequestStore
 from app.plex import PlexClient
@@ -120,9 +122,6 @@ class FakeTMDBClient:
 
     def get_available_trending(self, time_window="week", region="US", page=1):
         return {"results": [MOVIE], "page": page}
-
-    def get_watch_providers(self, region="US"):
-        return {"results": [{"provider_id": 8, "provider_name": "Netflix", "logo_path": "/netflix.png"}]}
 
     def get_available_by_provider(self, provider_id, region="US", page=1):
         return {"results": [MOVIE], "page": page, "total_pages": 10, "provider_id": provider_id}
@@ -251,7 +250,7 @@ class NoOpWorker:
         self.enqueued.append(request_id)
 
     def check_show(self, show, full_backfill: bool = False) -> int:
-        """Stands in for the real catch-up check api.py's POST /api/shows
+        """Stands in for the real catch-up check api/shows.py's POST /api/shows
         triggers immediately after creating a subscription — records that
         it was called (and with what `full_backfill` value) rather than
         actually hitting TMDB (see test_worker.py for the real
@@ -338,7 +337,7 @@ def _reset_rate_limiter():
     over unrelated ones). Autouse rather than folded into
     `client_and_deps`, since tests that take no client still share the
     process-wide limiter."""
-    api.limiter.reset()
+    deps.limiter.reset()
     yield
 
 
@@ -388,7 +387,7 @@ def client_and_deps(tmp_path):
             True,
             (datetime.now(timezone.utc) + timedelta(days=1)).isoformat(),
         )
-        client.cookies.set(api.SESSION_COOKIE_NAME, session.id)
+        client.cookies.set(deps.SESSION_COOKIE_NAME, session.id)
         yield client, store, tmdb, worker, qbt, plex_linker
 
 
@@ -397,7 +396,7 @@ def unauthenticated_client(client_and_deps):
     """The same fixture, but with the admin session cookie stripped —
     for tests that specifically exercise the "not signed in" 401 path."""
     client, store, tmdb, worker, qbt, plex_linker = client_and_deps
-    client.cookies.delete(api.SESSION_COOKIE_NAME)
+    client.cookies.delete(deps.SESSION_COOKIE_NAME)
     return client, store, tmdb, worker, qbt, plex_linker
 
 
@@ -415,7 +414,7 @@ def non_admin_client(client_and_deps):
         False,
         (datetime.now(timezone.utc) + timedelta(days=1)).isoformat(),
     )
-    client.cookies.set(api.SESSION_COOKIE_NAME, session.id)
+    client.cookies.set(deps.SESSION_COOKIE_NAME, session.id)
     return client, store, tmdb, worker, qbt, plex_linker
 
 
@@ -995,14 +994,6 @@ def test_discover_trending_passes_through_tmdb(client_and_deps):
     assert response.json()["results"] == [dict(MOVIE, on_plex=False)]
 
 
-def test_discover_providers_returns_results_list(client_and_deps):
-    client, _, _, _, _, _ = client_and_deps
-    response = client.get("/api/discover/providers")
-
-    assert response.status_code == 200
-    assert response.json() == [{"provider_id": 8, "provider_name": "Netflix", "logo_path": "/netflix.png"}]
-
-
 def test_discover_by_provider_passes_provider_id_through(client_and_deps):
     client, _, _, _, _, _ = client_and_deps
     response = client.get("/api/discover/providers/8")
@@ -1065,7 +1056,7 @@ def test_region_falls_back_to_the_default_when_nothing_is_chosen(client_and_deps
     )
 
     assert client.get("/api/discover/coming-soon").status_code == 200
-    assert seen == [api.DEFAULT_CERTIFICATION_REGION]
+    assert seen == [deps.DEFAULT_CERTIFICATION_REGION]
 
 
 def test_a_film_already_digital_abroad_is_not_coming_soon_here(client_and_deps):
@@ -1333,14 +1324,14 @@ def unmeasured_trailers(monkeypatch):
     the best type guess, which is the single key these tests set up.
     Their subject is the URL the endpoint builds, not which clip wins —
     that is test_trailers.py's."""
-    monkeypatch.setattr(api.trailers, "probe_duration", lambda key: None)
+    monkeypatch.setattr(trailers, "probe_duration", lambda key: None)
 
 
 def test_get_movie_trailer_returns_cached_file_url(client_and_deps, monkeypatch, tmp_path, unmeasured_trailers):
     client, _, tmdb, _, _, _ = client_and_deps
     tmdb._movie_videos = [{"site": "YouTube", "type": "Trailer", "official": True, "key": "abc123"}]
     monkeypatch.setattr(
-        api.trailers, "ensure_downloaded", lambda media_type, tmdb_id, key: tmp_path / f"{media_type}-{tmdb_id}-{key}.mp4"
+        trailers, "ensure_downloaded", lambda media_type, tmdb_id, key: tmp_path / f"{media_type}-{tmdb_id}-{key}.mp4"
     )
 
     response = client.get("/api/movies/693134/trailer")
@@ -1360,7 +1351,7 @@ def test_get_movie_trailer_returns_null_url_when_none_found(client_and_deps):
 def test_get_movie_trailer_returns_null_url_when_download_fails(client_and_deps, monkeypatch, unmeasured_trailers):
     client, _, tmdb, _, _, _ = client_and_deps
     tmdb._movie_videos = [{"site": "YouTube", "type": "Trailer", "official": True, "key": "abc123"}]
-    monkeypatch.setattr(api.trailers, "ensure_downloaded", lambda media_type, tmdb_id, key: None)
+    monkeypatch.setattr(trailers, "ensure_downloaded", lambda media_type, tmdb_id, key: None)
 
     response = client.get("/api/movies/693134/trailer")
 
@@ -1381,7 +1372,7 @@ def test_get_tv_trailer_returns_cached_file_url(client_and_deps, monkeypatch, tm
     client, _, tmdb, _, _, _ = client_and_deps
     tmdb._tv_videos = [{"site": "YouTube", "type": "Teaser", "official": True, "key": "xyz789"}]
     monkeypatch.setattr(
-        api.trailers, "ensure_downloaded", lambda media_type, tmdb_id, key: tmp_path / f"{media_type}-{tmdb_id}-{key}.mp4"
+        trailers, "ensure_downloaded", lambda media_type, tmdb_id, key: tmp_path / f"{media_type}-{tmdb_id}-{key}.mp4"
     )
 
     response = client.get("/api/tv/97546/trailer")
@@ -1406,7 +1397,7 @@ def test_get_tv_trailer_502s_on_upstream_error(client_and_deps):
 
 def test_get_trailer_file_serves_cached_file(client_and_deps, monkeypatch, tmp_path):
     client, _, _, _, _, _ = client_and_deps
-    monkeypatch.setattr(api.config, "TRAILER_CACHE_DIR", tmp_path)
+    monkeypatch.setattr(config, "TRAILER_CACHE_DIR", tmp_path)
     (tmp_path / "movie-693134-abc123.mp4").write_bytes(b"fake video bytes")
 
     response = client.get("/api/trailers/movie-693134-abc123.mp4")
@@ -1420,8 +1411,8 @@ def test_get_trailer_file_hands_nginx_the_file_when_configured(client_and_deps, 
     """With an X-Accel prefix set, the app authorises and names the file;
     nginx sends it. The empty body is the point — nginx discards it."""
     client, _, _, _, _, _ = client_and_deps
-    monkeypatch.setattr(api.config, "TRAILER_CACHE_DIR", tmp_path)
-    monkeypatch.setattr(api.config, "TRAILER_X_ACCEL_PREFIX", "/internal-trailers/")
+    monkeypatch.setattr(config, "TRAILER_CACHE_DIR", tmp_path)
+    monkeypatch.setattr(config, "TRAILER_X_ACCEL_PREFIX", "/internal-trailers/")
     (tmp_path / "movie-693134-abc123.mp4").write_bytes(b"fake video bytes")
 
     response = client.get("/api/trailers/movie-693134-abc123.mp4")
@@ -1437,8 +1428,8 @@ def test_get_trailer_file_still_checks_before_handing_off(client_and_deps, monke
     reaches nginx — which would otherwise be asked to serve a path this
     app never vouched for."""
     client, _, _, _, _, _ = client_and_deps
-    monkeypatch.setattr(api.config, "TRAILER_CACHE_DIR", tmp_path)
-    monkeypatch.setattr(api.config, "TRAILER_X_ACCEL_PREFIX", "/internal-trailers/")
+    monkeypatch.setattr(config, "TRAILER_CACHE_DIR", tmp_path)
+    monkeypatch.setattr(config, "TRAILER_X_ACCEL_PREFIX", "/internal-trailers/")
 
     missing = client.get("/api/trailers/movie-693134-abc123.mp4")
     rejected = client.get("/api/trailers/not-a-valid-name.mp4")
@@ -1451,7 +1442,7 @@ def test_get_trailer_file_still_checks_before_handing_off(client_and_deps, monke
 
 def test_get_trailer_file_404s_when_missing(client_and_deps, monkeypatch, tmp_path):
     client, _, _, _, _, _ = client_and_deps
-    monkeypatch.setattr(api.config, "TRAILER_CACHE_DIR", tmp_path)
+    monkeypatch.setattr(config, "TRAILER_CACHE_DIR", tmp_path)
 
     response = client.get("/api/trailers/movie-693134-abc123.mp4")
 
@@ -1470,7 +1461,7 @@ def test_get_trailer_file_404s_when_missing(client_and_deps, monkeypatch, tmp_pa
 )
 def test_get_trailer_file_rejects_non_matching_filenames(client_and_deps, monkeypatch, tmp_path, filename):
     client, _, _, _, _, _ = client_and_deps
-    monkeypatch.setattr(api.config, "TRAILER_CACHE_DIR", tmp_path)
+    monkeypatch.setattr(config, "TRAILER_CACHE_DIR", tmp_path)
 
     response = client.get(f"/api/trailers/{filename}")
 
@@ -1526,7 +1517,7 @@ def test_get_tv_detail_returns_full_show(client_and_deps):
 
 
 def test_aired_episode_count_counts_whole_earlier_seasons_plus_the_last_aired_episode():
-    from app.api import _aired_episode_count
+    from app.api.titles import _aired_episode_count
 
     show = {
         "seasons": [
@@ -1542,8 +1533,6 @@ def test_aired_episode_count_counts_whole_earlier_seasons_plus_the_last_aired_ep
 
 
 def test_get_tv_detail_plex_complete_when_plex_holds_every_aired_episode(client_and_deps, monkeypatch):
-    from app import api
-
     client, _, tmdb, _, _, _ = client_and_deps
     tmdb.get_tv = lambda tmdb_id: dict(
         SHOW,
@@ -1551,37 +1540,33 @@ def test_get_tv_detail_plex_complete_when_plex_holds_every_aired_episode(client_
         seasons=[{"season_number": 1, "episode_count": 8}],
         last_episode_to_air={"season_number": 1, "episode_number": 8},
     )
-    monkeypatch.setattr(api, "_on_plex_for", lambda title, year, media_type, store, tmdb_id=None: True)
+    monkeypatch.setattr(titles, "_on_plex_for", lambda title, year, media_type, store, tmdb_id=None: True)
 
-    monkeypatch.setattr(api, "_plex_episode_count", lambda store, title, year, tmdb_id=None: 8)
+    monkeypatch.setattr(titles, "_plex_episode_count", lambda store, title, year, tmdb_id=None: 8)
     assert client.get("/api/tv/95350").json()["plex_complete"] is True
 
-    monkeypatch.setattr(api, "_plex_episode_count", lambda store, title, year, tmdb_id=None: 6)
+    monkeypatch.setattr(titles, "_plex_episode_count", lambda store, title, year, tmdb_id=None: 6)
     assert client.get("/api/tv/95350").json()["plex_complete"] is False
 
-    monkeypatch.setattr(api, "_plex_episode_count", lambda store, title, year, tmdb_id=None: None)
+    monkeypatch.setattr(titles, "_plex_episode_count", lambda store, title, year, tmdb_id=None: None)
     assert client.get("/api/tv/95350").json()["plex_complete"] is False
 
 
 def test_plex_episode_count_counts_episodes_not_files(client_and_deps, monkeypatch):
-    from app import api
-
     _, store, _, _, _, _ = client_and_deps
     # Plex lists an episode once however many times it was downloaded, so
     # a re-download can't inflate this the way counting filed files does.
     # Specials (season 0) aren't episodes of a season here or anywhere
     # else on the show page.
-    monkeypatch.setattr(api, "plex_show_episodes", lambda store, title, year, tmdb_id=None: {(0, 1), (1, 1), (1, 2)})
-    assert api._plex_episode_count(store, "Show", 2026, 95350) == 2
+    monkeypatch.setattr(titles, "plex_show_episodes", lambda store, title, year, tmdb_id=None: {(0, 1), (1, 1), (1, 2)})
+    assert titles._plex_episode_count(store, "Show", 2026, 95350) == 2
 
-    monkeypatch.setattr(api, "plex_show_episodes", lambda store, title, year, tmdb_id=None: None)
-    assert api._plex_episode_count(store, "Show", 2026, 95350) is None
+    monkeypatch.setattr(titles, "plex_show_episodes", lambda store, title, year, tmdb_id=None: None)
+    assert titles._plex_episode_count(store, "Show", 2026, 95350) is None
 
 
 def test_get_tv_detail_reports_how_many_episodes_plex_holds(client_and_deps, monkeypatch):
     """What the show page's "On disk" Episodes tile counts."""
-    from app import api
-
     client, _, tmdb, _, _, _ = client_and_deps
     tmdb.get_tv = lambda tmdb_id: dict(
         SHOW,
@@ -1589,8 +1574,8 @@ def test_get_tv_detail_reports_how_many_episodes_plex_holds(client_and_deps, mon
         seasons=[{"season_number": 1, "episode_count": 8}],
         last_episode_to_air={"season_number": 1, "episode_number": 8},
     )
-    monkeypatch.setattr(api, "_on_plex_for", lambda title, year, media_type, store, tmdb_id=None: True)
-    monkeypatch.setattr(api, "plex_show_episodes", lambda store, title, year, tmdb_id=None: {(1, 1), (1, 2), (1, 3)})
+    monkeypatch.setattr(titles, "_on_plex_for", lambda title, year, media_type, store, tmdb_id=None: True)
+    monkeypatch.setattr(titles, "plex_show_episodes", lambda store, title, year, tmdb_id=None: {(1, 1), (1, 2), (1, 3)})
 
     body = client.get("/api/tv/95350").json()
     assert body["plex_episode_count"] == 3
@@ -1672,7 +1657,7 @@ def test_tv_discover_by_genre_passes_genre_id_through(client_and_deps):
 
 def test_deploy_runs_git_pull_and_returns_its_result(client_and_deps, monkeypatch):
     client, _, _, _, _, _ = client_and_deps
-    monkeypatch.setattr(api, "run_git_pull", lambda: {"detail": "Already up to date.", "commit": "abc1234"})
+    monkeypatch.setattr(system, "run_git_pull", lambda: {"detail": "Already up to date.", "commit": "abc1234"})
 
     response = client.post("/api/admin/deploy")
 
@@ -1684,9 +1669,9 @@ def test_deploy_maps_deploy_error_to_502(client_and_deps, monkeypatch):
     client, _, _, _, _, _ = client_and_deps
 
     def raise_deploy_error():
-        raise api.DeployError("not a git clone")
+        raise DeployError("not a git clone")
 
-    monkeypatch.setattr(api, "run_git_pull", raise_deploy_error)
+    monkeypatch.setattr(system, "run_git_pull", raise_deploy_error)
 
     response = client.post("/api/admin/deploy")
 
@@ -1918,7 +1903,7 @@ def test_qbt_settings_test_connection_reports_reachability(client_and_deps, monk
         def ping(self):
             return True
 
-    monkeypatch.setattr(api, "QBTClient", FakePingClient)
+    monkeypatch.setattr(setup, "QBTClient", FakePingClient)
 
     response = client.post(
         "/api/settings/qbittorrent/test", json={"host": "1.2.3.4", "port": 8080, "username": "", "password": ""}
@@ -1930,10 +1915,10 @@ def test_qbt_settings_test_connection_reports_reachability(client_and_deps, monk
 
 def test_update_qbt_settings_persists_when_not_env_configured(client_and_deps, monkeypatch):
     client, store, _, _, _, _ = client_and_deps
-    monkeypatch.setattr(api.config, "_QBIT_HOST_ENV", None)
-    monkeypatch.setattr(api.config, "_QBIT_PORT_ENV", None)
-    monkeypatch.setattr(api.config, "_QBIT_USERNAME_ENV", None)
-    monkeypatch.setattr(api.config, "_QBIT_PASSWORD_ENV", None)
+    monkeypatch.setattr(config, "_QBIT_HOST_ENV", None)
+    monkeypatch.setattr(config, "_QBIT_PORT_ENV", None)
+    monkeypatch.setattr(config, "_QBIT_USERNAME_ENV", None)
+    monkeypatch.setattr(config, "_QBIT_PASSWORD_ENV", None)
 
     response = client.put(
         "/api/settings/qbittorrent", json={"host": "10.0.0.5", "port": 9090, "username": "me", "password": "pw"}
@@ -1949,7 +1934,7 @@ def test_update_qbt_settings_persists_when_not_env_configured(client_and_deps, m
 
 def test_update_qbt_settings_refuses_to_override_env_configuration(client_and_deps, monkeypatch):
     client, _, _, _, _, _ = client_and_deps
-    monkeypatch.setattr(api.config, "_QBIT_HOST_ENV", "10.0.0.1")
+    monkeypatch.setattr(config, "_QBIT_HOST_ENV", "10.0.0.1")
 
     response = client.put(
         "/api/settings/qbittorrent", json={"host": "10.0.0.5", "port": 9090, "username": "", "password": ""}
@@ -2052,25 +2037,6 @@ def test_list_shows_filters_by_status(client_and_deps):
 def test_get_show_404s_when_missing(client_and_deps):
     client, _, _, _, _, _ = client_and_deps
     response = client.get("/api/shows/999")
-    assert response.status_code == 404
-
-
-def test_pause_and_resume_show(client_and_deps):
-    client, store, _, _, _, _ = client_and_deps
-    show = store.create_show(tmdb_id=1, title="A")
-
-    paused = client.post(f"/api/shows/{show.id}/pause")
-    assert paused.status_code == 200
-    assert paused.json()["status"] == "paused"
-
-    resumed = client.post(f"/api/shows/{show.id}/resume")
-    assert resumed.status_code == 200
-    assert resumed.json()["status"] == "watching"
-
-
-def test_pause_show_404s_when_missing(client_and_deps):
-    client, _, _, _, _, _ = client_and_deps
-    response = client.post("/api/shows/999/pause")
     assert response.status_code == 404
 
 
@@ -2582,7 +2548,7 @@ def test_region_rejects_anything_that_isnt_a_country_code(client_and_deps):
 def _hero_trending(tmdb, movie_pop=99, tv_pop=1):
     """The shared MOVIE/SHOW fixtures carry no backdrop, and a title with
     no backdrop can't be a hero — so give these ones one."""
-    api._hero_slides_cached.cache.clear()
+    hero._hero_slides_cached.cache.clear()
     tmdb.get_available_trending = lambda **kw: {"results": [dict(MOVIE, backdrop_path="/b.jpg", popularity=movie_pop)]}
     tmdb.get_available_tv_trending = lambda **kw: {"results": [dict(SHOW, backdrop_path="/s.jpg", popularity=tv_pop)]}
 
@@ -2678,7 +2644,7 @@ def test_an_arrival_that_is_also_trending_only_appears_once(client_and_deps):
     digital at the same time, which is the normal case for the ones
     worth holding a slot for."""
     client, _, tmdb, _, _, _ = client_and_deps
-    api._hero_slides_cached.cache.clear()
+    hero._hero_slides_cached.cache.clear()
     tmdb.get_available_trending = lambda **kw: {"results": [dict(ARRIVING)]}
     tmdb.get_available_tv_trending = lambda **kw: {"results": []}
     tmdb.digital_calendar = [dict(ARRIVING)]
@@ -2701,7 +2667,7 @@ def test_an_overlapping_arrival_that_is_not_the_held_one_still_appears_once(clie
     one, which is the single arrangement where the old filter was
     enough."""
     client, _, tmdb, _, _, _ = client_and_deps
-    api._hero_slides_cached.cache.clear()
+    hero._hero_slides_cached.cache.clear()
     both = {"id": 1234, "title": "The End of Oak Street", "release_date": "2026-08-12",
             "backdrop_path": "/oak.jpg", "popularity": 384.6}
     tmdb.get_available_trending = lambda **kw: {"results": [dict(both)]}
@@ -2777,7 +2743,12 @@ def test_hero_refreshes_on_plex_without_waiting_for_the_cache(client_and_deps, m
 
     tmdb.get_movie = counted
     on_plex = {"value": False}
-    monkeypatch.setattr(api, "plex_library_lookup", lambda store, media_type: (lambda *a, **k: on_plex["value"]))
+
+    def fake_lookup(store, media_type):
+        return lambda *a, **k: on_plex["value"]
+
+    monkeypatch.setattr(hero, "plex_library_lookup", fake_lookup)
+    monkeypatch.setattr(helpers, "plex_library_lookup", fake_lookup)
 
     first = client.get("/api/hero?kind=home").json()
     built = calls["n"]
@@ -2862,7 +2833,7 @@ def test_login_status_sets_session_cookie_once_resolved(client_and_deps):
     assert body["authenticated"] is True
     assert body["username"] == "friend"
     assert body["is_admin"] is False
-    assert api.SESSION_COOKIE_NAME in response.cookies
+    assert deps.SESSION_COOKIE_NAME in response.cookies
     # And the new user is genuinely persisted, not just reflected back.
     assert store.get_user("friend-1").username == "friend"
 
@@ -2879,7 +2850,7 @@ def test_login_status_reports_pending_error_without_a_cookie(client_and_deps):
     body = response.json()
     assert body["authenticated"] is False
     assert body["error"] == "Your Plex account doesn't have access."
-    assert api.SESSION_COOKIE_NAME not in response.cookies
+    assert deps.SESSION_COOKIE_NAME not in response.cookies
 
 
 def test_get_current_session_reflects_the_signed_in_user(non_admin_client):
@@ -2895,7 +2866,7 @@ def test_get_current_session_reflects_the_signed_in_user(non_admin_client):
         "is_admin": False,
         "has_seen_tutorial": False,
         "avatar": False,
-        "certification_region": api.DEFAULT_CERTIFICATION_REGION,
+        "certification_region": deps.DEFAULT_CERTIFICATION_REGION,
     }
 
 
@@ -3013,7 +2984,7 @@ def test_select_plex_server_during_bootstrap_also_signs_the_admin_in(tmp_path, m
         )
 
         assert response.status_code == 200
-        assert api.SESSION_COOKIE_NAME in response.cookies
+        assert deps.SESSION_COOKIE_NAME in response.cookies
 
         session_response = client.get("/api/auth/session")
         assert session_response.status_code == 200
@@ -3022,7 +2993,7 @@ def test_select_plex_server_during_bootstrap_also_signs_the_admin_in(tmp_path, m
             "is_admin": True,
             "has_seen_tutorial": False,
             "avatar": False,
-            "certification_region": api.DEFAULT_CERTIFICATION_REGION,
+            "certification_region": deps.DEFAULT_CERTIFICATION_REGION,
         }
 
 
@@ -3213,8 +3184,8 @@ def test_audit_log_records_login_success_and_failure(client_and_deps):
     # from the domain-less cookie the fixture set directly. Deleting by name
     # first (matches every domain) avoids ending up with both cookies present
     # at once, which is ambiguous about which one a request actually sends.
-    client.cookies.delete(api.SESSION_COOKIE_NAME)
-    client.cookies.set(api.SESSION_COOKIE_NAME, "test-admin-session")
+    client.cookies.delete(deps.SESSION_COOKIE_NAME)
+    client.cookies.set(deps.SESSION_COOKIE_NAME, "test-admin-session")
     response = client.get("/api/admin/audit-log")
 
     assert response.status_code == 200
@@ -3240,7 +3211,7 @@ def test_audit_log_records_remote_access_toggle(client_and_deps):
 def test_audit_log_records_connections_changes(client_and_deps, monkeypatch):
     client, _, _, _, _, _ = client_and_deps
     monkeypatch.setattr(config, "TMDB_API_KEY", None)
-    monkeypatch.setattr(api.config, "_QBIT_HOST_ENV", None)
+    monkeypatch.setattr(config, "_QBIT_HOST_ENV", None)
 
     client.put("/api/settings/tmdb", json={"api_key": "a-new-key"})
     client.put(
@@ -3254,7 +3225,7 @@ def test_audit_log_records_connections_changes(client_and_deps, monkeypatch):
 
 def test_audit_log_records_deploy_trigger(client_and_deps, monkeypatch):
     client, _, _, _, _, _ = client_and_deps
-    monkeypatch.setattr(api, "run_git_pull", lambda: {"detail": "ok", "commit": "abc1234"})
+    monkeypatch.setattr(system, "run_git_pull", lambda: {"detail": "ok", "commit": "abc1234"})
 
     client.post("/api/admin/deploy")
 
@@ -3266,9 +3237,9 @@ def test_audit_log_records_deploy_failure(client_and_deps, monkeypatch):
     client, _, _, _, _, _ = client_and_deps
 
     def _boom():
-        raise api.DeployError("git pull failed: conflict")
+        raise DeployError("git pull failed: conflict")
 
-    monkeypatch.setattr(api, "run_git_pull", _boom)
+    monkeypatch.setattr(system, "run_git_pull", _boom)
 
     response = client.post("/api/admin/deploy")
 
@@ -3321,7 +3292,7 @@ def test_login_status_limit_outpaces_the_frontend_poll():
     frontend_poll_interval_seconds = 2.5
     polls_per_minute = 60 / frontend_poll_interval_seconds
 
-    allowed, _, per_minute = api.STATUS_POLL_RATE_LIMIT.partition("/")
+    allowed, _, per_minute = deps.STATUS_POLL_RATE_LIMIT.partition("/")
 
     assert per_minute == "minute"
     # 2x, not 1x: two open login tabs, plus the retries that ride on top
@@ -3347,7 +3318,7 @@ def test_login_start_issues_an_attempt_cookie(client_and_deps):
     response = client.post("/api/auth/login/start")
 
     assert response.status_code == 200
-    assert api.LOGIN_ATTEMPT_COOKIE_NAME in response.cookies
+    assert deps.LOGIN_ATTEMPT_COOKIE_NAME in response.cookies
 
 
 def test_login_status_does_not_hand_a_session_to_a_bystander(client_and_deps):
@@ -3368,7 +3339,7 @@ def test_login_status_does_not_hand_a_session_to_a_bystander(client_and_deps):
     bystander = client.get("/api/auth/login/status")
 
     assert bystander.json()["authenticated"] is False
-    assert api.SESSION_COOKIE_NAME not in bystander.cookies
+    assert deps.SESSION_COOKIE_NAME not in bystander.cookies
 
 
 def test_login_status_with_an_unknown_attempt_id_mints_nothing(client_and_deps):
@@ -3377,11 +3348,11 @@ def test_login_status_with_an_unknown_attempt_id_mints_nothing(client_and_deps):
     client.post("/api/auth/login/start")
 
     client.cookies.clear()
-    client.cookies.set(api.LOGIN_ATTEMPT_COOKIE_NAME, "not-a-real-attempt-id")
+    client.cookies.set(deps.LOGIN_ATTEMPT_COOKIE_NAME, "not-a-real-attempt-id")
     guessed = client.get("/api/auth/login/status")
 
     assert guessed.json()["authenticated"] is False
-    assert api.SESSION_COOKIE_NAME not in guessed.cookies
+    assert deps.SESSION_COOKIE_NAME not in guessed.cookies
 
 
 def test_a_completed_login_is_claimable_only_once(client_and_deps):
@@ -3397,7 +3368,7 @@ def test_a_completed_login_is_claimable_only_once(client_and_deps):
     second = client.get("/api/auth/login/status")
 
     assert second.json()["authenticated"] is False
-    assert api.SESSION_COOKIE_NAME not in second.cookies
+    assert deps.SESSION_COOKIE_NAME not in second.cookies
 
 
 def api_state_login_session(client) -> "FakeLoginSession":
@@ -3500,7 +3471,7 @@ def test_a_french_household_gets_french_named_rows(client_and_deps):
 
 def test_recommendations_need_a_session(client_and_deps):
     client, _, _, _, _, _ = client_and_deps
-    client.cookies.delete(api.SESSION_COOKIE_NAME)
+    client.cookies.delete(deps.SESSION_COOKIE_NAME)
 
     assert client.get("/api/recommendations").status_code == 401
 
@@ -3584,7 +3555,7 @@ def test_declared_rows_are_bounded(client_and_deps):
 
     layout = client.get("/api/recommendations", params={"rows": flood}).json()["layout"]
 
-    assert len([k for k in layout if k.startswith("genre:")]) <= api._MAX_DECLARED_ROWS
+    assert len([k for k in layout if k.startswith("genre:")]) <= recommendations._MAX_DECLARED_ROWS
 
 
 def test_recommendations_mark_what_the_household_already_has(client_and_deps):
@@ -3599,6 +3570,25 @@ def test_recommendations_mark_what_the_household_already_has(client_and_deps):
 
     assert body["rows"], "expected at least one row to inspect"
     assert all("on_plex" in item for row in body["rows"] for item in row["items"])
+
+
+def test_recommended_shows_are_looked_up_in_plexs_show_library(client_and_deps, monkeypatch):
+    """Rows carry TMDB's "tv"; Plex only knows "movie" and "show". Passing
+    "tv" through raised a KeyError once Plex was linked, and the whole
+    endpoint 500'd."""
+    client, _, tmdb, _, _, _ = client_and_deps
+    _stub_recommendation_sources(tmdb)
+    asked = set()
+
+    def lookup(store, media_type):
+        assert media_type in ("movie", "show"), media_type
+        asked.add(media_type)
+        return lambda *a, **k: False
+
+    monkeypatch.setattr(helpers, "plex_library_lookup", lookup)
+
+    assert client.get("/api/recommendations", params={"page": "tv"}).status_code == 200
+    assert "show" in asked
 
 
 def test_an_unknown_page_falls_back_to_home_rather_than_erroring(client_and_deps):
@@ -3637,7 +3627,7 @@ def _capture_on_deck_token(monkeypatch):
         seen["token"] = server_token
         return []
 
-    monkeypatch.setattr(api.PlexClient, "on_deck", fake_on_deck)
+    monkeypatch.setattr(PlexClient, "on_deck", fake_on_deck)
     return seen
 
 
@@ -3872,11 +3862,9 @@ def test_reject_current_copy_for_a_file_this_app_never_added(client_and_deps, mo
     """The End of Oak Street (live 2026-09-17): on Plex, but not added by
     Obsidian, so "This copy is broken" was greyed out. Plex points at the
     file; it's deleted and its release name blacklisted."""
-    from app import api
-
     filed = tmp_path / "The.End.of.Oak.Street.2025.2160p.WEB-DL.mkv"
     filed.write_bytes(b"broken")
-    monkeypatch.setattr(api, "local_file_for_title", lambda store, media_type, title, year, tmdb_id=None: filed)
+    monkeypatch.setattr(api_requests, "local_file_for_title", lambda store, media_type, title, year, tmdb_id=None: filed)
     client, store, _, _, _, _ = client_and_deps
 
     response = client.post("/api/movies/693134/reject-current")
@@ -3886,20 +3874,20 @@ def test_reject_current_copy_for_a_file_this_app_never_added(client_and_deps, mo
     assert not filed.exists()
     assert store.get_rejected_releases(693134) == [{"name": "The.End.of.Oak.Street.2025.2160p.WEB-DL", "size_bytes": 6}]
 
-    monkeypatch.setattr(api, "local_file_for_title", lambda store, media_type, title, year, tmdb_id=None: None)
+    monkeypatch.setattr(api_requests, "local_file_for_title", lambda store, media_type, title, year, tmdb_id=None: None)
     assert client.post("/api/movies/693134/reject-current").status_code == 409
 
 
 def test_overwrite_is_allowed_when_plex_can_point_at_the_file(client_and_deps, monkeypatch, tmp_path):
-    from app import api
-
     client, _, _, _, _, _ = client_and_deps
-    monkeypatch.setattr(api, "local_file_for_title", lambda store, media_type, title, year, tmdb_id=None: None)
+    monkeypatch.setattr(api_requests, "local_file_for_title", lambda store, media_type, title, year, tmdb_id=None: None)
+    monkeypatch.setattr(titles, "local_file_for_title", lambda store, media_type, title, year, tmdb_id=None: None)
     assert client.post("/api/requests", json={"tmdb_id": 693134, "redownload_mode": "overwrite"}).status_code == 400
 
     filed = tmp_path / "Dune.mkv"
     filed.write_bytes(b"x")
-    monkeypatch.setattr(api, "local_file_for_title", lambda store, media_type, title, year, tmdb_id=None: filed)
+    monkeypatch.setattr(api_requests, "local_file_for_title", lambda store, media_type, title, year, tmdb_id=None: filed)
+    monkeypatch.setattr(titles, "local_file_for_title", lambda store, media_type, title, year, tmdb_id=None: filed)
     assert client.post("/api/requests", json={"tmdb_id": 693134, "redownload_mode": "overwrite"}).status_code == 201
     detail = client.get("/api/movies/693134").json()
     assert detail["plex_file_available"] is (detail["on_plex"] is True)
@@ -4006,7 +3994,7 @@ def test_an_airstamp_holds_an_episode_the_date_rule_would_have_released(client_a
     tmdb.get_tv_season = lambda tmdb_id, season_number: [
         {"episode_number": 6, "name": "Bad Optics", "air_date": "2020-01-01", "runtime": 55, "still_path": None},
     ]
-    monkeypatch.setattr(api, "_tvmaze", FakeTVMaze({(1, 6): out_in_an_hour}))
+    monkeypatch.setattr(shows, "_tvmaze", FakeTVMaze({(1, 6): out_in_an_hour}))
     store.update_settings({"episode_air_buffer_hours": 15})
 
     body = client.get("/api/tv/95350/season/1/episodes").json()
@@ -4024,7 +4012,7 @@ def test_without_an_airstamp_the_date_rule_still_applies(client_and_deps, monkey
     tmdb.get_tv_season = lambda tmdb_id, season_number: [
         {"episode_number": 6, "name": "Bad Optics", "air_date": "2020-01-01", "runtime": 55, "still_path": None},
     ]
-    monkeypatch.setattr(api, "_tvmaze", FakeTVMaze({}))
+    monkeypatch.setattr(shows, "_tvmaze", FakeTVMaze({}))
     store.update_settings({"episode_air_buffer_hours": 15})
 
     body = client.get("/api/tv/95350/season/1/episodes").json()

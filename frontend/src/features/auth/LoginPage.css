@@ -1,17 +1,5 @@
 /* Mobile-first, single-column — per Part H, the first screen a new user
-   most likely sees is on their phone. */
-.login-page {
-  position: relative;
-  overflow: hidden;
-  min-height: 100vh;
-  min-height: 100dvh;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 24px calc(20px + env(safe-area-inset-right)) calc(24px + env(safe-area-inset-bottom))
-    calc(20px + env(safe-area-inset-left));
-}
-
+   most likely sees is on their phone. The page's ground is global.css's. */
 .login-page .ambient-glow i {
   opacity: 0.3;
 }

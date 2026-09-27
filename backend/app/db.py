@@ -8,257 +8,31 @@ import json
 import os
 import secrets
 import sqlite3
-from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from threading import RLock
 
-from app import config
+# Callers import the row types from app.db rather than app.db_rows, so
+# they stay importable from here.
+from app.db_rows import RequestRow, SessionRow, ShowEpisodeRow, ShowRow, UserRow
+from app.db_schema import StoreSchema
 
 # Rows in these statuses are still live — an active job, or a torrent the
 # download watcher is still tracking. Retention purges (automatic or the
 # "Clear My Requests" button) never touch them, only settled history.
 NON_TERMINAL_STATUSES = {"queued", "searching", "downloading"}
 
+# Settled without a filed download, and not by choice — what the episode
+# auto-recheck retries and /api/admin/jobs lists by default.
+FAILURE_STATUSES = frozenset({"failed", "no qualifying results", "insufficient free space", "downloaded, not filed"})
+
+# The same, plus a deliberate "cancelled": every way a request can end up
+# settled without the episode, which a season view shows as failed.
+FAILED_OR_CANCELLED_STATUSES = FAILURE_STATUSES | {"cancelled"}
+
 
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
-
-
-@dataclass
-class RequestRow:
-    id: int
-    query: str | None
-    tmdb_id: int
-    title: str
-    release_year: int | None
-    status: str
-    error_message: str | None
-    result: dict | None
-    created_at: str
-    updated_at: str
-    # Stage 12: an episode request reuses this same table/statuses/watcher
-    # rather than a parallel one — `media_type` distinguishes the two,
-    # `show_id`/`season_number`/`episode_number` are only ever set together,
-    # only for `media_type == 'episode'`. `tmdb_id` for an episode row is
-    # the *show's* tmdb id, same as a movie row's is the movie's.
-    media_type: str = "movie"
-    show_id: int | None = None
-    season_number: int | None = None
-    episode_number: int | None = None
-    # Stage 14.x: only ever set on a 'pack' row, alongside season_number as
-    # the range's start — season_number set with this left NULL still means
-    # "one season" (Stage 13's original shape), unchanged; both set means
-    # "seasons season_number through season_range_end inclusive".
-    season_range_end: int | None = None
-    # Durable, restart-safe post-organize source cleanup (replaces Stage
-    # 13.x's original fire-and-forget in-memory version — see
-    # worker.py's _watch_source_cleanup). NULL means "not applicable"
-    # (every row created before this existed, or a row that was never
-    # organized); 'pending' means a cleanup attempt is owed once
-    # `source_cleanup_next_attempt_at` arrives; 'done' means it either
-    # succeeded or was deliberately, permanently skipped (see
-    # worker.py's `_attempt_source_cleanup`) — either way, never retried
-    # again. `result["organized_paths"]`/`result["pending_cleanup_hashes"]`
-    # (plain JSON inside the existing result blob, not new columns) carry
-    # what actually needs cleaning up.
-    source_cleanup_status: str | None = None
-    source_cleanup_next_attempt_at: str | None = None
-    # Per-request floor override (movie requests only, from the detail
-    # page's "Download 4K"/"Download 1080p" shortcuts) — a canonical
-    # min_resolution phrase (see config.RESOLUTION_TIERS) applied on top
-    # of the global pipeline settings for this one request. NULL means
-    # "use the global default", same as every row created before this
-    # existed.
-    min_resolution: str | None = None
-    # Who asked for this — the authenticated Plex account at the moment
-    # the request was created (frontend migration Part C2). Denormalized
-    # (copied at creation time, not joined against `users`) same as
-    # title/release_year above, so the Activity Dashboard shows who
-    # requested something as of *then* even if that Plex account's
-    # display name later changes. NULL for every row created before this
-    # existed, and for any request the worker itself creates
-    # automatically (e.g. a subscribed show's per-episode catch-up) —
-    # there's no authenticated user behind those, only a real request
-    # made through the API has one.
-    requested_by_plex_id: str | None = None
-    requested_by_username: str | None = None
-    # frontend migration Part K2 — "upgrade" (search again, no deletion)
-    # or "overwrite" (also delete the prior organized file once this
-    # request's own replacement is confirmed in place). NULL for every
-    # ordinary request, same as every field added before this existed.
-    redownload_mode: str | None = None
-    # Frontend migration Part J1 — denormalized from the identity resolved
-    # at creation time (same convention as title/release_year), so the
-    # Requests queue can show poster art without a per-row TMDB fetch.
-    # NULL for every row created before this existed, and whenever TMDB
-    # itself has no poster on file.
-    poster_path: str | None = None
-    # Frontend migration Part J2 — qBittorrent's live progress fraction
-    # (0.0-1.0), refreshed on every download-watcher poll
-    # (DOWNLOAD_POLL_INTERVAL_SECONDS) while status == "downloading".
-    # NULL before the first poll, and for any row never in that status.
-    download_progress: float | None = None
-
-    @classmethod
-    def _from_row(cls, row: sqlite3.Row) -> "RequestRow":
-        return cls(
-            id=row["id"],
-            query=row["query"],
-            tmdb_id=row["tmdb_id"],
-            title=row["title"],
-            release_year=row["release_year"],
-            status=row["status"],
-            error_message=row["error_message"],
-            result=json.loads(row["result_json"]) if row["result_json"] else None,
-            created_at=row["created_at"],
-            updated_at=row["updated_at"],
-            media_type=row["media_type"],
-            show_id=row["show_id"],
-            season_number=row["season_number"],
-            episode_number=row["episode_number"],
-            season_range_end=row["season_range_end"],
-            source_cleanup_status=row["source_cleanup_status"],
-            source_cleanup_next_attempt_at=row["source_cleanup_next_attempt_at"],
-            min_resolution=row["min_resolution"],
-            requested_by_plex_id=row["requested_by_plex_id"],
-            requested_by_username=row["requested_by_username"],
-            redownload_mode=row["redownload_mode"],
-            poster_path=row["poster_path"],
-            download_progress=row["download_progress"],
-        )
-
-
-@dataclass
-class ShowRow:
-    """A standing subscription (Stage 12) — distinct from the per-episode
-    audit trail, which lives in `requests` like any other request."""
-
-    id: int
-    tmdb_id: int
-    title: str
-    status: str  # "watching" | "paused"
-    created_at: str
-    last_checked_at: str | None
-    # Frontend migration Part J1 — see RequestRow's own comment; populated
-    # once at subscribe time, read back (not re-fetched) by every episode/
-    # pack request this show later produces and by bulk-download for an
-    # already-subscribed show.
-    poster_path: str | None = None
-    # TMDB's own status as of the last follow check ("Returning Series",
-    # "Ended", "Canceled"…), so the app can tell a finished show from one
-    # still going without asking TMDB per row.
-    tmdb_status: str | None = None
-
-    @classmethod
-    def _from_row(cls, row: sqlite3.Row) -> "ShowRow":
-        return cls(
-            id=row["id"],
-            tmdb_id=row["tmdb_id"],
-            title=row["title"],
-            status=row["status"],
-            created_at=row["created_at"],
-            last_checked_at=row["last_checked_at"],
-            poster_path=row["poster_path"],
-            tmdb_status=row["tmdb_status"] if "tmdb_status" in row.keys() else None,
-        )
-
-
-@dataclass
-class ShowEpisodeRow:
-    """One entry in the per-episode dedup ledger (Stage 12) — `request_id`
-    points at whichever `requests` row is the current audit trail for this
-    episode (the original attempt, or the latest retry/upgrade if it's been
-    rechecked). `recheck_count`/`last_rechecked_at` back worker.py's
-    auto-recheck loop (Stage 12.x), and `recheck_opted_in` records
-    whether that loop is entitled to touch this episode at all — see the
-    column's own note in the schema."""
-
-    id: int
-    show_id: int
-    season_number: int
-    episode_number: int
-    request_id: int
-    created_at: str
-    recheck_opted_in: bool
-    recheck_count: int
-    last_rechecked_at: str | None
-
-    @classmethod
-    def _from_row(cls, row: sqlite3.Row) -> "ShowEpisodeRow":
-        return cls(
-            id=row["id"],
-            show_id=row["show_id"],
-            season_number=row["season_number"],
-            episode_number=row["episode_number"],
-            request_id=row["request_id"],
-            created_at=row["created_at"],
-            recheck_opted_in=bool(row["recheck_opted_in"]),
-            recheck_count=row["recheck_count"],
-            last_rechecked_at=row["last_rechecked_at"],
-        )
-
-
-@dataclass
-class UserRow:
-    """One Plex account that has ever successfully signed in (frontend
-    migration Part C2) — distinct from `sessions` below: a user can have
-    zero, one, or several active sessions, but only one `users` row.
-    `is_admin` is refreshed on every login from a fresh Plex access check
-    (see api.py's login flow) — never edited directly."""
-
-    plex_user_id: str
-    username: str | None
-    is_admin: bool
-    has_seen_tutorial: bool
-    first_seen_at: str
-    last_login_at: str
-    # Household controls (Settings › Household).
-    can_request: bool = True
-    # plex.tv avatar URL (no query string), refreshed on every sign-in.
-    avatar_url: str | None = None
-
-    @classmethod
-    def _from_row(cls, row: sqlite3.Row) -> "UserRow":
-        keys = row.keys()
-        return cls(
-            plex_user_id=row["plex_user_id"],
-            username=row["username"],
-            is_admin=bool(row["is_admin"]),
-            has_seen_tutorial=bool(row["has_seen_tutorial"]),
-            first_seen_at=row["first_seen_at"],
-            last_login_at=row["last_login_at"],
-            can_request=bool(row["can_request"]) if "can_request" in keys else True,
-            avatar_url=row["avatar_url"] if "avatar_url" in keys else None,
-        )
-
-
-@dataclass
-class SessionRow:
-    """A signed-in browser session (frontend migration Part C2/C3) — `id`
-    is the opaque, random token set as the session cookie's value, never
-    guessable/sequential. `username`/`is_admin` are copied from `users` at
-    login time (not joined on every request) so `require_session` is a
-    single indexed lookup, same denormalize-for-cheap-reads convention as
-    `RequestRow.title`/`release_year`."""
-
-    id: str
-    plex_user_id: str
-    username: str | None
-    is_admin: bool
-    created_at: str
-    expires_at: str
-
-    @classmethod
-    def _from_row(cls, row: sqlite3.Row) -> "SessionRow":
-        return cls(
-            id=row["id"],
-            plex_user_id=row["plex_user_id"],
-            username=row["username"],
-            is_admin=bool(row["is_admin"]),
-            created_at=row["created_at"],
-            expires_at=row["expires_at"],
-        )
 
 
 class _Rows:
@@ -330,7 +104,7 @@ class _SerializedConnection:
         return getattr(self._conn, name)
 
 
-class RequestStore:
+class RequestStore(StoreSchema):
     def __init__(self, db_path: str | Path):
         if db_path != ":memory:":
             Path(db_path).parent.mkdir(parents=True, exist_ok=True)
@@ -342,276 +116,6 @@ class RequestStore:
         self._conn = _SerializedConnection(connection, self._lock)
         self._init_schema()
         self._backfill_library_items()
-
-    def _init_schema(self) -> None:
-        with self._lock:
-            self._conn.execute(
-                """
-                CREATE TABLE IF NOT EXISTS requests (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    query TEXT,
-                    tmdb_id INTEGER NOT NULL,
-                    title TEXT NOT NULL,
-                    release_year INTEGER,
-                    status TEXT NOT NULL,
-                    error_message TEXT,
-                    result_json TEXT,
-                    created_at TEXT NOT NULL,
-                    updated_at TEXT NOT NULL
-                )
-                """
-            )
-            # Stage 12: an already-existing NAS-deployed database needs
-            # these added on top of the table above, not just at CREATE
-            # time — PRAGMA-checked rather than a blind ALTER, since
-            # ALTER TABLE ... ADD COLUMN has no IF NOT EXISTS in the
-            # sqlite3 versions this project targets.
-            self._ensure_column("requests", "media_type", "media_type TEXT NOT NULL DEFAULT 'movie'")
-            self._ensure_column("requests", "show_id", "show_id INTEGER")
-            self._ensure_column("requests", "season_number", "season_number INTEGER")
-            self._ensure_column("requests", "episode_number", "episode_number INTEGER")
-            self._ensure_column("requests", "season_range_end", "season_range_end INTEGER")
-            self._ensure_column("requests", "source_cleanup_status", "source_cleanup_status TEXT")
-            self._ensure_column(
-                "requests", "source_cleanup_next_attempt_at", "source_cleanup_next_attempt_at TEXT"
-            )
-            self._ensure_column("requests", "min_resolution", "min_resolution TEXT")
-            # Frontend migration Part C2: who asked for this — see
-            # RequestRow's own field comments.
-            self._ensure_column("requests", "requested_by_plex_id", "requested_by_plex_id TEXT")
-            self._ensure_column("requests", "requested_by_username", "requested_by_username TEXT")
-            # Frontend migration Part K2 — see RequestRow's own comment.
-            self._ensure_column("requests", "redownload_mode", "redownload_mode TEXT")
-            # Frontend migration Part J1/J2 — see RequestRow's own comments.
-            self._ensure_column("requests", "poster_path", "poster_path TEXT")
-            self._ensure_column("requests", "download_progress", "download_progress REAL")
-
-            # Stage 12: the standing subscription. One row per subscribed
-            # show — a UNIQUE tmdb_id stops two subscriptions to the same
-            # show from ever both driving the scheduler.
-            self._conn.execute(
-                """
-                CREATE TABLE IF NOT EXISTS shows (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    tmdb_id INTEGER NOT NULL UNIQUE,
-                    title TEXT NOT NULL,
-                    status TEXT NOT NULL,
-                    created_at TEXT NOT NULL,
-                    last_checked_at TEXT
-                )
-                """
-            )
-            # Frontend migration Part J1 — see ShowRow's own comment.
-            self._ensure_column("shows", "poster_path", "poster_path TEXT")
-            self._ensure_column("shows", "tmdb_status", "tmdb_status TEXT")
-            # Stage 12: the per-episode dedup ledger — distinct from the
-            # `requests` audit trail. UNIQUE(show_id, season_number,
-            # episode_number) is what makes "already handled" a single
-            # indexed lookup, and what an `INSERT OR IGNORE` relies on to
-            # stay race-safe.
-            self._conn.execute(
-                """
-                CREATE TABLE IF NOT EXISTS show_episodes (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    show_id INTEGER NOT NULL,
-                    season_number INTEGER NOT NULL,
-                    episode_number INTEGER NOT NULL,
-                    request_id INTEGER NOT NULL,
-                    created_at TEXT NOT NULL,
-                    UNIQUE(show_id, season_number, episode_number)
-                )
-                """
-            )
-            # Auto-recheck (retry a stuck episode, or look for a better
-            # release once one's already downloaded): `recheck_count` gates
-            # against a configured max-attempts, `last_rechecked_at` (falls
-            # back to `created_at` when null, i.e. never rechecked) gates
-            # against a configured interval — see worker.py's
-            # `_watch_episode_rechecks`.
-            self._ensure_column("show_episodes", "recheck_count", "recheck_count INTEGER NOT NULL DEFAULT 0")
-            self._ensure_column("show_episodes", "last_rechecked_at", "last_rechecked_at TEXT")
-            # Whether this episode was claimed while "keep looking for
-            # missing or better copies" was on. Recorded per episode
-            # rather than read live, because the setting answers a
-            # question about the future and not the past: turning it on
-            # used to make every episode ever downloaded immediately due
-            # — `_recheck_is_due` falls back to `created_at` when nothing
-            # has been rechecked, and while the setting is off nothing
-            # ever is — so a household that enabled it came back to find
-            # its whole library being re-searched for upgrades it never
-            # asked for.
-            #
-            # Existing rows are backfilled from the setting as it stands
-            # right now, which is the only evidence available about how
-            # they were created: a household with it on keeps the
-            # behaviour it has today, and one with it off is left alone,
-            # which is the point.
-            if self._ensure_column("show_episodes", "recheck_opted_in", "recheck_opted_in INTEGER NOT NULL DEFAULT 0"):
-                if self._recheck_enabled_now():
-                    self._conn.execute("UPDATE show_episodes SET recheck_opted_in = 1")
-            # Stage 15: torrents explicitly rejected as genuinely defective
-            # (bad encode, audio sync drift, wrong cut — anything the
-            # search/scoring pipeline's filename-based signals could never
-            # have caught up front, confirmed live via a well-seeded,
-            # top-scored "Mutiny" 2160p release with progressive audio
-            # sync drift, 2026-09-14). Keyed by tmdb_id, not request_id —
-            # a rejection needs to keep excluding this exact torrent from
-            # every *future* request for the same movie/show, not just the
-            # one that first found it. UNIQUE(tmdb_id, torrent_hash) makes
-            # re-rejecting the same hash a harmless no-op.
-            self._conn.execute(
-                """
-                CREATE TABLE IF NOT EXISTS rejected_torrents (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    tmdb_id INTEGER NOT NULL,
-                    torrent_hash TEXT NOT NULL,
-                    created_at TEXT NOT NULL,
-                    UNIQUE(tmdb_id, torrent_hash)
-                )
-                """
-            )
-            # The library ledger: every file this app filed, kept for as long
-            # as the file is — clearing request history never touches it.
-            # This, not the request row, is how the app knows a title on
-            # Plex is one it added, which release it was, and where it is.
-            self._conn.execute(
-                """
-                CREATE TABLE IF NOT EXISTS library_items (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    tmdb_id INTEGER NOT NULL,
-                    media_type TEXT NOT NULL,
-                    season_number INTEGER,
-                    episode_number INTEGER,
-                    path TEXT NOT NULL UNIQUE,
-                    torrent_hash TEXT,
-                    release_name TEXT,
-                    size_bytes INTEGER,
-                    request_id INTEGER,
-                    created_at TEXT NOT NULL
-                )
-                """
-            )
-            self._conn.execute(
-                """
-                CREATE TABLE IF NOT EXISTS rejected_releases (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    tmdb_id INTEGER NOT NULL,
-                    name TEXT NOT NULL,
-                    size_bytes INTEGER,
-                    created_at TEXT NOT NULL,
-                    UNIQUE(tmdb_id, name)
-                )
-                """
-            )
-            # Stage 7's settings panel reads/writes this; Stage 3 only owns
-            # the schema — a single row, not per-profile (no family
-            # profiles, per the confirmed architecture).
-            self._conn.execute(
-                """
-                CREATE TABLE IF NOT EXISTS settings (
-                    id INTEGER PRIMARY KEY CHECK (id = 1),
-                    data_json TEXT NOT NULL
-                )
-                """
-            )
-            self._conn.execute("INSERT OR IGNORE INTO settings (id, data_json) VALUES (1, '{}')")
-
-            # Frontend migration Part C2 — Plex-authenticated users and
-            # their signed-in sessions. See UserRow/SessionRow above.
-            self._conn.execute(
-                """
-                CREATE TABLE IF NOT EXISTS users (
-                    plex_user_id TEXT PRIMARY KEY,
-                    username TEXT,
-                    is_admin INTEGER NOT NULL DEFAULT 0,
-                    has_seen_tutorial INTEGER NOT NULL DEFAULT 0,
-                    first_seen_at TEXT NOT NULL,
-                    last_login_at TEXT NOT NULL
-                )
-                """
-            )
-            self._conn.execute(
-                """
-                CREATE TABLE IF NOT EXISTS sessions (
-                    id TEXT PRIMARY KEY,
-                    plex_user_id TEXT NOT NULL,
-                    username TEXT,
-                    is_admin INTEGER NOT NULL DEFAULT 0,
-                    created_at TEXT NOT NULL,
-                    expires_at TEXT NOT NULL
-                )
-                """
-            )
-            # Household controls per user.
-            self._ensure_column("users", "can_request", "can_request INTEGER NOT NULL DEFAULT 1")
-            self._ensure_column("users", "avatar_url", "avatar_url TEXT")
-            # That user's *own* access token for the linked server, kept so
-            # per-user Plex reads (Continue Watching) can be made as them
-            # rather than as the admin. Deliberately not a field on UserRow:
-            # that dataclass is what /api/admin/users serialises, and a token
-            # that never enters the object can't leave in a response. Read it
-            # through get_user_server_token() instead, which exists to be the
-            # one path.
-            self._ensure_column("users", "plex_server_token", "plex_server_token TEXT")
-            # The notification system was removed: drop its tables from
-            # databases created before that.
-            self._conn.execute("DROP TABLE IF EXISTS notifications")
-            self._conn.execute("DROP TABLE IF EXISTS push_subscriptions")
-            # TV rows created without a poster (episode rechecks did) take
-            # the show's, or any other row's for the same title.
-            self._conn.execute(
-                "UPDATE requests SET poster_path = COALESCE("
-                "(SELECT s.poster_path FROM shows s WHERE s.id = requests.show_id), "
-                "(SELECT r.poster_path FROM requests r WHERE r.tmdb_id = requests.tmdb_id "
-                "AND r.media_type != 'movie' AND r.poster_path IS NOT NULL LIMIT 1)) "
-                "WHERE poster_path IS NULL AND media_type != 'movie'"
-            )
-            # Frontend migration Part G4 — a plain append-only log an admin
-            # can actually check once this instance is internet-facing.
-            # Scoped to genuinely security-relevant events, not every
-            # settings change (Pipeline/TV-schedule/Retention tuning isn't
-            # a security event) — login success/failure, Plex server
-            # link/switch/unlink, Connections (TMDB/qBittorrent
-            # credential) changes, Remote Access toggles, and deploy
-            # triggers. `detail` is a short human-readable string, not
-            # structured JSON — this is read by a person, not parsed back.
-            self._conn.execute(
-                """
-                CREATE TABLE IF NOT EXISTS auth_events (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    event_type TEXT NOT NULL,
-                    plex_user_id TEXT,
-                    username TEXT,
-                    ip_address TEXT,
-                    detail TEXT,
-                    created_at TEXT NOT NULL
-                )
-                """
-            )
-            self._conn.commit()
-
-    def _recheck_enabled_now(self) -> bool:
-        """The saved value of `episode_recheck_enabled`, falling back to
-        config's default when it has never been set — the same precedence
-        tv_settings.settings_from_raw uses. Read straight off the table
-        rather than through get_settings(), because this runs inside
-        schema setup with the lock already held."""
-        # Schema setup runs this before the settings table itself is
-        # created on a brand-new database. There is nothing saved to read
-        # in that case, and nothing to back-fill either — a fresh file has
-        # no episodes.
-        table = self._conn.execute("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'settings'").fetchone()
-        row = self._conn.execute("SELECT data_json FROM settings WHERE id = 1").fetchone() if table else None
-        saved = json.loads(row["data_json"]) if row else {}
-        value = saved.get("episode_recheck_enabled")
-        return bool(config.EPISODE_RECHECK_ENABLED if value is None else value)
-
-    def _ensure_column(self, table: str, column: str, ddl: str) -> bool:
-        existing = {row["name"] for row in self._conn.execute(f"PRAGMA table_info({table})").fetchall()}
-        if column not in existing:
-            self._conn.execute(f"ALTER TABLE {table} ADD COLUMN {ddl}")
-            return True
-        return False
 
     # -- requests --
 
@@ -756,6 +260,28 @@ class RequestStore:
         row = self._conn.execute("SELECT * FROM requests WHERE id = ?", (request_id,)).fetchone()
         return RequestRow._from_row(row) if row else None
 
+    def get_requests(self, request_ids) -> dict[int, RequestRow]:
+        """`get_request` for many ids in one query, keyed by id — missing
+        ids are simply absent."""
+        ids = list(set(request_ids))
+        if not ids:
+            return {}
+        placeholders = ",".join("?" for _ in ids)
+        rows = self._conn.execute(f"SELECT * FROM requests WHERE id IN ({placeholders})", ids).fetchall()
+        return {r["id"]: RequestRow._from_row(r) for r in rows}
+
+    def list_live_packs_for_show(self, show_id: int) -> list[RequestRow]:
+        """This show's pack requests still in flight (any scope), newest
+        first — what the show page and the scheduler check before treating
+        an episode as unrequested."""
+        placeholders = ",".join("?" for _ in NON_TERMINAL_STATUSES)
+        rows = self._conn.execute(
+            f"SELECT * FROM requests WHERE show_id = ? AND media_type = 'pack' AND status IN ({placeholders}) "
+            "ORDER BY id DESC",
+            (show_id, *NON_TERMINAL_STATUSES),
+        ).fetchall()
+        return [RequestRow._from_row(r) for r in rows]
+
     def get_latest_organized_request(self, tmdb_id: int, media_types: tuple[str, ...] = ("movie",)) -> RequestRow | None:
         """The most recent *complete*, genuinely-organized request for this
         title — i.e. one this app itself placed a file for and knows the
@@ -837,26 +363,6 @@ class RequestStore:
             (plex_user_id, limit),
         ).fetchall()
         return [RequestRow._from_row(r) for r in rows]
-
-    def library_tmdb_ids(self) -> set[tuple[str, int]]:
-        """Everything Obsidian has filed, as (media_type, tmdb_id).
-
-        Used to keep recommendations from offering something the household
-        already has. Incomplete on purpose for now: this knows what *this
-        app* downloaded and organized, not what was in Plex before it or
-        added by hand. Narrowing that gap means reading Plex's library
-        sections, which is its own piece of work — until then this is a
-        strict improvement over excluding nothing.
-
-        Episodes collapse to their show: `library_items` has a row per
-        episode file, and for "do we have this show" the answer is the same
-        for all of them."""
-        rows = self._conn.execute("SELECT DISTINCT media_type, tmdb_id FROM library_items").fetchall()
-        out: set[tuple[str, int]] = set()
-        for row in rows:
-            media_type = "movie" if row["media_type"] == "movie" else "tv"
-            out.add((media_type, int(row["tmdb_id"])))
-        return out
 
     def list_requests_page(self, limit: int, offset: int = 0) -> list[RequestRow]:
         """Frontend migration Part D — the Activity Dashboard's own paged
@@ -1481,7 +987,7 @@ class RequestStore:
         server_token: str | None = None,
     ) -> UserRow:
         """Called on every successful login — `is_admin` is re-derived
-        fresh each time from a live Plex access check (see api.py), so a
+        fresh each time from a live Plex access check (see api/auth.py), so a
         change in server ownership is picked up on the next sign-in
         without any migration. First-time sign-in inserts a new row;
         every later one just updates username/is_admin/last_login_at,
@@ -1579,12 +1085,6 @@ class RequestStore:
             self._conn.execute("DELETE FROM sessions WHERE id = ?", (session_id,))
             self._conn.commit()
 
-    def delete_sessions_for_user(self, plex_user_id: str) -> int:
-        with self._lock:
-            cur = self._conn.execute("DELETE FROM sessions WHERE plex_user_id = ?", (plex_user_id,))
-            self._conn.commit()
-            return cur.rowcount
-
     def delete_non_admin_sessions(self) -> int:
         """Called when the linked Plex server changes (switching servers
         in Settings, Part C3's `PUT /api/plex/server`) — every non-admin
@@ -1647,10 +1147,6 @@ class RequestStore:
             cur = self._conn.execute("DELETE FROM users WHERE plex_user_id = ?", (plex_user_id,))
             self._conn.commit()
             return cur.rowcount > 0
-
-    def count_requests(self) -> int:
-        row = self._conn.execute("SELECT COUNT(*) AS n FROM requests").fetchone()
-        return int(row["n"]) if row else 0
 
     def record_auth_event(
         self,

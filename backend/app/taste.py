@@ -131,34 +131,6 @@ def seeds_from_requests(rows, now: datetime) -> list[Seed]:
     return sorted(best.values(), key=lambda s: s.weight, reverse=True)
 
 
-def merge_seeds(*groups: list[Seed]) -> list[Seed]:
-    """Combine feeders, keeping the strongest claim on each title.
-
-    Summed rather than max'd: something a person both requested *and*
-    watched is a stronger signal than either alone, and that is exactly the
-    title their page should lean on.
-    """
-    merged: dict[tuple[str, int], Seed] = {}
-    for group in groups:
-        for seed in group:
-            key = (seed.media_type, seed.tmdb_id)
-            existing = merged.get(key)
-            if existing is None:
-                merged[key] = seed
-            else:
-                merged[key] = Seed(
-                    tmdb_id=seed.tmdb_id,
-                    media_type=seed.media_type,
-                    # Prefer a non-empty title from either side.
-                    title=existing.title or seed.title,
-                    weight=existing.weight + seed.weight,
-                    # Watched outranks requested as the stated reason, since
-                    # "because you watched" is the more honest sentence.
-                    source="watched" if "watched" in (existing.source, seed.source) else existing.source,
-                )
-    return sorted(merged.values(), key=lambda s: s.weight, reverse=True)
-
-
 def daily_rng(plex_user_id: str, day: str, purpose: str = "") -> random.Random:
     """A generator that is fixed for one person for one day.
 

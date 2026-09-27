@@ -1,5 +1,5 @@
 import { FALLBACK_REGION } from './regions'
-import type { Genre, ReleaseDatesResult } from '../types/movies'
+import type { ReleaseDatesResult } from '../types/movies'
 import type { ContentRatingEntry } from '../types/tv'
 
 export function yearOf(dateStr?: string | null): string {
@@ -28,7 +28,7 @@ export function tvCertificationOf(show: { content_ratings?: { results?: ContentR
 // e.g. "en"/"ja") — the browser's own Intl API already knows this, no
 // hand-maintained lookup table to keep in sync with whatever codes TMDB
 // happens to use.
-export function languageNameOf(code?: string | null): string {
+function languageNameOf(code?: string | null): string {
   if (!code) return ''
   try {
     return new Intl.DisplayNames(['en'], { type: 'language' }).of(code) || code
@@ -48,13 +48,5 @@ export function displayLanguageOf(original?: string | null, spoken?: { iso_639_1
   const codes = (spoken ?? []).map((s) => s.iso_639_1).filter(Boolean)
   const code = original && (codes.length === 0 || codes.includes(original)) ? original : codes[0] ?? original
   return languageNameOf(code)
-}
-
-// "Drama, Mystery, and Sci-Fi & Fantasy" — TMDB's own genre-line style.
-export function genreLine(genres?: Genre[] | null): string {
-  const names = (genres || []).map((g) => g.name)
-  if (names.length <= 1) return names[0] || ''
-  if (names.length === 2) return `${names[0]} and ${names[1]}`
-  return `${names.slice(0, -1).join(', ')}, and ${names[names.length - 1]}`
 }
 

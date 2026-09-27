@@ -5,7 +5,7 @@ export interface GenreOption {
   name: string
 }
 
-export const MOVIE_GENRES: GenreOption[] = [
+const MOVIE_GENRES: GenreOption[] = [
   { id: 28, name: 'Action' },
   { id: 12, name: 'Adventure' },
   { id: 16, name: 'Animation' },
@@ -26,7 +26,7 @@ export const MOVIE_GENRES: GenreOption[] = [
   { id: 37, name: 'Western' },
 ]
 
-export const TV_GENRES: GenreOption[] = [
+const TV_GENRES: GenreOption[] = [
   { id: 10759, name: 'Action & Adventure' },
   { id: 16, name: 'Animation' },
   { id: 35, name: 'Comedy' },

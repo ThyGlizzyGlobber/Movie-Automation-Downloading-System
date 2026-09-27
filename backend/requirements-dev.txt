@@ -1,0 +1,5 @@
+# Test-only: kept out of the runtime image. httpx is what FastAPI's
+# TestClient drives requests through.
+-r requirements.txt
+pytest>=8.0
+httpx>=0.27
