@@ -11,6 +11,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app import api, config
+from app.pipeline_settings import resolve_pipeline_settings
 from app.db import RequestStore
 from app.plex import PlexClient
 
@@ -2547,7 +2548,10 @@ def test_rate_limits_are_keyed_per_client_not_per_deployment(client_and_deps):
 def test_region_defaults_to_us_until_it_is_set(client_and_deps):
     client, _, _, _, _, _ = client_and_deps
 
-    assert client.get("/api/settings/region").json() == {"certification_region": "US"}
+    assert client.get("/api/settings/region").json() == {
+        "certification_region": "US",
+        "preferred_audio_language": "en",
+    }
 
 
 def test_region_round_trips_and_reaches_the_session(client_and_deps):
@@ -4026,3 +4030,47 @@ def test_without_an_airstamp_the_date_rule_still_applies(client_and_deps, monkey
     body = client.get("/api/tv/95350/season/1/episodes").json()
     assert body["episodes"][0]["state"] == "missing"
     assert client.post("/api/tv/95350/episodes/1/6").status_code == 201
+
+
+def test_the_region_card_saves_an_audio_language(client_and_deps):
+    client, store, _, _, _, _ = client_and_deps
+
+    put = client.put("/api/settings/region", json={"certification_region": "AU", "preferred_audio_language": "en"})
+
+    assert put.status_code == 200
+    assert put.json() == {"certification_region": "AU", "preferred_audio_language": "en"}
+    assert resolve_pipeline_settings(store).preferred_audio_language == "en"
+
+
+def test_saving_one_region_field_leaves_the_other_alone(client_and_deps):
+    """The panel sends one field at a time, so an absent key has to mean
+    "leave it" rather than "reset it" — otherwise picking a country
+    silently reverts the audio language to its default."""
+    client, store, _, _, _, _ = client_and_deps
+    client.put("/api/settings/region", json={"certification_region": "AU", "preferred_audio_language": "fr"})
+
+    client.put("/api/settings/region", json={"certification_region": "NZ"})
+
+    assert client.get("/api/settings/region").json() == {
+        "certification_region": "NZ",
+        "preferred_audio_language": "fr",
+    }
+
+
+def test_an_audio_language_no_container_uses_is_refused(client_and_deps):
+    """A code with no aliases on file would match no track in any file
+    and silently do nothing — the worst outcome for a setting whose job
+    is to stop people landing on audio they didn't pick."""
+    client, _, _, _, _, _ = client_and_deps
+
+    bad = client.put("/api/settings/region", json={"certification_region": "AU", "preferred_audio_language": "xx"})
+
+    assert bad.status_code == 422
+
+
+def test_the_pipeline_card_does_not_round_trip_the_audio_language(client_and_deps):
+    """One field, one panel that owns it. If it appeared here too, a save
+    on this card could write back a value it never showed."""
+    client, _, _, _, _, _ = client_and_deps
+
+    assert "preferred_audio_language" not in client.get("/api/settings/pipeline").json()

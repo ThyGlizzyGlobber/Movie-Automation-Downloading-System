@@ -38,6 +38,12 @@ class PipelineSettings:
     # Settings › Storage "Free-space floor": downloads that would leave
     # less than this many GB free are treated as not fitting.
     free_space_floor_gb: float = 0.0
+    # Settings › Region "Audio language": which audio track the organiser
+    # flags as default in the files it places. Plex's own preference is
+    # per account, so a release whose French track is flagged default
+    # plays French for every guest who hasn't changed their own settings.
+    # The flag lives in the file, so this is the only server-wide fix.
+    preferred_audio_language: str = "en"
 
     @classmethod
     def from_config(cls) -> "PipelineSettings":
@@ -53,6 +59,7 @@ class PipelineSettings:
             language_allowlist=tuple(config.LANGUAGE_ALLOWLIST),
             language_blocklist=tuple(config.LANGUAGE_BLOCKLIST),
             language_required=tuple(config.LANGUAGE_REQUIRED),
+            preferred_audio_language=config.PREFERRED_AUDIO_LANGUAGE,
         )
 
 
@@ -93,6 +100,7 @@ def settings_from_raw(saved: dict) -> PipelineSettings:
             else defaults.language_required
         ),
         free_space_floor_gb=float(saved.get("free_space_floor_gb") or 0.0),
+        preferred_audio_language=saved.get("preferred_audio_language") or defaults.preferred_audio_language,
     )
 
 

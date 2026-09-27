@@ -28,3 +28,28 @@ export const CERTIFICATION_REGIONS: { code: string; name: string }[] = [
   { code: 'US', name: 'United States' },
   { code: 'ZA', name: 'South Africa' },
 ]
+
+// Offered as the default audio track language. Mirrors the backend's
+// AUDIO_LANGUAGE_ALIASES (language.py) — a code missing from that table
+// would match no track in any container and silently do nothing.
+export const AUDIO_LANGUAGES: { code: string; name: string }[] = [
+  { code: 'en', name: 'English' },
+  { code: 'ar', name: 'Arabic' },
+  { code: 'zh', name: 'Chinese' },
+  { code: 'da', name: 'Danish' },
+  { code: 'nl', name: 'Dutch' },
+  { code: 'fi', name: 'Finnish' },
+  { code: 'fr', name: 'French' },
+  { code: 'de', name: 'German' },
+  { code: 'hi', name: 'Hindi' },
+  { code: 'it', name: 'Italian' },
+  { code: 'ja', name: 'Japanese' },
+  { code: 'ko', name: 'Korean' },
+  { code: 'no', name: 'Norwegian' },
+  { code: 'pl', name: 'Polish' },
+  { code: 'pt', name: 'Portuguese' },
+  { code: 'ru', name: 'Russian' },
+  { code: 'es', name: 'Spanish' },
+  { code: 'sv', name: 'Swedish' },
+  { code: 'tr', name: 'Turkish' },
+]

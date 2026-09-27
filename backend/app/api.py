@@ -1801,6 +1801,10 @@ def _pipeline_settings_out(store: RequestStore) -> dict:
     # settings), so it stays out of this panel's own round trip.
     out = asdict(resolve_pipeline_settings(store))
     out.pop("free_space_floor_gb", None)
+    # The audio language is edited on the Region card, for the same
+    # reason — one field, one panel that owns it, so a round trip here
+    # can't quietly write back a value this panel never showed.
+    out.pop("preferred_audio_language", None)
     return out
 
 
@@ -3180,17 +3184,47 @@ class RegionSettingsIn(BaseModel):
     # region it has nothing for simply falls back — see the frontend's
     # certificationOf.
     certification_region: str = Field(pattern=r"^[A-Z]{2}$")
+    # Which audio track the organiser flags as default in the files it
+    # places. Validated against the alias table rather than a pattern:
+    # a code with no aliases on file would match no track in any
+    # container and silently do nothing at all, which is the worst
+    # possible outcome for a setting whose whole job is to stop people
+    # landing on audio they didn't pick.
+    preferred_audio_language: str | None = None
+
+    @field_validator("preferred_audio_language")
+    @classmethod
+    def _known_audio_language(cls, v: str | None) -> str | None:
+        if v is None:
+            return v
+        code = v.strip().lower()
+        if code not in language.AUDIO_LANGUAGE_ALIASES:
+            raise ValueError(f"unknown audio language {v!r}")
+        return code
+
+
+def _region_settings_out(store: RequestStore) -> dict:
+    saved = store.get_settings()
+    return {
+        "certification_region": saved.get("certification_region") or DEFAULT_CERTIFICATION_REGION,
+        "preferred_audio_language": saved.get("preferred_audio_language") or config.PREFERRED_AUDIO_LANGUAGE,
+    }
 
 
 @admin_router.get("/api/settings/region")
 def get_region_settings(store: RequestStore = Depends(get_store)) -> dict:
-    return {"certification_region": store.get_settings().get("certification_region") or DEFAULT_CERTIFICATION_REGION}
+    return _region_settings_out(store)
 
 
 @admin_router.put("/api/settings/region")
 def set_region_settings(body: RegionSettingsIn, store: RequestStore = Depends(get_store)) -> dict:
-    store.update_settings({"certification_region": body.certification_region})
-    return {"certification_region": body.certification_region}
+    patch: dict = {"certification_region": body.certification_region}
+    # Absent means "leave it alone", not "reset it" — the panel sends one
+    # field at a time and the two are independent.
+    if body.preferred_audio_language is not None:
+        patch["preferred_audio_language"] = body.preferred_audio_language
+    store.update_settings(patch)
+    return _region_settings_out(store)
 
 
 @admin_router.get("/api/settings/library")

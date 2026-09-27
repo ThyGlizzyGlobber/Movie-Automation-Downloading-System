@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from app import config
+from app import config, media_organizer
 from app.media_organizer import (
     MediaOrganizerError,
     NoVideoFileError,
@@ -930,3 +930,83 @@ def test_organize_pack_files_an_appended_special_into_season_00(tmp_path, monkey
     # The tuple reports where the file went, not what the release called
     # it — the caller's ledger has to record the real place.
     assert (1, 9) not in by_key
+
+
+# ---------------------------------------------------------------------------
+# Default audio track — Plex's own audio preference is per account, so a
+# release whose French track is flagged default plays French for every
+# guest on the server. The flag lives in the file; this is where it moves.
+# ---------------------------------------------------------------------------
+
+
+def _ffprobe_audio(streams):
+    """ffprobe's -select_streams a JSON, shaped as the real one is."""
+    return json.dumps({"streams": streams})
+
+
+def _audio(index, lang, default=0):
+    return {"index": index, "tags": {"language": lang} if lang else {}, "disposition": {"default": default}}
+
+
+def _fake_probe(monkeypatch, payload, returncode=0):
+    def run(cmd, **kwargs):
+        return subprocess.CompletedProcess(cmd, returncode, stdout=payload, stderr="")
+
+    monkeypatch.setattr(media_organizer.subprocess, "run", run)
+
+
+def test_the_preferred_track_is_made_default_when_another_one_holds_it(monkeypatch, tmp_path):
+    """The reported case: a French release of an English-language film,
+    French flagged default, English sitting behind it."""
+    _fake_probe(monkeypatch, _ffprobe_audio([_audio(1, "fre", default=1), _audio(2, "eng")]))
+
+    args = media_organizer._audio_default_disposition(tmp_path / "f.mkv", "en")
+
+    assert args == ["-disposition:a:0", "0", "-disposition:a:1", "default"]
+
+
+def test_nothing_is_rewritten_when_the_preferred_track_is_already_default(monkeypatch, tmp_path):
+    """Most releases are already right, and this is what keeps them on
+    their free hardlink instead of paying for a remux to change nothing."""
+    _fake_probe(monkeypatch, _ffprobe_audio([_audio(1, "eng", default=1), _audio(2, "fre")]))
+
+    assert media_organizer._audio_default_disposition(tmp_path / "f.mkv", "en") == []
+
+
+def test_a_single_audio_track_is_left_alone(monkeypatch, tmp_path):
+    """Nothing to choose between, whatever it is tagged."""
+    _fake_probe(monkeypatch, _ffprobe_audio([_audio(1, "fre", default=1)]))
+
+    assert media_organizer._audio_default_disposition(tmp_path / "f.mkv", "en") == []
+
+
+def test_a_file_with_no_track_in_that_language_is_left_alone(monkeypatch, tmp_path):
+    """A Japanese film with no English dub keeps its own audio rather
+    than being pointed at a track that isn't there."""
+    _fake_probe(monkeypatch, _ffprobe_audio([_audio(1, "jpn", default=1), _audio(2, "kor")]))
+
+    assert media_organizer._audio_default_disposition(tmp_path / "f.mkv", "en") == []
+
+
+def test_an_untagged_track_is_not_assumed_to_be_the_preferred_one(monkeypatch, tmp_path):
+    _fake_probe(monkeypatch, _ffprobe_audio([_audio(1, "fre", default=1), _audio(2, None)]))
+
+    assert media_organizer._audio_default_disposition(tmp_path / "f.mkv", "en") == []
+
+
+def test_two_tracks_both_flagged_default_are_reduced_to_one(monkeypatch, tmp_path):
+    """Real files do carry this, and a player's behaviour with two
+    defaults is its own business — so say it once, explicitly."""
+    _fake_probe(monkeypatch, _ffprobe_audio([_audio(1, "eng", default=1), _audio(2, "fre", default=1)]))
+
+    args = media_organizer._audio_default_disposition(tmp_path / "f.mkv", "en")
+
+    assert args == ["-disposition:a:0", "default", "-disposition:a:1", "0"]
+
+
+def test_a_failed_probe_leaves_the_file_alone(monkeypatch, tmp_path):
+    """Same philosophy as the artwork probe above it: never block
+    organizing a file over this."""
+    _fake_probe(monkeypatch, "", returncode=1)
+
+    assert media_organizer._audio_default_disposition(tmp_path / "f.mkv", "en") == []

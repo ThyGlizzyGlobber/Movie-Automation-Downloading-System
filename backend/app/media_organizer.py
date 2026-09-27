@@ -27,6 +27,7 @@ from collections.abc import Callable
 from pathlib import Path, PurePosixPath
 
 from app import config
+from app.language import is_audio_language
 from app.normalize import has_token, normalize_text, tokenize
 from app.qbt import QBTClient
 from app.resolve import MediaIdentity
@@ -326,7 +327,65 @@ def _embedded_artwork_stream_indices(source: Path) -> list[int]:
     return indices
 
 
-def _strip_embedded_artwork(source: Path, target: Path, strip_indices: list[int]) -> bool:
+def _audio_default_disposition(source: Path, preferred: str) -> list[str]:
+    """ffmpeg arguments that make the `preferred`-language audio track the
+    default one, or an empty list when there is nothing worth doing.
+
+    Plex's audio-language preference is per Plex account, so a release
+    whose French track is flagged default plays in French for every
+    viewer who hasn't gone and changed their own settings — which is
+    every guest on the server. The flag lives in the file, so fixing it
+    here fixes it for everyone at once and needs nothing explained.
+
+    Returns nothing, rather than raising, whenever the question doesn't
+    arise or can't be answered: one audio track (nothing to choose
+    between), no track in the preferred language, the right track already
+    being the only default, or ffprobe failing. Each of those means the
+    caller should take its ordinary zero-cost hardlink.
+
+    Indices here are audio-relative, not the global stream index —
+    `-disposition:a:1` is the second *audio* stream, which is what ffmpeg
+    wants and what ffprobe's order gives us.
+    """
+    try:
+        result = subprocess.run(
+            [
+                "ffprobe", "-v", "error",
+                "-print_format", "json",
+                "-select_streams", "a",
+                "-show_entries", "stream=index:stream_tags=language:stream_disposition=default",
+                str(source),
+            ],
+            capture_output=True,
+            text=True,
+            timeout=config.FFPROBE_TIMEOUT_SECONDS,
+        )
+        streams = json.loads(result.stdout or "{}").get("streams", []) if result.returncode == 0 else []
+    except (OSError, subprocess.TimeoutExpired, ValueError) as exc:
+        logger.warning("ffprobe failed reading audio tracks of %r (%s); leaving them alone", str(source), exc)
+        return []
+
+    if len(streams) < 2:
+        return []
+
+    languages = [(stream.get("tags") or {}).get("language") for stream in streams]
+    wanted = next((i for i, tag in enumerate(languages) if is_audio_language(tag, preferred)), None)
+    if wanted is None:
+        return []
+
+    defaults = [bool((stream.get("disposition") or {}).get("default")) for stream in streams]
+    if defaults[wanted] and sum(defaults) == 1:
+        return []
+
+    args: list[str] = []
+    for i in range(len(streams)):
+        args += [f"-disposition:a:{i}", "default" if i == wanted else "0"]
+    return args
+
+
+def _strip_embedded_artwork(
+    source: Path, target: Path, strip_indices: list[int], extra_args: list[str] | None = None
+) -> bool:
     """Re-muxes `source` into `target`, dropping the given stream indices
     (embedded cover art) and stream-copying every other stream byte-for-
     byte (`-c copy`, no re-encode/no quality loss — near-instant even on a
@@ -342,11 +401,12 @@ def _strip_embedded_artwork(source: Path, target: Path, strip_indices: list[int]
     # extension, and a name ending in plain ".tmp" makes it refuse to
     # start at all ("Unable to choose an output format"), confirmed live
     # by this file's own test suite.
+    extra_args = extra_args or []
     tmp = target.with_name(f".{target.stem}.stripping.tmp{target.suffix}")
     cmd = ["ffmpeg", "-y", "-i", str(source), "-map", "0"]
     for index in strip_indices:
         cmd += ["-map", f"-0:{index}"]
-    cmd += ["-c", "copy", "-map_metadata", "0", str(tmp)]
+    cmd += ["-c", "copy", "-map_metadata", "0", *extra_args, str(tmp)]
     try:
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=config.FFMPEG_STRIP_TIMEOUT_SECONDS)
     except (OSError, subprocess.TimeoutExpired) as exc:
@@ -361,7 +421,7 @@ def _strip_embedded_artwork(source: Path, target: Path, strip_indices: list[int]
     return True
 
 
-def _link_or_copy(source: Path, target: Path) -> None:
+def _link_or_copy(source: Path, target: Path, preferred_audio_language: str | None = None) -> None:
     """Hardlinks `source` into `target` — the same safe pattern Sonarr/
     Radarr rely on: qBittorrent's own copy keeps seeding, untouched, while
     Plex sees a second, correctly-named reference to the same bytes at zero
@@ -386,9 +446,18 @@ def _link_or_copy(source: Path, target: Path) -> None:
     if target.exists() or target.is_symlink():
         target.unlink()
 
+    # Two reasons to write a real file instead of a hardlink, and they
+    # share the trip: there is no point remuxing twice. The hardlink is
+    # what makes an edit-in-place tool like mkvpropedit unusable here —
+    # the library copy and qBittorrent's are the same bytes, so editing
+    # one corrupts the torrent mid-seed.
     strip_indices = _embedded_artwork_stream_indices(source)
-    if strip_indices and _strip_embedded_artwork(source, target, strip_indices):
-        logger.info("stripped %d embedded-artwork stream(s) from %r while organizing", len(strip_indices), str(source))
+    disposition = _audio_default_disposition(source, preferred_audio_language) if preferred_audio_language else []
+    if (strip_indices or disposition) and _strip_embedded_artwork(source, target, strip_indices, disposition):
+        if strip_indices:
+            logger.info("stripped %d embedded-artwork stream(s) from %r while organizing", len(strip_indices), str(source))
+        if disposition:
+            logger.info("made the %s audio track default on %r while organizing", preferred_audio_language, str(target))
         return
 
     try:
@@ -405,7 +474,12 @@ def _link_or_copy(source: Path, target: Path) -> None:
 
 
 def organize_episode(
-    show_identity: ShowIdentity, season: int, episode: int, source_path: Path, title: str | None = None
+    show_identity: ShowIdentity,
+    season: int,
+    episode: int,
+    source_path: Path,
+    title: str | None = None,
+    preferred_audio_language: str | None = None,
 ) -> Path:
     """Places one episode's already-selected video file (see
     `select_video_file`) into Plex's library layout. Rename/place only
@@ -418,7 +492,7 @@ def organize_episode(
     source_path = Path(source_path)
     target = build_episode_path(show_identity, season, episode, source_path.suffix, title)
     target.parent.mkdir(parents=True, exist_ok=True)
-    _link_or_copy(source_path, target)
+    _link_or_copy(source_path, target, preferred_audio_language)
     return target
 
 
@@ -508,6 +582,7 @@ def organize_pack(
     qbt: QBTClient,
     release_name: str | None = None,
     place: Callable[[int, int], tuple[int, int, str | None]] | None = None,
+    preferred_audio_language: str | None = None,
 ) -> list[tuple[int, int, Path]]:
     """Stage 13: places every individually SxxEyy-identifiable file out of a
     completed season/complete-series pack torrent — an extension of
@@ -573,7 +648,7 @@ def organize_pack(
             )
         target = build_episode_path(show_identity, season, episode, source_path.suffix, title)
         target.parent.mkdir(parents=True, exist_ok=True)
-        _link_or_copy(source_path, target)
+        _link_or_copy(source_path, target, preferred_audio_language)
         placed.append((season, episode, target))
 
     if not placed:
@@ -591,7 +666,9 @@ def organize_pack(
     return placed
 
 
-def organize_movie(identity: MediaIdentity, source_path: Path) -> Path:
+def organize_movie(
+    identity: MediaIdentity, source_path: Path, preferred_audio_language: str | None = None
+) -> Path:
     """Places one movie's already-selected video file (see
     `select_video_file`) into a Plex-recognizable folder — the file's own
     name is kept exactly as-is; only the folder it sits in is renamed to
@@ -601,5 +678,5 @@ def organize_movie(identity: MediaIdentity, source_path: Path) -> Path:
     source_path = Path(source_path)
     target = build_movie_path(identity, source_path.name)
     target.parent.mkdir(parents=True, exist_ok=True)
-    _link_or_copy(source_path, target)
+    _link_or_copy(source_path, target, preferred_audio_language)
     return target

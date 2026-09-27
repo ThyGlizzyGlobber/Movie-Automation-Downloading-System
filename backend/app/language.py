@@ -72,3 +72,49 @@ def with_preferred_language(params: dict, region: str | None) -> dict:
     if "with_original_language" in params:
         return params
     return {**params, "with_original_language": primary_language(region)}
+
+
+# What a container calls a language, per ISO 639-1 code.
+#
+# ffprobe reports a track's language from the container's own metadata,
+# and containers disagree: MKV usually carries ISO 639-2/B ("fre", "ger",
+# "dut"), MP4 and some muxers carry 639-2/T ("fra", "deu", "nld"), and a
+# few carry the two-letter code. Matching one spelling finds a French
+# track in half the files that have one.
+AUDIO_LANGUAGE_ALIASES: dict[str, tuple[str, ...]] = {
+    "ar": ("ar", "ara"),
+    "da": ("da", "dan"),
+    "de": ("de", "deu", "ger"),
+    "en": ("en", "eng"),
+    "es": ("es", "spa"),
+    "fi": ("fi", "fin"),
+    "fr": ("fr", "fra", "fre"),
+    "hi": ("hi", "hin"),
+    "it": ("it", "ita"),
+    "ja": ("ja", "jpn"),
+    "ko": ("ko", "kor"),
+    "nl": ("nl", "nld", "dut"),
+    "no": ("no", "nor"),
+    "pl": ("pl", "pol"),
+    "pt": ("pt", "por"),
+    "ru": ("ru", "rus"),
+    "sv": ("sv", "swe"),
+    "tr": ("tr", "tur"),
+    "zh": ("zh", "zho", "chi"),
+}
+
+
+def is_audio_language(tag: str | None, code: str) -> bool:
+    """True when a track's own language tag names `code`.
+
+    An untagged track ("und", or nothing at all) is never a match. That
+    is deliberate rather than lenient: guessing that an unlabelled track
+    is the preferred one is how a household ends up defaulted onto a
+    commentary track or a foreign dub, and the whole point of this is to
+    stop people landing on audio they didn't choose."""
+    if not tag:
+        return False
+    tag = tag.strip().lower()
+    if tag in ("und", "unk", "mis", "zxx"):
+        return False
+    return tag in AUDIO_LANGUAGE_ALIASES.get(code.lower(), (code.lower(),))

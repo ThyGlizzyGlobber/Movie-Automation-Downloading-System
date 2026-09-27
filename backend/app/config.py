@@ -196,6 +196,11 @@ INFERRED_SD_SOURCES = (
 )
 MIN_RESOLUTION = "480p"
 
+# Which audio track the organiser flags as default in the files it
+# places — see media_organizer._audio_default_disposition. Overridden
+# per household in Settings › Region.
+PREFERRED_AUDIO_LANGUAGE = os.environ.get("PREFERRED_AUDIO_LANGUAGE", "en")
+
 YEAR_TOLERANCE = 1
 
 # The same check, loosened for a season or series *pack*.

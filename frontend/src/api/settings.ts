@@ -99,12 +99,17 @@ export function setLibrarySettings(body: {
 
 export interface RegionSettings {
   certification_region: string
+  /** ISO 639-1. Which audio track the organiser flags as default in the
+   *  files it places — see AUDIO_LANGUAGES. */
+  preferred_audio_language: string
 }
 
 export function getRegionSettings() {
   return request<RegionSettings>('/api/settings/region')
 }
 
-export function setRegionSettings(body: RegionSettings) {
+/** Partial on purpose: the panel saves one field at a time, and the
+ *  backend leaves an absent key alone rather than resetting it. */
+export function setRegionSettings(body: Partial<RegionSettings> & { certification_region: string }) {
   return putJson<RegionSettings>('/api/settings/region', body)
 }

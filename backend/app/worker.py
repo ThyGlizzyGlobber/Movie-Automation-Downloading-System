@@ -682,8 +682,9 @@ class Worker:
             title = await asyncio.to_thread(
                 episode_title_lookup(row.tmdb_id, self.tmdb), row.season_number, row.episode_number
             )
+            audio = (await asyncio.to_thread(resolve_pipeline_settings, self.store)).preferred_audio_language
             target_path = await asyncio.to_thread(
-                organize_episode, identity, row.season_number, row.episode_number, source_path, title
+                organize_episode, identity, row.season_number, row.episode_number, source_path, title, audio
             )
         except NoVideoFileError:
             message = await self._purge_no_video_torrent(torrent_hash, label)
@@ -727,7 +728,8 @@ class Worker:
             source_path = await asyncio.to_thread(
                 select_video_file, self.qbt, torrent_hash, config.QBIT_MOVIE_SAVE_PATH, config.MOVIE_LIBRARY_ROOT
             )
-            target_path = await asyncio.to_thread(organize_movie, identity, source_path)
+            audio = (await asyncio.to_thread(resolve_pipeline_settings, self.store)).preferred_audio_language
+            target_path = await asyncio.to_thread(organize_movie, identity, source_path, audio)
         except NoVideoFileError:
             message = await self._purge_no_video_torrent(torrent_hash, label)
             logger.warning("request %d (%s) downloading -> cancelled (%s)", row.id, label, message)
@@ -803,8 +805,9 @@ class Worker:
             # it doesn't. It also decides where a file goes, not just
             # what it is called; see episode_placement_lookup.
             place = episode_placement_lookup(row.tmdb_id, self.tmdb, identity.title)
+            audio = (await asyncio.to_thread(resolve_pipeline_settings, self.store)).preferred_audio_language
             placed = await asyncio.to_thread(
-                organize_pack, identity, torrent_hash, self.qbt, release_name, place
+                organize_pack, identity, torrent_hash, self.qbt, release_name, place, audio
             )
         except NoVideoFileError:
             message = await self._purge_no_video_torrent(torrent_hash, label)
