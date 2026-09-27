@@ -1,6 +1,6 @@
 """Self-hosted trailer cache for the home hero carousel — downloads a
 trailer once via yt-dlp and serves the local file directly, rather than
-embedding YouTube's own iframe. See api.py's get_movie_trailer/
+embedding YouTube's own iframe. See api/titles.py's get_movie_trailer/
 get_tv_trailer for why: YouTube's embed chrome (loading/buffering UI, and
 especially its Cards feature — an interactive overlay the uploader can
 configure at any timestamp, with no embed parameter or API call to

@@ -130,7 +130,7 @@ class PlexClient:
         just tells the user to "return to the app" by hand, which is the
         step that used to lose people — see LoginSession for what that
         cost. Optional because the caller can only supply it when it
-        knows the browser's own origin (api.py's `_return_url`)."""
+        knows the browser's own origin (api/auth.py's `_return_url`)."""
         params = {
             "clientID": self.client_id,
             "code": code,
@@ -245,7 +245,7 @@ class PlexClient:
         """Plex's own "Continue Watching" list for the linked server —
         `/library/onDeck`, every in-progress movie/episode with its
         `viewOffset`/`duration`. Backs the Home page's Continue watching
-        row. Raw Metadata dicts; api.py shapes them."""
+        row. Raw Metadata dicts; api/plex.py shapes them."""
         response = self.session.get(
             f"{server_url}/library/onDeck",
             headers={"Accept": "application/json", "X-Plex-Token": server_token},
@@ -564,7 +564,7 @@ class PlexLinker:
     the frontend a URL to open, then polls plex.tv itself until the
     browser-side login completes, resolves the account's owned server, and
     persists everything to settings. The frontend only ever polls this
-    app's own `/api/plex/status` — see api.py."""
+    app's own `/api/plex/status` — see api/plex.py."""
 
     def __init__(self, store):
         self.store = store

@@ -12,7 +12,7 @@ Two independent loops:
   actual bittorrent transfer happens inside qBittorrent, independent of
   this backend, so watching it shouldn't block the next queued request.
 
-"cancelled" is also reachable directly from the API (api.py's
+"cancelled" is also reachable directly from the API (api/requests.py's
 `POST /api/requests/{id}/cancel`), which deletes the torrent (and its
 files) from qBittorrent itself rather than waiting to notice it's gone.
 Either path keeps the request row — "download history", not a queue —
@@ -37,7 +37,7 @@ enqueues a normal episode `requests` row for every already-aired episode
 not yet handled — reusing `_process_queue`'s single pipeline lock and
 `_check_downloading`'s watcher completely unchanged, per the plan's
 "no second lock, no distributed queue" call. `check_show()` is the same
-code path api.py's `POST /api/shows` calls synchronously for the
+code path api/shows.py's `POST /api/shows` calls synchronously for the
 immediate post-subscribe catch-up — "add show mid-season" and "scheduled
 recheck" are one function, not two. Its wake-up interval is a real
 Settings-panel value (`tv_settings.TVScheduleSettings.show_check_interval_hours`),
@@ -307,7 +307,7 @@ class Worker:
             # Stage 15: copies explicitly rejected as genuinely defective (or
             # abandoned as stalled) on a prior attempt for this same
             # movie/show — excluded from this fresh search so it never
-            # re-selects the exact same bad release (see api.py's POST
+            # re-selects the exact same bad release (see api/requests.py's POST
             # /api/requests/{id}/reject).
             rejected_hashes, rejected_releases = await asyncio.to_thread(self._rejected_copies, row.tmdb_id)
             if row.media_type == "episode":
@@ -551,7 +551,7 @@ class Worker:
         re-queueing is the whole retry. Both are blacklisted, not just
         the hash — most winners are direct .torrent links that carry no
         hash to compare, so the name is what actually rules the release
-        out on the next pass (the same reason api.py's reject route does
+        out on the next pass (the same reason api/requests.py's reject route does
         both)."""
         result = dict(row.result or {})
         attempts = int(result.get("stall_attempts") or 1) + 1
@@ -608,7 +608,7 @@ class Worker:
                     await asyncio.to_thread(self.store.update_status, row.id, "cancelled", error_message=message)
                     continue
                 # Gone from qBittorrent without this app deleting it itself
-                # (api.py's cancel route sets "cancelled" directly and never
+                # (api/requests.py's cancel route sets "cancelled" directly and never
                 # reaches this branch). Two real causes look identical here:
                 # someone deleted it, or qBittorrent's own "remove torrent
                 # after completion" setting just cleaned up a *finished*
@@ -1424,7 +1424,7 @@ class Worker:
         normal episode request for every already-aired episode not yet
         handled. The *same* function backs both the scheduled recheck
         (`_check_all_watching_shows`, run every `show_check_interval_hours`
-        per `tv_settings.TVScheduleSettings`) and api.py's `POST /api/shows`
+        per `tv_settings.TVScheduleSettings`) and api/shows.py's `POST /api/shows`
         immediate post-subscribe catch-up —
         "add show mid-season" and "scheduled recheck" are one code path,
         per the plan. Specials (season 0) are excluded for free —

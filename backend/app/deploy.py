@@ -28,7 +28,7 @@ from app import config
 
 class DeployError(Exception):
     """Raised for any git-pull failure — not-a-repo, network, non-ff, or
-    timeout. api.py maps this straight to a 502."""
+    timeout. api/system.py maps this straight to a 502."""
 
 
 def _git(*args: str) -> subprocess.CompletedProcess:

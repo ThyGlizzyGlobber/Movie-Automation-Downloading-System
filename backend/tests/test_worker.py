@@ -1569,7 +1569,7 @@ def test_check_show_default_only_checks_the_latest_season_even_with_multiple_sea
 
 
 def test_check_show_full_backfill_bundles_a_complete_unhandled_prefix_into_one_range_pack():
-    """A first-time subscribe (api.py's POST /api/shows, full_backfill=True)
+    """A first-time subscribe (api/shows.py's POST /api/shows, full_backfill=True)
     to a show with nothing downloaded at all must grab everything already
     aired across every season, not just the newest — the gap this stage
     fixed. Seasons 1-2 have both finished airing and are both unhandled, so

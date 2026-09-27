@@ -8,7 +8,7 @@ Stage 2 and a casual edit could silently break the domination-margin
 guarantee between tiers. `PipelineSettings` is a plain dataclass so
 score.py/pipeline.py stay decoupled from the SQLite settings table (the
 "pipeline as a library" principle) — only `resolve_pipeline_settings()`
-(called from worker.py/api.py) touches the store.
+(called from worker.py/api/settings.py) touches the store.
 """
 
 from dataclasses import dataclass, replace
@@ -73,8 +73,8 @@ def settings_from_raw(saved: dict) -> PipelineSettings:
     a key that's absent or null falls back to the default, the same
     convention every other Settings-panel field already uses
     (request_retention_days). Takes a plain dict rather than a store so
-    api.py can validate a *prospective* merge (current row + an incoming
-    PUT's patch) before actually writing it — see api.py's
+    api/settings.py can validate a *prospective* merge (current row + an incoming
+    PUT's patch) before actually writing it — see api/settings.py's
     `set_pipeline_settings` for why that matters (a lone min_size_gb edit
     reverting max_size_gb to its default could otherwise silently invert
     the range)."""

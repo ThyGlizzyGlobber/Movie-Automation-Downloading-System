@@ -37,13 +37,13 @@ QBIT_PASSWORD = _QBIT_PASSWORD_ENV or ""
 #    an env-var user has already handled via infra-as-code, not tunable
 #    behavior every install is expected to configure through the UI.
 #
-#    Known, accepted gap: both api.py's lifespan (the worker's own
+#    Known, accepted gap: both api/main.py's lifespan (the worker's own
 #    TMDBClient/QBTClient) and its get_tmdb/get_qbt route dependencies
 #    resolve these only once, at startup — not per-request — so a value
 #    saved through the wizard needs a restart to actually take effect.
 #    (A per-request re-resolve was tried and reverted: it broke the test
 #    suite's fake-injection pattern for app.state.tmdb/app.state.qbt —
-#    see get_tmdb's own docstring in api.py.) Narrow in practice: setup
+#    see get_tmdb's own docstring in api/deps.py.) Narrow in practice: setup
 #    happens once, at first boot, before anything's depended on either
 #    value yet — the wizard's own final step can just say "restart to
 #    apply" rather than actually needing to solve this. --

@@ -9,7 +9,7 @@ per-episode auto-grab loop); this module accepts three pack shapes instead
 (`passes_series_pack_gate`) — never in a way that could let a pack sneak
 past the per-episode gate, since the two gates are wired to completely
 separate call paths (`pipeline.download_episode` vs `pipeline.download_pack`).
-Used both by an explicit user-triggered bulk download (api.py's
+Used both by an explicit user-triggered bulk download (api/shows.py's
 `POST /api/shows/{id}/bulk-download`) and, as of Stage 14.x,
 `worker.check_show()`'s own automatic pack preference for a season/show
 that's already finished airing — no longer manual-only.

@@ -17,7 +17,7 @@ class QBTError(RuntimeError):
 class QBTClient:
     def __init__(self, host: str, port: int, username: str = "", password: str = ""):
         # Stored alongside the real qbittorrentapi client (frontend
-        # migration Part E) so api.py's get_qbt dependency can tell
+        # migration Part E) so api/deps.py's get_qbt dependency can tell
         # whether the resolved config actually changed since this
         # instance was built, without needing its own separate tracking.
         self.host = host

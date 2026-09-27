@@ -64,7 +64,7 @@ def _lacks_digital_release(release_dates_by_country: list[dict]) -> bool:
     point of it. A digital release is a worldwide event as far as this
     app is concerned: once a copy exists it is on the indexers, whatever
     a territory's own paperwork says. The same reasoning already runs in
-    releaseWindow.ts's cascade and in api.py's _arriving_soon.
+    releaseWindow.ts's cascade and in api/hero.py's _arriving_soon.
 
     It used to ask one region and treat that region having no entry as
     evidence of no release, which is only safe where TMDB's coverage is
