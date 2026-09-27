@@ -1,0 +1,28 @@
+/* The poster grid Browse, Requests, Following, Search and a person's
+   page all lay their cards out in. Loaded with PosterCard rather than
+   with any one page: those pages are separate chunks, and a grid defined
+   in Browse's only existed on the others once Browse had been opened. */
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(var(--poster-w), 1fr));
+  gap: 20px 16px;
+  /* Symmetric: the grid's right edge lines up with the header, unlike
+     the scrolling rows which deliberately run off the right edge. */
+  padding-left: var(--row-inset);
+  padding-right: var(--row-inset);
+}
+.grid .poster-card {
+  width: auto;
+  min-width: 0;
+}
+.grid .poster-card img {
+  width: 100%;
+  height: auto;
+  aspect-ratio: 2 / 3;
+}
+/* Browse/person grids use a slightly smaller poster so the column
+   count stays close to the reference's seven across at desktop. */
+.grid.person-grid,
+.grid.category-grid {
+  --poster-w: clamp(104px, 12vw, 210px);
+}

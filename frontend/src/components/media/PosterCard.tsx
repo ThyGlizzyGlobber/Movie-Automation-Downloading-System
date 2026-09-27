@@ -4,6 +4,7 @@ import { posterUrl } from '../../lib/tmdbImage'
 import Img from '../ui/Img'
 import { genresFor } from '../../lib/genres'
 import './PosterCard.css'
+import './PosterGrid.css'
 
 export interface PosterCardItem {
   id: number

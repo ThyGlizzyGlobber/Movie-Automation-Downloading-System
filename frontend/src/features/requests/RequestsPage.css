@@ -104,34 +104,6 @@
   bottom: auto;
   top: calc(100% + 8px);
 }
-/* Also the Household panel's remove button in Settings. */
-.rq-circ {
-  width: 36px;
-  height: 36px;
-  border-radius: 50%;
-  border: none;
-  background: var(--glass);
-  color: var(--text);
-  font-size: 15px;
-  display: grid;
-  place-items: center;
-  transition: background 0.15s ease, color 0.15s ease;
-}
-.rq-circ:hover {
-  background: var(--btn-primary-bg);
-  color: var(--on-light);
-}
-.rq-circ.danger {
-  color: var(--status-failed);
-}
-.rq-circ.danger:hover {
-  background: color-mix(in srgb, var(--status-failed) 22%, transparent);
-  color: var(--status-failed);
-}
-.rq-circ[disabled] {
-  opacity: 0.5;
-}
-
 /* The grid already sits inside the page inset. */
 .rq .grid {
   padding-left: 0;
