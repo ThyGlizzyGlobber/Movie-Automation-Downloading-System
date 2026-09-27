@@ -11,7 +11,7 @@ from app.db import RequestStore
 from app.plex import local_file_for_title, plex_show_episodes
 from app.tmdb import TMDBClient, TMDBError, best_logo_path, is_movie_coming_soon, is_tv_upcoming, trailer_candidates
 from app.api.deps import get_store, get_tmdb, router
-from app.api.helpers import _on_plex_for
+from app.api.helpers import _annotate_on_plex, _on_plex_for
 
 
 # Cache filenames are always trailers.cached_trailer_path()'s own
@@ -77,6 +77,7 @@ def get_movie_detail(
     tracked = bool(store.get_library_items(tmdb_id, "movie")) or store.get_latest_organized_request(tmdb_id, ("movie",)) is not None
     return {
         **movie,
+        **_recommendations_on_plex(movie, "movie", store, title_key="title", date_key="release_date"),
         "on_plex": on_plex,
         # A file this app didn't add, but Plex can point at from here: enough
         # to offer "Replace it" and "This copy is broken" for it.
@@ -120,6 +121,20 @@ def get_movie_trailer(tmdb_id: int, tmdb: TMDBClient = Depends(get_tmdb)) -> dic
     return {"url": f"/api/trailers/{path.name}" if path else None}
 
 
+def _recommendations_on_plex(detail: dict, media_type: str, store: RequestStore, *, title_key: str, date_key: str) -> dict:
+    """The detail's "More like this" titles, carrying `on_plex` like every
+    other row. They arrive inside the detail's own append_to_response,
+    not through a list route, so they were the one row the annotation
+    never reached and never showed the On Plex badge. Returned as a key
+    to merge (empty when TMDB sent none), built on copies: get_movie and
+    get_tv are cached, and _annotate_on_plex never mutates."""
+    recs = detail.get("recommendations")
+    if not isinstance(recs, dict):
+        return {}
+    results = _annotate_on_plex(recs.get("results") or [], media_type, store, title_key=title_key, date_key=date_key)
+    return {"recommendations": {**recs, "results": results}}
+
+
 @router.get("/api/tv/{tmdb_id}")
 def get_tv_detail(tmdb_id: int, store: RequestStore = Depends(get_store), tmdb: TMDBClient = Depends(get_tmdb)) -> dict:
     """Full TMDB show detail — overview, seasons, status (Returning
@@ -138,6 +153,7 @@ def get_tv_detail(tmdb_id: int, store: RequestStore = Depends(get_store), tmdb: 
     have = _plex_episode_count(store, show.get("name") or "", year, tmdb_id) if on_plex else None
     return {
         **show,
+        **_recommendations_on_plex(show, "show", store, title_key="name", date_key="first_air_date"),
         "on_plex": on_plex,
         "plex_complete": bool(have is not None and have >= aired > 0),
         # How many episodes the household actually has, for the "On disk"

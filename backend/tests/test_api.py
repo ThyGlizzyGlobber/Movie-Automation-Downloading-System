@@ -1264,6 +1264,36 @@ def test_get_movie_detail_flags_is_coming_soon_for_a_theatrical_only_release(cli
     assert response.json()["is_coming_soon"] is True
 
 
+def test_detail_more_like_this_carries_on_plex(client_and_deps, monkeypatch):
+    """The "More like this" row rides in on the detail's own
+    append_to_response rather than a list route, and was the one row that
+    never got the On Plex badge."""
+    client, _, tmdb, _, _, _ = client_and_deps
+    owned = {("Owned Film", 2020), ("Owned Show", 2019)}
+    asked = set()
+
+    def lookup(store, media_type):
+        asked.add(media_type)
+        return lambda title, year, tmdb_id=None: (title, year) in owned
+
+    monkeypatch.setattr(helpers, "plex_library_lookup", lookup)
+    recs = [{"id": 1, "title": "Owned Film", "release_date": "2020-05-01"}, {"id": 2, "title": "Other Film", "release_date": "2021-01-01"}]
+    tmdb._movie = dict(MOVIE, recommendations={"page": 1, "results": recs})
+    show_recs = [{"id": 3, "name": "Owned Show", "first_air_date": "2019-02-02"}, {"id": 4, "name": "Other Show", "first_air_date": "2022-01-01"}]
+    monkeypatch.setattr(tmdb, "get_tv", lambda tmdb_id: dict(SHOW, id=tmdb_id, recommendations={"page": 1, "results": show_recs}))
+
+    movie = client.get("/api/movies/693134").json()
+    show = client.get("/api/tv/95350").json()
+
+    assert [r["on_plex"] for r in movie["recommendations"]["results"]] == [True, False]
+    assert movie["recommendations"]["page"] == 1
+    assert [r["on_plex"] for r in show["recommendations"]["results"]] == [True, False]
+    # Shows are looked up in Plex's show library, as the TV rows are.
+    assert "show" in asked
+    # The cached TMDB payload is left alone.
+    assert "on_plex" not in recs[0]
+
+
 def test_get_movie_detail_404s_on_unknown_tmdb_id(client_and_deps):
     client, _, tmdb, _, _, _ = client_and_deps
     tmdb._raise_on_get_movie = True
