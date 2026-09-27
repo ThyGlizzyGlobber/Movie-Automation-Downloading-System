@@ -3,7 +3,6 @@ import { useEffect, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { getPipelineSettings, getStorageDetails, setPipelineSettings } from '../../api/settings'
 import { listHousehold } from '../../api/admin'
-import { listRequests } from '../../api/requests'
 import { getRecentlyAdded } from '../../api/plex'
 import Avatar from '../../components/Avatar'
 import Icon from '../../components/Icon'
@@ -18,6 +17,7 @@ import { requestLabelAndHref } from '../../lib/requestGrouping'
 import type { RequestOut } from '../../types/requests'
 import { RESOLUTION_OPTIONS } from './PipelinePanel'
 import './DashboardPanel.css'
+import { useRequests } from '../../lib/useRequests'
 
 // Settings opens here: the household at a glance. Four numbers, the
 // library drive, who is downloading what right now, what Plex added
@@ -214,7 +214,7 @@ function QuickSettings() {
 
 export default function DashboardPanel({ onOpen }: { onOpen: (key: string) => void }) {
   const storage = useQuery({ queryKey: ['storage-details'], queryFn: getStorageDetails, refetchInterval: 30_000 })
-  const requests = useQuery({ queryKey: ['requests'], queryFn: () => listRequests(), refetchInterval: 5000 })
+  const requests = useRequests()
   const household = useQuery({ queryKey: ['household'], queryFn: listHousehold, staleTime: 60_000 })
   const recent = useQuery({ queryKey: ['plex-recently-added'], queryFn: getRecentlyAdded, staleTime: 120_000 })
 

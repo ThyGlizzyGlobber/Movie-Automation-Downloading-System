@@ -1,7 +1,7 @@
 import { NavLink } from 'react-router-dom'
 import Icon from './Icon'
 import { SECTIONS } from '../lib/sections'
-import { badgeLabel, useActiveRequestCount } from '../lib/useActiveRequestCount'
+import { badgeLabel, useActiveRequestCount } from '../lib/useRequests'
 import './Tabbar.css'
 
 // Phone navigation: the four sections plus search.

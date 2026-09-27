@@ -1,12 +1,13 @@
 import { useState, type MouseEvent } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { createRequest, listRequests } from '../api/requests'
+import { createRequest } from '../api/requests'
 import { createShow, listShows } from '../api/tv'
 import { posterUrl } from '../lib/tmdbImage'
 import { NON_TERMINAL, statusMeta } from '../lib/status'
 import { hitTitle, hitYear, type SearchHit } from '../lib/liveSearch'
 import { errorText, useToast } from '../lib/toast'
 import Icon from './Icon'
+import { useRequests } from '../lib/useRequests'
 
 // Live results inside the search palette (the reference's search sheet):
 // each row carries the action that fits its real state — Request (a
@@ -103,7 +104,7 @@ export default function SearchResults({
   // household already asked for shows its state instead of a second
   // Request button. Shared query keys with the Requests page / show
   // pages, so an action here refreshes those too.
-  const requests = useQuery({ queryKey: ['requests'], queryFn: () => listRequests(), staleTime: 15_000 })
+  const requests = useRequests()
   const shows = useQuery({ queryKey: ['shows'], queryFn: () => listShows(), staleTime: 15_000 })
 
   const activeByMovie = new Map<number, string>()

@@ -123,6 +123,7 @@ from app.tv_resolve import (
     aired_episode_numbers,
     episode_placement_lookup,
     episode_title_lookup,
+    identity_from_show,
     resolve_show,
     season_is_complete,
 )
@@ -582,11 +583,15 @@ class Worker:
         await asyncio.to_thread(self.store.update_status, row.id, "queued", None, result)
 
     async def _check_downloading(self) -> None:
+        tracked = []
         for row in await asyncio.to_thread(self.store.list_requests, "downloading"):
             torrent_hash = (row.result or {}).get("torrent_hash") or await self._adopt_untracked_torrent(row)
-            if not torrent_hash:
-                continue
-            info = await asyncio.to_thread(self.qbt.torrent_info, torrent_hash)
+            if torrent_hash:
+                tracked.append((row, torrent_hash))
+        # One qBittorrent round trip for the whole poll, not one per row.
+        infos = await asyncio.to_thread(self.qbt.torrents_info_many, [h for _, h in tracked]) if tracked else {}
+        for row, torrent_hash in tracked:
+            info = infos.get(torrent_hash.lower())
             if info is None:
                 if row.media_type in ("episode", "pack"):
                     # plex.has_in_library only supports a movie lookup
@@ -633,12 +638,12 @@ class Worker:
             else:
                 # Frontend migration Part J2 — the same live fraction this
                 # branch's own `>= 1` check above already reads, just no
-                # longer discarded once it's less than that. Persisted on
-                # every poll so the Requests queue can show a real
+                # longer discarded once it's less than that. Persisted
+                # whenever it moves so the Requests queue can show a real
                 # progress bar instead of an indeterminate "downloading"
-                # spinner.
+                # spinner — a paused or stalled torrent costs no write.
                 progress = info.get("progress")
-                if progress is not None:
+                if progress is not None and progress != row.download_progress:
                     await asyncio.to_thread(self.store.update_download_progress, row.id, progress)
 
     async def _adopt_untracked_torrent(self, row) -> str | None:
@@ -1308,9 +1313,7 @@ class Worker:
         return created
 
     def _pack_in_flight_for(self, show: ShowRow, season_number: int) -> bool:
-        for row in self.store.list_requests():
-            if row.media_type != "pack" or row.show_id != show.id or row.status not in NON_TERMINAL_STATUSES:
-                continue
+        for row in self.store.list_live_packs_for_show(show.id):
             if row.season_number is None:
                 return True  # whole series
             end = row.season_range_end if row.season_range_end is not None else row.season_number
@@ -1494,8 +1497,8 @@ class Worker:
         `show_episodes` marker — the ledger's job is knowing an episode is
         handled, not knowing how it got that way."""
         try:
-            identity = resolve_show(show.tmdb_id, self.tmdb)
             show_data = self.tmdb.get_tv(show.tmdb_id)
+            identity = identity_from_show(show.tmdb_id, show_data)
             latest_season = show_data.get("number_of_seasons")
         except TMDBError:
             logger.exception("show check: couldn't fetch TMDB data for show %d (%s)", show.id, show.title)

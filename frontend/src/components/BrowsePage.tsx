@@ -1,15 +1,14 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
 import { useSearchParams } from 'react-router-dom'
 import InfiniteGrid from './InfiniteGrid'
 import Icon from './Icon'
 import { browsePage, type BrowseList, type BrowseParams, type BrowseSort, type BrowseType } from '../api/browse'
-import { listRequests } from '../api/requests'
 import { CURATED_PROVIDERS } from '../lib/providers'
 import { counterpartGenre, genresFor } from '../lib/genres'
 import { usePageTitle } from '../lib/chrome'
 import type { TmdbListItem } from '../types/movies'
 import './BrowsePage.css'
+import { useRequests } from '../lib/useRequests'
 
 type Availability = 'all' | 'plex' | 'requested' | 'missing'
 
@@ -71,7 +70,7 @@ export default function BrowsePage() {
     update({ type: to, genre: genre ? counterpartGenre(type, genre) : null })
   }
 
-  const requests = useQuery({ queryKey: ['requests'], queryFn: () => listRequests(), refetchInterval: 5000 })
+  const requests = useRequests()
   const requestedIds = useMemo(() => {
     const ids = new Set<number>()
     for (const r of requests.data ?? []) {

@@ -3,10 +3,10 @@ import { useQuery } from '@tanstack/react-query'
 import { getDiscoverTrending, getMovie, searchMovies } from '../api/movies'
 import { getTvDiscoverTrending, getTvShow, searchTv } from '../api/tv'
 import { getOnDeck } from '../api/plex'
-import { listRequests } from '../api/requests'
 import { readRecentSearches } from '../lib/recentSearches'
 import PosterCard from './PosterCard'
 import type { TmdbListItem } from '../types/movies'
+import { useRequests } from '../lib/useRequests'
 
 // What the search palette shows before anything is typed: what's
 // trending, then one strip that takes turns each time the palette opens:
@@ -77,7 +77,7 @@ export default function SearchSuggestions({ onPick }: { onPick: () => void }) {
   })
 
   // Watching: the first Continue Watching item Plex can tie to a TMDB id.
-  const onDeck = useQuery({ queryKey: ['on-deck'], queryFn: getOnDeck, staleTime: 60_000 })
+  const onDeck = useQuery({ queryKey: ['plex-on-deck'], queryFn: getOnDeck, staleTime: 60_000 })
   const watching = (onDeck.data?.available ? onDeck.data.items : []).find((i) => i.tmdb_id != null) ?? null
   const watchingSeed: Seed | null = watching
     ? { kind: watching.media_type, id: watching.tmdb_id!, label: `Because you're watching ${watching.show_title || watching.title || 'this'}` }
@@ -97,7 +97,7 @@ export default function SearchSuggestions({ onPick }: { onPick: () => void }) {
 
   // Fallback when Plex has nothing on deck and nothing was searched yet.
   const needAsked = (onDeck.isFetched || onDeck.isError) && !watchingSeed && (!lastSearch || (searched.isFetched && !searchSeed))
-  const requests = useQuery({ queryKey: ['requests'], queryFn: () => listRequests(), staleTime: 30_000, enabled: needAsked })
+  const requests = useRequests()
   const asked = (requests.data ?? []).find((r) => r.media_type === 'movie' || r.media_type === 'episode' || r.media_type === 'pack') ?? null
   const askedSeed: Seed | null = asked ? { kind: asked.media_type === 'movie' ? 'movie' : 'tv', id: asked.tmdb_id, label: `Because you asked for ${asked.title}` } : null
 

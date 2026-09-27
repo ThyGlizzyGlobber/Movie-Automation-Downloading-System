@@ -5,7 +5,6 @@ import Img from '../../components/Img'
 import { Skel, SkelText } from '../../components/Skeleton'
 import '../../components/MediaRow.css'
 import { useQuery } from '@tanstack/react-query'
-import { listRequests } from '../../api/requests'
 import { locateOnPlex } from '../../api/plex'
 import { getMovieTrailer } from '../../api/movies'
 import { getTvTrailer } from '../../api/tv'
@@ -16,6 +15,7 @@ import type { CastMember } from '../../types/movies'
 import type { RequestOut } from '../../types/requests'
 import { DetailH4, type DetailTile } from './DetailShell'
 import { browseHref } from '../../api/browse'
+import { useRequests } from '../../lib/useRequests'
 
 export function DetailCast({ cast, limit = 16 }: { cast?: CastMember[]; limit?: number }) {
   const trackRef = useRef<HTMLDivElement>(null)
@@ -122,7 +122,7 @@ export function FactTiles({ tiles, four = true }: { tiles: DetailTile[]; four?: 
 
 // The household's requests for one title (newest first).
 export function useTitleRequests(tmdbId: number, kinds: RequestOut['media_type'][]) {
-  const query = useQuery({ queryKey: ['requests'], queryFn: () => listRequests(), refetchInterval: 8000 })
+  const query = useRequests()
   const rows = (query.data ?? []).filter((r) => r.tmdb_id === tmdbId && kinds.includes(r.media_type)).sort((a, b) => b.id - a.id)
   return rows
 }

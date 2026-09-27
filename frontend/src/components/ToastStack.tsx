@@ -1,11 +1,12 @@
 import Icon, { type IconName } from './Icon'
-import { useToast, type ToastTone } from '../lib/toast'
+import { useToast, useToastList, type ToastTone } from '../lib/toast'
 import './ToastStack.css'
 
 const TONE_ICON: Record<ToastTone, IconName> = { ok: 'check-circle', error: 'alert', info: 'download' }
 
 export default function ToastStack() {
-  const { toasts, dismiss } = useToast()
+  const toasts = useToastList()
+  const { dismiss } = useToast()
   if (!toasts.length) return null
   return (
     <div className="toast-stack" role="status" aria-live="polite">

@@ -90,6 +90,7 @@ class FakeQBTClient:
         self._torrent_files = torrent_files or {}
         self.added: list[tuple[str, str]] = []
         self.deleted: list[tuple[str, bool]] = []
+        self.info_batches: list[list[str]] = []
 
     def ping(self):
         return True
@@ -117,6 +118,10 @@ class FakeQBTClient:
 
     def torrent_info(self, torrent_hash):
         return self._torrent_states.get(torrent_hash)
+
+    def torrents_info_many(self, torrent_hashes):
+        self.info_batches.append(list(torrent_hashes))
+        return {h.lower(): self._torrent_states[h] for h in torrent_hashes if h in self._torrent_states}
 
     def torrent_files(self, torrent_hash):
         return self._torrent_files.get(torrent_hash, [])
@@ -420,6 +425,39 @@ def test_check_downloading_progress_updates_on_repeated_polls():
     asyncio.run(worker._check_downloading())
 
     assert store.get_request(row.id).download_progress == pytest.approx(0.75)
+
+
+def test_check_downloading_polls_every_torrent_in_one_call():
+    store = RequestStore(":memory:")
+    first = store.create_request(tmdb_id=693134, title="Dune: Part Two", release_year=2024, query=None)
+    second = store.create_request(tmdb_id=438631, title="Dune", release_year=2021, query=None)
+    store.update_status(first.id, "downloading", result={"torrent_hash": "aaaa"})
+    store.update_status(second.id, "downloading", result={"torrent_hash": "bbbb"})
+    qbt = FakeQBTClient(torrent_states={"aaaa": {"progress": 0.2}, "bbbb": {"progress": 0.6}})
+    worker = Worker(store, FakeTMDBClient(), qbt)
+
+    asyncio.run(worker._check_downloading())
+
+    assert len(qbt.info_batches) == 1
+    assert sorted(qbt.info_batches[0]) == ["aaaa", "bbbb"]
+    assert store.get_request(first.id).download_progress == pytest.approx(0.2)
+    assert store.get_request(second.id).download_progress == pytest.approx(0.6)
+
+
+def test_check_downloading_skips_the_write_when_progress_is_unchanged(monkeypatch):
+    store = RequestStore(":memory:")
+    row = store.create_request(tmdb_id=693134, title="Dune: Part Two", release_year=2024, query=None)
+    store.update_status(row.id, "downloading", result={"torrent_hash": "aaaa"})
+    qbt = FakeQBTClient(torrent_states={"aaaa": {"progress": 0.3}})
+    worker = Worker(store, FakeTMDBClient(), qbt)
+    asyncio.run(worker._check_downloading())
+
+    writes = []
+    monkeypatch.setattr(store, "update_download_progress", lambda *args: writes.append(args))
+    asyncio.run(worker._check_downloading())
+
+    assert writes == []
+    assert store.get_request(row.id).download_progress == pytest.approx(0.3)
 
 
 def test_check_downloading_marks_cancelled_when_torrent_is_gone():

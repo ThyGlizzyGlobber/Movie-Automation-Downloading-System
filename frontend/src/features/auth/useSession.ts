@@ -11,6 +11,9 @@ export function useSession(enabled = true) {
     queryKey: ['session'],
     queryFn: getSession,
     enabled,
+    // Re-asked on every return to the app, unlike the 5-minute default:
+    // that's how a revoked or expired session is noticed.
+    staleTime: 0,
     retry: false, // what's left to fail here is genuine: 401 comes back as data, not an error
   })
 }

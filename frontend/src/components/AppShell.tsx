@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Outlet, ScrollRestoration } from 'react-router-dom'
 import { ToastProvider } from '../lib/toast'
+import { usePollRequests } from '../lib/useRequests'
 import Topbar from './Topbar'
 import Tabbar from './Tabbar'
 import SearchOverlay from './SearchOverlay'
@@ -9,6 +10,7 @@ import TutorialOverlay from '../features/onboarding/TutorialOverlay'
 
 export default function AppShell() {
   const [searchOpen, setSearchOpen] = useState(false)
+  usePollRequests()
 
   // ⌘K / Ctrl+K opens the search palette from anywhere (the hint on the
   // top bar's search field).

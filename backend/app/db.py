@@ -756,6 +756,28 @@ class RequestStore:
         row = self._conn.execute("SELECT * FROM requests WHERE id = ?", (request_id,)).fetchone()
         return RequestRow._from_row(row) if row else None
 
+    def get_requests(self, request_ids) -> dict[int, RequestRow]:
+        """`get_request` for many ids in one query, keyed by id — missing
+        ids are simply absent."""
+        ids = list(set(request_ids))
+        if not ids:
+            return {}
+        placeholders = ",".join("?" for _ in ids)
+        rows = self._conn.execute(f"SELECT * FROM requests WHERE id IN ({placeholders})", ids).fetchall()
+        return {r["id"]: RequestRow._from_row(r) for r in rows}
+
+    def list_live_packs_for_show(self, show_id: int) -> list[RequestRow]:
+        """This show's pack requests still in flight (any scope), newest
+        first — what the show page and the scheduler check before treating
+        an episode as unrequested."""
+        placeholders = ",".join("?" for _ in NON_TERMINAL_STATUSES)
+        rows = self._conn.execute(
+            f"SELECT * FROM requests WHERE show_id = ? AND media_type = 'pack' AND status IN ({placeholders}) "
+            "ORDER BY id DESC",
+            (show_id, *NON_TERMINAL_STATUSES),
+        ).fetchall()
+        return [RequestRow._from_row(r) for r in rows]
+
     def get_latest_organized_request(self, tmdb_id: int, media_types: tuple[str, ...] = ("movie",)) -> RequestRow | None:
         """The most recent *complete*, genuinely-organized request for this
         title — i.e. one this app itself placed a file for and knows the

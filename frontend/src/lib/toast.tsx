@@ -17,13 +17,15 @@ export interface ToastItem extends ToastOptions {
   id: number
 }
 
-interface ToastContextValue {
-  toasts: ToastItem[]
+interface ToastActions {
   toast: (opts: ToastOptions) => void
   dismiss: (id: number) => void
 }
 
-const ToastContext = createContext<ToastContextValue | null>(null)
+// Two contexts so the pages that only ever raise a toast don't re-render
+// every time one appears or leaves; only ToastStack reads the list.
+const ToastContext = createContext<ToastActions | null>(null)
+const ToastListContext = createContext<ToastItem[]>([])
 const TOAST_MS = 5000
 
 export function ToastProvider({ children }: { children: ReactNode }) {
@@ -43,8 +45,12 @@ export function ToastProvider({ children }: { children: ReactNode }) {
     [dismiss],
   )
 
-  const value = useMemo(() => ({ toasts, toast, dismiss }), [toasts, toast, dismiss])
-  return <ToastContext.Provider value={value}>{children}</ToastContext.Provider>
+  const actions = useMemo(() => ({ toast, dismiss }), [toast, dismiss])
+  return (
+    <ToastContext.Provider value={actions}>
+      <ToastListContext.Provider value={toasts}>{children}</ToastListContext.Provider>
+    </ToastContext.Provider>
+  )
 }
 
 // Glass notices that slide in at the bottom corner (the reference's
@@ -53,6 +59,10 @@ export function useToast() {
   const ctx = useContext(ToastContext)
   if (!ctx) throw new Error('useToast must be used within ToastProvider')
   return ctx
+}
+
+export function useToastList(): ToastItem[] {
+  return useContext(ToastListContext)
 }
 
 export function errorText(err: unknown, fallback = 'Something went wrong'): string {

@@ -101,6 +101,15 @@ class QBTClient:
         results = self._client.torrents_info(torrent_hashes=torrent_hash)
         return dict(results[0]) if results else None
 
+    def torrents_info_many(self, torrent_hashes: list[str]) -> dict[str, dict]:
+        """`torrent_info` for several torrents in one WebUI call, keyed by
+        lowercased hash — the watcher polls every downloading row at once.
+        A hash qBittorrent no longer holds is simply absent."""
+        if not torrent_hashes:
+            return {}
+        results = self._client.torrents_info(torrent_hashes=list(torrent_hashes))
+        return {t.hash.lower(): dict(t) for t in results}
+
     def torrent_files(self, torrent_hash: str) -> list[dict]:
         """A completed (or in-progress) torrent's file list — name (relative
         to its `save_path`, may include subfolders for a multi-file

@@ -243,8 +243,12 @@ def _finished_seasons(show: dict, today: str | None = None) -> int | None:
 
 
 def resolve_show(tmdb_id: int, client: TMDBClient) -> ShowIdentity:
-    show = client.get_tv(tmdb_id)
+    return identity_from_show(tmdb_id, client.get_tv(tmdb_id))
 
+
+def identity_from_show(tmdb_id: int, show: dict) -> ShowIdentity:
+    """`resolve_show` for a caller that already holds the `get_tv` payload
+    and needs it too, so the same show isn't fetched twice."""
     title = show.get("name") or show.get("original_name") or ""
     original_title = show.get("original_name") or title
     first_air_date = show.get("first_air_date") or ""

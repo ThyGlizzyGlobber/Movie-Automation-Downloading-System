@@ -847,3 +847,29 @@ def test_purge_deletes_the_row_once_its_cleanup_has_run():
 
     assert store.purge_requests_older_than(days=1) == 1
     assert store.get_request(row.id) is None
+
+
+def test_list_live_packs_for_show_keeps_only_this_shows_in_flight_packs_newest_first():
+    store = RequestStore(":memory:")
+    show = store.create_show(tmdb_id=1, title="A")
+    other = store.create_show(tmdb_id=2, title="B")
+    older = store.create_pack_request(tmdb_id=1, show_id=show.id, title="A", season_number=1)
+    newer = store.create_pack_request(tmdb_id=1, show_id=show.id, title="A", season_number=None)
+    done = store.create_pack_request(tmdb_id=1, show_id=show.id, title="A", season_number=2)
+    store.update_status(done.id, "complete")
+    store.create_pack_request(tmdb_id=2, show_id=other.id, title="B", season_number=1)
+    store.create_episode_request(tmdb_id=1, show_id=show.id, title="A", season_number=1, episode_number=1)
+
+    assert [r.id for r in store.list_live_packs_for_show(show.id)] == [newer.id, older.id]
+
+
+def test_get_requests_fetches_many_rows_by_id_in_one_call():
+    store = RequestStore(":memory:")
+    a = store.create_request(tmdb_id=1, title="A", release_year=2020, query=None)
+    b = store.create_request(tmdb_id=2, title="B", release_year=2021, query=None)
+
+    rows = store.get_requests([a.id, b.id, a.id, 999])
+
+    assert set(rows) == {a.id, b.id}
+    assert rows[b.id].title == "B"
+    assert store.get_requests([]) == {}

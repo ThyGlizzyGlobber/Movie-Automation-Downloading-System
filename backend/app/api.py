@@ -62,7 +62,7 @@ from app.plex import (
 from app.qbt import QBTClient
 from app.resolve import resolve
 from app.tmdb import BROWSE_SORTS, TMDBClient, TMDBError, best_logo_path, is_movie_coming_soon, is_tv_upcoming, trailer_candidates
-from app.tv_resolve import episode_is_released, resolve_show
+from app.tv_resolve import ShowIdentity, episode_is_released, resolve_show
 from app.tv_settings import resolve_tv_settings
 from app.tvmaze import TVMazeClient, season_airstamps
 from app.worker import Worker
@@ -651,15 +651,14 @@ def _show_out(store: RequestStore, row: ShowRow) -> ShowOut:
 _tvmaze = TVMazeClient()
 
 
-def _season_airstamps_for(tmdb_id: int, season_number: int, tmdb: TMDBClient) -> dict[int, datetime]:
+def _season_airstamps_for(identity: ShowIdentity | None, season_number: int) -> dict[int, datetime]:
     """`{episode_number: released_at_utc}` from TVmaze for one season, so
     the show page and the per-episode request route hold an episode for
     the same window the worker does — measured from its real release
-    rather than midnight UTC on TMDB's date. `{}` on any failure, which
-    falls back to the date rule (tv_resolve.episode_is_released)."""
-    try:
-        identity = resolve_show(tmdb_id, tmdb)
-    except TMDBError:
+    rather than midnight UTC on TMDB's date. `{}` on any failure (the
+    caller's own `resolve_show` included, passed as `None`), which falls
+    back to the date rule (tv_resolve.episode_is_released)."""
+    if identity is None:
         return {}
     return season_airstamps(_tvmaze.airstamps_for_show(identity.tvdb_id, identity.imdb_id), season_number)
 
@@ -2371,20 +2370,20 @@ def get_season_episodes(
     per_episode: dict[int, RequestRow] = {}
     covering_packs: list[RequestRow] = []
     if show is not None:
-        for ledger in store.list_show_episodes(show.id):
-            if ledger.season_number == season_number:
-                row = store.get_request(ledger.request_id)
-                if row is not None:
-                    per_episode[ledger.episode_number] = row
-        for row in store.list_requests():
-            if row.media_type != "pack" or row.show_id != show.id or row.status not in NON_TERMINAL_STATUSES:
-                continue
+        ledgers = [ledger for ledger in store.list_show_episodes(show.id) if ledger.season_number == season_number]
+        rows_by_id = store.get_requests(ledger.request_id for ledger in ledgers)
+        for ledger in ledgers:
+            row = rows_by_id.get(ledger.request_id)
+            if row is not None:
+                per_episode[ledger.episode_number] = row
+        for row in store.list_live_packs_for_show(show.id):
             start = row.season_number
             end = row.season_range_end if row.season_range_end is not None else start
             if start is None or (start <= season_number <= end):
                 covering_packs.append(row)
     numbers = [e.get("episode_number") for e in episodes if e.get("episode_number") is not None]
     on_disk: dict[int, object] = {}
+    identity = None
     try:
         identity = resolve_show(tmdb_id, tmdb)
         on_disk = find_existing_episode_files(identity, season_number, numbers)
@@ -2397,7 +2396,7 @@ def get_season_episodes(
     # exact window the setting exists to sit out.
     today = datetime.now(timezone.utc).date().isoformat()
     buffer_hours = resolve_tv_settings(store).episode_air_buffer_hours
-    stamps = _season_airstamps_for(tmdb_id, season_number, tmdb) if buffer_hours else {}
+    stamps = _season_airstamps_for(identity, season_number) if buffer_hours else {}
     out = []
     for ep in episodes:
         number = ep.get("episode_number")
@@ -2456,6 +2455,7 @@ def request_episode(
     button). Same ledger the subscription scheduler uses, so the two never
     double-request the same episode; 409 if it is already tracked."""
     show = store.get_show_by_tmdb_id(tmdb_id)
+    identity = None
     if show is None:
         try:
             identity = resolve_show(tmdb_id, tmdb)
@@ -2479,7 +2479,12 @@ def request_episode(
         air_date = next(
             (e.get("air_date") for e in episodes if e.get("episode_number") == episode_number), None
         )
-        stamps = _season_airstamps_for(tmdb_id, season_number, tmdb)
+        if identity is None:
+            try:
+                identity = resolve_show(tmdb_id, tmdb)
+            except TMDBError:
+                pass
+        stamps = _season_airstamps_for(identity, season_number)
         if air_date and not episode_is_released(air_date, stamps.get(episode_number), buffer_hours=buffer_hours):
             raise HTTPException(
                 status_code=409,
@@ -2545,21 +2550,30 @@ def _directory_bytes(root) -> int | None:
 @router.get("/api/storage/details")
 async def get_storage_details(store: RequestStore = Depends(get_store)) -> dict:
     """The Settings storage panel: the disk from /api/storage plus how much
-    of it each library holds, and request throughput counters."""
-    disk = get_storage()
-    movie_bytes, tv_bytes = await asyncio.gather(
+    of it each library holds, and request throughput counters. Stays
+    async so the two library walks run side by side; everything else that
+    blocks (disk stat, SQLite counts) goes to a thread with them."""
+    disk, movie_bytes, tv_bytes, counters = await asyncio.gather(
+        asyncio.to_thread(get_storage),
         asyncio.to_thread(_directory_bytes, config.MOVIE_LIBRARY_ROOT),
         asyncio.to_thread(_directory_bytes, config.TV_LIBRARY_ROOT),
+        asyncio.to_thread(_request_counters, store),
     )
-    now = datetime.now(timezone.utc)
-    day_start = now.replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
-    week_start = (now - timedelta(days=7)).isoformat()
     return {
         **disk,
         "libraries": [
             {"key": "movies", "label": "Movies", "root": str(config.MOVIE_LIBRARY_ROOT), "bytes": movie_bytes},
             {"key": "tv", "label": "TV", "root": str(config.TV_LIBRARY_ROOT), "bytes": tv_bytes},
         ],
+        **counters,
+    }
+
+
+def _request_counters(store: RequestStore) -> dict:
+    now = datetime.now(timezone.utc)
+    day_start = now.replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
+    week_start = (now - timedelta(days=7)).isoformat()
+    return {
         "downloading": store.count_requests_with_status("downloading"),
         "queued": store.count_requests_with_status("queued") + store.count_requests_with_status("searching"),
         "completed_today": store.count_completed_since(day_start),
@@ -3035,10 +3049,7 @@ class HouseholdUserIn(BaseModel):
 
 @admin_router.get("/api/admin/users")
 def list_household(store: RequestStore = Depends(get_store)) -> list[HouseholdUserOut]:
-    counts: dict[str, int] = {}
-    for r in store.list_requests():
-        if r.requested_by_plex_id:
-            counts[r.requested_by_plex_id] = counts.get(r.requested_by_plex_id, 0) + 1
+    counts = {s["plex_user_id"]: s["total_requests"] for s in store.get_requester_stats()}
     return [
         HouseholdUserOut(
             plex_user_id=u.plex_user_id,

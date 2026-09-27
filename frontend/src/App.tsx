@@ -1,11 +1,15 @@
+import { lazy, Suspense } from 'react'
 import { RouterProvider } from 'react-router-dom'
 import { useSetupStatus } from './features/setup/useSetupStatus'
 import { useSession } from './features/auth/useSession'
-import SetupWizard from './features/setup/SetupWizard'
-import LoginPage from './features/auth/LoginPage'
 import BootSkeleton from './components/BootSkeleton'
 import ErrorState from './components/ErrorState'
 import { router } from './router/routes'
+
+// Seen once per install and once per sign-in, so neither rides in the
+// bundle every signed-in visit downloads.
+const SetupWizard = lazy(() => import('./features/setup/SetupWizard'))
+const LoginPage = lazy(() => import('./features/auth/LoginPage'))
 
 function App() {
   const setupStatus = useSetupStatus()
@@ -16,7 +20,13 @@ function App() {
   if (setupStatus.isError) {
     return <ErrorState message={setupStatus.error instanceof Error ? setupStatus.error.message : undefined} />
   }
-  if (!setupComplete) return <SetupWizard />
+  if (!setupComplete) {
+    return (
+      <Suspense fallback={<BootSkeleton />}>
+        <SetupWizard />
+      </Suspense>
+    )
+  }
 
   // Three states, told apart by the value rather than by the query's
   // status: `undefined` is the question still open (never asked, or the
@@ -29,7 +39,13 @@ function App() {
     return <ErrorState message={session.error instanceof Error ? session.error.message : undefined} />
   }
   if (session.data === undefined) return <BootSkeleton />
-  if (session.data === null) return <LoginPage />
+  if (session.data === null) {
+    return (
+      <Suspense fallback={<BootSkeleton />}>
+        <LoginPage />
+      </Suspense>
+    )
+  }
 
   return <RouterProvider router={router} />
 }

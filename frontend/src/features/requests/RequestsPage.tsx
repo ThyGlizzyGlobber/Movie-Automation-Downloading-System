@@ -1,7 +1,7 @@
 import { Link } from 'react-router-dom'
 import { useCallback, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { listRequests, clearRequests } from '../../api/requests'
+import { clearRequests } from '../../api/requests'
 import { getRetention, setRetention } from '../../api/settings'
 import { useSession } from '../auth/useSession'
 import Icon from '../../components/Icon'
@@ -20,6 +20,7 @@ import { errorText, useToast } from '../../lib/toast'
 import type { RequestOut } from '../../types/requests'
 import RequestSheet from './RequestSheet'
 import './RequestsPage.css'
+import { useRequests } from '../../lib/useRequests'
 
 type Filter = 'all' | 'active' | 'plex' | 'failed'
 const FILTERS: { id: Filter; label: string }[] = [
@@ -152,7 +153,7 @@ export default function RequestsPage() {
   const isAdmin = !!session.data?.is_admin
   const { toast } = useToast()
 
-  const requestsQuery = useQuery({ queryKey: ['requests'], queryFn: () => listRequests(), refetchInterval: 5000 })
+  const requestsQuery = useRequests()
   // Auto-clear is an admin-only policy; everyone else just gets Clear.
   const retentionQuery = useQuery({ queryKey: ['retention'], queryFn: () => getRetention(), enabled: isAdmin })
 
