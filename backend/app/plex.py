@@ -23,6 +23,7 @@ from pathlib import Path
 import requests
 
 from app.cache import TTLCache
+from app.language import is_audio_language
 from app.normalize import normalize_text, titles_match
 
 PLEX_TV_BASE = "https://plex.tv"
@@ -368,6 +369,57 @@ class PlexClient:
                 }
             )
         return out
+
+    def section_items(self, server_url: str, server_token: str, section_key: str, item_type: int) -> list[dict]:
+        """Every item of one type in a section — `1` movies, `4`
+        episodes. Paged, because a library of any size exceeds whatever
+        Plex feels like returning in one go."""
+        out: list[dict] = []
+        start, page = 0, 500
+        while True:
+            response = self.session.get(
+                f"{server_url}/library/sections/{section_key}/all",
+                headers={
+                    "Accept": "application/json",
+                    "X-Plex-Token": server_token,
+                    "X-Plex-Container-Start": str(start),
+                    "X-Plex-Container-Size": str(page),
+                },
+                params={"type": item_type},
+                timeout=30,
+            )
+            if not response.ok:
+                raise PlexError(f"Plex section listing failed: {response.status_code}")
+            batch = response.json().get("MediaContainer", {}).get("Metadata", []) or []
+            out += batch
+            if len(batch) < page:
+                return out
+            start += page
+
+    def select_audio_stream(self, server_url: str, server_token: str, part_id: str, stream_id: str) -> None:
+        """Tells Plex which audio track this part should use.
+
+        The file's own default flag only decides Plex's *first* choice.
+        Plex records what it picked when the item was scanned and keeps
+        it — neither Refresh Metadata nor Analyze revisits it — so a
+        default flag corrected afterwards changes nothing on its own.
+        Confirmed live 2026-09-27 on Supernatural s14e01: Plex reported
+        the English track as `default` and the Italian one as
+        `selected`, which is exactly the split this closes.
+
+        This is the same call Plex Web makes when someone picks a track
+        from an item's page rather than mid-playback, and it is stored
+        against the part rather than against a viewer, which is what
+        makes it reach everyone.
+        """
+        response = self.session.put(
+            f"{server_url}/library/parts/{part_id}",
+            headers={"Accept": "application/json", "X-Plex-Token": server_token},
+            params={"audioStreamID": stream_id, "allParts": "1"},
+            timeout=15,
+        )
+        if not response.ok:
+            raise PlexError(f"Plex audio-track selection failed: {response.status_code}")
 
     def refresh_section(self, server_url: str, server_token: str, section_key: str, path: str | None = None) -> None:
         """Asks Plex to scan one library — the whole section, or only
@@ -737,6 +789,89 @@ class LoginSession:
         a session, so one finished sign-in is one session and a replayed
         poll gets nothing."""
         self._discard(attempt_id)
+
+
+@dataclass
+class AudioSelection:
+    """One part whose selected audio track isn't the one the household
+    asked for."""
+
+    title: str
+    part_id: str
+    stream_id: str
+    from_language: str | None
+    to_language: str
+    languages: list[str]
+
+
+def plan_audio_selection(store, client: "PlexClient", preferred: str) -> list[AudioSelection]:
+    """Every part in Plex whose chosen audio track should change.
+
+    Reads Plex rather than the filesystem on purpose: the question here
+    is not what the file says but what Plex decided, and those two
+    disagree for every file whose flag was corrected after Plex had
+    already scanned it.
+
+    Items with one audio track are skipped without a lookup, and an item
+    already on the right language is left alone — the point is to change
+    as little as possible.
+    """
+    settings = store.get_settings()
+    url, token = settings.get("plex_server_url"), settings.get("plex_server_token")
+    if not url or not token:
+        raise PlexError("no Plex server is linked yet")
+
+    out: list[AudioSelection] = []
+    for section in client.sections(url, token):
+        item_type = 1 if section["type"] == "movie" else 4 if section["type"] == "show" else None
+        if item_type is None:
+            continue
+        for item in client.section_items(url, token, section["key"], item_type):
+            detail = client.metadata(url, token, str(item.get("ratingKey")))
+            if not detail:
+                continue
+            label = " - ".join(
+                x for x in (detail.get("grandparentTitle"), detail.get("title")) if x
+            ) or str(item.get("ratingKey"))
+            for media in detail.get("Media", []) or []:
+                for part in media.get("Part", []) or []:
+                    audio = [st for st in (part.get("Stream") or []) if st.get("streamType") == 2]
+                    if len(audio) < 2:
+                        continue
+                    # Plex reports ISO 639-2 ("eng", "ita") while the
+                    # setting is 639-1 ("en"), so these go through the
+                    # same alias table the organiser uses rather than a
+                    # string compare — which matched nothing at all.
+                    current = next((st for st in audio if st.get("selected")), None)
+                    if current is not None and is_audio_language(current.get("languageCode"), preferred):
+                        continue
+                    wanted = next(
+                        (st for st in audio if is_audio_language(st.get("languageCode"), preferred)), None
+                    )
+                    if wanted is None:
+                        continue
+                    out.append(
+                        AudioSelection(
+                            title=label,
+                            part_id=str(part.get("id")),
+                            stream_id=str(wanted.get("id")),
+                            from_language=(current or {}).get("languageCode"),
+                            to_language=preferred,
+                            languages=[(st.get("languageCode") or "?") for st in audio],
+                        )
+                    )
+    return out
+
+
+def apply_audio_selection(store, client: "PlexClient", choice: AudioSelection) -> str | None:
+    """Makes one selection stick. None on success, the reason otherwise."""
+    settings = store.get_settings()
+    url, token = settings.get("plex_server_url"), settings.get("plex_server_token")
+    try:
+        client.select_audio_stream(url, token, choice.part_id, choice.stream_id)
+    except (PlexError, requests.RequestException) as exc:
+        return str(exc)
+    return None
 
 
 def refresh_after_import(store, media_type: str, organized_path: str | None) -> bool:

@@ -20,6 +20,7 @@ from app.media_organizer import (
 )
 from app.pipeline_settings import resolve_pipeline_settings
 from app.pipeline import download, download_episode, download_pack
+from app.plex import PlexClient, PlexError, apply_audio_selection, plan_audio_selection
 from app.qbt import QBTClient
 from app.reconcile import remove_orphaned_download_dirs, remove_redundant_sources
 from app.resolve import resolve
@@ -411,6 +412,47 @@ def cmd_convert_to_mkv(args: argparse.Namespace) -> int:
     return 1 if failures else 0
 
 
+def cmd_fix_plex_audio(args: argparse.Namespace) -> int:
+    """Makes Plex actually use the audio track the files now ask for.
+
+    fix-audio-defaults corrects the file; this corrects Plex. They are
+    two jobs because a file's default flag only decides Plex's *first*
+    choice — Plex records what it picked when the item was scanned and
+    keeps it, and neither Refresh Metadata nor Analyze revisits that.
+    So every file fixed after Plex had already seen it still plays the
+    old track, which is precisely what happened here."""
+    store = RequestStore(config.DB_PATH)
+    try:
+        language = args.language or resolve_pipeline_settings(store).preferred_audio_language
+        client = PlexClient(store.get_settings().get("plex_client_id") or "obsidian-cli")
+        print(f"asking Plex which parts are not on {language}...")
+        try:
+            choices = plan_audio_selection(store, client, language)
+        except PlexError as exc:
+            print(f"  {exc}")
+            return 1
+
+        for choice in choices:
+            arrow = f"{choice.from_language or 'none'} -> {choice.to_language}"
+            print(f"  {'SET  ' if args.apply else 'WOULD'}  [{' '.join(choice.languages)}]  {arrow}  {choice.title[:60]}")
+
+        if not args.apply:
+            print(f"\n{len(choices)} part(s) would change. Re-run with --apply to set them.")
+            print("This changes which track Plex picks, for everyone — no file is touched.")
+            return 0
+
+        failures = 0
+        for choice in choices:
+            error = apply_audio_selection(store, client, choice)
+            if error:
+                failures += 1
+                print(f"  FAILED {choice.title[:60]}: {error}")
+        print(f"\n{len(choices) - failures} part(s) changed, {failures} failed.")
+        return 1 if failures else 0
+    finally:
+        store.close()
+
+
 def cmd_fix_audio_defaults(args: argparse.Namespace) -> int:
     """Backfill: the organiser only sees a file on its way in, so
     everything filed before it learned this keeps whatever default its
@@ -584,6 +626,17 @@ def main(argv: list[str] | None = None) -> int:
         help="Only do this many files. Safe to stop and resume — a converted file is no longer work.",
     )
     mkv_parser.set_defaults(func=cmd_convert_to_mkv)
+
+    plex_audio_parser = subparsers.add_parser(
+        "fix-plex-audio",
+        help="Make Plex use the preferred-language audio track on items it already scanned "
+        "(dry run unless --apply)",
+    )
+    plex_audio_parser.add_argument("--apply", action="store_true", help="Actually set them in Plex")
+    plex_audio_parser.add_argument(
+        "--language", default=None, help="ISO 639-1 code. Defaults to Settings > Region."
+    )
+    plex_audio_parser.set_defaults(func=cmd_fix_plex_audio)
 
     args = parser.parse_args(argv)
     return args.func(args)

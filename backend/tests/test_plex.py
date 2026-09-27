@@ -3,6 +3,7 @@ import itertools
 
 import pytest
 
+from app import plex
 from app.db import RequestStore
 from app.plex import LibraryIndex, LoginSession, PlexClient, PlexError, PlexLinker, has_in_library, plex_library_lookup
 
@@ -774,3 +775,118 @@ def test_login_session_reports_a_live_attempt_as_pending(monkeypatch):
     asyncio.run(run())
 
     assert seen["status"] == {"pending": True, "result": None, "error": None}
+
+
+# ---------------------------------------------------------------------------
+# Which audio track Plex actually uses.
+#
+# A file's default flag only decides Plex's first choice. Plex records what
+# it picked when the item was scanned and keeps it — Refresh Metadata and
+# Analyze both leave it alone — so a flag corrected afterwards changes
+# nothing. Confirmed live 2026-09-27 on Supernatural s14e01, where Plex
+# reported the English track as `default` and the Italian one as
+# `selected`, having re-read the file correctly.
+# ---------------------------------------------------------------------------
+
+
+class _FakePlex:
+    def __init__(self, items):
+        self._items = items
+        self.selected = []
+
+    def sections(self, url, token):
+        return [{"key": "2", "type": "show", "title": "TV Shows", "locations": []}]
+
+    def section_items(self, url, token, key, item_type):
+        return [{"ratingKey": k} for k in self._items]
+
+    def metadata(self, url, token, rating_key):
+        return self._items[rating_key]
+
+    def select_audio_stream(self, url, token, part_id, stream_id):
+        self.selected.append((part_id, stream_id))
+
+
+def _episode(title, streams):
+    return {
+        "title": title,
+        "Media": [{"Part": [{"id": f"part-{title}", "Stream": streams}]}],
+    }
+
+
+def _audio(sid, lang, default=False, selected=False):
+    return {"id": sid, "streamType": 2, "languageCode": lang, "default": default, "selected": selected}
+
+
+def _store(tmp_path):
+    store = RequestStore(str(tmp_path / "t.db"))
+    store.update_settings({"plex_server_url": "http://plex:32400", "plex_server_token": "tok"})
+    return store
+
+
+def test_a_part_plex_left_on_the_wrong_track_is_planned(tmp_path):
+    """The live case: Plex read the corrected flag and kept its old
+    choice anyway."""
+    store = _store(tmp_path)
+    fake = _FakePlex({
+        "1": _episode("s14e01", [_audio("10", "ita", selected=True), _audio("11", "eng", default=True)]),
+    })
+
+    plan = plex.plan_audio_selection(store, fake, "en")
+
+    assert len(plan) == 1
+    assert plan[0].stream_id == "11"
+    assert plan[0].from_language == "ita"
+    store.close()
+
+
+def test_a_part_already_on_the_right_track_is_left_alone(tmp_path):
+    """Changing as little as possible is the point — this runs over a
+    whole library."""
+    store = _store(tmp_path)
+    fake = _FakePlex({
+        "1": _episode("ok", [_audio("10", "ita"), _audio("11", "eng", default=True, selected=True)]),
+    })
+
+    assert plex.plan_audio_selection(store, fake, "en") == []
+    store.close()
+
+
+def test_a_single_track_part_is_never_touched(tmp_path):
+    """Nothing to choose between, and Plex's own `selected` on a lone
+    track means nothing."""
+    store = _store(tmp_path)
+    fake = _FakePlex({"1": _episode("solo", [_audio("10", "ita", selected=True)])})
+
+    assert plex.plan_audio_selection(store, fake, "en") == []
+    store.close()
+
+
+def test_a_part_with_no_track_in_that_language_is_left_alone(tmp_path):
+    """A foreign-language film with no English track keeps its own
+    audio rather than being pointed at a track that isn't there."""
+    store = _store(tmp_path)
+    fake = _FakePlex({"1": _episode("foreign", [_audio("10", "jpn", selected=True), _audio("11", "kor")])})
+
+    assert plex.plan_audio_selection(store, fake, "en") == []
+    store.close()
+
+
+def test_applying_sends_the_stream_id_for_that_part(tmp_path):
+    store = _store(tmp_path)
+    fake = _FakePlex({
+        "1": _episode("s14e01", [_audio("10", "ita", selected=True), _audio("11", "eng", default=True)]),
+    })
+    plan = plex.plan_audio_selection(store, fake, "en")
+
+    assert plex.apply_audio_selection(store, fake, plan[0]) is None
+    assert fake.selected == [("part-s14e01", "11")]
+    store.close()
+
+
+def test_an_unlinked_server_says_so_rather_than_failing_obscurely(tmp_path):
+    store = RequestStore(str(tmp_path / "t.db"))
+
+    with pytest.raises(plex.PlexError):
+        plex.plan_audio_selection(store, _FakePlex({}), "en")
+    store.close()
