@@ -118,3 +118,70 @@ def is_audio_language(tag: str | None, code: str) -> bool:
     if tag in ("und", "unk", "mis", "zxx"):
         return False
     return tag in AUDIO_LANGUAGE_ALIASES.get(code.lower(), (code.lower(),))
+
+
+# ---------------------------------------------------------------------------
+# Which of several tracks in the same language to use.
+# ---------------------------------------------------------------------------
+
+# A release routinely carries more than one English track: an Atmos mix
+# and a plain one, or the feature and a director's commentary. Taking
+# whichever the muxer happened to put first gets the stereo AC3 as often
+# as the 7.1, and occasionally gets the commentary.
+_CODEC_TIERS: tuple[tuple[int, tuple[str, ...]], ...] = (
+    (5, ("truehd", "flac", "mlp")),
+    (4, ("dts", "dca")),
+    (3, ("eac3", "ec-3", "e-ac-3")),
+    (2, ("ac3", "ac-3")),
+    (1, ("aac", "opus", "vorbis", "mp3", "pcm")),
+)
+
+# Tracks nobody means when they say "the English audio". Matched on the
+# track's own title, which is where releases put this.
+_NOT_THE_FEATURE = ("commentary", "comentario", "audio description", "described", "descriptive", "narration")
+
+
+def _codec_tier(codec: str | None) -> int:
+    name = (codec or "").strip().lower()
+    for tier, names in _CODEC_TIERS:
+        if any(name.startswith(n) for n in names):
+            return tier
+    return 0
+
+
+def is_feature_audio(title: str | None) -> bool:
+    """False for a commentary or an audio-description track.
+
+    These are in the same language as the feature and frequently sit
+    right beside it, so language alone cannot tell them apart — and
+    defaulting a household onto a director's commentary is a worse
+    outcome than the foreign track this all started with.
+    """
+    lowered = (title or "").strip().lower()
+    return not any(marker in lowered for marker in _NOT_THE_FEATURE)
+
+
+def audio_quality_key(
+    *, channels: int | None = None, codec: str | None = None, bitrate: int | None = None, title: str | None = None
+) -> tuple:
+    """How good an audio track is, biggest is best.
+
+    Channels first, because it is the one signal that is always present
+    and always means the same thing: a 7.1 AAC is more what someone
+    wants than a 2.0 TrueHD, however much better the codec is in the
+    abstract. Codec only decides between tracks of the same width —
+    which is exactly where an Atmos E-AC3 beats a plain AC3 5.1, both
+    reporting six channels.
+
+    Atmos is read from the track's title because that is the only place
+    it reliably appears: TrueHD Atmos reports as 7.1 and E-AC3 JOC as
+    5.1, and neither says so in any field of its own.
+    """
+    atmos = 1 if "atmos" in (title or "").lower() else 0
+    return (
+        1 if is_feature_audio(title) else 0,
+        channels or 0,
+        atmos,
+        _codec_tier(codec),
+        bitrate or 0,
+    )

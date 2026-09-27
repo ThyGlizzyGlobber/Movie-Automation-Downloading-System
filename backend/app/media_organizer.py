@@ -28,7 +28,7 @@ from collections.abc import Callable
 from pathlib import Path, PurePosixPath
 
 from app import config
-from app.language import is_audio_language
+from app.language import audio_quality_key, is_audio_language
 from app.normalize import has_token, normalize_text, tokenize
 from app.qbt import QBTClient
 from app.resolve import MediaIdentity
@@ -333,6 +333,16 @@ class AudioTrack(NamedTuple):
 
     language: str | None
     is_default: bool
+    channels: int | None = None
+    codec: str | None = None
+    bitrate: int | None = None
+    title: str | None = None
+
+    @property
+    def quality(self) -> tuple:
+        return audio_quality_key(
+            channels=self.channels, codec=self.codec, bitrate=self.bitrate, title=self.title
+        )
 
 
 def audio_tracks(source: Path) -> list[AudioTrack]:
@@ -346,7 +356,8 @@ def audio_tracks(source: Path) -> list[AudioTrack]:
                 "ffprobe", "-v", "error",
                 "-print_format", "json",
                 "-select_streams", "a",
-                "-show_entries", "stream_tags=language:stream_disposition=default",
+                "-show_entries",
+                "stream=channels,codec_name,bit_rate:stream_tags=language,title:stream_disposition=default",
                 str(source),
             ],
             capture_output=True,
@@ -357,10 +368,20 @@ def audio_tracks(source: Path) -> list[AudioTrack]:
     except (OSError, subprocess.TimeoutExpired, ValueError) as exc:
         logger.warning("ffprobe failed reading audio tracks of %r (%s); leaving them alone", str(source), exc)
         return []
+    def _int(value) -> int | None:
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            return None
+
     return [
         AudioTrack(
             language=(stream.get("tags") or {}).get("language"),
             is_default=bool((stream.get("disposition") or {}).get("default")),
+            channels=_int(stream.get("channels")),
+            codec=stream.get("codec_name"),
+            bitrate=_int(stream.get("bit_rate")),
+            title=(stream.get("tags") or {}).get("title"),
         )
         for stream in streams
     ]
@@ -376,6 +397,12 @@ def preferred_audio_track(tracks: list[AudioTrack], preferred: str) -> int | Non
     every guest on the server. The flag lives in the file, so deciding it
     here fixes it for everyone at once and needs nothing explained.
 
+    Where a release carries several tracks in that language — an Atmos
+    mix and a plain one, or the feature and a commentary — the best is
+    chosen rather than the first the muxer happened to write. See
+    language.audio_quality_key; taking the first gets the stereo AC3 as
+    often as the 7.1, and occasionally gets the commentary.
+
     None for: one track (nothing to choose between), no track in the
     preferred language, or that track already being the only default.
     Each means the caller should leave the file exactly as it is.
@@ -387,9 +414,10 @@ def preferred_audio_track(tracks: list[AudioTrack], preferred: str) -> int | Non
     """
     if len(tracks) < 2:
         return None
-    wanted = next((i for i, t in enumerate(tracks) if is_audio_language(t.language, preferred)), None)
-    if wanted is None:
+    candidates = [i for i, t in enumerate(tracks) if is_audio_language(t.language, preferred)]
+    if not candidates:
         return None
+    wanted = max(candidates, key=lambda i: tracks[i].quality)
     defaults = [t.is_default for t in tracks]
     if defaults[wanted] and sum(defaults) == 1:
         return None

@@ -107,3 +107,60 @@ def test_every_region_the_picker_offers_has_audio_aliases():
     country whose language this can't then find in a file."""
     for region, code in language.REGION_LANGUAGE.items():
         assert code in language.AUDIO_LANGUAGE_ALIASES, region
+
+
+# ---------------------------------------------------------------------------
+# Which of several tracks in the same language to use.
+# ---------------------------------------------------------------------------
+
+
+def _key(channels, codec, bitrate, title):
+    return language.audio_quality_key(channels=channels, codec=codec, bitrate=bitrate, title=title)
+
+
+def test_the_atmos_mix_beats_the_plain_one():
+    """A release routinely carries both, and taking whichever the muxer
+    wrote first gets the stereo AC3 about as often as the 7.1."""
+    atmos = _key(8, "truehd", 4_000_000, "English (TrueHD 7.1 Atmos)")
+    plain = _key(6, "ac3", 640_000, "English (AC3 5.1)")
+
+    assert atmos > plain
+
+
+def test_atmos_decides_between_two_tracks_of_the_same_width():
+    """E-AC3 JOC reports 5.1 exactly like plain AC3 does — neither says
+    "Atmos" in any field of its own, which is why the title is read."""
+    joc = _key(6, "eac3", 768_000, "English (DD+ 5.1 Atmos)")
+    plain = _key(6, "ac3", 640_000, "English (AC3 5.1)")
+
+    assert joc > plain
+
+
+def test_channels_outrank_the_codec():
+    """A 7.1 AAC is more what someone wants than a 2.0 TrueHD, however
+    much better the codec is in the abstract."""
+    assert _key(8, "aac", 400_000, "English 7.1") > _key(2, "truehd", 2_000_000, "English 2.0")
+
+
+def test_a_commentary_loses_to_the_feature_however_good_it_sounds():
+    """Commentary is in the same language and often sits right beside
+    the feature, so language alone cannot tell them apart — and landing
+    a household on a director's commentary is a worse outcome than the
+    foreign track this all started with."""
+    commentary = _key(6, "ac3", 640_000, "Director's Commentary")
+    feature = _key(2, "aac", 128_000, "English")
+
+    assert feature > commentary
+
+
+def test_audio_description_is_not_the_feature_either():
+    for title in ("Audio Description", "English - Descriptive Audio", "Narration"):
+        assert language.is_feature_audio(title) is False
+    for title in ("English", "English (Atmos)", None, ""):
+        assert language.is_feature_audio(title) is True
+
+
+def test_a_track_that_says_nothing_about_itself_still_ranks():
+    """Most tracks carry no title at all; they must not all collapse to
+    equal, or the first one wins again by accident."""
+    assert _key(6, "ac3", 640_000, None) > _key(2, "ac3", 192_000, None)

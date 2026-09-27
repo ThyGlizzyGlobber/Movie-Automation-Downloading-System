@@ -23,7 +23,7 @@ from pathlib import Path
 import requests
 
 from app.cache import TTLCache
-from app.language import is_audio_language
+from app.language import audio_quality_key, is_audio_language
 from app.normalize import normalize_text, titles_match
 
 PLEX_TV_BASE = "https://plex.tv"
@@ -791,6 +791,16 @@ class LoginSession:
         self._discard(attempt_id)
 
 
+def _plex_audio_quality(stream: dict) -> tuple:
+    """audio_quality_key over Plex's own field names."""
+    return audio_quality_key(
+        channels=stream.get("channels"),
+        codec=stream.get("codec"),
+        bitrate=(stream.get("bitrate") or 0) * 1000 or None,
+        title=stream.get("extendedDisplayTitle") or stream.get("displayTitle") or stream.get("title"),
+    )
+
+
 @dataclass
 class AudioSelection:
     """One part whose selected audio track isn't the one the household
@@ -843,12 +853,14 @@ def plan_audio_selection(store, client: "PlexClient", preferred: str) -> list[Au
                     # same alias table the organiser uses rather than a
                     # string compare — which matched nothing at all.
                     current = next((st for st in audio if st.get("selected")), None)
-                    if current is not None and is_audio_language(current.get("languageCode"), preferred):
+                    candidates = [st for st in audio if is_audio_language(st.get("languageCode"), preferred)]
+                    if not candidates:
                         continue
-                    wanted = next(
-                        (st for st in audio if is_audio_language(st.get("languageCode"), preferred)), None
-                    )
-                    if wanted is None:
+                    # Best of them, not the first: a release routinely
+                    # carries an Atmos English track and a plain one, and
+                    # a commentary is in English too.
+                    wanted = max(candidates, key=_plex_audio_quality)
+                    if current is not None and current.get("id") == wanted.get("id"):
                         continue
                     out.append(
                         AudioSelection(
