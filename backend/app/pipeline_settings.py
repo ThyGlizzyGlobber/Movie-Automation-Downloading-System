@@ -11,7 +11,7 @@ score.py/pipeline.py stay decoupled from the SQLite settings table (the
 (called from worker.py/api.py) touches the store.
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING
 
 from app import config
@@ -79,26 +79,18 @@ def settings_from_raw(saved: dict) -> PipelineSettings:
     reverting max_size_gb to its default could otherwise silently invert
     the range)."""
     defaults = PipelineSettings.from_config()
-    return PipelineSettings(
+    sizes = {k: saved[k] for k in ("min_size_gb", "max_size_gb") if saved.get(k) is not None}
+    languages = {
+        k: tuple(saved[k])
+        for k in ("language_allowlist", "language_blocklist", "language_required")
+        if saved.get(k) is not None
+    }
+    return replace(
+        defaults,
+        **sizes,
+        **languages,
         category=saved.get("category") or defaults.category,
         min_resolution=saved.get("min_resolution") or defaults.min_resolution,
-        min_size_gb=saved.get("min_size_gb") if saved.get("min_size_gb") is not None else defaults.min_size_gb,
-        max_size_gb=saved.get("max_size_gb") if saved.get("max_size_gb") is not None else defaults.max_size_gb,
-        language_allowlist=(
-            tuple(saved["language_allowlist"])
-            if saved.get("language_allowlist") is not None
-            else defaults.language_allowlist
-        ),
-        language_blocklist=(
-            tuple(saved["language_blocklist"])
-            if saved.get("language_blocklist") is not None
-            else defaults.language_blocklist
-        ),
-        language_required=(
-            tuple(saved["language_required"])
-            if saved.get("language_required") is not None
-            else defaults.language_required
-        ),
         free_space_floor_gb=float(saved.get("free_space_floor_gb") or 0.0),
         preferred_audio_language=saved.get("preferred_audio_language") or defaults.preferred_audio_language,
     )

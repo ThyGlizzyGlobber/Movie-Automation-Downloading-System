@@ -37,7 +37,15 @@ from slowapi.util import get_remote_address
 
 from app import config, language, moods, taste, trailers
 from app.cache import ttl_cache
-from app.db import RequestRow, RequestStore, SessionRow, ShowRow
+from app.db import (
+    FAILED_OR_CANCELLED_STATUSES,
+    FAILURE_STATUSES,
+    NON_TERMINAL_STATUSES,
+    RequestRow,
+    RequestStore,
+    SessionRow,
+    ShowRow,
+)
 from app.deploy import DeployError, run_git_pull
 from app.logging_config import configure_logging
 from app.media_organizer import find_existing_episode_files
@@ -53,9 +61,9 @@ from app.plex import (
     PlexClient,
     PlexError,
     PlexLinker,
+    client_from_settings,
     local_file_for_title,
     locate_title,
-    new_client_identifier,
     plex_library_lookup,
     plex_show_episodes,
 )
@@ -131,6 +139,18 @@ def _cookie_secure(request: Request) -> bool:
         # past it would silently mean "whatever the last proxy felt like".
         return forwarded.split(",")[0].strip().lower() == "https"
     return request.url.scheme == "https"
+
+
+def _set_session_cookie(response: Response, request: Request, session_id: str) -> None:
+    response.set_cookie(
+        key=SESSION_COOKIE_NAME,
+        value=session_id,
+        httponly=True,
+        samesite="strict",
+        secure=_cookie_secure(request),
+        max_age=SESSION_TTL_DAYS * 24 * 3600,
+        path="/",
+    )
 
 
 def _client_ip(request: Request) -> str | None:
@@ -425,15 +445,7 @@ def require_admin_or_setup_bootstrap(
         if request.headers.get("X-Setup-Token") != expected:
             raise HTTPException(status_code=401, detail="missing or incorrect setup token")
         return None
-    session_id = request.cookies.get(SESSION_COOKIE_NAME)
-    if not session_id:
-        raise HTTPException(status_code=401, detail="not signed in")
-    session = store.get_session(session_id)
-    if session is None:
-        raise HTTPException(status_code=401, detail="session expired or invalid")
-    if not session.is_admin:
-        raise HTTPException(status_code=403, detail="admin access required")
-    return session
+    return require_admin(require_session(request, store))
 
 
 def require_setup_token(request: Request, store: RequestStore = Depends(get_store)) -> None:
@@ -1870,12 +1882,9 @@ def unlink_plex(
     return linker.status()
 
 
-@app.get("/api/plex/servers", dependencies=[Depends(require_admin_or_setup_bootstrap)])
-def list_plex_servers(store: RequestStore = Depends(get_store)) -> list[dict]:
-    """Every Plex server this account *owns*, using the already-persisted
-    account-level token — no fresh PIN sign-in needed (frontend migration
-    Part C1). Backs both the setup wizard's server picker (an account can
-    own more than one server) and Settings' "Switch Server" action."""
+def _linked_account_resources(store: RequestStore) -> tuple[PlexClient, str, list[dict]]:
+    """The signed-in Plex account's client, token and plex.tv resources —
+    the first step of both listing its servers and picking one."""
     settings = store.get_settings()
     token = settings.get("plex_token")
     client_id = settings.get("plex_client_id")
@@ -1886,6 +1895,16 @@ def list_plex_servers(store: RequestStore = Depends(get_store)) -> list[dict]:
         resources = client.list_resources(token)
     except PlexError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
+    return client, token, resources
+
+
+@app.get("/api/plex/servers", dependencies=[Depends(require_admin_or_setup_bootstrap)])
+def list_plex_servers(store: RequestStore = Depends(get_store)) -> list[dict]:
+    """Every Plex server this account *owns*, using the already-persisted
+    account-level token — no fresh PIN sign-in needed (frontend migration
+    Part C1). Backs both the setup wizard's server picker (an account can
+    own more than one server) and Settings' "Switch Server" action."""
+    client, token, resources = _linked_account_resources(store)
     return [
         {"name": r["name"], "machine_identifier": r["machine_identifier"]} for r in resources if r["owned"]
     ]
@@ -1916,16 +1935,7 @@ def select_plex_server(
     *second*, separate PIN sign-in immediately after the one they just
     did to link the server in the first place, which is confusing on top
     of "why did that already work."""
-    settings = store.get_settings()
-    token = settings.get("plex_token")
-    client_id = settings.get("plex_client_id")
-    if not token or not client_id:
-        raise HTTPException(status_code=409, detail="no Plex account linked yet — sign in first")
-    client = PlexClient(client_id)
-    try:
-        resources = client.list_resources(token)
-    except PlexError as exc:
-        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    client, token, resources = _linked_account_resources(store)
     match = next(
         (r for r in resources if r["owned"] and r["machine_identifier"] == body.machine_identifier), None
     )
@@ -1959,15 +1969,7 @@ def select_plex_server(
             user = store.upsert_user(plex_user_id, identity.get("username"), True, identity.get("thumb"))
             session_id = secrets.token_urlsafe(32)
             store.create_session(session_id, user.plex_user_id, user.username, True, _new_session_expiry())
-            response.set_cookie(
-                key=SESSION_COOKIE_NAME,
-                value=session_id,
-                httponly=True,
-                samesite="strict",
-                secure=_cookie_secure(request),
-                max_age=SESSION_TTL_DAYS * 24 * 3600,
-                path="/",
-            )
+            _set_session_cookie(response, request, session_id)
     return {"server_name": match["name"]}
 
 
@@ -2036,15 +2038,7 @@ def login_status(
         )
         session_id = secrets.token_urlsafe(32)
         store.create_session(session_id, user.plex_user_id, user.username, user.is_admin, _new_session_expiry())
-        response.set_cookie(
-            key=SESSION_COOKIE_NAME,
-            value=session_id,
-            httponly=True,
-            samesite="strict",
-            secure=_cookie_secure(request),
-            max_age=SESSION_TTL_DAYS * 24 * 3600,
-            path="/",
-        )
+        _set_session_cookie(response, request, session_id)
         # Spent server-side above; clear the browser's copy too rather
         # than leave a dead id sitting in the jar for its full 15 minutes.
         response.delete_cookie(LOGIN_ATTEMPT_COOKIE_NAME, path="/")
@@ -2345,11 +2339,6 @@ def get_storage() -> dict:
     }
 
 
-
-NON_TERMINAL_STATUSES = {"queued", "searching", "downloading"}
-_EPISODE_TERMINAL_FAILURES = {"failed", "no qualifying results", "insufficient free space", "downloaded, not filed", "cancelled"}
-
-
 @router.get("/api/tv/{tmdb_id}/season/{season_number}/episodes")
 def get_season_episodes(
     tmdb_id: int,
@@ -2412,7 +2401,7 @@ def get_season_episodes(
         elif covering_packs:
             pack = covering_packs[0]
             state, status, progress, request_id = "requested", pack.status, pack.download_progress, pack.id
-        elif row is not None and row.status in _EPISODE_TERMINAL_FAILURES:
+        elif row is not None and row.status in FAILED_OR_CANCELLED_STATUSES:
             state, status, request_id = "failed", row.status, row.id
         elif not air_date or air_date > today:
             state = "unaired"
@@ -2885,7 +2874,7 @@ def get_plex_on_deck(
         token = settings.get("plex_server_token")
     if not url or not token:
         return {"available": False, "items": []}
-    client = PlexClient(settings.get("plex_client_id") or new_client_identifier())
+    client = client_from_settings(settings)
     try:
         raw = client.on_deck(url, token)
     except Exception as exc:  # noqa: BLE001 — any transport failure degrades the row, never the page
@@ -2944,7 +2933,7 @@ def plex_locate(
     url, token = settings.get("plex_server_url"), settings.get("plex_server_token")
     if not url or not token:
         return {"available": False}
-    client = PlexClient(settings.get("plex_client_id") or new_client_identifier())
+    client = client_from_settings(settings)
     try:
         found = locate_title(store, client, type, title, year, tmdb_id)
     except Exception as exc:  # noqa: BLE001
@@ -2965,7 +2954,7 @@ def get_plex_recently_added(store: RequestStore = Depends(get_store)) -> dict:
     url, token = settings.get("plex_server_url"), settings.get("plex_server_token")
     if not url or not token:
         return {"available": False, "items": []}
-    client = PlexClient(settings.get("plex_client_id") or new_client_identifier())
+    client = client_from_settings(settings)
     try:
         raw = client.recently_added(url, token)
     except Exception as exc:  # noqa: BLE001
@@ -3020,7 +3009,7 @@ def get_plex_image(path: str, width: int = 640, height: int = 360, store: Reques
     url, token = settings.get("plex_server_url"), settings.get("plex_server_token")
     if not url or not token:
         raise HTTPException(status_code=404, detail="Plex is not linked")
-    client = PlexClient(settings.get("plex_client_id") or new_client_identifier())
+    client = client_from_settings(settings)
     try:
         content, content_type = client.fetch_image(url, token, path, min(width, 1280), min(height, 720))
     except Exception as exc:  # noqa: BLE001
@@ -3084,7 +3073,7 @@ def update_household_user(
         "household_changed",
         session.plex_user_id,
         session.username,
-        request.client.host if request.client else None,
+        _client_ip(request),
         f"{user.username or plex_user_id}: requests {'on' if body.can_request else 'off'}",
     )
     return {"plex_user_id": plex_user_id, "can_request": body.can_request}
@@ -3107,7 +3096,7 @@ def remove_household_user(
         "household_changed",
         session.plex_user_id,
         session.username,
-        request.client.host if request.client else None,
+        _client_ip(request),
         f"{user.username or plex_user_id}: removed",
     )
     return {"removed": True}
@@ -3286,12 +3275,9 @@ def about(request: Request, store: RequestStore = Depends(get_store)) -> dict:
 #    checked with curl, not SSHed into; no frontend UI until it's actually
 #    needed often enough to justify one (Stage 8's own open decision). --
 
-_FAILURE_STATUSES = {"failed", "no qualifying results", "insufficient free space", "downloaded, not filed"}
-
-
 @admin_router.get("/api/admin/jobs")
 def admin_jobs(status: str | None = None, store: RequestStore = Depends(get_store)) -> list[RequestOut]:
-    statuses = [status] if status else sorted(_FAILURE_STATUSES)
+    statuses = [status] if status else sorted(FAILURE_STATUSES)
     rows = [r for s in statuses for r in store.list_requests(status=s)]
     rows.sort(key=lambda r: r.id, reverse=True)
     return [RequestOut.from_row(r) for r in rows]

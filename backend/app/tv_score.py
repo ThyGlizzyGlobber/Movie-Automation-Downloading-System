@@ -15,10 +15,7 @@ from app.normalize import normalize_text, tokenize
 from app.pipeline_settings import PipelineSettings
 from app.score import (
     matches_any_variant,
-    passes_cam_filter,
-    passes_language_filter,
-    passes_non_video_filter,
-    passes_resolution_floor,
+    passes_quality_filters,
 )
 from app.tv_resolve import ShowIdentity
 
@@ -51,10 +48,5 @@ def passes_episode_relevance_gate(
     return (
         matches_any_variant(tokens, identity.variants, identity.first_air_year)
         and has_episode_token(tokens, season, episode)
-        and passes_resolution_floor(tokens, settings.min_resolution)
-        and passes_language_filter(
-            tokens, settings.language_allowlist, settings.language_blocklist, settings.language_required
-        )
-        and passes_cam_filter(tokens)
-        and passes_non_video_filter(tokens)
+        and passes_quality_filters(tokens, settings)
     )

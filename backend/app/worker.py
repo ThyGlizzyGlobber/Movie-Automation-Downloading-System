@@ -103,7 +103,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from app import config, plex, reconcile
-from app.db import NON_TERMINAL_STATUSES, RequestStore, ShowEpisodeRow, ShowRow
+from app.db import FAILURE_STATUSES, NON_TERMINAL_STATUSES, RequestStore, ShowEpisodeRow, ShowRow
 from app.media_organizer import (
     MediaOrganizerError,
     NoVideoFileError,
@@ -1594,12 +1594,6 @@ class Worker:
     # -- Stage 12.x: episode auto-recheck (retry a stuck episode, or look
     #    for a better release once one's already downloaded). --
 
-    # Terminal statuses worth retrying — never "cancelled" (a deliberate
-    # stop, whether from the API or from someone deleting the torrent
-    # directly), and never the non-terminal ones (queued/searching/
-    # downloading are already active, not stuck).
-    _RECHECK_RETRY_STATUSES = frozenset({"no qualifying results", "insufficient free space", "failed", "downloaded, not filed"})
-
     async def _watch_episode_rechecks(self) -> None:
         while True:
             await asyncio.sleep(config.EPISODE_RECHECK_POLL_INTERVAL_SECONDS)
@@ -1656,7 +1650,7 @@ class Worker:
         SEARCH_CONCURRENCY; the add itself is serialised further down by
         pipeline._ADD_LOCK."""
         current = await asyncio.to_thread(self.store.get_request, episode_row.request_id)
-        if current is not None and current.status != "complete" and current.status not in self._RECHECK_RETRY_STATUSES:
+        if current is not None and current.status != "complete" and current.status not in FAILURE_STATUSES:
             return  # actively in progress, or a deliberate cancel — don't burn an attempt on it
 
         identity = await asyncio.to_thread(resolve_show, show.tmdb_id, self.tmdb)

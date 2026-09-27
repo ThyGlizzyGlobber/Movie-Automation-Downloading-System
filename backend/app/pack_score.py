@@ -27,10 +27,7 @@ from app.pipeline_settings import PipelineSettings
 from app.score import (
     contains_phrase,
     matches_any_variant,
-    passes_cam_filter,
-    passes_language_filter,
-    passes_non_video_filter,
-    passes_resolution_floor,
+    passes_quality_filters,
 )
 from app.tv_resolve import ShowIdentity
 
@@ -117,12 +114,7 @@ def passes_season_pack_gate(
         )
         and has_season_token(tokens, season)
         and not has_any_episode_token(tokens)
-        and passes_resolution_floor(tokens, settings.min_resolution)
-        and passes_language_filter(
-            tokens, settings.language_allowlist, settings.language_blocklist, settings.language_required
-        )
-        and passes_cam_filter(tokens)
-        and passes_non_video_filter(tokens)
+        and passes_quality_filters(tokens, settings)
     )
 
 
@@ -202,12 +194,7 @@ def passes_season_range_pack_gate(
         )
         and has_season_range_marker(tokens, start, end)
         and not has_any_episode_token(tokens)
-        and passes_resolution_floor(tokens, settings.min_resolution)
-        and passes_language_filter(
-            tokens, settings.language_allowlist, settings.language_blocklist, settings.language_required
-        )
-        and passes_cam_filter(tokens)
-        and passes_non_video_filter(tokens)
+        and passes_quality_filters(tokens, settings)
     )
 
 
@@ -247,10 +234,5 @@ def passes_series_pack_gate(
             tokens, identity.variants, identity.first_air_year, config.PACK_YEAR_TOLERANCE
         )
         and is_series_shaped(tokens, identity.number_of_seasons, identity.finished_seasons)
-        and passes_resolution_floor(tokens, settings.min_resolution)
-        and passes_language_filter(
-            tokens, settings.language_allowlist, settings.language_blocklist, settings.language_required
-        )
-        and passes_cam_filter(tokens)
-        and passes_non_video_filter(tokens)
+        and passes_quality_filters(tokens, settings)
     )

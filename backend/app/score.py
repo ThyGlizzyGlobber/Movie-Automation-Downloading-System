@@ -268,6 +268,20 @@ def passes_non_video_filter(tokens: list[str]) -> bool:
     return not any(normalize_text(blocked) in tokens for blocked in config.NON_VIDEO_BLOCKLIST)
 
 
+def passes_quality_filters(tokens: list[str], settings: PipelineSettings) -> bool:
+    """The resolution floor, language, cam and non-video checks, in that
+    order — the part of every relevance gate (movie, episode, season pack,
+    series pack) that doesn't care what kind of release it's looking at."""
+    return (
+        passes_resolution_floor(tokens, settings.min_resolution)
+        and passes_language_filter(
+            tokens, settings.language_allowlist, settings.language_blocklist, settings.language_required
+        )
+        and passes_cam_filter(tokens)
+        and passes_non_video_filter(tokens)
+    )
+
+
 def passes_not_a_tv_episode_filter(tokens: list[str]) -> bool:
     """Rejects a movie candidate whose filename is actually shaped like TV
     content — a whole "s01e04"-style episode token (contiguous or split
@@ -293,12 +307,7 @@ def passes_relevance_gate(file_name: str, identity: MediaIdentity, settings: Pip
     return (
         matches_any_variant(tokens, identity.variants, identity.release_year)
         and _year_within_tolerance(tokens, identity.release_year)
-        and passes_resolution_floor(tokens, settings.min_resolution)
-        and passes_language_filter(
-            tokens, settings.language_allowlist, settings.language_blocklist, settings.language_required
-        )
-        and passes_cam_filter(tokens)
-        and passes_non_video_filter(tokens)
+        and passes_quality_filters(tokens, settings)
         and passes_not_a_tv_episode_filter(tokens)
     )
 

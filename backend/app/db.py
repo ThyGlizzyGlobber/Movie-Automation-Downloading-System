@@ -20,6 +20,14 @@ from app import config
 # "Clear My Requests" button) never touch them, only settled history.
 NON_TERMINAL_STATUSES = {"queued", "searching", "downloading"}
 
+# Settled without a filed download, and not by choice — what the episode
+# auto-recheck retries and /api/admin/jobs lists by default.
+FAILURE_STATUSES = frozenset({"failed", "no qualifying results", "insufficient free space", "downloaded, not filed"})
+
+# The same, plus a deliberate "cancelled": every way a request can end up
+# settled without the episode, which a season view shows as failed.
+FAILED_OR_CANCELLED_STATUSES = FAILURE_STATUSES | {"cancelled"}
+
 
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()

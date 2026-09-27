@@ -479,6 +479,22 @@ class PlexClient:
         )
 
 
+def client_from_settings(settings: dict) -> PlexClient:
+    """A client for server reads, under the saved client id — or a
+    throwaway one, not persisted, if no sign-in has saved one yet."""
+    return PlexClient(settings.get("plex_client_id") or new_client_identifier())
+
+
+def _persisted_client(store) -> PlexClient:
+    """A client for plex.tv sign-in, whose client id has to stay the same
+    across requests: generated and saved on first use."""
+    client_id = store.get_settings().get("plex_client_id")
+    if not client_id:
+        client_id = new_client_identifier()
+        store.update_settings({"plex_client_id": client_id})
+    return PlexClient(client_id)
+
+
 # One cache per (server_url, server_token, media_type) — a fresh PlexClient
 # is constructed per call below (matching has_in_library's existing
 # pattern), so `app.cache.ttl_cache`'s self-keying decorator would never
@@ -498,7 +514,7 @@ def _cached_library_index(store, media_type: str) -> LibraryIndex | None:
     cache_key = (server_url, server_token, media_type)
     index, hit = _library_index_cache.get(cache_key)
     if not hit:
-        client = PlexClient(settings.get("plex_client_id") or new_client_identifier())
+        client = client_from_settings(settings)
         try:
             index = client.library_index(server_url, server_token, media_type)
         except PlexError:
@@ -535,7 +551,7 @@ def has_in_library(store, title: str, year: int | None, tmdb_id: int | None = No
     server_token = settings.get("plex_server_token")
     if not server_url or not server_token:
         return None
-    client = PlexClient(settings.get("plex_client_id") or new_client_identifier())
+    client = client_from_settings(settings)
     if tmdb_id is not None:
         # A fresh whole-library read: the title-filtered search can't find
         # a movie Plex spells differently, and a cached one may predate it.
@@ -556,12 +572,7 @@ class PlexLinker:
         self._error: str | None = None
 
     def _client(self) -> PlexClient:
-        settings = self.store.get_settings()
-        client_id = settings.get("plex_client_id")
-        if not client_id:
-            client_id = new_client_identifier()
-            self.store.update_settings({"plex_client_id": client_id})
-        return PlexClient(client_id)
+        return _persisted_client(self.store)
 
     async def start(self) -> str:
         client = self._client()
@@ -686,12 +697,7 @@ class LoginSession:
         self._attempts: dict[str, _LoginAttempt] = {}
 
     def _client(self) -> PlexClient:
-        settings = self.store.get_settings()
-        client_id = settings.get("plex_client_id")
-        if not client_id:
-            client_id = new_client_identifier()
-            self.store.update_settings({"plex_client_id": client_id})
-        return PlexClient(client_id)
+        return _persisted_client(self.store)
 
     def _discard(self, attempt_id: str) -> None:
         attempt = self._attempts.pop(attempt_id, None)
@@ -884,7 +890,7 @@ def refresh_after_import(store, media_type: str, organized_path: str | None) -> 
     url, token = settings.get("plex_server_url"), settings.get("plex_server_token")
     if not url or not token:
         return False
-    client = PlexClient(settings.get("plex_client_id") or new_client_identifier())
+    client = client_from_settings(settings)
     wanted = "movie" if media_type == "movie" else "show"
     try:
         sections = [s for s in client.sections(url, token) if s.get("type") == wanted]
@@ -922,7 +928,7 @@ def plex_show_episodes(store, title: str, year: int | None, tmdb_id: int | None 
     now = time.monotonic()
     if hit and now - hit[0] < _SHOW_EPISODES_TTL_SECONDS:
         return hit[1]
-    client = PlexClient(settings.get("plex_client_id") or new_client_identifier())
+    client = client_from_settings(settings)
     try:
         item = locate_title(store, client, "show", title, year, tmdb_id)
         episodes = client.show_episodes(server_url, server_token, item["rating_key"]) if item else None
@@ -953,7 +959,7 @@ def plex_title_files(store, media_type: str, title: str, year: int | None, tmdb_
     server_url, server_token = settings.get("plex_server_url"), settings.get("plex_server_token")
     if not server_url or not server_token:
         return None
-    client = PlexClient(settings.get("plex_client_id") or new_client_identifier())
+    client = client_from_settings(settings)
     try:
         item = locate_title(store, client, media_type, title, year, tmdb_id)
         return client.file_paths(server_url, server_token, item["rating_key"]) if item else None
