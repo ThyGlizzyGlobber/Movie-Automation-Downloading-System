@@ -22,7 +22,7 @@ its own it means the app.
 
 The visual reference for everything below is `design-exploration/
 obsidian.html` (that direction, expanded to eleven screens) and, for the
-record of how it was chosen, `design-exploration/redesign-directions.html`
+record of how it was chosen, `docs/history/redesign-directions.html`
 (Obsidian against the two rejected directions, Marquee and Folio). The
 reference files are standalone HTML, keep their original filenames, and
 are not built into the app.
@@ -45,7 +45,7 @@ word in the display face, never split or two-toned the way the old
 - `frontend/src/lib/chrome.tsx` — `document.title` (`"<page> — Obsidian"`)
 - `Topbar.tsx`, `MovieDetailPage.tsx`, `ShowDetailPage.tsx` — the wordmark
 - `LoginPage.tsx`, `TutorialOverlay.tsx`, `UpdatesPanel.tsx` — plain text
-- `backend/app/api.py` FastAPI title and `backend/app/plex.py`
+- `backend/app/api/main.py` FastAPI title and `backend/app/plex.py`
   `PRODUCT_NAME` (the label Plex shows for this app on sign-in; the client
   identifier is unchanged, so existing sign-ins are unaffected)
 

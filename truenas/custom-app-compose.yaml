@@ -121,12 +121,9 @@ services:
       # the user set qBittorrent's "tv" category save path to this exact
       # string on the real box).
       QBIT_TV_SAVE_PATH: "/media/TV Shows"
-      # Same idea for movies — inferred from the same qBittorrent category
-      # config (movies' own category save path, which "tv" defaulted to
-      # before being split out), not independently re-confirmed this
-      # session; movies aren't auto-organized by the worker today (only
-      # the manual `organize-movie` CLI command uses this), so a wrong
-      # value here has no live blast radius yet.
+      # Same idea for movies (qBittorrent's "movies" category save path).
+      # The worker organizes movies with it, so a wrong value here fails
+      # every movie filing the same way.
       QBIT_MOVIE_SAVE_PATH: "/media/Movies"
     volumes:
       # Deployed-copy source, live-reloaded by uvicorn --reload — confirmed
