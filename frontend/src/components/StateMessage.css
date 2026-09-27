@@ -41,7 +41,9 @@
   font-size: 14px;
   max-width: 34ch;
 }
-.retry {
+/* Requests' Clear finished is the same glass pill. */
+.retry,
+.rq-clear-btn {
   display: inline-flex;
   align-items: center;
   gap: 8px;

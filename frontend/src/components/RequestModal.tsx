@@ -1,9 +1,9 @@
-import { useEffect } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { getStorage } from '../api/system'
 import { formatBytes } from '../lib/format'
 import { posterUrl } from '../lib/tmdbImage'
 import Icon from './Icon'
+import Modal from './Modal'
 import './RequestModal.css'
 
 // The request sheet: what's being asked for, what the household will get
@@ -27,56 +27,40 @@ export default function RequestModal({
   onSubmit: () => void
 }) {
   const storage = useQuery({ queryKey: ['storage'], queryFn: getStorage, enabled: open, staleTime: 60_000 })
-  useEffect(() => {
-    if (!open) return
-    function onKey(e: KeyboardEvent) {
-      if (e.key === 'Escape') onClose()
-    }
-    document.addEventListener('keydown', onKey)
-    return () => document.removeEventListener('keydown', onKey)
-  }, [open, onClose])
-
   if (!open) return null
   const free = storage.data?.available ? storage.data.free_bytes : null
 
   return (
-    <div
-      className="request-modal-overlay"
-      onClick={(e) => {
-        if (e.target === e.currentTarget) onClose()
-      }}
-    >
-      <div className="request-modal" role="dialog" aria-modal="true" aria-labelledby="request-modal-title">
-        <button className="request-modal-close" aria-label="Close" onClick={onClose}>
-          <Icon name="close" />
-        </button>
-        <div className="request-modal-head">
-          {posterPath !== undefined && <img className="request-modal-poster" src={posterUrl(posterPath)} alt="" />}
-          <div>
-            <h2 id="request-modal-title" className="request-modal-title">
-              {title}
-            </h2>
-            {subtitle && <p className="request-modal-sub">{subtitle}</p>}
-          </div>
-        </div>
-        <div className="request-modal-best">
-          <Icon name="hd" />
-          <div>
-            <b>The best copy out there</b>
-            <small>4K when it exists, otherwise the sharpest release within the household's download limits.</small>
-          </div>
-        </div>
-        <div className="request-modal-foot">
-          <span className="request-modal-note">{free != null ? `${formatBytes(free)} free.` : 'Free space unknown.'}</span>
-          <button className="request-modal-cancel" onClick={onClose}>
-            Cancel
-          </button>
-          <button className="request-modal-submit" onClick={onSubmit}>
-            <Icon name="plus" />
-            {submitLabel}
-          </button>
+    <Modal className="request-modal" labelledBy="request-modal-title" onClose={onClose}>
+      <button className="request-modal-close" aria-label="Close" onClick={onClose}>
+        <Icon name="close" />
+      </button>
+      <div className="request-modal-head">
+        {posterPath !== undefined && <img className="request-modal-poster" src={posterUrl(posterPath)} alt="" />}
+        <div>
+          <h2 id="request-modal-title" className="request-modal-title">
+            {title}
+          </h2>
+          {subtitle && <p className="request-modal-sub">{subtitle}</p>}
         </div>
       </div>
-    </div>
+      <div className="request-modal-best">
+        <Icon name="hd" />
+        <div>
+          <b>The best copy out there</b>
+          <small>4K when it exists, otherwise the sharpest release within the household's download limits.</small>
+        </div>
+      </div>
+      <div className="request-modal-foot">
+        <span className="request-modal-note">{free != null ? `${formatBytes(free)} free.` : 'Free space unknown.'}</span>
+        <button className="request-modal-cancel" onClick={onClose}>
+          Cancel
+        </button>
+        <button className="request-modal-submit" onClick={onSubmit}>
+          <Icon name="plus" />
+          {submitLabel}
+        </button>
+      </div>
+    </Modal>
   )
 }

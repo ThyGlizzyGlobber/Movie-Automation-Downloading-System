@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Outlet, ScrollRestoration } from 'react-router-dom'
-import { ToastProvider } from '../lib/toast'
+import ToastProvider from './ToastProvider'
 import { usePollRequests } from '../lib/useRequests'
 import Topbar from './Topbar'
 import Tabbar from './Tabbar'

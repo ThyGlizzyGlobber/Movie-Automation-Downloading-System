@@ -2,8 +2,8 @@ import { useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEven
 import { getMovieTrailer } from '../api/movies'
 import { getTvTrailer } from '../api/tv'
 import { backdropUrl, logoUrl, posterUrl } from '../lib/tmdbImage'
-import { yearOf } from '../lib/detailHelpers'
-import { movieHeroBadge, movieCertOf, tvHeroBadge, tvCertOf } from '../lib/homeHero'
+import { certificationOf, tvCertificationOf, yearOf } from '../lib/detailHelpers'
+import { movieHeroBadge, tvHeroBadge } from '../lib/homeHero'
 import type { HeroSlide } from '../types/hero'
 import AmbientGlow from './AmbientGlow'
 import './HeroCarousel.css'
@@ -277,7 +277,7 @@ export default function HeroCarousel({ items, loading = false }: { items: HeroSl
         const seasons = (item.seasons ?? []).filter((se) => se.season_number > 0).length
         out[i] = {
           badge: tvHeroBadge(item),
-          cert: tvCertOf(item, region),
+          cert: tvCertificationOf(item, region),
           length: seasons ? `${seasons} season${seasons === 1 ? '' : 's'}` : '',
           genres,
           logo,
@@ -285,7 +285,7 @@ export default function HeroCarousel({ items, loading = false }: { items: HeroSl
       } else {
         out[i] = {
           badge: movieHeroBadge(item, region),
-          cert: movieCertOf(item, region),
+          cert: certificationOf(item, region),
           length: movieLength(item.runtime ?? null),
           genres,
           logo,

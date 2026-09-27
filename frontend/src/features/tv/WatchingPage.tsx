@@ -1,9 +1,10 @@
 import { Link } from 'react-router-dom'
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { listShows, deleteShow } from '../../api/tv'
 import Icon from '../../components/Icon'
 import Img from '../../components/Img'
+import Modal from '../../components/Modal'
 import PosterCard from '../../components/PosterCard'
 import DownloadBar from '../../components/DownloadBar'
 import RequestStatusChip from '../../components/RequestStatusChip'
@@ -71,13 +72,6 @@ function FollowSheet({ show, onClose, onChanged }: { show: ShowOut; onClose: () 
   const [busy, setBusy] = useState(false)
   const { toast } = useToast()
   const req = show.latest_request
-  useEffect(() => {
-    function onKey(e: KeyboardEvent) {
-      if (e.key === 'Escape') onClose()
-    }
-    document.addEventListener('keydown', onKey)
-    return () => document.removeEventListener('keydown', onKey)
-  }, [onClose])
 
   async function handleUnfollow() {
     setBusy(true)
@@ -101,58 +95,51 @@ function FollowSheet({ show, onClose, onChanged }: { show: ShowOut; onClose: () 
   const downloading = req?.status === 'downloading'
 
   return (
-    <div
-      className="request-modal-overlay"
-      onClick={(e) => {
-        if (e.target === e.currentTarget) onClose()
-      }}
-    >
-      <div className="request-modal rq-sheet" role="dialog" aria-modal="true" aria-labelledby="follow-sheet-title">
-        <button className="request-modal-close" aria-label="Close" onClick={onClose}>
-          <Icon name="close" />
-        </button>
-        <div className="request-modal-head">
-          <Img className="request-modal-poster" src={posterUrl(show.poster_path)} alt="" />
-          <div>
-            <h2 id="follow-sheet-title" className="request-modal-title">
-              {show.title}
-            </h2>
-            <p className="request-modal-sub">{sub}</p>
-          </div>
-        </div>
-
-        <div className="rq-sheet-status">
-          {req ? (
-            // A download is said by its bar, so it gets no pill.
-            <div className={`rq-sheet-line${downloading ? ' live' : ''}`}>
-              {!downloading && <StatusPill status={req.status} />}
-              <span>
-                {latestRequestLabel(req)}
-                {' | '}
-                {downloading ? 'Downloading now' : statusDetail(req.status, req.download_progress, req.error_message)}
-              </span>
-            </div>
-          ) : (
-            <div className="rq-sheet-line">
-              <span>Nothing requested yet. New episodes are picked up as they air.</span>
-            </div>
-          )}
-          {downloading && <DownloadBar progress={req.download_progress} className="rq-sheet-bar" />}
-        </div>
-
-        <div className="request-modal-foot">
-          <span className="request-modal-note">Checked {relativeTime(show.last_checked_at)}</span>
-          <button className="btn sm danger" disabled={busy} onClick={handleUnfollow}>
-            <Icon name="close" />
-            {busy ? 'Unfollowing…' : 'Unfollow'}
-          </button>
-          <Link className="btn sm pri" to={`/tv/${show.tmdb_id}`} onClick={onClose}>
-            Open show
-            <Icon name="next" />
-          </Link>
+    <Modal className="request-modal rq-sheet" labelledBy="follow-sheet-title" onClose={onClose}>
+      <button className="request-modal-close" aria-label="Close" onClick={onClose}>
+        <Icon name="close" />
+      </button>
+      <div className="request-modal-head">
+        <Img className="request-modal-poster" src={posterUrl(show.poster_path)} alt="" />
+        <div>
+          <h2 id="follow-sheet-title" className="request-modal-title">
+            {show.title}
+          </h2>
+          <p className="request-modal-sub">{sub}</p>
         </div>
       </div>
-    </div>
+
+      <div className="rq-sheet-status">
+        {req ? (
+          // A download is said by its bar, so it gets no pill.
+          <div className={`rq-sheet-line${downloading ? ' live' : ''}`}>
+            {!downloading && <StatusPill status={req.status} />}
+            <span>
+              {latestRequestLabel(req)}
+              {' | '}
+              {downloading ? 'Downloading now' : statusDetail(req.status, req.download_progress, req.error_message)}
+            </span>
+          </div>
+        ) : (
+          <div className="rq-sheet-line">
+            <span>Nothing requested yet. New episodes are picked up as they air.</span>
+          </div>
+        )}
+        {downloading && <DownloadBar progress={req.download_progress} className="rq-sheet-bar" />}
+      </div>
+
+      <div className="request-modal-foot">
+        <span className="request-modal-note">Checked {relativeTime(show.last_checked_at)}</span>
+        <button className="btn sm danger" disabled={busy} onClick={handleUnfollow}>
+          <Icon name="close" />
+          {busy ? 'Unfollowing…' : 'Unfollow'}
+        </button>
+        <Link className="btn sm pri" to={`/tv/${show.tmdb_id}`} onClick={onClose}>
+          Open show
+          <Icon name="next" />
+        </Link>
+      </div>
+    </Modal>
   )
 }
 

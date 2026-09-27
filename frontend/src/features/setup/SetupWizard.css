@@ -1,17 +1,7 @@
 /* First-run setup, in the Obsidian language: a glass card centred on the
    blue-black ground with the house ambient glow behind it (no poster to
-   derive from yet), step progress as a glowing ice line, glass inputs. */
-.setup-page {
-  position: relative;
-  overflow: hidden;
-  min-height: 100vh;
-  min-height: 100dvh;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 24px calc(20px + env(safe-area-inset-right)) calc(24px + env(safe-area-inset-bottom))
-    calc(20px + env(safe-area-inset-left));
-}
+   derive from yet), step progress as a glowing ice line, glass inputs.
+   The page's ground is global.css's. */
 .setup-page .ambient-glow i {
   opacity: 0.3;
 }

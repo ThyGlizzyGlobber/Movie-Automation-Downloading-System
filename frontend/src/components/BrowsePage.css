@@ -9,14 +9,6 @@
   flex-wrap: wrap;
   margin-bottom: 22px;
 }
-.browse-title {
-  font-family: var(--font-display);
-  font-weight: 300;
-  font-size: var(--text-page);
-  letter-spacing: var(--tracking-display);
-  line-height: 0.95;
-  margin: 0;
-}
 .browse-count {
   color: var(--text-dim);
   font-weight: 200;

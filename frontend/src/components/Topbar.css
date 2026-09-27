@@ -110,7 +110,7 @@ body.search-open #searchToggleBtn {
    reference's warm gradient; the user icon is the fallback when there is
    no username to draw from. */
 #accountToggle.has-initials {
-  background: linear-gradient(135deg, #ffb88c, #ea6a8b);
+  background: var(--avatar-gradient);
   color: var(--on-light);
   font-family: var(--font-body);
   font-size: 12px;

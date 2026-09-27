@@ -1,8 +1,9 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { cancelRequest } from '../../api/requests'
 import Icon from '../../components/Icon'
 import Img from '../../components/Img'
+import Modal from '../../components/Modal'
 import StatusPill from '../../components/StatusPill'
 import DownloadBar from '../../components/DownloadBar'
 import { posterUrl } from '../../lib/tmdbImage'
@@ -123,14 +124,6 @@ function movieSub(r: RequestOut): string {
 // asked, when, the full reason something stopped, a show's seasons
 // episode by episode, and the cancel/delete actions.
 export default function RequestSheet({ item, onClose, onChanged }: { item: DisplayItem; onClose: () => void; onChanged: () => void }) {
-  useEffect(() => {
-    function onKey(e: KeyboardEvent) {
-      if (e.key === 'Escape') onClose()
-    }
-    document.addEventListener('keydown', onKey)
-    return () => document.removeEventListener('keydown', onKey)
-  }, [onClose])
-
   const rows = item.type === 'standalone' ? [item.row] : item.rows
   const status = item.type === 'standalone' ? item.row.status : dominantStatus(item.rows)
   const updated = rows.reduce((best, r) => (r.updated_at > best ? r.updated_at : best), rows[0].updated_at)
@@ -171,52 +164,45 @@ export default function RequestSheet({ item, onClose, onChanged }: { item: Displ
   }
 
   return (
-    <div
-      className="request-modal-overlay"
-      onClick={(e) => {
-        if (e.target === e.currentTarget) onClose()
-      }}
-    >
-      <div className="request-modal rq-sheet" role="dialog" aria-modal="true" aria-labelledby="rq-sheet-title">
-        <button className="request-modal-close" aria-label="Close" onClick={onClose}>
-          <Icon name="close" />
-        </button>
-        <div className="request-modal-head">
-          <Img className="request-modal-poster" src={posterUrl(poster ?? null)} alt="" />
-          <div>
-            <h2 id="rq-sheet-title" className="request-modal-title">
-              {title}
-            </h2>
-            <p className="request-modal-sub">{sub}</p>
-          </div>
-        </div>
-
-        <div className="rq-sheet-status">
-          {/* A download is said by its bar, so it gets no pill. */}
-          <div className={`rq-sheet-line${status === 'downloading' ? ' live' : ''}`}>
-            {status !== 'downloading' && <StatusPill status={status} />}
-            <span>{detail}</span>
-          </div>
-          {status === 'downloading' && <DownloadBar progress={progress} className="rq-sheet-bar" />}
-        </div>
-
-        {item.type === 'show' && (
-          <div className="rq-seasons">
-            {item.seasons.map((season) => (
-              <SeasonStrip key={season.key} season={season} onChanged={onChanged} />
-            ))}
-          </div>
-        )}
-
-        <div className="request-modal-foot">
-          <span className="request-modal-note">Updated {relativeTime(updated)}</span>
-          {item.type === 'standalone' && <CancelButton row={item.row} onChanged={onChanged} />}
-          <Link className="btn sm pri" to={href.replace(/^#/, '')} onClick={onClose}>
-            {item.type === 'show' ? 'Open show' : 'Open'}
-            <Icon name="next" />
-          </Link>
+    <Modal className="request-modal rq-sheet" labelledBy="rq-sheet-title" onClose={onClose}>
+      <button className="request-modal-close" aria-label="Close" onClick={onClose}>
+        <Icon name="close" />
+      </button>
+      <div className="request-modal-head">
+        <Img className="request-modal-poster" src={posterUrl(poster ?? null)} alt="" />
+        <div>
+          <h2 id="rq-sheet-title" className="request-modal-title">
+            {title}
+          </h2>
+          <p className="request-modal-sub">{sub}</p>
         </div>
       </div>
-    </div>
+
+      <div className="rq-sheet-status">
+        {/* A download is said by its bar, so it gets no pill. */}
+        <div className={`rq-sheet-line${status === 'downloading' ? ' live' : ''}`}>
+          {status !== 'downloading' && <StatusPill status={status} />}
+          <span>{detail}</span>
+        </div>
+        {status === 'downloading' && <DownloadBar progress={progress} className="rq-sheet-bar" />}
+      </div>
+
+      {item.type === 'show' && (
+        <div className="rq-seasons">
+          {item.seasons.map((season) => (
+            <SeasonStrip key={season.key} season={season} onChanged={onChanged} />
+          ))}
+        </div>
+      )}
+
+      <div className="request-modal-foot">
+        <span className="request-modal-note">Updated {relativeTime(updated)}</span>
+        {item.type === 'standalone' && <CancelButton row={item.row} onChanged={onChanged} />}
+        <Link className="btn sm pri" to={href.replace(/^#/, '')} onClick={onClose}>
+          {item.type === 'show' ? 'Open show' : 'Open'}
+          <Icon name="next" />
+        </Link>
+      </div>
+    </Modal>
   )
 }

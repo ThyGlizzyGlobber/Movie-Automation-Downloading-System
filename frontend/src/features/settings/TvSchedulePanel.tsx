@@ -5,9 +5,8 @@ import { SettingsCardSkeleton } from './SettingsSkeleton'
 import ErrorState from '../../components/ErrorState'
 import { ApiError } from '../../api/client'
 import SettingRow from '../../components/SettingRow'
+import { useSaveFlash } from '../../lib/hooks'
 import Toggle from '../../components/Toggle'
-
-type SaveState = 'idle' | 'saving' | 'saved' | 'error'
 
 const TV_SUB = 'How Obsidian watches for new episodes of the shows you follow.'
 
@@ -19,7 +18,7 @@ export default function TvSchedulePanel() {
   const [recheckEnabled, setRecheckEnabled] = useState(false)
   const [recheckInterval, setRecheckInterval] = useState('1')
   const [recheckLimit, setRecheckLimit] = useState('0')
-  const [saveState, setSaveState] = useState<SaveState>('idle')
+  const [saveState, setSaveState, flashSaveState] = useSaveFlash()
   const [saveError, setSaveError] = useState<string | null>(null)
 
   useEffect(() => {
@@ -47,8 +46,7 @@ export default function TvSchedulePanel() {
         episode_recheck_interval_hours: Number(recheckInterval),
         episode_recheck_max_attempts: Number(recheckLimit),
       })
-      setSaveState('saved')
-      setTimeout(() => setSaveState('idle'), 1200)
+      flashSaveState('saved')
     } catch (err) {
       setSaveError(err instanceof ApiError ? err.message : 'Something went wrong.')
       setSaveState('error')

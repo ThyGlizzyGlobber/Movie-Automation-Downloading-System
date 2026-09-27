@@ -73,6 +73,9 @@
   --radius-pill: 999px;
   --shadow-float: 0 20px 60px rgba(0, 0, 0, 0.5);
   --shadow-primary: 0 12px 40px rgba(255, 255, 255, 0.18);
+  /* The warm ground a person's initials sit on wherever they have no
+     photo (the account button, the household list, the Account page). */
+  --avatar-gradient: linear-gradient(135deg, #ffb88c, #ea6a8b);
 
   /* ---- Primitives: type ----
      Outfit is loaded 200–700 (display only ever uses 200–500; the

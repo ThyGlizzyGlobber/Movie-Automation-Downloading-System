@@ -51,7 +51,9 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.poster-caption small {
+/* Requests' caption, beside its ⋯, has the same second line. */
+.poster-caption small,
+.rq-cap small {
   display: block;
   color: var(--text-dim);
   font-size: 12px;

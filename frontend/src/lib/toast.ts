@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useMemo, useRef, useState, type ReactNode } from 'react'
+import { createContext, useContext } from 'react'
 import type { IconName } from '../components/Icon'
 
 export type ToastTone = 'ok' | 'error' | 'info'
@@ -17,41 +17,16 @@ export interface ToastItem extends ToastOptions {
   id: number
 }
 
-interface ToastActions {
+export interface ToastActions {
   toast: (opts: ToastOptions) => void
   dismiss: (id: number) => void
 }
 
 // Two contexts so the pages that only ever raise a toast don't re-render
 // every time one appears or leaves; only ToastStack reads the list.
-const ToastContext = createContext<ToastActions | null>(null)
-const ToastListContext = createContext<ToastItem[]>([])
-const TOAST_MS = 5000
-
-export function ToastProvider({ children }: { children: ReactNode }) {
-  const [toasts, setToasts] = useState<ToastItem[]>([])
-  const nextId = useRef(1)
-
-  const dismiss = useCallback((id: number) => {
-    setToasts((list) => list.filter((t) => t.id !== id))
-  }, [])
-
-  const toast = useCallback(
-    (opts: ToastOptions) => {
-      const id = nextId.current++
-      setToasts((list) => [...list.slice(-3), { ...opts, id }])
-      window.setTimeout(() => dismiss(id), TOAST_MS)
-    },
-    [dismiss],
-  )
-
-  const actions = useMemo(() => ({ toast, dismiss }), [toast, dismiss])
-  return (
-    <ToastContext.Provider value={actions}>
-      <ToastListContext.Provider value={toasts}>{children}</ToastListContext.Provider>
-    </ToastContext.Provider>
-  )
-}
+// ToastProvider (components/ToastProvider.tsx) fills them.
+export const ToastContext = createContext<ToastActions | null>(null)
+export const ToastListContext = createContext<ToastItem[]>([])
 
 // Glass notices that slide in at the bottom corner (the reference's
 // toasts) in place of browser alert() dialogs.

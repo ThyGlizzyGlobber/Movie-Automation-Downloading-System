@@ -141,10 +141,3 @@ export function showPill(show: TvDetail): BannerPill | null {
   if (last?.episode_number === 1 && lastAge != null && lastAge >= 0 && lastAge <= 30) return { text: 'New season', tone: 'hot' }
   return null
 }
-
-// The hero's certification lookups used to live here, reading a
-// hardcoded 'AU' while detailHelpers read a hardcoded 'US' — the same
-// title rated two ways on two pages of the same app. There is one
-// lookup now, in detailHelpers, and it takes the household's region.
-// Re-exported so the carousel's imports stay in one place.
-export { certificationOf as movieCertOf, tvCertificationOf as tvCertOf } from './detailHelpers'

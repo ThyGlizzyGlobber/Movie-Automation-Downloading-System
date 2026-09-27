@@ -58,6 +58,33 @@ main {
   line-height: 1;
   margin: 0 0 22px var(--row-inset);
 }
+/* The list pages' heading (Browse, Requests, Following), which sits in a
+   head row that does its own spacing. */
+.browse-title,
+.rq-h1 {
+  font-family: var(--font-display);
+  font-weight: 300;
+  font-size: var(--text-page);
+  letter-spacing: var(--tracking-display);
+  line-height: 0.95;
+  margin: 0;
+}
+
+/* The full-screen ground the sign-in and first-run setup cards sit on.
+   (Each page dims its own glow: that rule has to load after
+   AmbientGlow.css to beat its per-blob opacities.) */
+.login-page,
+.setup-page {
+  position: relative;
+  overflow: hidden;
+  min-height: 100vh;
+  min-height: 100dvh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px calc(20px + env(safe-area-inset-right)) calc(24px + env(safe-area-inset-bottom))
+    calc(20px + env(safe-area-inset-left));
+}
 
 /* The throb on anything still in motion (searching/downloading). */
 @keyframes pulse {
