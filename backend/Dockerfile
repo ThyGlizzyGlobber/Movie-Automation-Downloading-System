@@ -21,8 +21,14 @@ WORKDIR /app
 # deliberately pinned to the same major version (20.x) as frontend/
 # Dockerfile's own `node:20-alpine` build stage, rather than trusting
 # whatever happens to be in this base image's apt repo at build time.
+# mkvtoolnix: media_organizer's fix-audio-defaults backfill edits an
+# MKV's default-audio-track flag with mkvpropedit, which rewrites the
+# header in place — milliseconds whatever the file's size, against the
+# full re-mux ffmpeg would need to change the same flag. Only the
+# backfill uses it; the organiser itself is already re-muxing new files
+# for other reasons and sets the flag on the way through.
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends git openssh-client ffmpeg curl \
+    && apt-get install -y --no-install-recommends git openssh-client ffmpeg mkvtoolnix curl \
     && curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
     && apt-get install -y --no-install-recommends nodejs \
     && rm -rf /var/lib/apt/lists/*

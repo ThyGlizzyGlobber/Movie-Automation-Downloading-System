@@ -6,7 +6,16 @@ from pathlib import Path
 from app import config
 from app.config import QBIT_HOST, QBIT_PASSWORD, QBIT_PORT, QBIT_USERNAME, TMDB_API_KEY
 from app.db import RequestStore
-from app.media_organizer import MediaOrganizerError, organize_episode, organize_movie, organize_pack, select_video_file
+from app.media_organizer import (
+    MediaOrganizerError,
+    apply_audio_default_fix,
+    organize_episode,
+    organize_movie,
+    organize_pack,
+    plan_audio_default_fix,
+    select_video_file,
+)
+from app.pipeline_settings import resolve_pipeline_settings
 from app.pipeline import download, download_episode, download_pack
 from app.qbt import QBTClient
 from app.reconcile import remove_orphaned_download_dirs, remove_redundant_sources
@@ -317,6 +326,58 @@ def cmd_cleanup_orphans(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_fix_audio_defaults(args: argparse.Namespace) -> int:
+    """Backfill: the organiser only sees a file on its way in, so
+    everything filed before it learned this keeps whatever default its
+    release shipped with.
+
+    Dry run unless --apply, and it prints what it is declining to touch
+    as loudly as what it would change — a silent skip here reads as
+    "nothing was wrong", which is the one thing it must not be mistaken
+    for."""
+    language = args.language
+    if language is None:
+        store = RequestStore(config.DB_PATH)
+        try:
+            language = resolve_pipeline_settings(store).preferred_audio_language
+        finally:
+            store.close()
+    roots = [Path(r) for r in (args.root or [])] or [config.MOVIE_LIBRARY_ROOT, config.TV_LIBRARY_ROOT]
+
+    plans = []
+    for root in roots:
+        if not root.is_dir():
+            print(f"skipping {root}: not a directory")
+            continue
+        print(f"scanning {root}...")
+        plans += plan_audio_default_fix(root, language)
+
+    changeable = [p for p in plans if p.skipped is None]
+    skipped = [p for p in plans if p.skipped is not None]
+
+    for plan in skipped:
+        print(f"  SKIP  {plan.summary} {plan.path.name[:70]}  — {plan.skipped}")
+    for plan in changeable:
+        track = plan.tracks[plan.wanted]
+        print(f"  {'FIX ' if args.apply else 'WOULD'}  {plan.summary} -> track {plan.wanted + 1} ({track.language})  {plan.path.name[:70]}")
+
+    if not args.apply:
+        print(f"\n{len(changeable)} file(s) would change, {len(skipped)} skipped. Re-run with --apply to write them.")
+        print("Nothing is deleted: only which track carries the default flag changes.")
+        return 0
+
+    failures = 0
+    for plan in changeable:
+        error = apply_audio_default_fix(plan)
+        if error:
+            failures += 1
+            print(f"  FAILED {plan.path.name[:70]}: {error}")
+    done = len(changeable) - failures
+    print(f"\n{done} file(s) changed, {failures} failed, {len(skipped)} skipped.")
+    print("Plex reads stream flags when it analyses a file, so refresh metadata on anything that looks unchanged.")
+    return 1 if failures else 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="app.cli")
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -398,6 +459,26 @@ def main(argv: list[str] | None = None) -> int:
         "Defaults to the movie and TV library roots.",
     )
     cleanup_parser.set_defaults(func=cmd_cleanup_orphans)
+
+    audio_parser = subparsers.add_parser(
+        "fix-audio-defaults",
+        help="Flag the preferred-language audio track as default on files already in the library "
+        "(dry run unless --apply)",
+    )
+    audio_parser.add_argument(
+        "--apply", action="store_true", help="Actually write the change; without this, only lists what would happen"
+    )
+    audio_parser.add_argument(
+        "--language",
+        default=None,
+        help="ISO 639-1 code. Defaults to the household's Settings > Region choice.",
+    )
+    audio_parser.add_argument(
+        "--root",
+        action="append",
+        help="Directory to scan (repeatable). Defaults to the movie and TV library roots.",
+    )
+    audio_parser.set_defaults(func=cmd_fix_audio_defaults)
 
     args = parser.parse_args(argv)
     return args.func(args)

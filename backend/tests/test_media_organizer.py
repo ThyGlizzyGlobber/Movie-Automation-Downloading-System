@@ -1010,3 +1010,137 @@ def test_a_failed_probe_leaves_the_file_alone(monkeypatch, tmp_path):
     _fake_probe(monkeypatch, "", returncode=1)
 
     assert media_organizer._audio_default_disposition(tmp_path / "f.mkv", "en") == []
+
+
+# ---------------------------------------------------------------------------
+# Backfill — the same decision, applied to files already in the library.
+# ---------------------------------------------------------------------------
+
+
+def _mkv(path: Path, tracks) -> Path:
+    """A file that only has to exist and end in .mkv; the probe is faked."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(b"not really an mkv")
+    return path
+
+
+def _probe_returns(monkeypatch, by_name):
+    """ffprobe answers per filename, so one scan can mix several shapes."""
+
+    def run(cmd, **kwargs):
+        path = Path(cmd[-1])
+        streams = [
+            {"tags": {"language": lang} if lang else {}, "disposition": {"default": 1 if default else 0}}
+            for lang, default in by_name[path.name]
+        ]
+        return subprocess.CompletedProcess(cmd, 0, stdout=json.dumps({"streams": streams}), stderr="")
+
+    monkeypatch.setattr(media_organizer.subprocess, "run", run)
+
+
+def test_the_backfill_plans_the_same_change_the_organiser_would(monkeypatch, tmp_path):
+    _mkv(tmp_path / "French Release.mkv", None)
+    _probe_returns(monkeypatch, {"French Release.mkv": [("fre", True), ("eng", False)]})
+
+    plans = media_organizer.plan_audio_default_fix(tmp_path, "en")
+
+    assert [(p.path.name, p.wanted, p.skipped) for p in plans] == [("French Release.mkv", 1, None)]
+    assert plans[0].summary == "[fre* eng]"
+
+
+def test_a_file_that_is_already_right_is_not_in_the_plan_at_all(monkeypatch, tmp_path):
+    """Not reported as skipped either — "nothing to do" is not an
+    exception, and a report listing every correct file in the library
+    would bury the ones that aren't."""
+    _mkv(tmp_path / "Fine.mkv", None)
+    _probe_returns(monkeypatch, {"Fine.mkv": [("eng", True), ("fre", False)]})
+
+    assert media_organizer.plan_audio_default_fix(tmp_path, "en") == []
+
+
+def test_a_still_hardlinked_file_is_skipped_rather_than_edited(monkeypatch, tmp_path):
+    """mkvpropedit rewrites the header in place, and the organiser
+    hardlinks — so more than one link means qBittorrent is very likely
+    seeding these exact bytes, and editing them fails its next re-check.
+    This is the guard that makes the whole command safe to run."""
+    seeding = _mkv(tmp_path / "Seeding.mkv", None)
+    os.link(seeding, tmp_path / "torrent-copy.mkv")
+    _probe_returns(monkeypatch, {
+        "Seeding.mkv": [("fre", True), ("eng", False)],
+        "torrent-copy.mkv": [("fre", True), ("eng", False)],
+    })
+
+    plans = media_organizer.plan_audio_default_fix(tmp_path, "en")
+
+    assert plans and all(p.wanted is None for p in plans)
+    assert all("hardlinked" in p.skipped for p in plans)
+
+
+def test_a_non_mkv_is_skipped_loudly_rather_than_dropped(monkeypatch, tmp_path):
+    """mkvpropedit is Matroska-only. Saying so beats leaving the file out
+    of the report, which would read as "this one was fine"."""
+    _mkv(tmp_path / "Movie.mp4", None)
+    _probe_returns(monkeypatch, {"Movie.mp4": [("fre", True), ("eng", False)]})
+
+    plans = media_organizer.plan_audio_default_fix(tmp_path, "en")
+
+    assert len(plans) == 1
+    assert plans[0].wanted is None
+    assert "MKV" in plans[0].skipped
+
+
+def test_the_backfill_and_the_organiser_cannot_disagree(monkeypatch, tmp_path):
+    """Both read preferred_audio_track. The point of the split is that
+    one file can't start being fixed one way on the way in and another
+    way afterwards."""
+    source = _mkv(tmp_path / "Both.mkv", None)
+    _probe_returns(monkeypatch, {"Both.mkv": [("ita", True), ("eng", False)]})
+
+    organiser = media_organizer._audio_default_disposition(source, "en")
+    backfill = media_organizer.plan_audio_default_fix(tmp_path, "en")[0]
+
+    assert organiser == ["-disposition:a:0", "0", "-disposition:a:1", "default"]
+    assert backfill.wanted == 1
+
+
+def test_apply_builds_the_track_selectors_mkvpropedit_expects(monkeypatch, tmp_path):
+    """mkvpropedit numbers tracks from 1 within their own type, so the
+    second audio track is `track:a2`. Off by one here would silently flag
+    the wrong track."""
+    path = _mkv(tmp_path / "X.mkv", None)
+    plan = media_organizer.AudioFixPlan(
+        path=path,
+        tracks=[media_organizer.AudioTrack("fre", True), media_organizer.AudioTrack("eng", False)],
+        wanted=1,
+        skipped=None,
+    )
+    seen = {}
+
+    def run(cmd, **kwargs):
+        seen["cmd"] = cmd
+        return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+
+    monkeypatch.setattr(media_organizer.subprocess, "run", run)
+
+    assert media_organizer.apply_audio_default_fix(plan) is None
+    assert seen["cmd"][2:] == [
+        "--edit", "track:a1", "--set", "flag-default=0",
+        "--edit", "track:a2", "--set", "flag-default=1",
+    ]
+
+
+def test_a_missing_mkvpropedit_says_so_instead_of_crashing(monkeypatch, tmp_path):
+    path = _mkv(tmp_path / "X.mkv", None)
+    plan = media_organizer.AudioFixPlan(
+        path=path,
+        tracks=[media_organizer.AudioTrack("fre", True), media_organizer.AudioTrack("eng", False)],
+        wanted=1,
+        skipped=None,
+    )
+
+    def run(cmd, **kwargs):
+        raise FileNotFoundError("mkvpropedit")
+
+    monkeypatch.setattr(media_organizer.subprocess, "run", run)
+
+    assert "mkvtoolnix" in media_organizer.apply_audio_default_fix(plan)

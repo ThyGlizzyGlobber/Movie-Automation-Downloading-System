@@ -23,6 +23,7 @@ import os
 import re
 import shutil
 import subprocess
+from typing import NamedTuple
 from collections.abc import Callable
 from pathlib import Path, PurePosixPath
 
@@ -327,25 +328,17 @@ def _embedded_artwork_stream_indices(source: Path) -> list[int]:
     return indices
 
 
-def _audio_default_disposition(source: Path, preferred: str) -> list[str]:
-    """ffmpeg arguments that make the `preferred`-language audio track the
-    default one, or an empty list when there is nothing worth doing.
+class AudioTrack(NamedTuple):
+    """One audio stream, as much of it as this question needs."""
 
-    Plex's audio-language preference is per Plex account, so a release
-    whose French track is flagged default plays in French for every
-    viewer who hasn't gone and changed their own settings — which is
-    every guest on the server. The flag lives in the file, so fixing it
-    here fixes it for everyone at once and needs nothing explained.
+    language: str | None
+    is_default: bool
 
-    Returns nothing, rather than raising, whenever the question doesn't
-    arise or can't be answered: one audio track (nothing to choose
-    between), no track in the preferred language, the right track already
-    being the only default, or ffprobe failing. Each of those means the
-    caller should take its ordinary zero-cost hardlink.
 
-    Indices here are audio-relative, not the global stream index —
-    `-disposition:a:1` is the second *audio* stream, which is what ffmpeg
-    wants and what ffprobe's order gives us.
+def audio_tracks(source: Path) -> list[AudioTrack]:
+    """`source`'s audio streams in order, or an empty list if ffprobe
+    can't say. Never raises: a file this can't read is a file the caller
+    leaves alone, which is the same answer as a file with nothing to fix.
     """
     try:
         result = subprocess.run(
@@ -353,7 +346,7 @@ def _audio_default_disposition(source: Path, preferred: str) -> list[str]:
                 "ffprobe", "-v", "error",
                 "-print_format", "json",
                 "-select_streams", "a",
-                "-show_entries", "stream=index:stream_tags=language:stream_disposition=default",
+                "-show_entries", "stream_tags=language:stream_disposition=default",
                 str(source),
             ],
             capture_output=True,
@@ -364,21 +357,59 @@ def _audio_default_disposition(source: Path, preferred: str) -> list[str]:
     except (OSError, subprocess.TimeoutExpired, ValueError) as exc:
         logger.warning("ffprobe failed reading audio tracks of %r (%s); leaving them alone", str(source), exc)
         return []
+    return [
+        AudioTrack(
+            language=(stream.get("tags") or {}).get("language"),
+            is_default=bool((stream.get("disposition") or {}).get("default")),
+        )
+        for stream in streams
+    ]
 
-    if len(streams) < 2:
-        return []
 
-    languages = [(stream.get("tags") or {}).get("language") for stream in streams]
-    wanted = next((i for i, tag in enumerate(languages) if is_audio_language(tag, preferred)), None)
+def preferred_audio_track(tracks: list[AudioTrack], preferred: str) -> int | None:
+    """Which audio track should carry the default flag, as an index into
+    `tracks`, or None when there is nothing worth doing.
+
+    Plex's audio-language preference is per Plex account, so a release
+    whose French track is flagged default plays in French for every
+    viewer who hasn't gone and changed their own settings — which is
+    every guest on the server. The flag lives in the file, so deciding it
+    here fixes it for everyone at once and needs nothing explained.
+
+    None for: one track (nothing to choose between), no track in the
+    preferred language, or that track already being the only default.
+    Each means the caller should leave the file exactly as it is.
+
+    The decision lives apart from either way of acting on it — the
+    organiser remuxes new files with ffmpeg, the backfill edits existing
+    ones in place with mkvpropedit — because the two agreeing is the
+    whole point, and two copies of this would eventually not.
+    """
+    if len(tracks) < 2:
+        return None
+    wanted = next((i for i, t in enumerate(tracks) if is_audio_language(t.language, preferred)), None)
+    if wanted is None:
+        return None
+    defaults = [t.is_default for t in tracks]
+    if defaults[wanted] and sum(defaults) == 1:
+        return None
+    return wanted
+
+
+def _audio_default_disposition(source: Path, preferred: str) -> list[str]:
+    """ffmpeg arguments that make the `preferred`-language audio track
+    the default one, or an empty list when there is nothing to do.
+
+    Indices here are audio-relative, not the global stream index —
+    `-disposition:a:1` is the second *audio* stream, which is what ffmpeg
+    wants and what ffprobe's order gives us.
+    """
+    tracks = audio_tracks(source)
+    wanted = preferred_audio_track(tracks, preferred)
     if wanted is None:
         return []
-
-    defaults = [bool((stream.get("disposition") or {}).get("default")) for stream in streams]
-    if defaults[wanted] and sum(defaults) == 1:
-        return []
-
     args: list[str] = []
-    for i in range(len(streams)):
+    for i in range(len(tracks)):
         args += [f"-disposition:a:{i}", "default" if i == wanted else "0"]
     return args
 
@@ -680,3 +711,88 @@ def organize_movie(
     target.parent.mkdir(parents=True, exist_ok=True)
     _link_or_copy(source_path, target, preferred_audio_language)
     return target
+
+
+# ---------------------------------------------------------------------------
+# Backfill — the same decision applied to files already in the library.
+#
+# The organiser only ever sees a file on its way in, so every title filed
+# before it learned this keeps whatever default its release shipped with.
+# Audited 2026-09-27 against the live library: 126 of 1683 files carried
+# an English track that wasn't the default, twenty of them one season of
+# one show from an Italian release.
+# ---------------------------------------------------------------------------
+
+# mkvpropedit rewrites the header in place — milliseconds whatever the
+# file's size, no copy, no re-mux. That is only safe away from the
+# organiser: on the way in, the library path and qBittorrent's own copy
+# are one inode, so editing the bytes corrupts a live torrent. Here the
+# link count is checked first instead.
+_MKVPROPEDIT = "mkvpropedit"
+
+
+class AudioFixPlan(NamedTuple):
+    path: Path
+    tracks: list[AudioTrack]
+    # Index into `tracks`, or None when the file is being skipped.
+    wanted: int | None
+    # None when there is something to do; otherwise why there isn't.
+    skipped: str | None
+
+    @property
+    def summary(self) -> str:
+        shown = " ".join(f"{t.language or 'none'}{'*' if t.is_default else ''}" for t in self.tracks)
+        return f"[{shown}]"
+
+
+def plan_audio_default_fix(root: Path, preferred: str) -> list[AudioFixPlan]:
+    """What a backfill would change under `root`, and what it would not.
+
+    Everything it declines to touch is reported rather than dropped: a
+    silent skip in a job like this reads as "nothing was wrong", which is
+    the one thing it must never be mistaken for.
+    """
+    plans: list[AudioFixPlan] = []
+    for path in sorted(root.rglob("*")):
+        if path.suffix.lower() not in (".mkv", ".mp4", ".m4v"):
+            continue
+        tracks = audio_tracks(path)
+        wanted = preferred_audio_track(tracks, preferred)
+        if wanted is None:
+            continue
+        if path.suffix.lower() != ".mkv":
+            plans.append(AudioFixPlan(path, tracks, None, "not an MKV; mkvpropedit can't edit it"))
+            continue
+        try:
+            links = path.stat().st_nlink
+        except OSError as exc:
+            plans.append(AudioFixPlan(path, tracks, None, f"can't stat it ({exc})"))
+            continue
+        if links > 1:
+            # The organiser hardlinks, so more than one link means
+            # qBittorrent is very likely still seeding these exact bytes.
+            # Editing them in place would fail its next re-check.
+            plans.append(AudioFixPlan(path, tracks, None, f"still hardlinked ({links} links) — probably seeding"))
+            continue
+        plans.append(AudioFixPlan(path, tracks, wanted, None))
+    return plans
+
+
+def apply_audio_default_fix(plan: AudioFixPlan) -> str | None:
+    """Writes one plan's change. Returns None on success, or the reason
+    it failed. mkvpropedit numbers tracks from 1 within their own type,
+    so `track:a1` is the first audio track."""
+    if plan.wanted is None:
+        return "nothing to do"
+    cmd = [_MKVPROPEDIT, str(plan.path)]
+    for i in range(len(plan.tracks)):
+        cmd += ["--edit", f"track:a{i + 1}", "--set", f"flag-default={1 if i == plan.wanted else 0}"]
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=config.FFMPEG_STRIP_TIMEOUT_SECONDS)
+    except FileNotFoundError:
+        return "mkvpropedit not installed (add mkvtoolnix to the backend image)"
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        return str(exc)
+    if result.returncode != 0:
+        return (result.stderr or result.stdout or "mkvpropedit failed").strip()[-300:]
+    return None
