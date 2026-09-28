@@ -40,12 +40,27 @@ export interface ReleaseOutlook {
   eta: string | null
 }
 
-function dated(entries: ReleaseDatesResult[], types: number[], after: Date): string[] {
+// Whole days from today to `iso`, so a release is compared against the
+// day it lands on rather than against the moment of asking. Negative for
+// a date already gone, 0 for today.
+function daysUntil(iso: string, now: Date): number {
+  const midnight = new Date(now)
+  midnight.setHours(0, 0, 0, 0)
+  return Math.round((new Date(`${iso}T00:00:00`).getTime() - midnight.getTime()) / 86400000)
+}
+
+function dated(entries: ReleaseDatesResult[], types: number[], now: Date): string[] {
   return entries
     .flatMap((r) => r.release_dates)
     .filter((d) => d.type != null && types.includes(d.type) && d.release_date)
     .map((d) => d.release_date!.slice(0, 10))
-    .filter((iso) => new Date(`${iso}T00:00:00`) > after)
+    // Today counts. Comparing against the instant instead dropped a
+    // release the moment local midnight passed, and the cascade then
+    // fell through to the next thing it could find — which is a disc
+    // date months later. Spider-Man: Brand New Day went digital on the
+    // 29th and its page offered the 17 Nov disc, 49 days out, on the
+    // morning of the 29th.
+    .filter((iso) => daysUntil(iso, now) >= 0)
     .sort()
 }
 
@@ -96,8 +111,9 @@ function formatMonth(iso: string): string {
 // makes you do the arithmetic to find out whether that means the 17th,
 // and the rounding meant it sometimes didn't.
 function etaFrom(iso: string, now: Date): string | null {
-  const days = Math.ceil((new Date(`${iso}T00:00:00`).getTime() - now.getTime()) / 86400000)
-  if (days <= 0) return null
+  const days = daysUntil(iso, now)
+  if (days < 0) return null
+  if (days === 0) return 'Today'
   return `${days} Day${days === 1 ? '' : 's'}`
 }
 
