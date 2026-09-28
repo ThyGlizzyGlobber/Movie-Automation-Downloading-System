@@ -1,5 +1,5 @@
 import { FALLBACK_REGION } from './regions'
-import type { MovieDetail, ReleaseDatesResult, TmdbListItem } from '../types/movies'
+import type { MovieDetail, ReleaseDatesResult } from '../types/movies'
 import { arrivalPhrase, releaseOutlook } from './releaseWindow'
 import type { EpisodeToAir, TvDetail } from '../types/tv'
 
@@ -20,23 +20,6 @@ type TvBadgeSource = {
   first_air_date?: string | null
   next_episode_to_air?: EpisodeToAir | null
   last_episode_to_air?: EpisodeToAir | null
-}
-
-export interface TaggedItem extends TmdbListItem {
-  mediaType: 'movie' | 'tv'
-}
-
-export function tagMediaType(items: TmdbListItem[], mediaType: 'movie' | 'tv'): TaggedItem[] {
-  return items.map((it) => ({ ...it, mediaType }))
-}
-
-// Trending movies+TV interleaved into one popularity-sorted list — backs
-// both the "Trending Now" row and (its top few, backdrop-having entries)
-// the hero carousel's own slide picks.
-export function mixTrending(movies: TmdbListItem[], shows: TmdbListItem[], limit = 20): TaggedItem[] {
-  return [...tagMediaType(movies, 'movie'), ...tagMediaType(shows, 'tv')]
-    .sort((a, b) => (b.popularity || 0) - (a.popularity || 0))
-    .slice(0, limit)
 }
 
 // Midnight today, local time, for "has this aired yet" comparisons.

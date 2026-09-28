@@ -14,6 +14,7 @@ import asyncio
 import secrets
 import time
 import uuid
+from datetime import datetime, timezone
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from urllib.parse import urlencode
@@ -51,16 +52,19 @@ def _tmdb_id_of(item: dict) -> int | None:
     return None
 
 
-def _matches(item: dict, target: str, year: int | None, tmdb_id: int | None) -> bool:
+def _matches(item: dict, target: str, year: int | None, tmdb_id: int | None, normalized: str | None = None) -> bool:
     """Whether a Plex item is the title asked about. When both sides
     carry a TMDB id, the ids decide on their own: titles collide ("Runner"
     against "The Runner") and drift ("The Fantastic 4: First Steps" on
     TMDB is "The Fantastic Four: First Steps" in Plex). Otherwise it's the
-    title (see titles_match) within YEAR_TOLERANCE."""
+    title (see titles_match) within YEAR_TOLERANCE. `normalized` is the
+    item's title already through normalize_text, when the caller has it."""
     item_id = item.get("tmdb_id", _tmdb_id_of(item))
     if tmdb_id is not None and item_id is not None:
         return item_id == tmdb_id
-    if not titles_match(normalize_text(item.get("title", "")), target):
+    if normalized is None:
+        normalized = normalize_text(item.get("title", ""))
+    if not titles_match(normalized, target):
         return False
     return not (year and item.get("year") and abs(item["year"] - year) > YEAR_TOLERANCE)
 
@@ -73,8 +77,16 @@ class LibraryIndex:
         self.items = items
         self._by_id = {i["tmdb_id"]: i for i in items if i.get("tmdb_id") is not None}
         self._by_title: dict[str, list[dict]] = {}
+        # Every item's title normalised once, here. The fuzzy fallback in
+        # find() walks the whole library for any title that isn't in it —
+        # the usual case for a browse row — and normalising each library
+        # title again on every lookup was most of what an "On Plex" badge
+        # cost: ~2s to mark a 300-title landing page against 317 films.
+        self._normalized: list[tuple[str, dict]] = []
         for item in items:
-            self._by_title.setdefault(normalize_text(item.get("title", "")), []).append(item)
+            normalized = normalize_text(item.get("title", ""))
+            self._by_title.setdefault(normalized, []).append(item)
+            self._normalized.append((normalized, item))
 
     def find(self, title: str, year: int | None, tmdb_id: int | None = None) -> dict | None:
         if tmdb_id is not None and tmdb_id in self._by_id:
@@ -82,10 +94,10 @@ class LibraryIndex:
         target = normalize_text(title)
         # Exact title first (the common case), then the fuzzy fallback.
         for item in self._by_title.get(target, []):
-            if _matches(item, target, year, tmdb_id):
+            if _matches(item, target, year, tmdb_id, target):
                 return item
-        for item in self.items:
-            if _matches(item, target, year, tmdb_id):
+        for normalized, item in self._normalized:
+            if _matches(item, target, year, tmdb_id, normalized):
                 return item
         return None
 
@@ -257,6 +269,49 @@ class PlexClient:
         if not response.ok:
             raise PlexError(f"Plex on-deck fetch failed: {response.status_code}")
         return response.json().get("MediaContainer", {}).get("Metadata", []) or []
+
+    def watched(self, server_url: str, server_token: str, media_type: str, limit: int = 300) -> list[dict]:
+        """What the token's own account has watched in one library type
+        ("movie"/"show"), most recent first: `{tmdb_id, title, year,
+        last_viewed_at}` with `last_viewed_at` an ISO timestamp.
+
+        Watched state is per Plex account, so this answers for whoever's
+        token asks — the same reason on_deck is asked with each person's
+        own token. `viewCount>>=1` is Plex's "at least once" filter; a show
+        counts as soon as any episode has been played. Items the agent
+        never matched to TMDB are skipped: without an id they can't seed
+        anything."""
+        response = self.session.get(
+            f"{server_url}/library/all",
+            headers={
+                "Accept": "application/json",
+                "X-Plex-Token": server_token,
+                "X-Plex-Container-Start": "0",
+                "X-Plex-Container-Size": str(limit),
+            },
+            params={"type": _LIBRARY_TYPE[media_type], "includeGuids": 1, "sort": "lastViewedAt:desc", "viewCount>>": 0},
+            timeout=15,
+        )
+        if not response.ok:
+            raise PlexError(f"Plex watch history fetch failed: {response.status_code}")
+        out = []
+        for item in response.json().get("MediaContainer", {}).get("Metadata", []) or []:
+            tmdb_id = _tmdb_id_of(item)
+            # Checked here as well as filtered for: a server that ignored
+            # the filter would otherwise hand back the whole library as
+            # "watched".
+            if tmdb_id is None or not (item.get("viewCount") or item.get("viewedLeafCount")):
+                continue
+            stamp = item.get("lastViewedAt")
+            out.append(
+                {
+                    "tmdb_id": tmdb_id,
+                    "title": item.get("title") or "",
+                    "year": item.get("year"),
+                    "last_viewed_at": datetime.fromtimestamp(int(stamp), timezone.utc).isoformat() if stamp else None,
+                }
+            )
+        return out
 
     def recently_added(self, server_url: str, server_token: str, limit: int = 24) -> list[dict]:
         """Plex's own "Recently Added" for the linked server — backs the
@@ -539,6 +594,46 @@ def plex_library_lookup(store, media_type: str) -> Callable[..., bool] | None:
         return index.find(title, year, tmdb_id) is not None
 
     return matcher
+
+
+# Watch history changes when someone finishes something, not per page
+# load; ten minutes keeps Home quick without leaving a finished film out of
+# the next visit's taste for long.
+_WATCH_HISTORY_TTL_SECONDS = 600
+_watch_history_cache = TTLCache(_WATCH_HISTORY_TTL_SECONDS)
+
+
+def user_watch_history(store, plex_user_id: str, is_admin: bool) -> dict[str, list[dict]]:
+    """This person's watched movies and shows (`{"movie": [...], "tv":
+    [...]}`, keyed by TMDB's namespaces), from Plex, cached per person.
+
+    Asked with their own server token, captured at sign-in — the same
+    rule, and the same admin fallback, as the Continue watching row (see
+    api/plex.py's get_plex_on_deck): the admin's token would describe the
+    admin's viewing, not theirs. Empty rather than an error when Plex isn't
+    linked, the token isn't known yet, or Plex doesn't answer: it feeds
+    recommendations, and those degrade to the other signals."""
+    settings = store.get_settings()
+    server_url = settings.get("plex_server_url")
+    token = store.get_user_server_token(plex_user_id)
+    if not token and is_admin:
+        token = settings.get("plex_server_token")
+    empty: dict[str, list[dict]] = {"movie": [], "tv": []}
+    if not server_url or not token:
+        return empty
+    cache_key = (server_url, plex_user_id, token)
+    history, hit = _watch_history_cache.get(cache_key)
+    if hit:
+        return history
+    client = client_from_settings(settings)
+    history = {"movie": [], "tv": []}
+    for plex_type, tmdb_type in (("movie", "movie"), ("show", "tv")):
+        try:
+            history[tmdb_type] = client.watched(server_url, token, plex_type)
+        except (PlexError, requests.RequestException, ValueError) as exc:
+            logging.getLogger(__name__).info("plex watch history unavailable (%s): %s", plex_type, exc)
+    _watch_history_cache.set(cache_key, history)
+    return history
 
 
 def has_in_library(store, title: str, year: int | None, tmdb_id: int | None = None) -> bool | None:

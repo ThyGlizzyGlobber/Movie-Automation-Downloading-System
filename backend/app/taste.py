@@ -41,8 +41,17 @@ HALF_LIFE_DAYS = 45.0
 # stronger statement — a request is what someone *expected* to like, a watch
 # is what they actually sat through. Close together on purpose: in a
 # household that requests a lot and watches unevenly, weighting watches far
-# higher would hand the page to whoever leaves things playing.
-SOURCE_WEIGHTS = {"watched": 1.0, "requested": 0.8}
+# higher would hand the page to whoever leaves things playing. Opening a
+# title's page is the weakest: curiosity, not commitment — enough to tilt
+# the page toward it, never enough to outweigh what someone actually did.
+SOURCE_WEIGHTS = {"watched": 1.0, "requested": 0.8, "viewed": 0.35}
+
+# When one title turns up in more than one signal — watched *and* requested,
+# say — it is still one interest, so it stays one seed. It keeps its
+# strongest signal's weight and gains this share of the others', so
+# agreement counts for something without letting a title that was merely
+# looked at a lot outrank one that was watched.
+MERGE_BONUS = 0.25
 
 # Rows shown per day, and the pool they're drawn from. The gap between these
 # two numbers *is* the freshness: 4 of 12 means a seed appears roughly every
@@ -53,6 +62,11 @@ SEED_POOL = 12
 
 # Titles per row. More than a screenful, so the row is worth scrolling.
 ITEMS_PER_ROW = 20
+
+# How a row justified by a seed introduces itself, by what the person did.
+# Looking at a page is not something to say "because you…" about, so those
+# rows are just "More like" the title.
+ROW_TITLES = {"watched": "Because you watched", "requested": "Because you asked for", "viewed": "More like"}
 
 # A request row's media_type is finer-grained than TMDB's namespaces: a
 # whole show, one episode of it and a season pack are all the same seed,
@@ -68,7 +82,7 @@ class Seed:
     media_type: str  # "movie" | "tv" — TMDB's namespace, not the request's
     title: str
     weight: float
-    source: str  # "watched" | "requested"
+    source: str  # "watched" | "requested" | "viewed"
 
 
 @dataclass(frozen=True)
@@ -129,6 +143,66 @@ def seeds_from_requests(rows, now: datetime) -> list[Seed]:
                 source="requested",
             )
     return sorted(best.values(), key=lambda s: s.weight, reverse=True)
+
+
+def seeds_from_watch_history(history: dict[str, list[dict]], now: datetime) -> list[Seed]:
+    """Their Plex watch history as seeds — the strongest signal there is.
+
+    `history` is plex.user_watch_history's `{"movie": [...], "tv": [...]}`,
+    each entry carrying a TMDB id, a title and when it was last played."""
+    seeds = []
+    for media_type in ("movie", "tv"):
+        for entry in history.get(media_type) or []:
+            if not entry.get("tmdb_id") or not entry.get("title"):
+                continue
+            seeds.append(
+                Seed(
+                    tmdb_id=int(entry["tmdb_id"]),
+                    media_type=media_type,
+                    title=entry["title"],
+                    weight=_decayed(SOURCE_WEIGHTS["watched"], entry.get("last_viewed_at"), now),
+                    source="watched",
+                )
+            )
+    return seeds
+
+
+def seeds_from_views(rows: list[dict], now: datetime) -> list[Seed]:
+    """The titles they have opened in the app, as seeds (db.py's
+    list_title_views_for_user). Already one row per title."""
+    seeds = []
+    for row in rows:
+        media_type = _MEDIA_TYPES.get(row.get("media_type") or "")
+        if not media_type or not row.get("tmdb_id") or not row.get("title"):
+            continue
+        seeds.append(
+            Seed(
+                tmdb_id=int(row["tmdb_id"]),
+                media_type=media_type,
+                title=row["title"],
+                weight=_decayed(SOURCE_WEIGHTS["viewed"], row.get("viewed_at"), now),
+                source="viewed",
+            )
+        )
+    return seeds
+
+
+def merge_seeds(*groups: list[Seed]) -> list[Seed]:
+    """Every signal's seeds as one list, one seed per title, strongest
+    first. A title in several signals keeps its strongest signal (its
+    weight, its source, so its row is labelled by what they actually did)
+    plus MERGE_BONUS of the rest."""
+    by_title: dict[tuple[str, int], list[Seed]] = {}
+    for group in groups:
+        for seed in group:
+            by_title.setdefault((seed.media_type, seed.tmdb_id), []).append(seed)
+    merged = []
+    for same in by_title.values():
+        same.sort(key=lambda s: s.weight, reverse=True)
+        best = same[0]
+        extra = sum(s.weight for s in same[1:]) * MERGE_BONUS
+        merged.append(Seed(best.tmdb_id, best.media_type, best.title, best.weight + extra, best.source))
+    return sorted(merged, key=lambda s: s.weight, reverse=True)
 
 
 def daily_rng(plex_user_id: str, day: str, purpose: str = "") -> random.Random:
@@ -250,7 +324,7 @@ def build_rows(
         rows.append(
             Row(
                 key=f"because:{seed.media_type}:{seed.tmdb_id}",
-                title="Because you watched" if seed.source == "watched" else "Because you asked for",
+                title=ROW_TITLES.get(seed.source, "More like"),
                 qualifier=seed.title,
                 media_type=seed.media_type,
                 items=picked,

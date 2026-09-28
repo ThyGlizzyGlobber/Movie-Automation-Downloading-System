@@ -1,15 +1,16 @@
-import { request } from './client'
+import { postJson, request } from './client'
 import type { Recommendations } from '../types/recommendations'
 
-// The personalised rows and the day's row order for one landing page.
-//
-// `page` decides which half of the catalogue is drawn from and which rows
-// are pinned — see PAGE_LAYOUTS in api.py. `rows` is the page declaring the
-// rows it owns but the backend can't name (the genre rows, keyed by label,
-// and the provider rows, keyed by a TMDB provider id), so those get dealt
-// with everything else rather than sitting in a fixed tail.
-export function getRecommendations(page: 'home' | 'movies' | 'tv', rows = '') {
-  const query = new URLSearchParams({ page })
-  if (rows) query.set('rows', rows)
-  return request<Recommendations>(`/api/recommendations?${query}`)
+// Every discovery row on one landing page — personal, named and catalogue
+// alike — filled, ranked for the signed-in person and dealt so no title
+// repeats, plus the order the whole page runs in. See
+// backend/app/api/recommendations.py and feed.py.
+export function getRecommendations(page: 'home' | 'movies' | 'tv') {
+  return request<Recommendations>(`/api/recommendations?${new URLSearchParams({ page })}`)
+}
+
+// Someone opened a title's page: a light taste signal for their own
+// recommendations. Fire and forget — it must never hold up the page.
+export function recordTitleView(mediaType: 'movie' | 'tv', tmdbId: number, title: string) {
+  return postJson<{ recorded: true }>('/api/views', { media_type: mediaType, tmdb_id: tmdbId, title })
 }

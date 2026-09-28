@@ -364,6 +364,27 @@ class RequestStore(StoreSchema):
         ).fetchall()
         return [RequestRow._from_row(r) for r in rows]
 
+    def record_title_view(self, plex_user_id: str, media_type: str, tmdb_id: int, title: str) -> None:
+        """Someone opened a title's page — a taste signal (taste.py), kept
+        as one row per person per title with its latest visit."""
+        with self._lock:
+            self._conn.execute(
+                "INSERT INTO title_views (plex_user_id, media_type, tmdb_id, title, views, viewed_at) VALUES (?, ?, ?, ?, 1, ?) "
+                "ON CONFLICT (plex_user_id, media_type, tmdb_id) DO UPDATE SET views = views + 1, viewed_at = excluded.viewed_at, title = excluded.title",
+                (plex_user_id, media_type, int(tmdb_id), title, _now()),
+            )
+            self._conn.commit()
+
+    def list_title_views_for_user(self, plex_user_id: str, limit: int = 200) -> list[dict]:
+        """One person's opened titles, most recent first. Bounded for the
+        same reason list_requests_for_user is: it feeds a decaying taste
+        signal, and the long tail has decayed to nothing."""
+        rows = self._conn.execute(
+            "SELECT media_type, tmdb_id, title, views, viewed_at FROM title_views WHERE plex_user_id = ? ORDER BY viewed_at DESC LIMIT ?",
+            (plex_user_id, limit),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
     def list_requests_page(self, limit: int, offset: int = 0) -> list[RequestRow]:
         """Frontend migration Part D — the Activity Dashboard's own paged
         view of the full requests history (every request, not just a

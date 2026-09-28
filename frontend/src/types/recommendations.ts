@@ -1,6 +1,7 @@
 // Mirrors api.py's /api/recommendations.
 
 import type { PosterCardItem } from '../components/media/PosterCard'
+import type { BrowseParams, BrowseType } from '../api/browse'
 
 /** One row the backend decided this person should see today. */
 export interface RecommendedRow {
@@ -15,6 +16,9 @@ export interface RecommendedRow {
    *  — see `mediaTypeOf`. */
   media_type: 'movie' | 'tv' | 'mixed'
   items: (PosterCardItem & { media_type?: 'movie' | 'tv' })[]
+  /** Where the row's "See all" goes: the browse page's own filters. Absent
+   *  on the personal rows, which have no full list to go to. */
+  browse?: (Partial<BrowseParams> & { type: BrowseType }) | null
 }
 
 export interface Recommendations {

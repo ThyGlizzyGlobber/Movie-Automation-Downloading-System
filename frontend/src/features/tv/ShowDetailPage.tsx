@@ -12,6 +12,7 @@ import DetailShell, { DetailShellSkeleton, type DetailPill, type DetailRow, type
 import { acrossReleases, DetailCast, DetailCastSkeleton, DetailTrailer, DetailTrailerSkeleton, FactTiles, genreLinks, peopleLinks, qualityFromName, sourceFromName, usePlexHref, useTitleRequests } from '../detail/DetailBits'
 import { formatBytes } from '../../lib/format'
 import { usePageTitle } from '../../lib/chrome'
+import { useRecordView } from '../recommendations/useRecordView'
 import { errorText, useToast } from '../../lib/toast'
 import { displayLanguageOf, tvCertificationOf, yearOf } from '../../lib/detailHelpers'
 import { showPill, startOfToday } from '../../lib/homeHero'
@@ -82,6 +83,7 @@ export default function ShowDetailPage() {
   const showQuery = useQuery({ queryKey: ['tv', tmdbId], queryFn: () => getTvShow(tmdbId) })
   const showsQuery = useQuery({ queryKey: ['shows'], queryFn: () => listShows() })
   const show = showQuery.data
+  useRecordView('tv', tmdbId, show?.name)
   usePageTitle(show ? show.name || show.original_name || null : null)
 
   const [subscription, setSubscription] = useState<ShowOut | null>(null)

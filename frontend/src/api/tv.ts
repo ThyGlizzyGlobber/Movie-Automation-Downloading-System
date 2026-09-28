@@ -8,25 +8,8 @@ export function searchTv(query: string, providerId?: number | null) {
   return postJson<TmdbListItem[]>('/api/tv/search', { query, provider_id: providerId ?? null })
 }
 
-export function getTvDiscoverPopular(page = 1) {
-  return request<TmdbListResponse>(`/api/tv/discover/popular?page=${page}`)
-}
-
 export function getTvDiscoverTrending(page = 1) {
   return request<TmdbListResponse>(`/api/tv/discover/trending?page=${page}`)
-}
-
-export function getTvDiscoverByProvider(providerId: number, page = 1) {
-  return request<TmdbListResponse>(`/api/tv/discover/providers/${providerId}?page=${page}`)
-}
-
-export function getTvDiscoverByGenre(genreId: number, page = 1) {
-  return request<TmdbListResponse>(`/api/tv/discover/genre/${genreId}?page=${page}`)
-}
-
-// See getComingSoon in movies.ts — the region is the backend's to know.
-export function getTvComingSoon(page = 1) {
-  return request<TmdbListResponse>(`/api/tv/discover/coming-soon?page=${page}`)
 }
 
 export function getTvShow(tmdbId: number) {

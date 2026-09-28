@@ -11,6 +11,7 @@ import Icon from '../../components/ui/Icon'
 import DetailShell, { DetailShellSkeleton, type DetailPill, type DetailRow, type DetailTile } from '../detail/DetailShell'
 import { acrossReleases, DetailCast, DetailCastSkeleton, DetailTrailer, DetailTrailerSkeleton, FactTiles, filedOnLabel, genreLinks, peopleLinks, qualityFromName, sourceFromName, usePlexHref, useTitleRequests } from '../detail/DetailBits'
 import { usePageTitle } from '../../lib/chrome'
+import { useRecordView } from '../recommendations/useRecordView'
 import { certificationOf, displayLanguageOf, yearOf } from '../../lib/detailHelpers'
 import { originalServiceMatch } from '../../lib/providers'
 import { useMediaQuery } from '../../lib/hooks'
@@ -63,6 +64,7 @@ export default function MovieDetailPage() {
 
   const movieQuery = useQuery({ queryKey: ['movie', tmdbId], queryFn: () => getMovie(tmdbId) })
   const movie = movieQuery.data
+  useRecordView('movie', tmdbId, movie?.title)
   usePageTitle(movie ? movie.title || movie.original_title || null : null)
 
   const [busy, setBusy] = useState<string | null>(null)

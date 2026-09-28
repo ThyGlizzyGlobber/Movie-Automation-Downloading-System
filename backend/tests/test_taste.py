@@ -321,3 +321,46 @@ def test_titles_the_household_already_has_are_not_hidden():
     )
 
     assert len(rows[0].items) >= 4
+
+
+def test_watch_history_seeds_outweigh_requests_of_the_same_age():
+    """Finishing something is a firmer statement than asking for it."""
+    watched = taste.seeds_from_watch_history({"movie": [{"tmdb_id": 1, "title": "Heat", "last_viewed_at": _days_ago(3)}]}, NOW)
+    requested = taste.seeds_from_requests([FakeRequest(2, "Ronin", "movie", _days_ago(3))], NOW)
+
+    assert watched[0].source == "watched"
+    assert watched[0].weight > requested[0].weight
+
+
+def test_watched_shows_seed_as_tv():
+    seeds = taste.seeds_from_watch_history({"tv": [{"tmdb_id": 5920, "title": "The Mentalist", "last_viewed_at": _days_ago(1)}]}, NOW)
+
+    assert [(s.media_type, s.tmdb_id) for s in seeds] == [("tv", 5920)]
+
+
+def test_opening_a_page_is_the_lightest_signal():
+    viewed = taste.seeds_from_views([{"media_type": "movie", "tmdb_id": 3, "title": "Collateral", "viewed_at": _days_ago(0)}], NOW)
+    requested = taste.seeds_from_requests([FakeRequest(2, "Ronin", "movie", _days_ago(0))], NOW)
+
+    assert 0 < viewed[0].weight < requested[0].weight
+
+
+def test_one_title_in_several_signals_is_one_seed_labelled_by_the_strongest():
+    """Watched and requested and looked at is still one interest — a little
+    stronger for the agreement, and its row says "Because you watched"."""
+    watched = taste.seeds_from_watch_history({"movie": [{"tmdb_id": 1, "title": "Heat", "last_viewed_at": _days_ago(2)}]}, NOW)
+    requested = taste.seeds_from_requests([FakeRequest(1, "Heat", "movie", _days_ago(2))], NOW)
+    viewed = taste.seeds_from_views([{"media_type": "movie", "tmdb_id": 1, "title": "Heat", "viewed_at": _days_ago(2)}], NOW)
+
+    merged = taste.merge_seeds(watched, requested, viewed)
+
+    assert len(merged) == 1
+    assert merged[0].source == "watched"
+    assert merged[0].weight > watched[0].weight
+
+
+def test_a_looked_at_title_is_more_like_not_because():
+    seed = taste.Seed(tmdb_id=3, media_type="movie", title="Collateral", weight=0.3, source="viewed")
+    rows = taste.build_rows([seed], lambda media_type, tmdb_id: [{"id": n} for n in range(10, 20)], taste.daily_rng("p", "d"))
+
+    assert (rows[0].title, rows[0].qualifier) == ("More like", "Collateral")

@@ -5,27 +5,8 @@ export function searchMovies(query: string, providerId?: number | null) {
   return postJson<TmdbListItem[]>('/api/search', { query, provider_id: providerId ?? null })
 }
 
-export function getDiscoverPopular(page = 1) {
-  return request<TmdbListResponse>(`/api/discover/popular?page=${page}`)
-}
-
 export function getDiscoverTrending(page = 1) {
   return request<TmdbListResponse>(`/api/discover/trending?page=${page}`)
-}
-
-export function getDiscoverByProvider(providerId: number, page = 1) {
-  return request<TmdbListResponse>(`/api/discover/providers/${providerId}?page=${page}`)
-}
-
-export function getDiscoverByGenre(genreId: number, page = 1) {
-  return request<TmdbListResponse>(`/api/discover/genre/${genreId}?page=${page}`)
-}
-
-// No region argument on any of these: the backend answers in the
-// household's own region (api.py's resolve_region), which is the only
-// place that knows it and the only way a caller can't forget to ask.
-export function getComingSoon(page = 1) {
-  return request<TmdbListResponse>(`/api/discover/coming-soon?page=${page}`)
 }
 
 export function getMovie(tmdbId: number) {

@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
 import DiscoverLanding, { type DiscoverSource } from '../discover/DiscoverLanding'
-import { getTvDiscoverByGenre, getTvDiscoverByProvider, getTvDiscoverPopular, getTvDiscoverTrending, getTvComingSoon, listShows } from '../../api/tv'
+import { getTvDiscoverTrending, listShows } from '../../api/tv'
 import MediaRow from '../../components/media/MediaRow'
 import { PosterCardSkeleton } from '../../components/ui/Skeleton'
 
@@ -12,25 +12,13 @@ import { PosterCardSkeleton } from '../../components/ui/Skeleton'
 // that only paid for itself on Home/TV pages together. "Subscribed
 // Shows" (sorted by most recently *subscribed*, below) needs no such
 // fetch — ShowOut already carries poster_path — so it's the one ported.
+// Its genre and service rows are defined with the rest of the page's rows
+// in backend/app/api/recommendations.py (TV_GENRES, ROW_PROVIDERS).
 const TV: DiscoverSource = {
   page: 'tv',
   mediaType: 'tv',
   title: 'TV Shows',
-  trendingQualifier: 'shows',
-  genres: [
-    { id: 35, label: 'Comedies' },
-    { id: 18, label: 'Dramas' },
-    { id: 10765, label: 'Sci-Fi & Fantasy' },
-    { id: 16, label: 'Animation' },
-    { id: 99, label: 'Documentaries' },
-    { id: 80, label: 'Crime' },
-    { id: 10764, label: 'Reality' },
-  ],
   trending: getTvDiscoverTrending,
-  popular: getTvDiscoverPopular,
-  comingSoon: getTvComingSoon,
-  byGenre: getTvDiscoverByGenre,
-  byProvider: getTvDiscoverByProvider,
 }
 
 // Followed shows carry no year or genre, so their cards have no meta line.

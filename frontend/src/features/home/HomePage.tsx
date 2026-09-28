@@ -1,14 +1,10 @@
 import { useMemo } from 'react'
 import type { ReactNode } from 'react'
-import { useQueries, useQuery } from '@tanstack/react-query'
+import { useQuery } from '@tanstack/react-query'
 import { useRecommendedRows } from '../recommendations/useRecommendedRows'
-import {
-  getDiscoverByGenre,
-  getDiscoverPopular,
-  getDiscoverTrending,
-  getComingSoon,
-} from '../../api/movies'
-import { getTvDiscoverByGenre, getTvDiscoverPopular, getTvDiscoverTrending, listShows } from '../../api/tv'
+import { getDiscoverTrending } from '../../api/movies'
+import { getTvDiscoverTrending, listShows } from '../../api/tv'
+import { getOnDeck, getRecentlyAdded } from '../../api/plex'
 import HeroCarousel from '../../components/media/HeroCarousel'
 import { getHeroSlides } from '../../api/hero'
 import MediaRow from '../../components/media/MediaRow'
@@ -20,20 +16,7 @@ import ProviderChips from '../../components/media/ProviderChips'
 import { PosterCardSkeleton } from '../../components/ui/Skeleton'
 import ErrorState from '../../components/ui/ErrorState'
 import { usePageTitle } from '../../lib/chrome'
-import { mixTrending, tagMediaType } from '../../lib/homeHero'
 import { browseHref } from '../../api/browse'
-
-
-// Same 5 named genres as the old app's own HOME_GENRES — each pairs a
-// label with both a movie and a TV genre id (they diverge, e.g. Sci-Fi
-// is 878 for movies but 10765 for TV), interleaved into one mixed row.
-const HOME_GENRES = [
-  { label: 'Comedies', movieId: 35, tvId: 35 },
-  { label: 'Action & Adventure', movieId: 28, tvId: 10759 },
-  { label: 'Sci-Fi & Fantasy', movieId: 878, tvId: 10765 },
-  { label: 'Animation', movieId: 16, tvId: 16 },
-  { label: 'Documentaries', movieId: 99, tvId: 99 },
-]
 
 // The merged Home feed — mixes movies and TV into one curated, row-based
 // landing page, alongside (not instead of) the separate movie-only/
@@ -56,28 +39,29 @@ export function HomeSkeleton() {
 // Followed shows carry no year or genre, so their cards have no meta line.
 const followedSkeleton = () => <PosterCardSkeleton meta={false} />
 
-// Static, so the hook's query key doesn't change between renders.
-const HOME_ROW_KEYS = HOME_GENRES.map((g) => `genre:${g.label}`)
-
 export default function HomePage() {
   usePageTitle(null)
 
+  // Trending feeds the Top 10 row only; every other discovery row —
+  // Trending, Popular, Coming soon, the genres, the personal and named
+  // rows — is filled by the backend, ranked for this person and dealt so
+  // nothing repeats (see useRecommendedRows).
   const movieTrending = useQuery({ queryKey: ['movies', 'trending'], queryFn: () => getDiscoverTrending(1) })
   const tvTrending = useQuery({ queryKey: ['tv', 'trending'], queryFn: () => getTvDiscoverTrending(1) })
-  const moviePopular = useQuery({ queryKey: ['movies', 'popular'], queryFn: () => getDiscoverPopular(1) })
-  const tvPopular = useQuery({ queryKey: ['tv', 'popular'], queryFn: () => getTvDiscoverPopular(1) })
-  const comingSoon = useQuery({ queryKey: ['movies', 'comingSoon'], queryFn: () => getComingSoon(1) })
   const shows = useQuery({ queryKey: ['shows'], queryFn: () => listShows() })
-  const genreMovieResults = useQueries({
-    queries: HOME_GENRES.map((g) => ({ queryKey: ['movies', 'genre', g.movieId], queryFn: () => getDiscoverByGenre(g.movieId, 1) })),
-  })
-  const genreTvResults = useQueries({
-    queries: HOME_GENRES.map((g) => ({ queryKey: ['tv', 'genre', g.tvId], queryFn: () => getTvDiscoverByGenre(g.tvId, 1) })),
-  })
-
-  const mixedTrending = useMemo(
-    () => mixTrending(movieTrending.data?.results ?? [], tvTrending.data?.results ?? []),
-    [movieTrending.data, tvTrending.data],
+  // The same queries Continue watching and New in your library run (same
+  // keys, so one fetch between them), read here so the discovery rows can
+  // leave out what those two already show.
+  const onDeck = useQuery({ queryKey: ['plex-on-deck'], queryFn: getOnDeck, staleTime: 60_000 })
+  const recentlyAdded = useQuery({ queryKey: ['plex-recently-added'], queryFn: getRecentlyAdded, staleTime: 120_000 })
+  const alreadyShown = useMemo(
+    () =>
+      new Set(
+        [...(onDeck.data?.items ?? []), ...(recentlyAdded.data?.items ?? [])]
+          .filter((item) => item.tmdb_id)
+          .map((item) => `${item.media_type}:${item.tmdb_id}`),
+      ),
+    [onDeck.data, recentlyAdded.data],
   )
   // The hero's slides come from the server already carrying their logo,
   // badge, certification, length and genres — see api.py's hero_slides.
@@ -85,7 +69,7 @@ export default function HomePage() {
   // carousel fetching a detail per slide to learn any of that, which is
   // what used to keep the title logos a round trip behind the page.
   const hero = useQuery({ queryKey: ['hero', 'home'], queryFn: () => getHeroSlides('home') })
-  const { order } = useRecommendedRows('home', HOME_ROW_KEYS)
+  const recommended = useRecommendedRows('home')
 
   // Sorted by most recently subscribed — see TvLandingPage's own note on
   // why the old app's richer "New In Watching" (sorted by most recently
@@ -103,37 +87,17 @@ export default function HomePage() {
     [shows.data],
   )
   // Each section shows its own skeleton until its data arrives; the page
-  // only gives way to an error once the main lists have all failed.
+  // only gives way to an error once the trending lists and the rows have
+  // all failed.
   const trendingLoading = movieTrending.isLoading || tvTrending.isLoading
-  const firstError = movieTrending.error || tvTrending.error || moviePopular.error || tvPopular.error || comingSoon.error
-  if (firstError && !movieTrending.data && !tvTrending.data && !moviePopular.data && !tvPopular.data && !comingSoon.data) {
+  const firstError = movieTrending.error || tvTrending.error
+  if (firstError && !movieTrending.data && !tvTrending.data && recommended.isError) {
     return <ErrorState message={firstError instanceof Error ? firstError.message : undefined} />
   }
 
-  const genreRows = HOME_GENRES.map((g, i) => {
-    const movieItems = tagMediaType(genreMovieResults[i].data?.results ?? [], 'movie')
-    const tvItems = tagMediaType(genreTvResults[i].data?.results ?? [], 'tv')
-    const merged: typeof movieItems = []
-    for (let j = 0; j < Math.max(movieItems.length, tvItems.length); j++) {
-      if (movieItems[j]) merged.push(movieItems[j])
-      if (tvItems[j]) merged.push(tvItems[j])
-    }
-    return (
-      <MediaRow
-        key={g.label}
-        title={g.label}
-        items={merged}
-        mediaType={(it) => it.mediaType}
-        loading={genreMovieResults[i].isLoading || genreTvResults[i].isLoading}
-        expandHref={browseHref({ type: 'movie', genre: g.movieId })}
-      />
-    )
-  })
-
-  // Keyed by the same names the backend's layout uses, so it decides where
-  // each one sits today. Rows it doesn't name — the genre rows, whose keys
-  // are labels it has no reason to know — keep this declared order at the
-  // end. See useRecommendedRows.
+  // The page's own rows — built from live household data the backend's
+  // rows don't carry — keyed by the names its layout uses, so it decides
+  // where the dealt ones sit around them. See useRecommendedRows.
   const ownRows: Record<string, ReactNode> = {
     top10: <TopTenRow key="top10" movies={movieTrending.data?.results ?? []} shows={tvTrending.data?.results ?? []} loading={trendingLoading} />,
     // Renders nothing when Plex has none, so pinning it costs nothing on a
@@ -141,19 +105,11 @@ export default function HomePage() {
     continue: <ContinueWatchingRow key="continue" />,
     recent: <RecentlyAddedRow key="recent" />,
     requested: <RequestedRow key="requested" />,
-    trending: <MediaRow key="trending" title="Trending" qualifier="now" items={mixedTrending} mediaType={(it) => it.mediaType} loading={trendingLoading} expandHref={browseHref({ type: 'movie', sort: 'trending' })} />,
-    'popular-movies': <MediaRow key="popular-movies" title="Popular" qualifier="movies" items={moviePopular.data?.results ?? []} mediaType="movie" loading={moviePopular.isLoading} expandHref={browseHref({ type: 'movie' })} />,
-    'popular-tv': <MediaRow key="popular-tv" title="Popular" qualifier="TV shows" items={tvPopular.data?.results ?? []} mediaType="tv" loading={tvPopular.isLoading} expandHref={browseHref({ type: 'tv' })} />,
-    'coming-soon': <MediaRow key="coming-soon" title="Coming" qualifier="soon" items={comingSoon.data?.results ?? []} mediaType="movie" loading={comingSoon.isLoading} expandHref={browseHref({ type: 'movie', list: 'coming-soon' })} />,
   }
   if (shows.isLoading || subscribedShows.length) {
     ownRows.subscribed = <MediaRow key="subscribed" title="Shows" qualifier="you follow" items={subscribedShows} mediaType="tv" loading={shows.isLoading} renderSkeleton={followedSkeleton} expandHref="/tv/watching" />
   }
-  genreRows.forEach((row, i) => {
-    ownRows[`genre:${HOME_GENRES[i].label}`] = row
-  })
-
-  const contentRows = order(ownRows)
+  const contentRows = recommended.order(ownRows, alreadyShown)
 
   return (
     <>

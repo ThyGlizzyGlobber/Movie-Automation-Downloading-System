@@ -257,6 +257,24 @@ class StoreSchema:
                 )
                 """
             )
+            # Which titles each person has opened in the app — the third
+            # taste signal beside Plex watch history and requests (see
+            # taste.py). One row per person per title: what matters is that
+            # and when they last looked, not every visit, and a title opened
+            # fifty times is one interest rather than fifty.
+            self._conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS title_views (
+                    plex_user_id TEXT NOT NULL,
+                    media_type TEXT NOT NULL,
+                    tmdb_id INTEGER NOT NULL,
+                    title TEXT NOT NULL,
+                    views INTEGER NOT NULL DEFAULT 1,
+                    viewed_at TEXT NOT NULL,
+                    PRIMARY KEY (plex_user_id, media_type, tmdb_id)
+                )
+                """
+            )
             self._conn.commit()
 
     def _recheck_enabled_now(self) -> bool:

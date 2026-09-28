@@ -3466,6 +3466,123 @@ def _stub_recommendation_sources(tmdb, movie_ids=range(500, 530), tv_ids=range(9
     }
 
 
+def _stub_overlapping_catalogue(tmdb, ids=range(1, 61)):
+    """Every catalogue source answering with the same popular titles — the
+    shape real TMDB lists have, and what made the page repeat itself."""
+    page_of = lambda page: {"results": [{"id": n, "genre_ids": [28]} for n in list(ids)[(page - 1) * 20 : page * 20]]}
+    for name in (
+        "get_available_trending", "get_available_tv_trending", "get_available_popular", "get_available_tv_popular",
+        "get_coming_soon", "get_tv_coming_soon", "get_available_by_genre", "get_available_tv_by_genre",
+        "get_available_by_provider", "get_available_tv_by_provider",
+    ):
+        setattr(tmdb, name, lambda *a, page=1, **k: page_of(page))
+
+
+def _stub_distinct_catalogue(tmdb):
+    """Every catalogue source answering with titles of its own, so each row
+    can fill and a test can look at what the row itself carries."""
+    names = (
+        "get_available_trending", "get_available_tv_trending", "get_available_popular", "get_available_tv_popular",
+        "get_coming_soon", "get_tv_coming_soon", "get_available_by_genre", "get_available_tv_by_genre",
+        "get_available_by_provider", "get_available_tv_by_provider",
+    )
+    for i, name in enumerate(names):
+        def fetch(*args, page=1, _i=i, **kwargs):
+            # Its own block of ids per source, per genre/provider, per page.
+            which = args[0] if args and isinstance(args[0], int) else 0
+            base = 1_000_000 * (_i + 1) + 100 * which + 20 * (page - 1)
+            return {"results": [{"id": base + n, "genre_ids": [28]} for n in range(20)]}
+
+        setattr(tmdb, name, fetch)
+
+
+def _titles_by_row(body):
+    return {row["key"]: [(item.get("media_type"), item["id"]) for item in row["items"]] for row in body["rows"]}
+
+
+def test_no_title_repeats_down_a_page(client_and_deps):
+    """Measured 2026-09-29: Home put 243 titles in 347 slots and one film in
+    five rows, because every catalogue row is a popularity list and nothing
+    knew what the rows above it had shown."""
+    client, _, tmdb, _, _, _ = client_and_deps
+    _stub_recommendation_sources(tmdb)
+    _stub_overlapping_catalogue(tmdb)
+
+    for page in ("home", "movies", "tv"):
+        rows = _titles_by_row(client.get("/api/recommendations", params={"page": page}).json())
+        titles = [t for items in rows.values() for t in items]
+        assert len(titles) == len(set(titles)), page
+        assert len(rows) > 3, page
+
+
+def test_the_top_10_is_not_shown_again_below_it(client_and_deps):
+    client, _, tmdb, _, _, _ = client_and_deps
+    _stub_recommendation_sources(tmdb)
+    _stub_overlapping_catalogue(tmdb)
+
+    rows = _titles_by_row(client.get("/api/recommendations", params={"page": "movies"}).json())
+
+    assert all(("movie", n) not in items for items in rows.values() for n in range(1, 11))
+
+
+def test_what_someone_has_watched_is_not_recommended_back(client_and_deps, monkeypatch):
+    client, _, tmdb, _, _, _ = client_and_deps
+    _stub_recommendation_sources(tmdb)
+    _stub_overlapping_catalogue(tmdb)
+    monkeypatch.setattr(
+        recommendations,
+        "user_watch_history",
+        lambda store, who, is_admin: {"movie": [{"tmdb_id": 30, "title": "Watched", "last_viewed_at": None}], "tv": []},
+    )
+
+    rows = _titles_by_row(client.get("/api/recommendations", params={"page": "movies"}).json())
+
+    assert all(("movie", 30) not in items for items in rows.values())
+
+
+def test_their_watch_history_seeds_their_rows(client_and_deps, monkeypatch):
+    client, _, tmdb, _, _, _ = client_and_deps
+    _stub_recommendation_sources(tmdb)
+    monkeypatch.setattr(
+        recommendations,
+        "user_watch_history",
+        lambda store, who, is_admin: {"movie": [{"tmdb_id": 603, "title": "The Matrix", "last_viewed_at": None}], "tv": []},
+    )
+
+    rows = client.get("/api/recommendations", params={"page": "movies"}).json()["rows"]
+
+    assert any(row["title"] == "Because you watched" and row["qualifier"] == "The Matrix" for row in rows)
+
+
+def test_opening_a_title_shapes_their_page(client_and_deps):
+    client, _, tmdb, _, _, _ = client_and_deps
+    _stub_recommendation_sources(tmdb)
+
+    assert client.post("/api/views", json={"media_type": "movie", "tmdb_id": 438631, "title": "Dune"}).json() == {"recorded": True}
+    rows = client.get("/api/recommendations", params={"page": "movies"}).json()["rows"]
+
+    assert any(row["title"] == "More like" and row["qualifier"] == "Dune" for row in rows)
+
+
+def test_a_view_needs_a_session_and_a_sane_body(client_and_deps):
+    client, _, _, _, _, _ = client_and_deps
+    assert client.post("/api/views", json={"media_type": "person", "tmdb_id": 1, "title": "x"}).status_code == 422
+    client.cookies.delete(deps.SESSION_COOKIE_NAME)
+    assert client.post("/api/views", json={"media_type": "movie", "tmdb_id": 1, "title": "x"}).status_code == 401
+
+
+def test_catalogue_rows_say_where_see_all_goes(client_and_deps):
+    client, _, tmdb, _, _, _ = client_and_deps
+    _stub_recommendation_sources(tmdb)
+    _stub_distinct_catalogue(tmdb)
+
+    rows = {row["key"]: row for row in client.get("/api/recommendations", params={"page": "tv"}).json()["rows"]}
+
+    assert rows["genre:18"]["browse"] == {"type": "tv", "genre": 18}
+    assert rows["provider:8"]["browse"] == {"type": "tv", "provider": 8}
+    assert rows["provider:8"]["qualifier"] == "on Netflix"
+
+
 def test_named_rows_are_asked_for_in_the_households_language(client_and_deps):
     """Measured 2026-09-26, the 45 named rows came back 66% English —
     "Animated, and Not for the Kids" was 20%, and several were majority

@@ -1,31 +1,24 @@
 import type { ReactNode } from 'react'
-import { useQueries, useQuery } from '@tanstack/react-query'
+import { useQuery } from '@tanstack/react-query'
 import { useRecommendedRows } from '../recommendations/useRecommendedRows'
 import HeroCarousel from '../../components/media/HeroCarousel'
 import { getHeroSlides } from '../../api/hero'
-import MediaRow from '../../components/media/MediaRow'
 import TopTenRow from '../../components/media/TopTenRow'
 import ProviderChips from '../../components/media/ProviderChips'
 import ErrorState from '../../components/ui/ErrorState'
 import { usePageTitle } from '../../lib/chrome'
-import { ROW_PROVIDERS } from '../../lib/providers'
-import { browseHref } from '../../api/browse'
 import type { TmdbListResponse } from '../../types/movies'
 
-// What sets the Movies page apart from the TV one: its endpoints, its
-// genre rows and a word or two of copy. Everything else is one page.
+// What sets the Movies page apart from the TV one. Its genre and service
+// rows are the backend's now (backend/app/api/recommendations.py), filled
+// and dealt with the rest; the page itself only needs its trending list,
+// for the Top 10.
 export interface DiscoverSource {
   /* Query-key prefix, hero kind and recommendations page in one. */
   page: 'movies' | 'tv'
   mediaType: 'movie' | 'tv'
   title: string
-  trendingQualifier: string
-  genres: { id: number; label: string }[]
   trending: (page: number) => Promise<TmdbListResponse>
-  popular: (page: number) => Promise<TmdbListResponse>
-  comingSoon: (page: number) => Promise<TmdbListResponse>
-  byGenre: (genreId: number, page: number) => Promise<TmdbListResponse>
-  byProvider: (providerId: number, page: number) => Promise<TmdbListResponse>
 }
 
 // Curated, row-based — no Popular/Trending/Coming Soon tabs; each row's
@@ -42,78 +35,32 @@ export default function DiscoverLanding({
      the Top 10. */
   extraRows?: Record<string, ReactNode>
 }) {
-  const { page, mediaType, genres } = source
+  const { page, mediaType } = source
   usePageTitle(source.title)
 
+  // For the Top 10 only — the Trending row itself, Popular, Coming soon,
+  // the genre and service rows are the backend's (see useRecommendedRows).
   const trending = useQuery({ queryKey: [page, 'trending'], queryFn: () => source.trending(1) })
-  const popular = useQuery({ queryKey: [page, 'popular'], queryFn: () => source.popular(1) })
-  const comingSoon = useQuery({ queryKey: [page, 'comingSoon'], queryFn: () => source.comingSoon(1) })
-  const genreResults = useQueries({
-    queries: genres.map((g) => ({
-      queryKey: [page, 'genre', g.id],
-      queryFn: () => source.byGenre(g.id, 1),
-    })),
-  })
-  const providerResults = useQueries({
-    queries: ROW_PROVIDERS.map((p) => ({
-      queryKey: [page, 'provider', p.id],
-      queryFn: () => source.byProvider(p.id, 1),
-    })),
-  })
 
   // Enriched server-side in one call — see HomePage's own note.
   const hero = useQuery({ queryKey: ['hero', page], queryFn: () => getHeroSlides(page) })
-  const { order } = useRecommendedRows(page, [
-    ...genres.map((g) => `genre:${g.id}`),
-    ...ROW_PROVIDERS.map((p) => `provider:${p.id}`),
-  ])
+  const recommended = useRecommendedRows(page)
 
   // Each section shows its own skeleton until its data arrives; the page
-  // only gives way to an error once the main lists have all failed.
-  const firstError = trending.error || popular.error || comingSoon.error
-  if (firstError && !trending.data && !popular.data && !comingSoon.data) {
-    return <ErrorState message={firstError instanceof Error ? firstError.message : undefined} />
+  // only gives way to an error once both the trending list and the rows
+  // have failed.
+  if (trending.error && !trending.data && recommended.isError) {
+    return <ErrorState message={trending.error instanceof Error ? trending.error.message : undefined} />
   }
 
-  // Ordered by the backend, same as Home — see useRecommendedRows. Only
-  // the discovery rows take part: the "Browse by service" section and the
-  // provider rows below it stay put, because that heading introduces the
-  // rows under it and shuffling it away from them would leave it
-  // introducing nothing.
+  // Ordered by the backend, same as Home — see useRecommendedRows. The
+  // "Browse by service" section stays last, below.
   const topTen = trending.data?.results ?? []
   const ownRows: Record<string, ReactNode> = {
     top10: <TopTenRow key="top10" movies={mediaType === 'movie' ? topTen : []} shows={mediaType === 'tv' ? topTen : []} only={mediaType} loading={trending.isLoading} />,
     ...extraRows,
-    trending: <MediaRow key="trending" title="Trending" qualifier={source.trendingQualifier} items={trending.data?.results ?? []} mediaType={mediaType} loading={trending.isLoading} expandHref={browseHref({ type: mediaType, sort: 'trending' })} />,
-    popular: <MediaRow key="popular" title="Popular" items={popular.data?.results ?? []} mediaType={mediaType} loading={popular.isLoading} expandHref={browseHref({ type: mediaType })} />,
-    'coming-soon': <MediaRow key="coming-soon" title="Coming" qualifier="soon" items={comingSoon.data?.results ?? []} mediaType={mediaType} loading={comingSoon.isLoading} expandHref={browseHref({ type: mediaType, list: 'coming-soon' })} />,
   }
-  genres.forEach((g, i) => {
-    ownRows[`genre:${g.id}`] = (
-      <MediaRow
-        key={g.id}
-        title={g.label}
-        items={genreResults[i].data?.results ?? []}
-        mediaType={mediaType}
-        loading={genreResults[i].isLoading}
-        expandHref={browseHref({ type: mediaType, genre: g.id })}
-      />
-    )
-  })
-  ROW_PROVIDERS.forEach((provider, i) => {
-    ownRows[`provider:${provider.id}`] = (
-      <MediaRow
-        key={provider.id}
-        title="Popular"
-        qualifier={`on ${provider.name}`}
-        items={providerResults[i].data?.results ?? []}
-        mediaType={mediaType}
-        loading={providerResults[i].isLoading}
-        expandHref={browseHref({ type: mediaType, provider: provider.id })}
-      />
-    )
-  })
-  const contentRows = order(ownRows)
+  const contentRows = recommended.order(ownRows)
 
   return (
     <>

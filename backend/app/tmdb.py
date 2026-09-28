@@ -2,6 +2,7 @@
 reaches the browser; the frontend hotlinks TMDB's public image CDN
 directly instead of proxying images."""
 
+import concurrent.futures
 from datetime import datetime, timedelta, timezone
 
 import requests
@@ -10,6 +11,14 @@ from app.cache import ttl_cache
 
 BASE_URL = "https://api.themoviedb.org/3"
 POPULAR_DISCOVER_TTL_SECONDS = 300
+
+# Release-date lookups run at once per page of results (see
+# _digitally_released). Bounded because a landing page asks for many pages
+# at the same moment, and TMDB is a shared, rate-limited service.
+RELEASE_DATE_WORKERS = 8
+# Connections kept open to TMDB — enough for a landing page's lookups to
+# run at once rather than queue for a free one (see _pooled_session).
+HTTP_POOL_SIZE = 32
 
 # TMDB's /movie/{id}/release_dates `type` field: 1 Premiere, 2 Theatrical
 # (limited), 3 Theatrical, 4 Digital, 5 Physical, 6 TV.
@@ -181,6 +190,17 @@ def best_logo_path(images: dict | None) -> str | None:
     return best.get("file_path") or None
 
 
+def _pooled_session() -> requests.Session:
+    """A session that can hold HTTP_POOL_SIZE connections to TMDB at once.
+    requests' default keeps ten; a landing page asks for a few hundred
+    lookups together (see _digitally_released and api/recommendations.py),
+    and past ten each one was waiting for a connection or opening a fresh
+    TLS one — measured, most of a cold Home's nine seconds."""
+    session = requests.Session()
+    session.mount("https://", requests.adapters.HTTPAdapter(pool_maxsize=HTTP_POOL_SIZE))
+    return session
+
+
 class TMDBClient:
     def __init__(self, api_key: str, session: requests.Session | None = None):
         # Deliberately not raised here (frontend migration Part E): the
@@ -191,7 +211,7 @@ class TMDBClient:
         # same "not configured" failure just happens on first real call
         # instead of at construction time.
         self.api_key = api_key
-        self.session = session or requests.Session()
+        self.session = session or _pooled_session()
 
     def _get(self, path: str, params: dict | None = None) -> dict:
         if not self.api_key:
@@ -318,13 +338,18 @@ class TMDBClient:
 
     def _digitally_released(self, data: dict) -> dict:
         """A TMDB results page with every theatrical-only title dropped —
-        one extra (TTL-cached) release_dates call per candidate."""
-        filtered = [
-            movie
-            for movie in data.get("results", [])
-            if not _lacks_digital_release(self.get_release_dates(movie["id"]))
-        ]
-        return {**data, "results": filtered}
+        one extra (TTL-cached) release_dates call per candidate.
+
+        Asked together rather than in turn: twenty lookups one after the
+        other were 4-5s for a page on a cold cache, every movie row and
+        browse page paying it. A failed lookup still fails the page, as it
+        did when they ran in sequence."""
+        results = data.get("results", [])
+        if not results:
+            return {**data, "results": []}
+        with concurrent.futures.ThreadPoolExecutor(max_workers=min(RELEASE_DATE_WORKERS, len(results))) as pool:
+            lacking = list(pool.map(lambda movie: _lacks_digital_release(self.get_release_dates(movie["id"])), results))
+        return {**data, "results": [movie for movie, lacks in zip(results, lacking) if not lacks]}
 
     def get_available_popular(self, page: int = 1, region: str = "US") -> dict:
         """Popular titles TMDB already has a Digital/Physical release date

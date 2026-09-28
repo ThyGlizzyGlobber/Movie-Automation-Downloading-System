@@ -19,19 +19,15 @@ export const CURATED_PROVIDERS: CuratedProvider[] = [
   // one — kept for the provider-browse id even though the logo is now local.
   { id: 2303, name: 'Paramount+', icon: 'paramount-plus.png' },
   { id: 386, name: 'Peacock', icon: 'peacock.png' },
-  // Last, so it stays out of ROW_PROVIDERS' first four and doesn't earn
+  // Last, so it stays out of the first four — the services with a
+  // "Popular on …" row (ROW_PROVIDERS in backend/app/api/recommendations.py,
+  // which mirrors this list's order) — and doesn't earn
   // a row of its own. It can be here at all only because the browse
   // path stopped pinning every lookup to the US: TMDB lists 0 titles on
   // provider 21 there against 613 in AU, so before api.py's
   // resolve_region this chip would have opened an empty page.
   { id: 21, name: 'Stan', icon: 'stan.png' },
 ]
-
-// Subset surfaced as inline "Popular on X" rows on the Movies/TV curated
-// pages — all 8 as rows would make an already-heavy page noticeably
-// heavier; the full list stays reachable via the "Browse a Service" chip
-// grid on the same page.
-export const ROW_PROVIDERS = CURATED_PROVIDERS.slice(0, 4) // Netflix, Prime Video, Disney+, Max
 
 // Detail-page service icon (sits left of the score ring) — a separate
 // lookup from CURATED_PROVIDERS above: that one is keyed by TMDB's
