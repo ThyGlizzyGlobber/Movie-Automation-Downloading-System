@@ -7,8 +7,14 @@ section.row h2 {
   font-weight: 400;
   color: var(--text);
   letter-spacing: var(--tracking-title);
-  margin: 0 0 14px var(--row-inset);
+  margin: 0 var(--row-inset) 14px;
   white-space: nowrap;
+  /* A title longer than the screen ends in an ellipsis, as it does in a
+     .row-head, rather than running past the edge. A recommendation row's
+     "because you…" ran 2px wide in iOS WebKit, and a page any wider than
+     the screen lets a home-screen app pan sideways on every scroll. */
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 /* A row whose title expands to a dedicated full-list page — accent-
    colored with a trailing chevron so it reads as tappable, not just a
@@ -85,6 +91,8 @@ section.row .row-head {
 section.row .row-head h2,
 section.row .row-head .row-title {
   min-width: 0;
+  /* .row-head holds the right inset itself. */
+  margin-right: 0;
   overflow: hidden;
   text-overflow: ellipsis;
 }

@@ -12,6 +12,14 @@ records the minor and major releases, and the patches worth calling out. See
 
 ## [Unreleased]
 
+### Fixed
+
+- The home-screen app on iPhone drifted sideways while scrolling, on every page. A
+  long row heading ran 2px past the screen edge in iOS WebKit, which made the page
+  pannable; row headings now end in an ellipsis instead.
+- "On Plex" and status badges could flash as blank pills while a row was scrolling
+  on iPhone.
+
 ## [1.0.0] — 2026-09-28
 
 The first versioned release: everything the household has been using, audited,
