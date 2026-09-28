@@ -10,7 +10,7 @@ from fastapi import FastAPI
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 
-from app import config
+from app import config, version
 from app.db import RequestStore
 from app.logging_config import configure_logging
 from app.plex import LoginSession, PlexLinker
@@ -90,7 +90,7 @@ async def lifespan(app: FastAPI):
         store.close()
 
 
-app = FastAPI(title="Obsidian", lifespan=lifespan)
+app = FastAPI(title="Obsidian", version=version.current().version or "unknown", lifespan=lifespan)
 
 # See deps.py's `limiter` for which routes are rate limited, and why.
 app.state.limiter = limiter

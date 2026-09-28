@@ -92,7 +92,10 @@ export interface LibrarySettings {
 }
 export interface AboutInfo {
   name: string
+  // "1.0.3": the release tag plus one per commit since (backend/app/version.py).
   version: string | null
+  commit: string | null
+  date: string | null
   python: string
   started_at: string | null
   uptime_seconds: number | null

@@ -3780,6 +3780,7 @@ def test_about_reports_the_basics(client_and_deps):
     body = client.get("/api/about").json()
     assert body["name"] == "Obsidian"
     assert "requests" in body and "users" in body
+    assert {"version", "commit", "date"} <= body.keys()
 
 
 def test_best_logo_prefers_english_png_with_votes():

@@ -11,7 +11,7 @@ from datetime import datetime, timedelta, timezone
 from fastapi import Depends, HTTPException, Request
 from pydantic import BaseModel
 
-from app import config
+from app import config, version
 from app.db import FAILURE_STATUSES, RequestStore
 from app.deploy import DeployError, run_git_pull
 from app.api.deps import _client_ip, admin_router, get_qbt, get_store, router
@@ -141,26 +141,6 @@ def _request_counters(store: RequestStore) -> dict:
     }
 
 
-def _app_version() -> str | None:
-    import subprocess
-
-    env = os.environ.get("APP_VERSION")
-    if env:
-        return env
-    try:
-        result = subprocess.run(
-            ["git", "rev-parse", "--short", "HEAD"],
-            # The repository root: backend/app/api/system.py -> parents[3].
-            cwd=Path(__file__).resolve().parents[3],
-            capture_output=True,
-            text=True,
-            timeout=3,
-        )
-        return result.stdout.strip() or None
-    except Exception:  # noqa: BLE001
-        return None
-
-
 @router.get("/api/about")
 def about(request: Request, store: RequestStore = Depends(get_store)) -> dict:
     import platform
@@ -173,7 +153,7 @@ def about(request: Request, store: RequestStore = Depends(get_store)) -> dict:
         db_bytes = None
     return {
         "name": "Obsidian",
-        "version": _app_version(),
+        **version.as_dict(),
         "python": platform.python_version(),
         "started_at": started.isoformat() if started else None,
         "uptime_seconds": int((datetime.now(timezone.utc) - started).total_seconds()) if started else None,

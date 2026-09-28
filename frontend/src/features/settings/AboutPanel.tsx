@@ -14,7 +14,14 @@ function uptime(seconds: number | null): string {
   return `${m}m`
 }
 
-const ABOUT_SUB = 'Version, uptime, and what this install is connected to.'
+// "Build 1a2b3c4 | 28 Sep 2026", or what's missing when git couldn't say.
+function buildLine(commit: string | null, date: string | null): string {
+  if (!commit) return 'Unknown build'
+  const day = date ? new Date(`${date}T00:00:00`).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' }) : null
+  return day ? `Build ${commit} | ${day}` : `Build ${commit}`
+}
+
+const ABOUT_SUB ='Version, uptime, and what this install is connected to.'
 
 export default function AboutPanel() {
   const query = useQuery({ queryKey: ['about'], queryFn: getAbout, refetchInterval: 60_000 })
@@ -24,8 +31,8 @@ export default function AboutPanel() {
     <div className="settings-panel-card">
       <h2>About</h2>
       <p className="settings-sub">{ABOUT_SUB}</p>
-      <SettingRow label="Version" hint={a.version ? 'Latest commit on the server' : 'Unknown build'}>
-        <span className="about-value mono">{a.version ?? '—'}</span>
+      <SettingRow label="Version" hint={buildLine(a.commit, a.date)}>
+        <span className="about-value mono">{a.version ? `v${a.version}` : '—'}</span>
       </SettingRow>
       <SettingRow label="Running for" hint={a.started_at ? `Since ${new Date(a.started_at).toLocaleString()}` : undefined}>
         <span className="about-value">{uptime(a.uptime_seconds)}</span>

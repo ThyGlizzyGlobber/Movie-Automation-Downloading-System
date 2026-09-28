@@ -1,6 +1,6 @@
 """Stage 6: the entire self-update surface. `run_git_pull()` is the whole
-implementation of `POST /api/admin/deploy` — exactly `git pull --ff-only`
-against the deployed-copy clone, no path/branch/command ever accepted as
+implementation of `POST /api/admin/deploy` — exactly `git pull --ff-only
+--tags` against the deployed-copy clone, no path/branch/command ever accepted as
 input, per the confirmed architecture's "one fixed verb" deploy model.
 
 `--ff-only` is deliberate, not the git default: the deployed-copy clone is
@@ -74,7 +74,9 @@ def run_git_pull() -> dict:
         raise DeployError(f"{config.DEPLOY_REPO_PATH} is not a git clone")
 
     try:
-        result = _git("pull", "--ff-only")
+        # --tags: the release tags are what app/version.py counts from, and
+        # a tag pushed after the commit it names wouldn't otherwise arrive.
+        result = _git("pull", "--ff-only", "--tags")
     except subprocess.TimeoutExpired as exc:
         raise DeployError("git pull timed out") from exc
     if result.returncode != 0:

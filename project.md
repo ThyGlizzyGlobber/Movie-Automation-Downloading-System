@@ -17,6 +17,8 @@ to install, configure and run it, see the [README](README.md).
 
 ## Status
 
+- **Version 1.0.0**, released 2026-09-28. Every later commit on `main` is the next patch
+  (1.0.1, 1.0.2, …); see the README's Versioning section and [CHANGELOG.md](CHANGELOG.md).
 - Running in production for one household on TrueNAS SCALE, as a Custom App
   (`movie-downloader`), deployed from its own git clone.
 - Reachable from outside the house through a Cloudflare Tunnel; see the README's Remote access

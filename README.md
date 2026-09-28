@@ -52,6 +52,7 @@ design goal: **the household gets a streaming app; the admin gets an automation 
 - [Configuration](#configuration)
 - [Remote access](#remote-access)
 - [Updating](#updating)
+- [Versioning](#versioning)
 - [Development](#development)
 - [Project structure](#project-structure)
 - [Status and scope](#status-and-scope)
@@ -322,13 +323,41 @@ untouched, so no CORS configuration is ever needed.
 ## Updating
 
 From the app: **Settings → Updates → Check for updates.** That runs a `git pull` against the
-deployed clone and rebuilds the frontend in place.
+deployed clone (tags included) and rebuilds the frontend in place.
 
-The endpoint runs exactly `git pull` — hardcoded. No path, branch or command is ever
+The endpoint runs exactly `git pull --ff-only --tags` — hardcoded. No path, branch or command is ever
 accepted as input, and the Docker socket is never mounted. "Self-update" here means
 "pull my own repo", nothing more privileged.
 
 Rolling back is `git checkout` or `git revert` on the deployed copy.
+
+---
+
+## Versioning
+
+Obsidian follows [Semantic Versioning](https://semver.org/), and the version is worked out
+from git rather than kept in a file:
+
+- A release is an annotated `vX.Y.0` tag on `main`. The tagged commit *is* that version.
+- **Every commit after it is the next patch**, automatically: the commit after `v1.0.0`
+  runs as `1.0.1`, the one after that `1.0.2`, and so on. Nothing is bumped by hand.
+- The next tag starts the count again: `v1.1.0` for new features, `v2.0.0` for anything
+  that breaks an existing install.
+
+**Settings → About** shows the running version with its build hash and commit date, read
+from the deployed clone on each check (`backend/app/version.py`). Setting `APP_VERSION` in
+the backend's environment overrides it, for a build made without its `.git`.
+
+Cutting a release: move the `[Unreleased]` notes in [`CHANGELOG.md`](CHANGELOG.md) under the
+new version and commit that, then tag the commit and push the tag with it.
+
+```bash
+git tag -a v1.1.0 -m "Obsidian 1.1.0"
+```
+
+```bash
+git push --follow-tags
+```
 
 ---
 
