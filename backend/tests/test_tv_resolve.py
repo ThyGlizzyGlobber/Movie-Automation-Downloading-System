@@ -2,6 +2,7 @@ from datetime import datetime, timedelta, timezone
 
 from app.tmdb import TMDBClient
 from app.tv_resolve import (
+    align_pack_episodes,
     find_predecessor_show,
     aired_cutoff_date,
     episode_is_released,
@@ -681,3 +682,82 @@ def test_a_title_of_one_word_has_nothing_to_shorten():
 
     assert find_predecessor_show(only, tmdb, seasons_needed=1) is None
     assert tmdb.searched == []
+
+
+# ---------------------------------------------------------------------------
+# One TMDB episode, several files.
+#
+# Justice League's pilot is the case: TMDB has "Secret Origins" as a single
+# 72-minute episode 1 with the season at 24, while the release numbers the
+# three broadcast parts separately and ships 26 files. Filed literally,
+# everything from the second file on is two ahead of the episode it claims
+# to be, and the last two fall off the end into Specials.
+# ---------------------------------------------------------------------------
+
+
+def _season(runtimes):
+    return [{"episode_number": i, "runtime": r, "name": f"e{i}"} for i, r in enumerate(runtimes, start=1)]
+
+
+JL_SEASON_1 = _season([72] + [24] * 23)
+
+
+def test_a_multi_part_episode_is_aligned_from_its_runtime():
+    """72 is exactly three 24s, and 3 + 23 comes out at the 26 files
+    actually present. Both halves have to hold."""
+    plan = align_pack_episodes(JL_SEASON_1, list(range(1, 27)))
+
+    assert plan is not None
+    assert plan[1] == [1, 2, 3]
+    assert plan[2] == [4]
+    assert plan[24] == [26]
+    assert sum(len(v) for v in plan.values()) == 26
+
+
+def test_a_season_that_already_lines_up_is_left_alone():
+    """None means "file it the way it is numbered", so the common case
+    costs nothing."""
+    assert align_pack_episodes(JL_SEASON_1, list(range(1, 25))) is None
+    assert align_pack_episodes(_season([24] * 26), list(range(1, 27))) is None
+
+
+def test_arithmetic_that_does_not_balance_is_refused():
+    """25 files against a season that should be 24 or 26 is something
+    this does not understand, and guessing would renumber the whole
+    season wrongly."""
+    assert align_pack_episodes(JL_SEASON_1, list(range(1, 26))) is None
+
+
+def test_the_usual_length_is_the_common_one_not_the_average():
+    """One 72-minute pilot drags a mean of 24 up to 26, and then nothing
+    is a clean multiple of anything."""
+    plan = align_pack_episodes(JL_SEASON_1, list(range(1, 27)))
+
+    assert plan is not None and plan[1] == [1, 2, 3]
+
+
+def test_a_season_with_no_runtimes_is_refused():
+    """Runtime is the entire signal. Without it there is nothing to
+    reason from, and TMDB leaves it null on plenty of shows."""
+    bare = [{"episode_number": i, "runtime": None, "name": f"e{i}"} for i in range(1, 25)]
+
+    assert align_pack_episodes(bare, list(range(1, 27))) is None
+
+
+def test_a_short_pack_is_not_this_function_s_business():
+    """Fewer files than episodes is a partial pack, not a merged one."""
+    assert align_pack_episodes(JL_SEASON_1, [1, 2, 3]) is None
+
+
+def test_two_multi_part_episodes_in_one_season():
+    """Nothing about this is specific to there being exactly one."""
+    plan = align_pack_episodes(_season([48, 24, 24, 48, 24, 24]), list(range(1, 9)))
+
+    assert plan == {1: [1, 2], 2: [3], 3: [4], 4: [5, 6], 5: [7], 6: [8]}
+
+
+def test_a_season_with_no_usual_length_is_refused():
+    """Half the episodes at one length and half at another leaves no
+    "usual" to measure against — which length is the double? Declining
+    is the only honest answer."""
+    assert align_pack_episodes(_season([48, 24, 48, 24]), list(range(1, 7))) is None

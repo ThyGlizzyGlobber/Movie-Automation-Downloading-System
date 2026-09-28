@@ -661,6 +661,72 @@ def _pack_entries(
     return entries, f"folder {str(release_dir)!r}"
 
 
+def concat_parts(sources: list[Path], target: Path) -> bool:
+    """Stitches a release's parts into the one episode TMDB says they
+    are. Stream copy — nothing is re-encoded, and nothing is decoded.
+
+    The parts come out of one release, so they share codec, resolution
+    and channel layout, which is what makes `-c copy` safe here and
+    would not make it safe in general.
+
+    Verified by duration before anything replaces anything: concat can
+    exit clean having written a short file if a part is unreadable, and
+    the result of getting that wrong is an episode that looks filed and
+    plays half of itself. A result more than five seconds short of the
+    parts it came from is thrown away.
+
+    Returns False rather than raising, so a pack whose parts won't
+    stitch falls back to filing them as they are.
+    """
+    durations = [probe_duration_minutes(part) for part in sources]
+    expected = sum(d for d in durations if d) if all(durations) else None
+
+    listing = target.with_name(f".{target.stem}.concat.txt")
+    tmp = target.with_name(f".{target.stem}.joining.tmp{target.suffix}")
+    try:
+        # ffmpeg's concat list quotes with single quotes and escapes them
+        # the awkward way; a title with an apostrophe in it is not rare.
+        listing.write_text(
+            "".join(f"file '{str(part).replace(chr(39), chr(39) + chr(92) + chr(39) + chr(39))}'\n" for part in sources),
+            encoding="utf-8",
+        )
+        result = subprocess.run(
+            [
+                "ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", str(listing),
+                "-map", "0", "-map", "-0:d?", "-c", "copy", str(tmp),
+            ],
+            capture_output=True,
+            text=True,
+            timeout=config.FFMPEG_STRIP_TIMEOUT_SECONDS,
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        logger.warning("could not join %d part(s) into %r (%s)", len(sources), target.name, exc)
+        listing.unlink(missing_ok=True)
+        tmp.unlink(missing_ok=True)
+        return False
+    finally:
+        listing.unlink(missing_ok=True)
+
+    if result.returncode != 0:
+        logger.warning("ffmpeg could not join %d part(s) into %r: %s",
+                       len(sources), target.name, _ffmpeg_reason(result.stderr))
+        tmp.unlink(missing_ok=True)
+        return False
+
+    joined = probe_duration_minutes(tmp)
+    if expected and (joined is None or joined < expected - (5 / 60)):
+        logger.warning(
+            "joined %d part(s) into %r but it came out %.1f min against the %.1f min they run to — discarding it",
+            len(sources), target.name, joined or 0, expected,
+        )
+        tmp.unlink(missing_ok=True)
+        return False
+
+    os.replace(tmp, target)
+    logger.info("joined %d part(s) into %r (%.1f min)", len(sources), target.name, joined or 0)
+    return True
+
+
 def pack_season_span(
     torrent_hash: str | None, qbt: QBTClient, release_name: str | None = None
 ) -> tuple[int, int] | None:
@@ -690,6 +756,7 @@ def organize_pack(
     preferred_audio_language: str | None = None,
     only_seasons: tuple[int, int] | None = None,
     season_offset: int = 0,
+    align: Callable[[int, list[int]], dict[int, list[int]] | None] | None = None,
 ) -> list[tuple[int, int, Path]]:
     """Stage 13: places every individually SxxEyy-identifiable file out of a
     completed season/complete-series pack torrent — an extension of
@@ -723,6 +790,7 @@ def organize_pack(
     function only ever touches the filesystem, never the database."""
     entries, source_desc = _pack_entries(torrent_hash, qbt, release_name)
     placed: list[tuple[int, int, Path]] = []
+    by_season: dict[int, list[tuple[int, Path, Path]]] = {}
     any_video_file = False
     for name, source_path in entries:
         path = Path(name)
@@ -752,19 +820,50 @@ def organize_pack(
         if only_seasons and not (only_seasons[0] <= season <= only_seasons[1]):
             continue
         season += season_offset
+        by_season.setdefault(season, []).append((episode, path, source_path))
 
-        title: str | None = None
-        if place:
-            # The stem and a *lazy* duration: place() only reaches for
-            # the runtime when the filename couldn't settle which
-            # special a file is, so the extra ffprobe is paid on the odd
-            # out-of-range file rather than on all twenty in a pack.
-            season, episode, title = place(
-                season, episode, path.stem, lambda p=source_path: probe_duration_minutes(p)
+    # A release sometimes ships as several files what TMDB records as one
+    # episode — Justice League's pilot is three broadcast parts against a
+    # single 72-minute episode 1 — and every file after them is then
+    # numbered ahead of the episode it claims to be. `align` says which
+    # files make up which episode; see tv_resolve.align_pack_episodes,
+    # which owns that judgement and refuses unless the arithmetic
+    # balances.
+    for season in sorted(by_season):
+        files = sorted(by_season[season], key=lambda f: f[0])
+        plan = align(season, [episode for episode, _p, _s in files]) if align else None
+        if plan:
+            by_number = {episode: entry for entry, episode in ((f, f[0]) for f in files)}
+            grouped = [
+                (target, [by_number[n] for n in sources if n in by_number])
+                for target, sources in sorted(plan.items())
+            ]
+        else:
+            grouped = [(entry[0], [entry]) for entry in files]
+        for episode, members in grouped:
+            if not members:
+                continue
+            _number, path, source_path = members[0]
+            title: str | None = None
+            if place:
+                # The stem and a *lazy* duration: place() only reaches
+                # for the runtime when the filename couldn't settle
+                # which special a file is, so the extra ffprobe is paid
+                # on the odd out-of-range file rather than on all twenty
+                # in a pack.
+                placed_season, episode, title = place(
+                    season, episode, path.stem, lambda p=source_path: probe_duration_minutes(p)
+                )
+            else:
+                placed_season = season
+            target = build_episode_path(show_identity, placed_season, episode, source_path.suffix, title)
+            target.parent.mkdir(parents=True, exist_ok=True)
+            if len(members) > 1 and concat_parts([m[2] for m in members], target):
+                placed.append((placed_season, episode, target))
+                continue
+            placed.append(
+                (placed_season, episode, _link_or_copy(source_path, target, preferred_audio_language))
             )
-        target = build_episode_path(show_identity, season, episode, source_path.suffix, title)
-        target.parent.mkdir(parents=True, exist_ok=True)
-        placed.append((season, episode, _link_or_copy(source_path, target, preferred_audio_language)))
 
     if not placed:
         if not any_video_file:

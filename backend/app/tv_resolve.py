@@ -8,6 +8,8 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta, timezone
 
+from collections import Counter
+
 from app.normalize import normalize_text, generate_variants, token_overlap, tokenize
 from app.tmdb import TMDBClient
 
@@ -536,6 +538,83 @@ def find_predecessor_show(
             )
             return candidate
     return None
+
+
+def pack_alignment_lookup(tmdb_id: int, tmdb: TMDBClient):
+    """`(season, episodes present) -> {tmdb episode: [pack episodes]}`,
+    memoised per season the way episode_placement_lookup is — a pack
+    only asks about the seasons it turns out to carry."""
+    cache = _SeasonCache(tmdb_id, tmdb)
+
+    def align(season: int, present: list[int]) -> dict[int, list[int]] | None:
+        episodes = cache.raw(season)
+        plan = align_pack_episodes(episodes, present)
+        if plan:
+            joined = {t: srcs for t, srcs in plan.items() if len(srcs) > 1}
+            logger.info(
+                "tmdb_id=%s: season %d ships %d file(s) against TMDB's %d episode(s) — joining %s",
+                tmdb_id, season, len(present), len(episodes),
+                ", ".join(f"e{t:02d} from parts {srcs}" for t, srcs in sorted(joined.items())),
+            )
+        return plan
+
+    return align
+
+
+def align_pack_episodes(episodes: list[dict], present: list[int]) -> dict[int, list[int]] | None:
+    """Which of a pack's files make up each of TMDB's episodes.
+
+    TMDB sometimes records as one episode what a release ships as
+    several. Justice League's pilot is the case this was written for:
+    TMDB has "Secret Origins" as a single 72-minute episode 1 and the
+    season as 24, while the release numbers the three broadcast parts
+    separately and ships 26 files. Filed literally, everything from the
+    second file on is two ahead of the episode it claims to be, and the
+    last two fall off the end of the season into Specials.
+
+    Runtime is what gives it away, and it gives it away cleanly: every
+    other episode of that season is 24 minutes and the pilot is exactly
+    three of them. So each episode is read as however many of the
+    season's usual length it lasts, and the total has to come out at the
+    number of files actually present — 3 + 23 = 26, in that case.
+
+    Returns {tmdb episode: [pack episodes, in order]}, or None when it
+    cannot be sure: a pack that is merely short, a season TMDB has no
+    runtimes for, or any arithmetic that does not balance. None means
+    "file it the way it is numbered", so being unsure costs nothing
+    beyond leaving today's behaviour alone.
+    """
+    present = sorted(present)
+    if not episodes or not present or len(present) <= len(episodes):
+        return None
+
+    runtimes = [e.get("runtime") for e in episodes if e.get("runtime")]
+    if len(runtimes) < 2:
+        return None
+    # The season's usual length, taken as the most common rather than the
+    # mean: one 72-minute pilot drags a mean of 24 up to 26, and then
+    # nothing is a clean multiple of anything.
+    usual = Counter(runtimes).most_common(1)[0][0]
+    if usual <= 0:
+        return None
+
+    parts: list[int] = []
+    for episode in episodes:
+        runtime = episode.get("runtime") or usual
+        count = max(1, round(runtime / usual))
+        parts.append(count)
+
+    if sum(parts) != len(present):
+        return None
+    if all(count == 1 for count in parts):
+        return None
+
+    plan: dict[int, list[int]] = {}
+    cursor = 0
+    for episode, count in zip(episodes, parts):
+        plan[episode["episode_number"]] = present[cursor : cursor + count]
+        cursor += count
+    return plan
 
 
 def episode_placement_lookup(

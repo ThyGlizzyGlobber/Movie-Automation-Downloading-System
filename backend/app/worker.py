@@ -122,6 +122,7 @@ from app.tmdb import TMDBClient, TMDBError
 from app.tv_resolve import (
     ShowIdentity,
     find_predecessor_show,
+    pack_alignment_lookup,
     aired_episode_numbers,
     episode_placement_lookup,
     episode_title_lookup,
@@ -814,6 +815,7 @@ class Worker:
             # it doesn't. It also decides where a file goes, not just
             # what it is called; see episode_placement_lookup.
             place = episode_placement_lookup(row.tmdb_id, self.tmdb, identity.title)
+            align = pack_alignment_lookup(row.tmdb_id, self.tmdb)
             audio = (await asyncio.to_thread(resolve_pipeline_settings, self.store)).preferred_audio_language
 
             # A "complete series" pack of a continuation show is often
@@ -844,9 +846,10 @@ class Worker:
                 # Two passes, each claiming its own slice of the pack and
                 # renumbering it onto that show's own seasons.
                 lead_place = episode_placement_lookup(predecessor.tmdb_id, self.tmdb, predecessor.title)
+                lead_align = pack_alignment_lookup(predecessor.tmdb_id, self.tmdb)
                 lead = await asyncio.to_thread(
                     organize_pack, predecessor, torrent_hash, self.qbt, release_name,
-                    lead_place, audio, (1, spare), 0,
+                    lead_place, audio, (1, spare), 0, lead_align,
                 )
                 logger.info(
                     "pack request %d: filed %d file(s) as %r, which this pack carried in front of %r",
@@ -854,11 +857,11 @@ class Worker:
                 )
                 placed = await asyncio.to_thread(
                     organize_pack, identity, torrent_hash, self.qbt, release_name,
-                    place, audio, (spare + 1, span[1]), -spare,
+                    place, audio, (spare + 1, span[1]), -spare, align,
                 )
             else:
                 placed = await asyncio.to_thread(
-                    organize_pack, identity, torrent_hash, self.qbt, release_name, place, audio
+                    organize_pack, identity, torrent_hash, self.qbt, release_name, place, audio, None, 0, align
                 )
         except NoVideoFileError:
             message = await self._purge_no_video_torrent(torrent_hash, label)
