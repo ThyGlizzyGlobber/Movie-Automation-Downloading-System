@@ -1376,6 +1376,38 @@ def test_check_downloading_marks_pack_downloaded_not_filed_when_organize_fails(t
     assert reloaded.error_message is not None
 
 
+def test_a_pack_numbered_past_the_shows_last_season_is_refused(tmp_path, monkeypatch):
+    """Seasons 3-5 of a three-season show: the numbering belongs to
+    something bigger — a franchise pack whose first seasons weren't
+    counted — and filing it literally invents two seasons (2026-09-29)."""
+    from app import worker as worker_module
+
+    monkeypatch.setattr(config, "TV_LIBRARY_ROOT", tmp_path / "library")
+    downloads = tmp_path / "downloads"
+    downloads.mkdir(parents=True)
+    names = [f"Lanterns.S0{n}E01.mkv" for n in (3, 4, 5)]
+    for name in names:
+        (downloads / name).write_bytes(b"x")
+    store = RequestStore(":memory:")
+    show = store.create_show(tmdb_id=95350, title="Lanterns")
+    row = store.create_pack_request(tmdb_id=95350, show_id=show.id, title="Lanterns", season_number=None)
+    store.update_status(row.id, "downloading", result={"torrent_hash": "cccc"})
+    qbt = FakeQBTClient(
+        torrent_states={"cccc": {"progress": 1.0, "save_path": str(downloads)}},
+        torrent_files={"cccc": [{"name": n, "size": 1} for n in names]},
+    )
+    tmdb = FakeTMDBClient()
+    real = resolve_show(95350, tmdb)
+    monkeypatch.setattr(worker_module, "resolve_show", lambda tmdb_id, client: real.__class__(**{**real.__dict__, "number_of_seasons": 3}))
+
+    asyncio.run(Worker(store, tmdb, qbt)._check_downloading())
+
+    reloaded = store.get_request(row.id)
+    assert reloaded.status == "downloaded, not filed"
+    assert "seasons 3-5" in reloaded.error_message
+    assert not (tmp_path / "library").exists() or not any((tmp_path / "library").rglob("*.mkv"))
+
+
 def test_check_downloading_purges_pack_torrent_with_no_video_file_at_all(tmp_path, monkeypatch):
     """Same fake-release protection, for a season/complete-series pack
     request: no real video file anywhere in the pack -> purge it and its

@@ -168,17 +168,30 @@ def _title_subtitle_split(title: str) -> tuple[str, str] | None:
     return None
 
 
+# Subtitles that only say "this is the film of…". "Batman Beyond: The
+# Movie" is the film of the show Batman Beyond, so its head names a
+# different work — the series — and its tail names nothing at all. Split
+# like any other title, the head let every series pack through as the
+# movie: a search for it turned up "Batman Beyond (1999) BDRip",
+# "Batman Beyond Complete (1999) HDTV" and "Batman Beyond (1999-2001)
+# DVDRip", all the show, and nothing else passed (2026-09-29).
+_FILM_OF_SUBTITLES = {"the movie", "the motion picture", "the film", "movie"}
+
+
 def generate_variants(title: str, original_title: str, release_year: int | None) -> list[str]:
     """Up to MAX_VARIANTS ranked queries: canonical title, original_title
     (if different), title without subtitle, subtitle without title,
     title+year. Deduplicated on normalized form, original ranking order
-    preserved."""
+    preserved. A subtitle that only says the title is a film ("…: The
+    Movie") isn't split off: see _FILM_OF_SUBTITLES."""
     candidates = [title]
 
     if normalize_text(original_title) != normalize_text(title):
         candidates.append(original_title)
 
     split = _title_subtitle_split(title)
+    if split and normalize_text(split[1]) in _FILM_OF_SUBTITLES:
+        split = None
     if split:
         head, tail = split
         seen_so_far = {normalize_text(c) for c in candidates}

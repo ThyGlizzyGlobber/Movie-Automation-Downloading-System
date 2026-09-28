@@ -301,14 +301,42 @@ def passes_not_a_tv_episode_filter(tokens: list[str]) -> bool:
     return not any(_SOLO_SEASON_RE.match(token) for token in tokens)
 
 
+# Words a film's release never uses about itself, only a show's: "The
+# Complete Series", "TV Series", "Seasons 1-3", "Miniseries". Not
+# "episode" — "Star.Wars.Episode.IV.A.New.Hope.1977" is a film — and not
+# "complete", which is the scene's tag for a whole Blu-ray disc of one
+# ("Dune.Part.Two.2024.COMPLETE.UHD.BLURAY").
+_SERIES_WORDS = {"season", "seasons", "series", "miniseries"}
+
+
+def passes_not_a_series_filter(tokens: list[str], title_tokens: set[str]) -> bool:
+    """Rejects a movie candidate that names itself a TV series in words
+    rather than season numbers — the gap passes_not_a_tv_episode_filter
+    leaves, since "Batman Beyond Complete Series" and "Downton Abbey
+    (2010-2015)" carry no s01 for it to catch.
+
+    Two tells: a series word (_SERIES_WORDS), and a run of years — two
+    years side by side, the second later, which is how a show states the
+    span it aired over and never how a film states when it came out.
+    Words that are part of the film's own title don't count, so "A
+    Series of Unfortunate Events" and "Season of the Witch" still pass."""
+    extra = [(i, t) for i, t in enumerate(tokens) if t not in title_tokens]
+    if any(t in _SERIES_WORDS for _, t in extra):
+        return False
+    years = [(i, int(t)) for i, t in extra if _YEAR_TOKEN_RE.match(t)]
+    return not any(j == i + 1 and later > earlier for (i, earlier), (j, later) in zip(years, years[1:]))
+
+
 def passes_relevance_gate(file_name: str, identity: MediaIdentity, settings: PipelineSettings | None = None) -> bool:
     settings = settings or PipelineSettings.from_config()
     tokens = tokenize(file_name)
+    title_tokens = {token for variant in identity.variants for token in tokenize(variant)}
     return (
         matches_any_variant(tokens, identity.variants, identity.release_year)
         and _year_within_tolerance(tokens, identity.release_year)
         and passes_quality_filters(tokens, settings)
         and passes_not_a_tv_episode_filter(tokens)
+        and passes_not_a_series_filter(tokens, title_tokens)
     )
 
 

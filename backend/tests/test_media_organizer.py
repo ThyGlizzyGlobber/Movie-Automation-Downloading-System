@@ -1612,3 +1612,30 @@ def test_the_two_passes_together_account_for_every_file(tmp_path, monkeypatch):
     assert len(paths) == 5
     assert len(set(paths)) == 5
     assert sorted(s for s, _e, _p in rest) == [1, 2, 3]
+
+
+def test_every_file_the_organizer_can_place_is_counted_in_the_span(tmp_path):
+    """A pack mixing two naming styles: Justice League as "1x01", Unlimited
+    as S03-S05. The span used to read names more strictly than the
+    organizer, saw only 3-5, and the pack was filed as one show from end
+    to end (2026-09-29)."""
+    root = tmp_path / "pack" / "Justice League Complete"
+    root.mkdir(parents=True)
+    names = [
+        "Justice League/Season 1/Justice League 1x01 Secret Origins.mkv",
+        "Justice League/Season 2/Justice League 2x01 Twilight.mkv",
+        "Justice League Unlimited/Justice League S03E01 1080p BluRay x264-SPRiNTER.mkv",
+        "Justice League Unlimited/Justice League S05E13 1080p BluRay x264-SPRiNTER.mkv",
+    ]
+    qbt = FakeQBTClient(str(root), [{"name": n} for n in names])
+
+    assert media_organizer.pack_season_span("hash", qbt) == (1, 5)
+
+
+def test_what_the_organizer_wont_file_does_not_count_toward_the_span(tmp_path):
+    root = tmp_path / "pack"
+    root.mkdir(parents=True)
+    names = ["Show.S01E01.mkv", "Show.S02E01.mkv", "Show.S07E01.nfo", "sample-Show.S08E01.mkv"]
+    qbt = FakeQBTClient(str(root), [{"name": n} for n in names])
+
+    assert media_organizer.pack_season_span("hash", qbt) == (1, 2)

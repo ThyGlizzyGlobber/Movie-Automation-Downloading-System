@@ -829,6 +829,16 @@ class Worker:
             # tv_resolve.find_predecessor_show.
             span = await asyncio.to_thread(pack_season_span, torrent_hash, self.qbt, release_name)
             spare, predecessor = 0, None
+            # Numbered past this show's last season, but not from season 1:
+            # the numbering belongs to something bigger than this show and
+            # there's no telling what — refused rather than filed as seasons
+            # the show doesn't have.
+            if span and identity.number_of_seasons and span[0] > 1 and span[1] > identity.number_of_seasons:
+                raise MediaOrganizerError(
+                    f"this pack holds seasons {span[0]}-{span[1]} but {identity.title} has "
+                    f"{identity.number_of_seasons} — its numbering belongs to something bigger than this "
+                    f"show, and filing it would invent seasons this show does not have"
+                )
             if span and identity.number_of_seasons and span[0] == 1:
                 spare = span[1] - identity.number_of_seasons
                 if spare > 0:

@@ -727,6 +727,26 @@ def concat_parts(sources: list[Path], target: Path) -> bool:
     return True
 
 
+def _pack_file_episode(name: str) -> tuple[int, int] | None:
+    """Which (season, episode) one file in a pack is, or None when it is
+    not an episode at all — not a video, a sample, or no episode token.
+
+    The one reading of a pack's files, shared by pack_season_span (how
+    many seasons does this pack hold?) and organize_pack (where does each
+    file go?). They used to read names differently: the span looked at
+    the whole path with the plain parser, the organizer at the file's own
+    name with the "1x01" form allowed too. So a pack whose files the
+    organizer could place, the span could miss — and a Justice League
+    Unlimited pack whose first two seasons it didn't count looked like
+    seasons 3-5 of one show, skipped the check that splits off the show
+    bundled in front, and was filed as Unlimited from end to end
+    (2026-09-29). One function, so the two can't disagree again."""
+    path = Path(name)
+    if path.suffix.lower() not in config.VIDEO_EXTENSIONS or has_token(path.stem, "sample"):
+        return None
+    return extract_episode_identity(tokenize(path.stem), allow_x_form=True)
+
+
 def pack_season_span(
     torrent_hash: str | None, qbt: QBTClient, release_name: str | None = None
 ) -> tuple[int, int] | None:
@@ -735,13 +755,14 @@ def pack_season_span(
 
     The name is a claim and the files are the fact, and for the decision
     this feeds — whether a pack is carrying more than one show — only
-    the fact will do. Season 0 is ignored: a bundled specials folder
+    the fact will do. Read exactly as organize_pack reads them (see
+    _pack_file_episode). Season 0 is ignored: a bundled specials folder
     says nothing about how many series are in here.
     """
     entries, _ = _pack_entries(torrent_hash, qbt, release_name)
     seasons = set()
     for name, _path in entries:
-        identity = extract_episode_identity(tokenize(name))
+        identity = _pack_file_episode(name)
         if identity and identity[0] > 0:
             seasons.add(identity[0])
     return (min(seasons), max(seasons)) if seasons else None
@@ -797,7 +818,7 @@ def organize_pack(
         if path.suffix.lower() not in config.VIDEO_EXTENSIONS or has_token(path.stem, "sample"):
             continue
         any_video_file = True
-        identity_pair = extract_episode_identity(tokenize(path.stem), allow_x_form=True)
+        identity_pair = _pack_file_episode(name)
         if identity_pair is None:
             logger.info("organize_pack: skipping %r — no recognizable episode token", name)
             continue

@@ -44,3 +44,18 @@ def test_generate_variants_includes_the_tail_side_of_a_subtitle_split():
     variants = generate_variants("Special Ops: Lioness", "Special Ops: Lioness", None)
     assert "Lioness" in variants
     assert "Special Ops" in variants
+
+
+def test_a_film_of_a_show_is_not_split_into_the_shows_name():
+    """"Batman Beyond: The Movie" split like any subtitle gave "Batman
+    Beyond" — the series' own name — and every series pack passed as the
+    film (2026-09-29)."""
+    assert generate_variants("Batman Beyond: The Movie", "Batman Beyond: The Movie", 1999) == [
+        "Batman Beyond: The Movie",
+        "Batman Beyond: The Movie 1999",
+    ]
+    assert "Star Trek" not in generate_variants("Star Trek: The Motion Picture", "Star Trek: The Motion Picture", 1979)
+
+
+def test_an_ordinary_subtitle_is_still_split():
+    assert "Dune" in generate_variants("Dune: Part Two", "Dune: Part Two", 2024)

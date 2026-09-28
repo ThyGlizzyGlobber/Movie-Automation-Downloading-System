@@ -767,6 +767,49 @@ def test_a_title_without_a_subtitle_is_its_own_full_title_and_matches_anywhere()
     assert not matches_any_variant(tokenize("Batman.S01E01.2160p"), variants)
 
 
+def _movie(title, year, original=None):
+    from app.resolve import MediaIdentity
+    from app.normalize import generate_variants
+
+    return MediaIdentity(tmdb_id=1, title=title, original_title=original or title, release_year=year,
+                         variants=generate_variants(title, original or title, year))
+
+
+def test_a_film_of_a_show_does_not_take_the_shows_packs():
+    """Every one of these was the series, and each passed as "Batman
+    Beyond: The Movie" (live search, 2026-09-29)."""
+    film = _movie("Batman Beyond: The Movie", 1999)
+    for name in (
+        "Batman Beyond (1999) BDRip",
+        "Batman Beyond  Complete (1999) HDTV (SEEDBOX) Pimp4003",
+        "Batman Beyond (1999-2001) DVDRip",
+        "BATMAN BEYOND Complete TV Series S01-S03 Movie 1080p BluRay x264",
+    ):
+        assert not passes_relevance_gate(name, film), name
+    assert passes_relevance_gate("Batman.Beyond.The.Movie.1999.1080p.BluRay.x264", film)
+
+
+def test_a_film_sharing_a_shows_name_does_not_take_its_series_packs():
+    """No season numbers to catch — the words and the run of years say it."""
+    film = _movie("Downton Abbey", 2019)
+    assert not passes_relevance_gate("Downton.Abbey.The.Complete.Series.1080p.BluRay", film)
+    assert not passes_relevance_gate("Downton Abbey (2010-2015) 1080p BluRay x264", film)
+    assert passes_relevance_gate("Downton.Abbey.2019.1080p.BluRay.x264", film)
+
+
+def test_series_words_in_a_films_own_title_are_the_title():
+    assert passes_relevance_gate(
+        "A.Series.of.Unfortunate.Events.2004.1080p.BluRay.x264", _movie("A Series of Unfortunate Events", 2004)
+    )
+    assert passes_relevance_gate("Season.of.the.Witch.2011.1080p.BluRay.x264", _movie("Season of the Witch", 2011))
+
+
+def test_what_films_do_say_about_themselves_still_passes():
+    """"Episode" names Star Wars films; COMPLETE tags a whole Blu-ray disc."""
+    assert passes_relevance_gate("Star.Wars.Episode.IV.A.New.Hope.1977.1080p.BluRay.x264", _movie("Star Wars", 1977))
+    assert passes_relevance_gate("Dune.Part.Two.2024.COMPLETE.UHD.BLURAY-GRP", _movie("Dune: Part Two", 2024))
+
+
 # ---------------------------------------------------------------------------
 # SD rips name their source instead of a resolution ("TVRip", "DVDRip",
 # "HDTV XviD") — those count as the 480p tier so an "Anything" floor really
