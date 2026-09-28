@@ -111,6 +111,7 @@ from app.media_organizer import (
     organize_episode,
     organize_movie,
     organize_pack,
+    pack_season_span,
     select_video_file,
 )
 from app.pipeline import download, download_episode, download_pack, find_best_episode_candidate, same_release
@@ -120,6 +121,7 @@ from app.resolve import resolve
 from app.tmdb import TMDBClient, TMDBError
 from app.tv_resolve import (
     ShowIdentity,
+    find_predecessor_show,
     aired_episode_numbers,
     episode_placement_lookup,
     episode_title_lookup,
@@ -813,9 +815,51 @@ class Worker:
             # what it is called; see episode_placement_lookup.
             place = episode_placement_lookup(row.tmdb_id, self.tmdb, identity.title)
             audio = (await asyncio.to_thread(resolve_pipeline_settings, self.store)).preferred_audio_language
-            placed = await asyncio.to_thread(
-                organize_pack, identity, torrent_hash, self.qbt, release_name, place, audio
-            )
+
+            # A "complete series" pack of a continuation show is often
+            # the whole franchise in airing order, numbered straight
+            # through: Justice League Unlimited has three seasons and
+            # every pack of it is S01-S05, because it carries Justice
+            # League's two first. Filed as one show those become seasons
+            # four and five of a three-season show, which Plex shelves
+            # as specials, while the two that really are the other
+            # series get filed under this one. See
+            # tv_resolve.find_predecessor_show.
+            span = await asyncio.to_thread(pack_season_span, torrent_hash, self.qbt, release_name)
+            spare, predecessor = 0, None
+            if span and identity.number_of_seasons and span[0] == 1:
+                spare = span[1] - identity.number_of_seasons
+                if spare > 0:
+                    predecessor = await asyncio.to_thread(
+                        find_predecessor_show, identity, self.tmdb, spare
+                    )
+                    if predecessor is None:
+                        raise MediaOrganizerError(
+                            f"this pack holds seasons 1-{span[1]} but {identity.title} has "
+                            f"{identity.number_of_seasons}, and nothing on TMDB accounts for the extra "
+                            f"{spare} — filing it would invent seasons this show does not have"
+                        )
+
+            if predecessor is not None:
+                # Two passes, each claiming its own slice of the pack and
+                # renumbering it onto that show's own seasons.
+                lead_place = episode_placement_lookup(predecessor.tmdb_id, self.tmdb, predecessor.title)
+                lead = await asyncio.to_thread(
+                    organize_pack, predecessor, torrent_hash, self.qbt, release_name,
+                    lead_place, audio, (1, spare), 0,
+                )
+                logger.info(
+                    "pack request %d: filed %d file(s) as %r, which this pack carried in front of %r",
+                    row.id, len(lead), predecessor.title, identity.title,
+                )
+                placed = await asyncio.to_thread(
+                    organize_pack, identity, torrent_hash, self.qbt, release_name,
+                    place, audio, (spare + 1, span[1]), -spare,
+                )
+            else:
+                placed = await asyncio.to_thread(
+                    organize_pack, identity, torrent_hash, self.qbt, release_name, place, audio
+                )
         except NoVideoFileError:
             message = await self._purge_no_video_torrent(torrent_hash, label)
             logger.warning("pack request %d (%s) downloading -> cancelled (%s)", row.id, label, message)

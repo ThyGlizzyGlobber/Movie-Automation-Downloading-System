@@ -8,7 +8,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta, timezone
 
-from app.normalize import generate_variants, token_overlap, tokenize
+from app.normalize import normalize_text, generate_variants, token_overlap, tokenize
 from app.tmdb import TMDBClient
 
 logger = logging.getLogger("app.tv_resolve")
@@ -470,6 +470,72 @@ def _pick_special(
     if 1 <= offset <= len(candidates):
         return candidates[offset - 1], "position, nothing else being able to tell them apart"
     return None, "nothing"
+
+
+# How far back a bundled predecessor can plausibly be. A shortened
+# title matches coincidentally as often as not — "Justice League
+# Unlimited" cut to one word finds a 1971 series called "Justice",
+# which shares a word and nothing else — and the two failure modes are
+# not symmetric. A false positive files episodes under the wrong show;
+# a false negative only declines the pack and falls back to
+# season-by-season, which works. So this is deliberately tight.
+_PREDECESSOR_MAX_YEARS = 15
+
+
+def find_predecessor_show(
+    identity: ShowIdentity, client: TMDBClient, seasons_needed: int
+) -> ShowIdentity | None:
+    """The earlier series a franchise pack bundled in front of this one.
+
+    A "complete series" pack of a continuation show is routinely the
+    whole franchise in airing order. Justice League Unlimited has three
+    seasons; every pack of it on the trackers is S01-S05, because it
+    carries Justice League's two seasons first. Filed against Unlimited
+    those become seasons four and five of a three-season show, which
+    Plex files as specials, and the two that really are Justice League
+    are filed as Unlimited — the exact mess this exists to stop.
+
+    Found by shortening the title a word at a time — "Justice League
+    Unlimited" to "Justice League" — which is how these franchises are
+    actually named. A candidate has to earn it: a different show, with
+    exactly the `seasons_needed` seasons the pack has spare, that began
+    before this one. Those three together are narrow enough that a
+    wrong answer is hard to construct; anything less and the caller is
+    better off declining the pack.
+
+    None when nothing verifies, which the caller must treat as "do not
+    file this pack" rather than "file it anyway".
+    """
+    words = identity.title.split()
+    for cut in range(len(words) - 1, 0, -1):
+        guess = " ".join(words[:cut])
+        try:
+            results = client.search_tv(guess).get("results", []) or []
+        except Exception:  # noqa: BLE001 — a failed search is "no predecessor"
+            return None
+        for result in results:
+            if result.get("id") == identity.tmdb_id:
+                continue
+            if normalize_text(result.get("name") or "") != normalize_text(guess):
+                continue
+            try:
+                candidate = resolve_show(result["id"], client)
+            except Exception:  # noqa: BLE001
+                continue
+            if candidate.number_of_seasons != seasons_needed:
+                continue
+            if identity.first_air_year and candidate.first_air_year:
+                gap = identity.first_air_year - candidate.first_air_year
+                if not 0 < gap <= _PREDECESSOR_MAX_YEARS:
+                    continue
+            logger.info(
+                "tmdb_id=%s: a pack carrying %d season(s) too many looks like it also holds %r "
+                "(tmdb_id=%s, %d seasons, first aired %s)",
+                identity.tmdb_id, seasons_needed, candidate.title,
+                candidate.tmdb_id, candidate.number_of_seasons, candidate.first_air_year,
+            )
+            return candidate
+    return None
 
 
 def episode_placement_lookup(

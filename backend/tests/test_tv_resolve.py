@@ -2,6 +2,7 @@ from datetime import datetime, timedelta, timezone
 
 from app.tmdb import TMDBClient
 from app.tv_resolve import (
+    find_predecessor_show,
     aired_cutoff_date,
     episode_is_released,
     aired_episode_numbers,
@@ -583,3 +584,100 @@ def test_placement_fetches_each_season_at_most_once():
     # stops and the next one starts.
     assert sorted(set(tmdb.calls)) == [0, 1, 2]
     assert tmdb.calls.count(1) == 1
+
+
+# ---------------------------------------------------------------------------
+# A franchise pack carries more than one show.
+#
+# "Justice League Unlimited" has three seasons, and every complete-series
+# pack of it on the trackers is S01-S05 — it carries Justice League's two
+# seasons first, numbered straight through. Filed as one show those become
+# seasons four and five of a three-season show.
+# ---------------------------------------------------------------------------
+
+
+class _FranchiseTMDB:
+    def __init__(self, shows, results_by_query=None):
+        self.shows = shows
+        self.results_by_query = results_by_query or {}
+        self.searched = []
+
+    def search_tv(self, query, year=None):
+        self.searched.append(query)
+        return {"results": self.results_by_query.get(query, [])}
+
+    def get_tv(self, tmdb_id):
+        return self.shows[tmdb_id]
+
+
+def _show(tmdb_id, name, seasons, year):
+    return {
+        "id": tmdb_id,
+        "name": name,
+        "original_name": name,
+        "first_air_date": f"{year}-01-01",
+        "number_of_seasons": seasons,
+        "seasons": [{"season_number": n, "episode_count": 13} for n in range(1, seasons + 1)],
+        "status": "Ended",
+    }
+
+
+def test_the_earlier_series_in_a_franchise_pack_is_found():
+    """The real case, with the real numbers: Unlimited is three seasons
+    from 2004, the pack is five, and Justice League is the two-season
+    2001 show sitting in front of it."""
+    tmdb = _FranchiseTMDB(
+        shows={1618: _show(1618, "Justice League", 2, 2001), 84200: _show(84200, "Justice League Unlimited", 3, 2004)},
+        results_by_query={"Justice League": [{"id": 1618, "name": "Justice League"}]},
+    )
+    jlu = resolve_show(84200, tmdb)
+
+    found = find_predecessor_show(jlu, tmdb, seasons_needed=2)
+
+    assert found is not None
+    assert (found.tmdb_id, found.number_of_seasons) == (1618, 2)
+
+
+def test_a_candidate_with_the_wrong_season_count_is_refused():
+    """The pack has exactly this many seasons spare. A show that can't
+    account for all of them isn't what's in it."""
+    tmdb = _FranchiseTMDB(
+        shows={1618: _show(1618, "Justice League", 2, 2001), 84200: _show(84200, "Justice League Unlimited", 3, 2004)},
+        results_by_query={"Justice League": [{"id": 1618, "name": "Justice League"}]},
+    )
+    jlu = resolve_show(84200, tmdb)
+
+    assert find_predecessor_show(jlu, tmdb, seasons_needed=3) is None
+
+
+def test_a_coincidental_prefix_match_from_another_era_is_refused():
+    """Cutting the title to one word finds a 1971 series called
+    "Justice", which shares a word and nothing else. A false positive
+    files episodes under the wrong show; a false negative only declines
+    the pack. The two are not worth trading."""
+    tmdb = _FranchiseTMDB(
+        shows={43559: _show(43559, "Justice", 2, 1971), 84200: _show(84200, "Justice League Unlimited", 3, 2004)},
+        results_by_query={"Justice": [{"id": 43559, "name": "Justice"}]},
+    )
+    jlu = resolve_show(84200, tmdb)
+
+    assert find_predecessor_show(jlu, tmdb, seasons_needed=2) is None
+
+
+def test_a_later_show_is_never_the_predecessor():
+    """Airing order is the whole premise: the bundled series came first."""
+    tmdb = _FranchiseTMDB(
+        shows={999: _show(999, "Justice League", 2, 2019), 84200: _show(84200, "Justice League Unlimited", 3, 2004)},
+        results_by_query={"Justice League": [{"id": 999, "name": "Justice League"}]},
+    )
+    jlu = resolve_show(84200, tmdb)
+
+    assert find_predecessor_show(jlu, tmdb, seasons_needed=2) is None
+
+
+def test_a_title_of_one_word_has_nothing_to_shorten():
+    tmdb = _FranchiseTMDB(shows={1: _show(1, "Lanterns", 1, 2026)})
+    only = resolve_show(1, tmdb)
+
+    assert find_predecessor_show(only, tmdb, seasons_needed=1) is None
+    assert tmdb.searched == []

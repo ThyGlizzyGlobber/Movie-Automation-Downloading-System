@@ -1535,3 +1535,80 @@ def test_the_audio_fix_also_leaves_downloads_alone(monkeypatch, tmp_path):
     assert len(plans) == 1
     assert plans[0].wanted is None
     assert "not filed" in plans[0].skipped
+
+
+# ---------------------------------------------------------------------------
+# Filing one franchise pack as two shows.
+# ---------------------------------------------------------------------------
+
+
+JL = ShowIdentity(
+    tmdb_id=1618, title="Justice League", original_title="Justice League",
+    variants=["Justice League"], number_of_seasons=2, first_air_year=2001,
+)
+JLU = ShowIdentity(
+    tmdb_id=84200, title="Justice League Unlimited", original_title="Justice League Unlimited",
+    variants=["Justice League Unlimited"], number_of_seasons=3, first_air_year=2004,
+)
+
+
+def _franchise_pack(tmp_path):
+    """A pack numbered the way the release does: five seasons straight
+    through, carrying two shows."""
+    root = tmp_path / "pack" / "Justice League Unlimited S01-S05"
+    root.mkdir(parents=True)
+    names = [f"S{n:02d}E01.mkv" for n in range(1, 6)]
+    for name in names:
+        (root / name).write_bytes(b"x")
+    return FakeQBTClient(str(root), [{"name": n} for n in names])
+
+
+def test_the_pack_span_is_read_from_the_files_not_the_name(tmp_path, monkeypatch):
+    """The name is a claim and the files are the fact, and only the fact
+    decides whether more than one show is in here."""
+    qbt = _franchise_pack(tmp_path)
+
+    assert media_organizer.pack_season_span("hash", qbt) == (1, 5)
+
+
+def test_a_slice_of_the_pack_is_filed_and_renumbered(tmp_path, monkeypatch):
+    """Unlimited's three seasons sit at the back of the pack as 3, 4 and
+    5. Filed against Unlimited they have to become 1, 2 and 3 — filed
+    literally they are seasons a three-season show does not have, which
+    is what Plex shelves as specials."""
+    monkeypatch.setattr(config, "TV_LIBRARY_ROOT", tmp_path / "library")
+    qbt = _franchise_pack(tmp_path)
+
+    placed = media_organizer.organize_pack(
+        JLU, "hash", qbt, None, None, None, only_seasons=(3, 5), season_offset=-2
+    )
+
+    assert sorted(season for season, _ep, _path in placed) == [1, 2, 3]
+    assert all("Justice League Unlimited (2004)" in str(p) for _s, _e, p in placed)
+
+
+def test_the_other_half_of_the_pack_is_filed_as_the_other_show(tmp_path, monkeypatch):
+    """Justice League's two seasons are the pack's first two, already
+    numbered as its own, so they need no offset — only their own folder."""
+    monkeypatch.setattr(config, "TV_LIBRARY_ROOT", tmp_path / "library")
+    qbt = _franchise_pack(tmp_path)
+
+    placed = media_organizer.organize_pack(JL, "hash", qbt, None, None, None, only_seasons=(1, 2), season_offset=0)
+
+    assert sorted(season for season, _ep, _path in placed) == [1, 2]
+    assert all("Justice League (2001)" in str(p) for _s, _e, p in placed)
+
+
+def test_the_two_passes_together_account_for_every_file(tmp_path, monkeypatch):
+    """Nothing filed twice, nothing dropped — the pack is split, not
+    sampled."""
+    monkeypatch.setattr(config, "TV_LIBRARY_ROOT", tmp_path / "library")
+    qbt = _franchise_pack(tmp_path)
+
+    lead = media_organizer.organize_pack(JL, "hash", qbt, None, None, None, only_seasons=(1, 2), season_offset=0)
+    rest = media_organizer.organize_pack(JLU, "hash", qbt, None, None, None, only_seasons=(3, 5), season_offset=-2)
+
+    paths = [p for _s, _e, p in lead + rest]
+    assert len(paths) == 5
+    assert len(set(paths)) == 5
+    assert sorted(s for s, _e, _p in rest) == [1, 2, 3]

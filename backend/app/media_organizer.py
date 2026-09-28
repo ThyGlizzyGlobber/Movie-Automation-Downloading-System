@@ -661,6 +661,26 @@ def _pack_entries(
     return entries, f"folder {str(release_dir)!r}"
 
 
+def pack_season_span(
+    torrent_hash: str | None, qbt: QBTClient, release_name: str | None = None
+) -> tuple[int, int] | None:
+    """The lowest and highest season numbered inside a pack, read from
+    the files themselves rather than from the release's name.
+
+    The name is a claim and the files are the fact, and for the decision
+    this feeds — whether a pack is carrying more than one show — only
+    the fact will do. Season 0 is ignored: a bundled specials folder
+    says nothing about how many series are in here.
+    """
+    entries, _ = _pack_entries(torrent_hash, qbt, release_name)
+    seasons = set()
+    for name, _path in entries:
+        identity = extract_episode_identity(tokenize(name))
+        if identity and identity[0] > 0:
+            seasons.add(identity[0])
+    return (min(seasons), max(seasons)) if seasons else None
+
+
 def organize_pack(
     show_identity: ShowIdentity,
     torrent_hash: str | None,
@@ -668,6 +688,8 @@ def organize_pack(
     release_name: str | None = None,
     place: Callable[[int, int], tuple[int, int, str | None]] | None = None,
     preferred_audio_language: str | None = None,
+    only_seasons: tuple[int, int] | None = None,
+    season_offset: int = 0,
 ) -> list[tuple[int, int, Path]]:
     """Stage 13: places every individually SxxEyy-identifiable file out of a
     completed season/complete-series pack torrent — an extension of
@@ -722,6 +744,15 @@ def organize_pack(
         # S01E09, where TMDB has S00E01 and season 1 stops at 8) is
         # re-placed into Season 00 — see tv_resolve.episode_placement_lookup,
         # which owns that judgement and the TMDB data behind it.
+        # A franchise pack holds more than one show: "Justice League
+        # Unlimited S01-S05" is Justice League's two seasons followed by
+        # Unlimited's three. The caller files it in two passes, each
+        # claiming its own slice and renumbering it onto that show's own
+        # seasons — see tv_resolve.find_predecessor_show.
+        if only_seasons and not (only_seasons[0] <= season <= only_seasons[1]):
+            continue
+        season += season_offset
+
         title: str | None = None
         if place:
             # The stem and a *lazy* duration: place() only reaches for
