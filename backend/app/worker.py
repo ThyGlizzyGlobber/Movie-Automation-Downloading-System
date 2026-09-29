@@ -250,6 +250,9 @@ class Worker:
         # part that genuinely still is.
         self._search_slots = asyncio.Semaphore(config.SEARCH_CONCURRENCY)
         self._tasks: list[asyncio.Task] = []
+        # Strong references to the after-import Plex nudges, so a task
+        # fired and forgotten isn't garbage-collected mid-flight.
+        self._audio_nudges: set = set()
 
     def enqueue(self, request_id: int) -> None:
         self.queue.put_nowait(request_id)
@@ -537,12 +540,47 @@ class Worker:
             except Exception:
                 logger.exception("download watch cycle failed")
 
-    async def _refresh_plex(self, media_type: str, target_path) -> None:
+    async def _refresh_plex(
+        self,
+        media_type: str,
+        target_path,
+        title: str | None = None,
+        year: int | None = None,
+        tmdb_id: int | None = None,
+    ) -> None:
         folder = str(target_path.parent) if target_path is not None else None
         try:
             await asyncio.to_thread(plex.refresh_after_import, self.store, media_type, folder)
         except Exception:
             logger.exception("plex refresh after import failed")
+        if not title:
+            return
+        # And then tell Plex which track to use, rather than trusting it
+        # to have read the one the file asks for. Setting the flag in the
+        # file decides Plex's *first* choice and nothing after it, and
+        # that turned out to be a weaker guarantee than it sounds: a
+        # viewer's own language preference sits above it, a failed remux
+        # leaves the old flag in place, and Plex records whatever it
+        # picked and never revisits it. Seen on The Gorge, whose file had
+        # English as its only default while Plex played the Russian dub.
+        # Not awaited: Plex has to finish scanning before the part
+        # exists, so this waits and retries, and a download completing
+        # must not sit behind that. Failures are its own to log.
+        async def _nudge() -> None:
+            try:
+                settings = await asyncio.to_thread(resolve_pipeline_settings, self.store)
+                raw = await asyncio.to_thread(self.store.get_settings)
+                client = plex.client_from_settings(raw)
+                await asyncio.to_thread(
+                    plex.select_audio_after_import,
+                    self.store, client, media_type, title, year, tmdb_id,
+                    settings.preferred_audio_language,
+                )
+            except Exception:
+                logger.exception("plex audio selection after import failed")
+
+        self._audio_nudges.add(task := asyncio.create_task(_nudge()))
+        task.add_done_callback(self._audio_nudges.discard)
 
     async def _retry_stalled_download(self, row, torrent_hash: str) -> None:
         """Abandon a pick whose swarm never showed up, and search again
@@ -719,7 +757,7 @@ class Worker:
         await asyncio.to_thread(
             self.store.mark_organized, row.id, [str(target_path)], pending_hashes, self._next_cleanup_attempt_at()
         )
-        await self._refresh_plex("tv", target_path)
+        await self._refresh_plex("tv", target_path, identity.title, identity.first_air_year, row.tmdb_id)
 
     async def _organize_and_complete_movie(self, row) -> None:
         """Movie equivalent of `_organize_and_complete_episode` — a movie
@@ -782,7 +820,7 @@ class Worker:
             self._next_cleanup_attempt_at(),
             superseded_paths=superseded_paths,
         )
-        await self._refresh_plex("movie", target_path)
+        await self._refresh_plex("movie", target_path, identity.title, identity.release_year, row.tmdb_id)
 
     async def _organize_and_complete_pack(self, row) -> None:
         """Stage 13's fan-out point: a bulk season/complete-series pack row
@@ -922,7 +960,9 @@ class Worker:
             [torrent_hash],
             self._next_cleanup_attempt_at(),
         )
-        await self._refresh_plex("tv", placed[-1][2] if placed else None)
+        await self._refresh_plex(
+            "tv", placed[-1][2] if placed else None, identity.title, identity.first_air_year, row.tmdb_id
+        )
 
     async def _purge_no_video_torrent(self, torrent_hash: str, label: str) -> str:
         """A completed torrent with no real video file in it at all is the

@@ -927,39 +927,117 @@ def plan_audio_selection(store, client: "PlexClient", preferred: str) -> list[Au
             detail = client.metadata(url, token, str(item.get("ratingKey")))
             if not detail:
                 continue
-            label = " - ".join(
-                x for x in (detail.get("grandparentTitle"), detail.get("title")) if x
-            ) or str(item.get("ratingKey"))
-            for media in detail.get("Media", []) or []:
-                for part in media.get("Part", []) or []:
-                    audio = [st for st in (part.get("Stream") or []) if st.get("streamType") == 2]
-                    if len(audio) < 2:
-                        continue
-                    # Plex reports ISO 639-2 ("eng", "ita") while the
-                    # setting is 639-1 ("en"), so these go through the
-                    # same alias table the organiser uses rather than a
-                    # string compare — which matched nothing at all.
-                    current = next((st for st in audio if st.get("selected")), None)
-                    candidates = [st for st in audio if is_audio_language(st.get("languageCode"), preferred)]
-                    if not candidates:
-                        continue
-                    # Best of them, not the first: a release routinely
-                    # carries an Atmos English track and a plain one, and
-                    # a commentary is in English too.
-                    wanted = max(candidates, key=_plex_audio_quality)
-                    if current is not None and current.get("id") == wanted.get("id"):
-                        continue
-                    out.append(
-                        AudioSelection(
-                            title=label,
-                            part_id=str(part.get("id")),
-                            stream_id=str(wanted.get("id")),
-                            from_language=(current or {}).get("languageCode"),
-                            to_language=preferred,
-                            languages=[(st.get("languageCode") or "?") for st in audio],
-                        )
-                    )
+            out += _selections_in(detail, preferred)
     return out
+
+
+def _selections_in(detail: dict | None, preferred: str) -> list[AudioSelection]:
+    """Every part of one Plex item whose chosen audio track should
+    change. Shared so the library-wide sweep and the after-import nudge
+    cannot drift apart about what "right" means."""
+    if not detail:
+        return []
+    label = " - ".join(
+        x for x in (detail.get("grandparentTitle"), detail.get("title")) if x
+    ) or str(detail.get("ratingKey"))
+
+    out: list[AudioSelection] = []
+    for media in detail.get("Media", []) or []:
+        for part in media.get("Part", []) or []:
+            audio = [st for st in (part.get("Stream") or []) if st.get("streamType") == 2]
+            if len(audio) < 2:
+                continue
+            # Plex reports ISO 639-2 ("eng", "ita") while the setting is
+            # 639-1 ("en"), so these go through the same alias table the
+            # organiser uses rather than a string compare, which matched
+            # nothing at all.
+            current = next((st for st in audio if st.get("selected")), None)
+            candidates = [st for st in audio if is_audio_language(st.get("languageCode"), preferred)]
+            if not candidates:
+                continue
+            # Best of them, not the first: a release routinely carries an
+            # Atmos English track and a plain one, and a commentary is in
+            # English too.
+            wanted = max(candidates, key=_plex_audio_quality)
+            if current is not None and current.get("id") == wanted.get("id"):
+                continue
+            out.append(
+                AudioSelection(
+                    title=label,
+                    part_id=str(part.get("id")),
+                    stream_id=str(wanted.get("id")),
+                    from_language=(current or {}).get("languageCode"),
+                    to_language=preferred,
+                    languages=[(st.get("languageCode") or "?") for st in audio],
+                )
+            )
+    return out
+
+
+def select_audio_after_import(
+    store,
+    client: "PlexClient",
+    media_type: str,
+    title: str,
+    year: int | None,
+    tmdb_id: int | None,
+    preferred: str,
+    attempts: int = 4,
+    delay: float = 15.0,
+) -> int:
+    """Tell Plex which audio track this title should use, once it has
+    finished scanning it in.
+
+    Setting the flag in the file decides Plex's *first* choice and
+    nothing after it, and "first choice" turned out to be a weaker
+    guarantee than it sounds. A viewer's own language preference sits
+    above the flag, a remux that failed leaves the old flag in place,
+    and Plex records whatever it picked and never revisits it. The
+    household hit all of this on The Gorge: the file had English as its
+    only default and Plex played the Russian dub regardless.
+
+    So the file is told, and then Plex is told, and neither is trusted
+    to have understood the other. Idempotent — an item already on the
+    right track plans nothing.
+
+    Retried because a scan takes as long as it takes: the refresh that
+    precedes this only *asks* Plex to look, so the part may not exist
+    for a few seconds yet. Best effort throughout; a failure here is
+    logged and never raised into the worker, because a correct file
+    filed in the right place is still a success.
+    """
+    settings = store.get_settings()
+    if not settings.get("plex_server_url") or not settings.get("plex_server_token"):
+        return 0
+
+    for attempt in range(attempts):
+        if attempt:
+            time.sleep(delay)
+        try:
+            found = locate_title(store, client, media_type, title, year, tmdb_id)
+        except Exception as exc:  # noqa: BLE001
+            logger.info("plex audio selection: couldn't locate %r yet (%s)", title, exc)
+            continue
+        if not found:
+            continue
+        try:
+            url = settings.get("plex_server_url")
+            token = settings.get("plex_server_token")
+            detail = client.metadata(url, token, str(found["rating_key"]))
+            changed = 0
+            for choice in _selections_in(detail, preferred):
+                if apply_audio_selection(store, client, choice) is None:
+                    changed += 1
+            if changed:
+                logger.info(
+                    "plex audio selection: put %d part(s) of %r on %s after import", changed, title, preferred
+                )
+            return changed
+        except Exception as exc:  # noqa: BLE001
+            logger.info("plex audio selection for %r failed: %s", title, exc)
+            return 0
+    logger.info("plex audio selection: %r hadn't appeared in Plex after %d tries", title, attempts)
+    return 0
 
 
 def apply_audio_selection(store, client: "PlexClient", choice: AudioSelection) -> str | None:

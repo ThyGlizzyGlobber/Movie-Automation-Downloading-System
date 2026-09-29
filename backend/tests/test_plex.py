@@ -880,3 +880,91 @@ def test_an_unlinked_server_says_so_rather_than_failing_obscurely(tmp_path):
     with pytest.raises(plex.PlexError):
         plex.plan_audio_selection(store, _FakePlex({}), "en")
     store.close()
+
+
+# ---------------------------------------------------------------------------
+# Telling Plex after an import, rather than trusting it to have read the
+# flag the file asks for.
+#
+# The Gorge, live: the file had English as its only default track and Plex
+# played the Russian dub. Setting the flag decides Plex's first choice and
+# nothing after it.
+# ---------------------------------------------------------------------------
+
+
+class _LocatableePlex(_FakePlex):
+    def __init__(self, items, found_on_attempt=1):
+        super().__init__(items)
+        self.found_on_attempt = found_on_attempt
+        self.locate_calls = 0
+
+    def locate(self, url, token, media_type, title, year, tmdb_id=None):
+        self.locate_calls += 1
+        if self.locate_calls < self.found_on_attempt:
+            return None
+        return {"rating_key": "1", "title": title, "year": year}
+
+
+def test_a_freshly_imported_title_is_put_on_the_right_track(tmp_path):
+    store = _store(tmp_path)
+    fake = _LocatableePlex({
+        "1": _episode("The Gorge", [
+            _audio("10", "rus", selected=True),
+            _audio("11", "eng", default=True),
+        ]),
+    })
+
+    changed = plex.select_audio_after_import(store, fake, "movie", "The Gorge", 2025, 950396, "en", delay=0)
+
+    assert changed == 1
+    assert fake.selected == [("part-The Gorge", "11")]
+    store.close()
+
+
+def test_it_waits_for_plex_to_finish_scanning(tmp_path):
+    """The refresh only *asks* Plex to look, so the part may not exist
+    for a few seconds yet."""
+    store = _store(tmp_path)
+    fake = _LocatableePlex(
+        {"1": _episode("The Gorge", [_audio("10", "rus", selected=True), _audio("11", "eng", default=True)])},
+        found_on_attempt=3,
+    )
+
+    changed = plex.select_audio_after_import(store, fake, "movie", "The Gorge", 2025, 950396, "en", delay=0)
+
+    assert changed == 1
+    assert fake.locate_calls == 3
+    store.close()
+
+
+def test_a_title_plex_never_indexes_gives_up_quietly(tmp_path):
+    """A correct file in the right place is still a success; this is the
+    belt, not the braces."""
+    store = _store(tmp_path)
+    fake = _LocatableePlex({"1": _episode("x", [])}, found_on_attempt=99)
+
+    assert plex.select_audio_after_import(store, fake, "movie", "Nope", 2025, 1, "en", attempts=2, delay=0) == 0
+    store.close()
+
+
+def test_nothing_happens_without_a_plex_server(tmp_path):
+    """No retries, no sleeping — a household that never linked Plex must
+    not pay a minute of waiting per import."""
+    store = RequestStore(str(tmp_path / "t.db"))
+    fake = _LocatableePlex({})
+
+    assert plex.select_audio_after_import(store, fake, "movie", "x", 2025, 1, "en") == 0
+    assert fake.locate_calls == 0
+    store.close()
+
+
+def test_an_import_already_on_the_right_track_changes_nothing(tmp_path):
+    """Idempotent, because this runs after every single import."""
+    store = _store(tmp_path)
+    fake = _LocatableePlex({
+        "1": _episode("Fine", [_audio("10", "rus"), _audio("11", "eng", default=True, selected=True)]),
+    })
+
+    assert plex.select_audio_after_import(store, fake, "movie", "Fine", 2025, 1, "en", delay=0) == 0
+    assert fake.selected == []
+    store.close()
