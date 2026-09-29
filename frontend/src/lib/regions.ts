@@ -53,3 +53,30 @@ export const AUDIO_LANGUAGES: { code: string; name: string }[] = [
   { code: 'sv', name: 'Swedish' },
   { code: 'tr', name: 'Turkish' },
 ]
+
+// A representative IANA zone per region, for converting a release date
+// out of the country that published it and into the household's own
+// calendar — see releaseWindow.localiseDate.
+//
+// The US is Los Angeles rather than New York deliberately: the
+// conversion asks when the source country's day is *over*, and the US
+// day ends on the west coast.
+export const REGION_TIMEZONE: Record<string, string> = {
+  AU: 'Australia/Sydney',
+  BR: 'America/Sao_Paulo',
+  CA: 'America/Toronto',
+  DE: 'Europe/Berlin',
+  ES: 'Europe/Madrid',
+  FR: 'Europe/Paris',
+  GB: 'Europe/London',
+  IE: 'Europe/Dublin',
+  IN: 'Asia/Kolkata',
+  IT: 'Europe/Rome',
+  JP: 'Asia/Tokyo',
+  MX: 'America/Mexico_City',
+  NL: 'Europe/Amsterdam',
+  NZ: 'Pacific/Auckland',
+  SE: 'Europe/Stockholm',
+  US: 'America/Los_Angeles',
+  ZA: 'Africa/Johannesburg',
+}

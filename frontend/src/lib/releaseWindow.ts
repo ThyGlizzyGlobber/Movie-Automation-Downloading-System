@@ -1,4 +1,4 @@
-import { FALLBACK_REGION } from './regions'
+import { FALLBACK_REGION, REGION_TIMEZONE } from './regions'
 import type { ReleaseDatesResult } from '../types/movies'
 
 // TMDB's /movie/{id}/release_dates `type` field — the same numbers the
@@ -31,9 +31,10 @@ export interface ReleaseOutlook {
   kind: 'digital' | 'physical' | 'estimate' | 'unknown'
   /** ISO yyyy-mm-dd. Null when `kind` is `unknown`. */
   date: string | null
-  /** The country whose calendar this date is on, when that isn't the
-   *  household's — see `soonest`. Null when it is theirs, or when the
-   *  date was derived rather than read. */
+  /** The country whose schedule this date came from, when it wasn't
+   *  the household's own. `date` has already been converted into the
+   *  household's calendar — see `localiseDate` — so this is provenance,
+   *  not a caveat the reader has to apply themselves. */
   from: string | null
   /** Ready to render: "14 Nov 2026", or "Nov 2026" for an estimate
    *  (which carries no day — see TYPICAL_WINDOW_DAYS), or "Not
@@ -51,6 +52,77 @@ function daysUntil(iso: string, now: Date): number {
   const midnight = new Date(now)
   midnight.setHours(0, 0, 0, 0)
   return Math.round((new Date(`${iso}T00:00:00`).getTime() - midnight.getTime()) / 86400000)
+}
+
+// How far `timeZone` is from UTC at a given instant, in minutes. There
+// is no built-in for this, and the offset moves with daylight saving —
+// Sydney is +10 half the year and +11 the other half, and so is the
+// answer to "what day is it there".
+function offsetMinutes(at: Date, timeZone: string): number {
+  const parts = Object.fromEntries(
+    new Intl.DateTimeFormat('en-US', {
+      timeZone,
+      hour12: false,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+    })
+      .formatToParts(at)
+      .map((p) => [p.type, p.value]),
+  )
+  const asUtc = Date.UTC(
+    Number(parts.year),
+    Number(parts.month) - 1,
+    Number(parts.day),
+    Number(parts.hour) % 24,
+    Number(parts.minute),
+    Number(parts.second),
+  )
+  return (asUtc - at.getTime()) / 60000
+}
+
+/**
+ * A release date moved out of the country that published it and into the
+ * household's own calendar.
+ *
+ * TMDB scopes a release date to a country and records no hour, so "the
+ * 6th in the US" is a day, not a moment. This converts the *end* of that
+ * day, which makes the answer the first date in the household's calendar
+ * by which the release has certainly happened — the honest direction to
+ * round, since the alternative promises a film on a morning when the
+ * country releasing it has not woken up.
+ *
+ * Australia gains a day from a US date, which is the point: on the
+ * morning of the 6th in Sydney it is still the 5th in Los Angeles.
+ * A household behind the source region loses nothing, because the end
+ * of a day abroad is still that day at home or earlier.
+ *
+ * Returns the date unchanged when either country has no zone on file,
+ * which is the same answer as before this existed.
+ */
+export function localiseDate(iso: string, from: string | null, to: string): string {
+  const source = REGION_TIMEZONE[(from || '').toUpperCase()]
+  const home = REGION_TIMEZONE[to.toUpperCase()]
+  if (!source || !home || source === home) return iso
+
+  const [year, month, day] = iso.split('-').map(Number)
+  const endOfDay = Date.UTC(year, month - 1, day, 23, 59)
+  // Two passes: the offset has to be measured at the instant we are
+  // solving for, and the first guess can land the wrong side of a
+  // daylight-saving change.
+  let instant = endOfDay - offsetMinutes(new Date(endOfDay), source) * 60000
+  instant = endOfDay - offsetMinutes(new Date(instant), source) * 60000
+
+  const there = new Intl.DateTimeFormat('en-CA', {
+    timeZone: home,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(new Date(instant))
+  return there
 }
 
 function dated(entries: ReleaseDatesResult[], types: number[], now: Date): string[] {
@@ -158,12 +230,14 @@ export function releaseOutlook(
 
   const digital = soonest(results, region, [DIGITAL], now)
   if (digital) {
-    return { kind: 'digital', date: digital.date, from: digital.from, when: formatDate(digital.date), eta: etaFrom(digital.date, now) }
+    const date = localiseDate(digital.date, digital.from, region)
+    return { kind: 'digital', date, from: digital.from, when: formatDate(date), eta: etaFrom(date, now) }
   }
 
   const physical = soonest(results, region, [PHYSICAL], now)
   if (physical) {
-    return { kind: 'physical', date: physical.date, from: physical.from, when: formatDate(physical.date), eta: etaFrom(physical.date, now) }
+    const date = localiseDate(physical.date, physical.from, region)
+    return { kind: 'physical', date, from: physical.from, when: formatDate(date), eta: etaFrom(date, now) }
   }
 
   // Nothing on file for the drop itself, so work forward from the cinema
@@ -231,12 +305,10 @@ export function downloadableLabel(outlook: ReleaseOutlook): string {
   const kind = KIND_LABEL[outlook.kind]
   // No date to qualify or count down to — the phrase is the whole answer.
   if (!kind) return outlook.when
-  // Say whose calendar it is when it isn't this household's. A US date
-  // read as a local one is optimistic by the better part of a day.
-  const qualified = outlook.from ? `${kind}, ${outlook.from}` : kind
+
   // The countdown trails the pair rather than splitting it, so the
   // qualifier stays attached to the date it qualifies. An estimate has
   // no eta by construction: a countdown to a month we guessed would be
   // the one part of this that sounded certain.
-  return `${outlook.when} (${qualified})${outlook.eta ? ` | ${outlook.eta}` : ''}`
+  return `${outlook.when} (${kind})${outlook.eta ? ` | ${outlook.eta}` : ''}`
 }
