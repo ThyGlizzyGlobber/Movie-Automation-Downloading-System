@@ -950,6 +950,21 @@ class RequestStore(StoreSchema):
             )
             self._conn.commit()
 
+    def forget_show_episodes(self, show_id: int, season_number: int) -> int:
+        """Drops one season's rows from the per-episode dedup ledger.
+
+        For "this copy is broken": the files are gone, so the ledger
+        saying they were handled is now a lie — and it is the thing that
+        would stop the re-request from filing their replacements. Returns
+        how many rows went, for the log."""
+        with self._lock:
+            cursor = self._conn.execute(
+                "DELETE FROM show_episodes WHERE show_id = ? AND season_number = ?",
+                (show_id, season_number),
+            )
+            self._conn.commit()
+            return cursor.rowcount
+
     def list_show_episodes(self, show_id: int | None = None) -> list[ShowEpisodeRow]:
         if show_id is not None:
             rows = self._conn.execute(

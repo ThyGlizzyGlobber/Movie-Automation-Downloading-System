@@ -4210,3 +4210,84 @@ def test_the_pipeline_card_does_not_round_trip_the_audio_language(client_and_dep
     client, _, _, _, _, _ = client_and_deps
 
     assert "preferred_audio_language" not in client.get("/api/settings/pipeline").json()
+
+
+# ---------------------------------------------------------------------------
+# "This copy is broken", for a season.
+#
+# A season pack is one encode, so a fault in it — jump cuts, sync drift, a
+# wrong cut — is a fault in every episode of that season. None of it is
+# visible to a search that reads filenames and seeder counts, so a person
+# saying so is the only signal there is.
+# ---------------------------------------------------------------------------
+
+
+def _filed_season(store, tmp_path, tmdb_id, season, episodes, torrent_hash, release_name):
+    # One show row per tmdb_id — two seasons of the same show share it.
+    show = store.get_show_by_tmdb_id(tmdb_id) or store.create_show(
+        tmdb_id=tmdb_id, title="Lanterns", poster_path=None
+    )
+    paths = []
+    for episode in episodes:
+        path = tmp_path / f"Lanterns - s{season:02d}e{episode:02d}.mkv"
+        path.write_bytes(b"jump cuts")
+        row = store.create_episode_request(tmdb_id, show.id, "Lanterns", season, episode)
+        store.update_status(
+            row.id, "downloading",
+            result={"torrent_hash": torrent_hash, "winner": {"fileName": release_name}},
+        )
+        store.mark_organized(row.id, [str(path)], [torrent_hash], "2000-01-01T00:00:00+00:00")
+        store.add_show_episode(show.id, season, episode, row.id)
+        paths.append(path)
+    return show, paths
+
+
+def test_rejecting_a_season_bins_its_files_and_blacklists_the_release(client_and_deps, tmp_path):
+    client, store, _, _, _, _ = client_and_deps
+    show, paths = _filed_season(store, tmp_path, 95350, 2, [1, 2, 3], "beef", "Lanterns.S02.2160p.WEB-DL.mkv")
+
+    response = client.post("/api/tv/95350/seasons/2/reject-current")
+
+    assert response.status_code == 200, response.text
+    assert sorted(response.json()["removed"]) == sorted(p.name for p in paths)
+    assert not any(p.exists() for p in paths)
+    assert store.get_rejected_torrent_hashes(95350) == {"beef"}
+    assert store.get_rejected_releases(95350) == [
+        {"name": "Lanterns.S02.2160p.WEB-DL.mkv", "size_bytes": None}
+    ]
+
+
+def test_rejecting_one_season_leaves_the_others_alone(client_and_deps, tmp_path):
+    """The whole point of scoping it: a bad season 2 pack says nothing
+    about season 1."""
+    client, store, _, _, _, _ = client_and_deps
+    show, season1 = _filed_season(store, tmp_path, 95350, 1, [1, 2], "aaaa", "Lanterns.S01.mkv")
+    _, season2 = _filed_season(store, tmp_path, 95350, 2, [1, 2], "bbbb", "Lanterns.S02.mkv")
+
+    client.post("/api/tv/95350/seasons/2/reject-current")
+
+    assert all(p.exists() for p in season1)
+    assert not any(p.exists() for p in season2)
+    assert {i["season_number"] for i in store.get_library_items(95350)} == {1}
+
+
+def test_rejecting_a_season_forgets_its_episode_ledger(client_and_deps, tmp_path):
+    """The files are gone, so the ledger saying they were handled is now
+    a lie — and it is the thing that would stop the re-request from
+    filing their replacements."""
+    client, store, _, _, _, _ = client_and_deps
+    show, _paths = _filed_season(store, tmp_path, 95350, 2, [1, 2, 3], "beef", "Lanterns.S02.mkv")
+    assert store.has_show_episode(show.id, 2, 1) is True
+
+    client.post("/api/tv/95350/seasons/2/reject-current")
+
+    assert store.has_show_episode(show.id, 2, 1) is False
+
+
+def test_rejecting_a_season_this_app_never_filed_is_refused(client_and_deps):
+    """Deleting files on a guess is not something to do to a household's
+    library — a season assembled by hand has no ledger row saying where
+    it came from."""
+    client, _, _, _, _, _ = client_and_deps
+
+    assert client.post("/api/tv/95350/seasons/2/reject-current").status_code == 409

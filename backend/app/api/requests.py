@@ -10,6 +10,7 @@ from app.db import RequestRow, RequestStore, SessionRow
 from app.plex import local_file_for_title
 from app.qbt import QBTClient
 from app.resolve import resolve
+from app.tv_resolve import resolve_show
 from app.tmdb import TMDBClient, TMDBError
 from app.worker import Worker
 from app.api.deps import get_qbt, get_store, get_tmdb, get_worker, logger, require_can_request, router
@@ -227,6 +228,76 @@ def reject_current_movie_copy(
         removed.append(path.name)
     logger.info("movie %d (%s): current copy rejected by %s: %s", tmdb_id, identity.title, session.username, ", ".join(removed))
     return {"removed": removed}
+
+
+@router.post("/api/tv/{tmdb_id}/seasons/{season_number}/reject-current")
+def reject_current_season_copy(
+    tmdb_id: int,
+    season_number: int,
+    store: RequestStore = Depends(get_store),
+    tmdb: TMDBClient = Depends(get_tmdb),
+    session: SessionRow = Depends(require_can_request),
+) -> dict:
+    """"This copy is broken" for a season already filed.
+
+    The TV counterpart of reject_current_movie_copy, and season-scoped
+    because that is how these arrive: a season pack is one encode, so a
+    fault in it — jump cuts, sync drift, a wrong cut — is a fault in
+    every episode of that season, and rejecting them one at a time
+    would be thirteen clicks to say one thing.
+
+    Every file the ledger holds for the season is deleted and its
+    torrent hash and release name blacklisted for the show, so the
+    re-request that follows cannot land on the same release. The name
+    matters as much as the hash: a bad encode re-uploaded under a new
+    hash is still the bad encode.
+
+    Only files this app filed, deliberately. A season assembled by hand,
+    or by whatever was here before it, has no ledger row saying where it
+    came from — and deleting files on a guess is not something to do on
+    a household's library.
+    """
+    try:
+        identity = resolve_show(tmdb_id, tmdb)
+    except TMDBError as exc:
+        raise HTTPException(status_code=404, detail=f"tmdb_id {tmdb_id} not found") from exc
+
+    items = [
+        item
+        for item in store.get_library_items(tmdb_id, "episode")
+        if item.get("season_number") == season_number
+    ]
+    if not items:
+        raise HTTPException(
+            status_code=409,
+            detail=f"nothing filed by Obsidian for {identity.title} season {season_number}",
+        )
+
+    removed: list[str] = []
+    for item in items:
+        if item.get("torrent_hash"):
+            store.add_rejected_torrent(tmdb_id, item["torrent_hash"])
+        if item.get("release_name"):
+            store.add_rejected_release(tmdb_id, item["release_name"])
+        elif item.get("size_bytes"):
+            store.add_rejected_release(tmdb_id, Path(item["path"]).stem, item["size_bytes"])
+        path = Path(item["path"])
+        try:
+            path.unlink(missing_ok=True)
+        except OSError as exc:
+            raise HTTPException(status_code=500, detail=f"couldn't delete {path.name}: {exc}") from exc
+        store.remove_library_item(item["path"])
+        removed.append(path.name)
+
+    # The episode ledger is what stops a re-request re-filing episodes it
+    # thinks it already has, so it has to forget them too.
+    show = store.get_show_by_tmdb_id(tmdb_id)
+    forgotten = store.forget_show_episodes(show.id, season_number) if show else 0
+    logger.info(
+        "show %d (%s) season %d: current copy rejected by %s: %d file(s), %d ledger row(s)",
+        tmdb_id, identity.title, season_number, session.username, len(removed), forgotten,
+    )
+    return {"removed": removed, "season_number": season_number}
 
 
 @router.post("/api/requests/{request_id}/reject")

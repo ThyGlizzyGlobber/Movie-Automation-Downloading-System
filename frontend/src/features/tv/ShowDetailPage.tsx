@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { useParams } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { getTvShow, listShows, createShow, deleteShow, bulkDownload } from '../../api/tv'
+import { getTvShow, listShows, createShow, deleteShow, bulkDownload, rejectCurrentSeasonCopy } from '../../api/tv'
 import RequestModal from '../detail/RequestModal'
 import EpisodeList, { EpisodesSectionSkeleton } from './EpisodeList'
 import MediaRow from '../../components/media/MediaRow'
@@ -441,15 +441,40 @@ export default function ShowDetailPage() {
           runBulkDownload(pending.scope, pending.seasonNumber, key)
         }}
       />
+      {/* Season scope only for "this copy is broken": a season pack is
+          one encode, so a fault in it is a fault in every episode of it,
+          and there is nothing sensible to bin for "the whole series"
+          that isn't several packs with their own releases. */}
       <RedownloadModal
         open={modalOpen}
         targetLabel={pendingBulk?.label ?? title}
         trackedAvailable={show.on_plex_tracked}
+        canReject={pendingBulk?.scope === 'season' && pendingBulk.seasonNumber != null}
         onClose={() => setModalOpen(false)}
-        onChoose={(mode) => {
+        onChoose={async (mode) => {
           setModalOpen(false)
-          if (mode === 'reject') return // not offered for shows
-          if (pendingBulk) runBulkDownload(pendingBulk.scope, pendingBulk.seasonNumber, pendingBulk.scope === 'series' ? 'series' : `season-${pendingBulk.seasonNumber}`, mode)
+          if (!pendingBulk) return
+          const key = pendingBulk.scope === 'series' ? 'series' : `season-${pendingBulk.seasonNumber}`
+          if (mode === 'reject') {
+            if (pendingBulk.seasonNumber == null) return
+            setBulkBusyKey(key)
+            try {
+              const { removed } = await rejectCurrentSeasonCopy(tmdbId, pendingBulk.seasonNumber)
+              toast({
+                tone: 'info',
+                title: `Binned season ${pendingBulk.seasonNumber}`,
+                body: `${removed.length} file${removed.length === 1 ? '' : 's'} deleted | looking for a different copy`,
+              })
+            } catch (err) {
+              toast({ tone: 'error', title: "Couldn't bin that copy", body: errorText(err) })
+              setBulkBusyKey(null)
+              return
+            }
+            queryClient.invalidateQueries({ queryKey: ['episodes', tmdbId] })
+            runBulkDownload(pendingBulk.scope, pendingBulk.seasonNumber, key)
+            return
+          }
+          runBulkDownload(pendingBulk.scope, pendingBulk.seasonNumber, key, mode)
         }}
       />
     </>

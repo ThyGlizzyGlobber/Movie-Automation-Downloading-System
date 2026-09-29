@@ -12,6 +12,16 @@ export function getTvDiscoverTrending(page = 1) {
   return request<TmdbListResponse>(`/api/tv/discover/trending?page=${page}`)
 }
 
+/** "This copy is broken" for a season already filed: every file the
+ *  ledger holds for it is deleted and its release blacklisted, so the
+ *  re-request that follows can't land on the same encode. */
+export function rejectCurrentSeasonCopy(tmdbId: number, seasonNumber: number) {
+  return request<{ removed: string[]; season_number: number }>(
+    `/api/tv/${tmdbId}/seasons/${seasonNumber}/reject-current`,
+    { method: 'POST' },
+  )
+}
+
 export function getTvShow(tmdbId: number) {
   return request<TvDetail>(`/api/tv/${tmdbId}`)
 }
