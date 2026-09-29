@@ -31,6 +31,10 @@ export interface ReleaseOutlook {
   kind: 'digital' | 'physical' | 'estimate' | 'unknown'
   /** ISO yyyy-mm-dd. Null when `kind` is `unknown`. */
   date: string | null
+  /** The country whose calendar this date is on, when that isn't the
+   *  household's — see `soonest`. Null when it is theirs, or when the
+   *  date was derived rather than read. */
+  from: string | null
   /** Ready to render: "14 Nov 2026", or "Nov 2026" for an estimate
    *  (which carries no day — see TYPICAL_WINDOW_DAYS), or "Not
    *  announced yet". */
@@ -82,14 +86,30 @@ function dated(entries: ReleaseDatesResult[], types: number[], now: Date): strin
  * the indexers is a worldwide event, whatever a territory's own
  * paperwork says about it.
  */
-function soonest(results: ReleaseDatesResult[], region: string, types: number[], after: Date): string | undefined {
+function soonest(
+  results: ReleaseDatesResult[],
+  region: string,
+  types: number[],
+  after: Date,
+): { date: string; from: string | null } | undefined {
   for (const scope of [
     results.filter((r) => r.iso_3166_1 === region),
     results.filter((r) => r.iso_3166_1 === FALLBACK_REGION),
     results,
   ]) {
     const found = dated(scope, types, after)[0]
-    if (found) return found
+    if (found) {
+      // Which country's calendar this date belongs to, when it isn't
+      // the household's own. TMDB stores a release date scoped to a
+      // country — "2026-10-06T00:00:00.000Z" is the 6th *there*, with a
+      // zero time nobody released anything at — so showing a US date to
+      // an Australian household unlabelled claims a day that hasn't
+      // started yet: on the morning of the 6th in Sydney it is still
+      // the 5th in Los Angeles.
+      const owner = scope.find((r) => r.release_dates.some((d) => (d.release_date || '').startsWith(found)))
+      const from = owner?.iso_3166_1 ?? null
+      return { date: found, from: from && from !== region ? from : null }
+    }
   }
   return undefined
 }
@@ -137,15 +157,19 @@ export function releaseOutlook(
   const results = movie.release_dates?.results ?? []
 
   const digital = soonest(results, region, [DIGITAL], now)
-  if (digital) return { kind: 'digital', date: digital, when: formatDate(digital), eta: etaFrom(digital, now) }
+  if (digital) {
+    return { kind: 'digital', date: digital.date, from: digital.from, when: formatDate(digital.date), eta: etaFrom(digital.date, now) }
+  }
 
   const physical = soonest(results, region, [PHYSICAL], now)
-  if (physical) return { kind: 'physical', date: physical, when: formatDate(physical), eta: etaFrom(physical, now) }
+  if (physical) {
+    return { kind: 'physical', date: physical.date, from: physical.from, when: formatDate(physical.date), eta: etaFrom(physical.date, now) }
+  }
 
   // Nothing on file for the drop itself, so work forward from the cinema
   // date — its own if TMDB has one, otherwise the headline release_date,
   // which for an unreleased title is the cinema date under another name.
-  const cinema = soonest(results, region, THEATRICAL, new Date(0)) ?? movie.release_date?.slice(0, 10)
+  const cinema = soonest(results, region, THEATRICAL, new Date(0))?.date ?? movie.release_date?.slice(0, 10)
   if (cinema) {
     const guess = new Date(`${cinema}T00:00:00`)
     guess.setDate(guess.getDate() + TYPICAL_WINDOW_DAYS)
@@ -155,11 +179,11 @@ export function releaseOutlook(
     // know.
     if (guess > now) {
       const iso = guess.toISOString().slice(0, 10)
-      return { kind: 'estimate', date: iso, when: formatMonth(iso), eta: null }
+      return { kind: 'estimate', date: iso, from: null, when: formatMonth(iso), eta: null }
     }
   }
 
-  return { kind: 'unknown', date: null, when: 'Not announced yet', eta: null }
+  return { kind: 'unknown', date: null, from: null, when: 'Not announced yet', eta: null }
 }
 
 // What kind of date this is, in one capitalised word. Parallel on
@@ -207,9 +231,12 @@ export function downloadableLabel(outlook: ReleaseOutlook): string {
   const kind = KIND_LABEL[outlook.kind]
   // No date to qualify or count down to — the phrase is the whole answer.
   if (!kind) return outlook.when
+  // Say whose calendar it is when it isn't this household's. A US date
+  // read as a local one is optimistic by the better part of a day.
+  const qualified = outlook.from ? `${kind}, ${outlook.from}` : kind
   // The countdown trails the pair rather than splitting it, so the
   // qualifier stays attached to the date it qualifies. An estimate has
   // no eta by construction: a countdown to a month we guessed would be
   // the one part of this that sounded certain.
-  return `${outlook.when} (${kind})${outlook.eta ? ` | ${outlook.eta}` : ''}`
+  return `${outlook.when} (${qualified})${outlook.eta ? ` | ${outlook.eta}` : ''}`
 }
