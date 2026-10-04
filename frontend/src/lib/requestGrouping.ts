@@ -46,6 +46,10 @@ const GROUP_STATUS_PRIORITY = [
   'failed',
   'complete',
   'cancelled',
+  // Last, below even cancelled: it carries no news of its own. A show
+  // whose series request split into seasons is exactly as done as those
+  // seasons are, and its card should say so.
+  'split',
 ]
 
 export function dominantStatus(rows: RequestOut[]): string {

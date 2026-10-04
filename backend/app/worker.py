@@ -253,9 +253,39 @@ class Worker:
         # Strong references to the after-import Plex nudges, so a task
         # fired and forgotten isn't garbage-collected mid-flight.
         self._audio_nudges: set = set()
+        # Request ids sitting in `queue` right now, so enqueue can refuse
+        # a duplicate and the orphan sweep can tell what is missing.
+        self._pending: set[int] = set()
 
     def enqueue(self, request_id: int) -> None:
+        # Idempotent, so the orphan sweep below can offer every queued
+        # row without stacking duplicates behind one another.
+        if request_id in self._pending:
+            return
+        self._pending.add(request_id)
         self.queue.put_nowait(request_id)
+
+    async def _requeue_orphans(self) -> int:
+        """Every row the database calls queued, offered to the queue.
+
+        A safety net under the rule "anything that sets a row to queued
+        must also enqueue it". That rule was broken once, by the stall
+        retry, and the cost was a request that waited forever while
+        saying it was waiting its turn. One missed call anywhere is
+        enough to do it again, and the failure is silent by nature —
+        nothing errors, a card just never moves. So rather than trust
+        every future path to remember, this closes the gap within a poll.
+
+        Cheap: one indexed query, and enqueue ignores anything already
+        waiting."""
+        added = 0
+        for request_id in await asyncio.to_thread(self.store.queued_request_ids):
+            if request_id not in self._pending:
+                self.enqueue(request_id)
+                added += 1
+        if added:
+            logger.warning("re-queued %d request(s) the database had as queued but nothing was waiting on", added)
+        return added
 
     async def start(self) -> None:
         recovered = await asyncio.to_thread(self.store.recover_interrupted)
@@ -293,6 +323,7 @@ class Worker:
         slots."""
         while True:
             request_id = await self.queue.get()
+            self._pending.discard(request_id)
             async with self._search_slots:
                 await self._run_one(request_id)
 
@@ -427,6 +458,7 @@ class Worker:
         tv_settings = await asyncio.to_thread(resolve_tv_settings, self.store)
         on_plex = await asyncio.to_thread(self._episodes_on_plex, identity)
         created: list[int] = []
+        covered = 0
         for season_number in seasons:
             try:
                 episodes = await asyncio.to_thread(self.tmdb.get_tv_season, row.tmdb_id, season_number)
@@ -448,9 +480,11 @@ class Worker:
                 else:
                     had.append(await asyncio.to_thread(self.store.has_live_show_episode, show.id, season_number, e))
             if all(had):
+                covered += 1
                 continue
             attempts = await asyncio.to_thread(self.store.list_pack_requests_for_show, show.id, season_number, None)
             if attempts and (attempts[0].status in NON_TERMINAL_STATUSES or attempts[0].status in self._PACK_DONE_STATUSES):
+                covered += 1
                 continue
             season_row = await asyncio.to_thread(
                 self.store.create_pack_request,
@@ -472,9 +506,24 @@ class Worker:
         if created:
             n = len(created)
             message = f"{lead} its {n} season{'s were' if n != 1 else ' was'} requested one at a time."
-        else:
+        elif covered:
             message = f"{lead} nothing was added: every season is already requested or on Plex."
-        await asyncio.to_thread(self.store.update_status, row.id, "no qualifying results", error_message=message)
+        else:
+            message = f"{lead} there were no aired seasons to ask for instead."
+        # "split", not "no qualifying results". This request did its job —
+        # its seasons own the work now — and recording it as a failure
+        # did real damage: the Requests page filed it under Failed, its
+        # "No match" outranked every finished episode on the show's card
+        # (The Pitt read "No match" with 46 of 48 on Plex), and the retry
+        # gate treated it as a failed attempt and ran it again, which is
+        # where that show's second "Whole series" row came from.
+        #
+        # A fallback with nothing to hand off at all — nothing aired yet,
+        # or TMDB had nothing — is still "no qualifying results". That one
+        # really is a no-match, and calling it "split" would say something
+        # was split up when nothing was.
+        status = "split" if created or covered else "no qualifying results"
+        await asyncio.to_thread(self.store.update_status, row.id, status, error_message=message)
         logger.info("pack fallback: %s -> %d per-season request(s)", _request_label(row), len(created))
         for season_id in created:
             self.enqueue(season_id)
@@ -485,7 +534,7 @@ class Worker:
         circulate as single episodes. Episodes already in the ledger
         (handled by an earlier request, or found on disk) are left alone;
         the new rows inherit the request's resolution floor, and
-        the pack row keeps its "no match" but says what happened next."""
+        the pack row is marked "split" and says what happened next."""
         show = await asyncio.to_thread(self.store.get_show, row.show_id)
         if show is None:
             return
@@ -494,6 +543,7 @@ class Worker:
         tv_settings = await asyncio.to_thread(resolve_tv_settings, self.store)
         on_plex = await asyncio.to_thread(self._episodes_on_plex, identity)
         created: list[int] = []
+        covered = 0
         for season_number in seasons:
             try:
                 episodes = await asyncio.to_thread(self.tmdb.get_tv_season, row.tmdb_id, season_number)
@@ -505,9 +555,11 @@ class Worker:
                 episodes, buffer_hours=tv_settings.episode_air_buffer_hours, airstamps=stamps
             ):
                 if await asyncio.to_thread(self.store.has_live_show_episode, show.id, season_number, episode_number):
+                    covered += 1
                     continue
                 if (season_number, episode_number) in on_plex:
                     await asyncio.to_thread(self._mark_found, show, identity, season_number, episode_number, "already on Plex, not downloaded by this app")
+                    covered += 1
                     continue
                 episode_row = await asyncio.to_thread(
                     self.store.create_episode_request,
@@ -525,9 +577,14 @@ class Worker:
         if created:
             n = len(created)
             message = f"No season pack found, so its {n} episode{'s were' if n != 1 else ' was'} requested one by one."
-        else:
+        elif covered:
             message = "No season pack found, and every aired episode is already requested."
-        await asyncio.to_thread(self.store.update_status, row.id, "no qualifying results", error_message=message)
+        else:
+            message = "No season pack found, and no aired episodes to ask for instead."
+        # See _fall_back_to_seasons for why a handoff is not a failure —
+        # and why having nothing to hand off still is.
+        status = "split" if created or covered else "no qualifying results"
+        await asyncio.to_thread(self.store.update_status, row.id, status, error_message=message)
         logger.info("pack fallback: %s -> %d per-episode request(s)", _request_label(row), len(created))
         for episode_id in created:
             self.enqueue(episode_id)
@@ -539,6 +596,10 @@ class Worker:
                 await self._check_downloading()
             except Exception:
                 logger.exception("download watch cycle failed")
+            try:
+                await self._requeue_orphans()
+            except Exception:
+                logger.exception("orphan requeue sweep failed")
 
     async def _refresh_plex(
         self,
@@ -624,6 +685,14 @@ class Worker:
             config.STALL_MAX_ATTEMPTS,
         )
         await asyncio.to_thread(self.store.update_status, row.id, "queued", None, result)
+        # The database saying "queued" is not the same as being queued.
+        # Without this the row sat on "Waiting its turn" with no turn
+        # coming — nothing in memory knew about it — until the next
+        # process restart, when boot recovery re-enqueued every queued
+        # row. That is why it looked intermittent: a git pull reloads
+        # uvicorn and quietly fixes it, and the next stalled download
+        # breaks it again. Hanging Up sat like that for three days.
+        self.enqueue(row.id)
 
     async def _check_downloading(self) -> None:
         tracked = []
@@ -1420,7 +1489,10 @@ class Worker:
                 return True
         return False
 
-    _PACK_DONE_STATUSES = {"complete"}
+    # "split" counts as done: a pack that handed its work to per-season
+    # or per-episode requests must not be re-attempted, or every recheck
+    # cycle re-runs the same fallback and adds another copy of itself.
+    _PACK_DONE_STATUSES = {"complete", "split"}
 
     def _should_attempt_pack(
         self,

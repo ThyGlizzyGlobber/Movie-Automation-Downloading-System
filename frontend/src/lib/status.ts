@@ -10,6 +10,7 @@ export type RequestStatus =
   | 'failed'
   | 'cancelled'
   | 'downloaded, not filed'
+  | 'split'
 
 interface StatusMeta {
   label: string
@@ -36,6 +37,11 @@ const STATUS_META: Record<string, StatusMeta> = {
   'insufficient free space': { label: 'No space', cls: 'status-nospace', icon: 'alert', tone: 'var(--status-nospace)' },
   failed: { label: 'Failed', cls: 'status-failed', icon: 'alert-circle', tone: 'var(--status-failed)' },
   cancelled: { label: 'Cancelled', cls: 'status-queued', icon: 'block', tone: 'var(--text-dim)' },
+  // A pack with no pack to find, whose work was handed to one request
+  // per season (or per episode). Not a failure — its children carry
+  // the real progress — so it is never filed under Failed and never
+  // outranks them on a show's card.
+  split: { label: 'Split up', cls: 'status-queued', icon: 'next', tone: 'var(--text-dim)' },
 }
 
 export const NON_TERMINAL = new Set(['queued', 'searching', 'downloading'])
@@ -78,6 +84,10 @@ export function statusDetail(status: string, progress: number | null, errorMessa
       return 'Something went wrong'
     case 'cancelled':
       return 'Cancelled'
+    case 'split':
+      // The worker's own sentence: "No series pack found, so its 2
+      // seasons were requested one at a time."
+      return errorMessage || 'Requested in parts instead'
     default:
       return ''
   }

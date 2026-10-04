@@ -1040,7 +1040,10 @@ def test_pack_with_no_pack_at_all_falls_back_to_one_request_per_aired_episode():
     asyncio.run(worker._run_one(row.id))
 
     pack = store.get_request(row.id)
-    assert pack.status == "no qualifying results"
+    # Handed off, so not a failure: its children own the work now. As
+    # "no qualifying results" it was filed under Failed, outranked
+    # every finished episode on the show's card, and was retried.
+    assert pack.status == "split"
     assert pack.error_message == "No season pack found, so its 2 episodes were requested one by one."
     episodes = [r for r in store.list_requests() if r.media_type == "episode"]
     assert sorted((r.season_number, r.episode_number) for r in episodes) == [(1, 1), (1, 2)]
@@ -1173,7 +1176,10 @@ def test_series_pack_fallback_asks_for_each_season_not_each_episode():
     asyncio.run(worker._run_one(row.id))
 
     pack = store.get_request(row.id)
-    assert pack.status == "no qualifying results"
+    # Handed off, so not a failure: its children own the work now. As
+    # "no qualifying results" it was filed under Failed, outranked
+    # every finished episode on the show's card, and was retried.
+    assert pack.status == "split"
     assert pack.error_message == "No series pack found, so its 1 season was requested one at a time."
     seasons = [r for r in store.list_requests() if r.media_type == "pack" and r.id != row.id]
     assert [(r.season_number, r.status, r.requested_by_username) for r in seasons] == [(2, "queued", "bejay")]
@@ -2838,6 +2844,39 @@ def test_check_downloading_requeues_a_pick_whose_swarm_never_appeared():
     # name is what rules the release out when it came from a .torrent link.
     assert "dead" in store.get_rejected_torrent_hashes(693134)
     assert refreshed.result["stall_attempts"] == 2
+    # And actually waiting, not just labelled as waiting. This test used
+    # to stop at `status == "queued"`, which passed while the row sat in
+    # the database with nothing in memory ever coming for it — Hanging
+    # Up, three days on "Waiting its turn".
+    assert worker.queue.get_nowait() == row.id
+
+
+def test_a_row_the_database_calls_queued_is_picked_up_even_if_nothing_enqueued_it():
+    """The safety net under "anything that sets queued must enqueue".
+    One missed call is enough to strand a request silently, so the
+    download watch offers every queued row each poll."""
+    store = RequestStore(":memory:")
+    row = store.create_request(tmdb_id=693134, title="Hanging Up", release_year=2000, query=None)
+    worker = Worker(store, FakeTMDBClient(), FakeQBTClient())
+    assert worker.queue.empty()
+
+    added = asyncio.run(worker._requeue_orphans())
+
+    assert added == 1
+    assert worker.queue.get_nowait() == row.id
+
+
+def test_the_sweep_does_not_stack_duplicates_behind_a_waiting_row():
+    """It runs every poll, so it has to be a no-op for a row already
+    waiting — or a slow queue fills with copies of itself."""
+    store = RequestStore(":memory:")
+    row = store.create_request(tmdb_id=693134, title="Hanging Up", release_year=2000, query=None)
+    worker = Worker(store, FakeTMDBClient(), FakeQBTClient())
+    worker.enqueue(row.id)
+
+    assert asyncio.run(worker._requeue_orphans()) == 0
+    assert asyncio.run(worker._requeue_orphans()) == 0
+    assert worker.queue.qsize() == 1
 
 
 def test_check_downloading_leaves_a_stalled_torrent_alone_inside_the_grace_period():
@@ -3013,3 +3052,24 @@ def test_orphan_sweep_leaves_the_library_alone(tmp_path, monkeypatch):
 
     assert filed.exists()
     assert filed.parent.parent.exists()
+
+
+def test_a_split_pack_is_not_attempted_again():
+    """The other half of the Pitt bug. A handed-off series request sitting
+    in "no qualifying results" looked like a failed attempt to the retry
+    gate, which re-ran it after the cooldown — the source of that show's
+    second "Whole series" row, whose own message read "nothing was added:
+    every season is already requested or on Plex"."""
+    from app.tv_settings import TVScheduleSettings
+
+    store = RequestStore(":memory:")
+    show = store.create_show(tmdb_id=95350, title="The Pitt")
+    row = store.create_pack_request(tmdb_id=95350, show_id=show.id, title="The Pitt", season_number=None)
+    store.update_status(row.id, "split", error_message="No series pack found, so its 1 season was requested one at a time.")
+    worker = Worker(store, FakeTMDBClient(), FakeQBTClient())
+    settings = TVScheduleSettings(
+        **{**TVScheduleSettings.from_config().__dict__,
+           "episode_recheck_enabled": True, "episode_recheck_interval_hours": 0}
+    )
+
+    assert worker._should_attempt_pack(store.get_show(show.id), None, settings) is False
