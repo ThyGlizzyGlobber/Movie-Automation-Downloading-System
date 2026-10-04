@@ -81,10 +81,12 @@
      Outfit is loaded 200–700 (display only ever uses 200–500; the
      lighter the bigger). Manrope 400–800 is every label, body and
      button. IBM Plex Mono is reserved for paths, hosts and other
-     technical strings in Settings. All three come from Google Fonts
-     via index.html; nginx.conf's CSP already allows those hosts. */
-  --font-display: 'Outfit', 'Manrope', -apple-system, BlinkMacSystemFont, sans-serif;
-  --font-body: 'Manrope', -apple-system, BlinkMacSystemFont, 'Helvetica Neue', Arial, sans-serif;
+     technical strings in Settings. All three are served from this
+     origin (Fontsource packages, imported in main.tsx) rather than
+     Google Fonts, whose stylesheet held up first paint on a phone while
+     two more hosts were looked up and connected to. */
+  --font-display: 'Outfit Variable', 'Manrope Variable', -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-body: 'Manrope Variable', -apple-system, BlinkMacSystemFont, 'Helvetica Neue', Arial, sans-serif;
   --font-mono: 'IBM Plex Mono', ui-monospace, Menlo, monospace;
 
   /* Fluid display scale. Hero and page titles are Outfit 300 with tight

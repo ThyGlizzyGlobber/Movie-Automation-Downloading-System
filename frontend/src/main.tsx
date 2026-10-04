@@ -1,6 +1,12 @@
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+// Self-hosted, see tokens.css. Mono is only Settings' paths and hosts, so
+// just the two weights it uses.
+import '@fontsource-variable/outfit'
+import '@fontsource-variable/manrope'
+import '@fontsource/ibm-plex-mono/400.css'
+import '@fontsource/ibm-plex-mono/500.css'
 import './styles/global.css'
 import App from './App.tsx'
 import { getHeroSlides } from './api/hero'

@@ -16,12 +16,12 @@
     <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
     <link rel="icon" type="image/svg+xml" href="/brand-icon.svg" />
     <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link
-      href="https://fonts.googleapis.com/css2?family=Outfit:wght@200..700&family=Manrope:wght@400..800&family=IBM+Plex+Mono:wght@400;500&display=swap"
-      rel="stylesheet"
-    />
+    <!-- The two faces every screen uses, fetched alongside the script
+         rather than once it has run and drawn some text. The same files
+         main.tsx's font imports point at, so Vite gives both the same
+         hashed URL and the preload is what the page then uses. -->
+    <link rel="preload" as="font" type="font/woff2" crossorigin href="./node_modules/@fontsource-variable/manrope/files/manrope-latin-wght-normal.woff2" />
+    <link rel="preload" as="font" type="font/woff2" crossorigin href="./node_modules/@fontsource-variable/outfit/files/outfit-latin-wght-normal.woff2" />
   </head>
   <body>
     <div id="root"></div>
