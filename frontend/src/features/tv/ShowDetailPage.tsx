@@ -23,6 +23,7 @@ import { useCertificationRegion } from '../auth/useSession'
 import type { ShowOut } from '../../types/tv'
 import type { RedownloadMode } from '../../types/requests'
 import '../detail/DetailPage.css'
+import { showStatusLabel } from '../../lib/genres'
 
 interface PendingBulk {
   scope: 'season' | 'series'
@@ -323,7 +324,7 @@ export default function ShowDetailPage() {
   // recognise it. The rating can live in the corner alone because the
   // chip is its own label; this can't.
   if (network) details.push({ label: 'Network', value: network })
-  if (show.status) details.push({ label: 'Status', value: limited ? 'Limited series' : show.status })
+  if (show.status) details.push({ label: 'Status', value: limited ? 'Limited series' : showStatusLabel(show.status) })
   const lang = displayLanguageOf(show.original_language, show.spoken_languages)
   if (lang) details.push({ label: 'Language', value: lang })
   if (show.genres?.length) details.push({ label: 'Genres', value: genreLinks(show.genres, 'tv', ', ') })

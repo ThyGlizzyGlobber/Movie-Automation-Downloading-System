@@ -6,9 +6,9 @@ function pad2(n: number): string {
 }
 
 // A pack row's scope, as a short label — "Season N", "Season N-M" (a
-// range pack), or "Complete Series".
+// range pack), or "Complete series".
 export function packScopeLabel(r: RequestOut): string {
-  if (r.season_number == null) return 'Complete Series'
+  if (r.season_number == null) return 'Complete series'
   if (r.season_range_end != null) return `Season ${r.season_number}-${r.season_range_end}`
   return `Season ${r.season_number}`
 }
@@ -104,7 +104,7 @@ export interface StandaloneItem {
   row: RequestOut
 }
 
-// One season (or the season-less "Complete Series" bucket) within a
+// One season (or the season-less "Complete series" bucket) within a
 // show's group — a season that has both its own bulk pack row and
 // individual episode rows shows the pack as one of its own rows
 // alongside them, not specially merged; `key` disambiguates "Complete

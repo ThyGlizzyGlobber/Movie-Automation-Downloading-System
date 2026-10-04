@@ -22,6 +22,7 @@ import type { ShowOut } from '../../types/tv'
 import '../requests/RequestsPage.css'
 import '../detail/RequestModal.css'
 import './WatchingPage.css'
+import { showStatusLabel } from '../../lib/genres'
 
 // The caption's second line: which episode/pack the latest request is
 // for, then what the chip can't say — the reason when it stopped short,
@@ -87,7 +88,7 @@ function FollowSheet({ show, onClose, onChanged }: { show: ShowOut; onClose: () 
 
   const sub = [
     'Series',
-    show.tmdb_status && show.tmdb_status !== 'Returning Series' ? show.tmdb_status : null,
+    show.tmdb_status && show.tmdb_status !== 'Returning Series' ? showStatusLabel(show.tmdb_status) : null,
     `Following since ${new Date(show.created_at).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })}`,
   ]
     .filter(Boolean)

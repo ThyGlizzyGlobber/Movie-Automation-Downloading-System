@@ -24,7 +24,7 @@ const LANGUAGE_OPTIONS = [
   'Korean',
   'Chinese',
   'Multi',
-  'Dual Audio',
+  'Dual audio',
 ]
 
 function summaryText(selected: string[]): string {

@@ -6,7 +6,7 @@ import MediaRow from '../../components/media/MediaRow'
 import type { RecommendedRow } from '../../types/recommendations'
 
 /** One row the backend filled: a personal one ("Because you watched…",
- *  "Today's top picks"), a named one ("Comedies That Go Somewhere Dark"),
+ *  "Today's top picks"), a named one ("Comedies that go somewhere dark"),
  *  or a catalogue one (Trending, a genre, a service). */
 function RecommendedMediaRow({ row }: { row: RecommendedRow }) {
   // A "mixed" row carries films and shows together; each item says which

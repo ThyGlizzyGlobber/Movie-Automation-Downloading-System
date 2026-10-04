@@ -71,8 +71,8 @@ PAGE_LAYOUTS = {
 # for films, 10765 for TV).
 HOME_GENRES = (
     ("Comedies", 35, 35),
-    ("Action & Adventure", 28, 10759),
-    ("Sci-Fi & Fantasy", 878, 10765),
+    ("Action & adventure", 28, 10759),
+    ("Sci-fi & fantasy", 878, 10765),
     ("Animation", 16, 16),
     ("Documentaries", 99, 99),
 )
@@ -80,7 +80,7 @@ MOVIE_GENRES = ((28, "Action"), (35, "Comedies"), (27, "Horror"), (10749, "Roman
 TV_GENRES = (
     (35, "Comedies"),
     (18, "Dramas"),
-    (10765, "Sci-Fi & Fantasy"),
+    (10765, "Sci-fi & fantasy"),
     (16, "Animation"),
     (99, "Documentaries"),
     (80, "Crime"),
@@ -409,7 +409,7 @@ def _deal_page(
     if len(picks) >= 4:
         candidates.append(feed.Candidate(key="top-picks", title="Today's top picks", qualifier="for you", media_type="mixed", items=picks, ranked=False, personal=True))
 
-    # Named rows ("Comedies That Go Somewhere Dark"), steered by what their
+    # Named rows ("Comedies that go somewhere dark"), steered by what their
     # seeds point at.
     affinity = moods.affinity_from_rows(personal)
     mood_catalogue = [m for m in moods.CATALOGUE if not only or m.media_type == only]

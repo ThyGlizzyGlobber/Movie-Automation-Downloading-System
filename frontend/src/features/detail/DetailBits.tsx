@@ -14,6 +14,7 @@ import { plexWebUrl } from '../../lib/format'
 import type { CastMember } from '../../types/movies'
 import type { RequestOut } from '../../types/requests'
 import { DetailH4, type DetailTile } from './DetailShell'
+import { genreLabel } from '../../lib/genres'
 import { browseHref } from '../../api/browse'
 import { useRequests } from '../../lib/useRequests'
 
@@ -84,7 +85,7 @@ export function genreLinks(genres: { id: number; name: string }[], type: 'movie'
       {genres.map((g, i) => (
         <span key={g.id}>
           {i > 0 && separator}
-          <a href={`#${browseHref({ type, genre: g.id })}`}>{g.name}</a>
+          <a href={`#${browseHref({ type, genre: g.id })}`}>{genreLabel(g.name)}</a>
         </span>
       ))}
     </>

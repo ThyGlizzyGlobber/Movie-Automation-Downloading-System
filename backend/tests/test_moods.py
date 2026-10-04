@@ -2,7 +2,7 @@
 itself sound.
 
 The last one matters more than it looks. These rows are hand-written, so
-the failure mode isn't a crash — it's a row called "Quietly Devastating"
+the failure mode isn't a crash — it's a row called "Quietly devastating"
 quietly filling with films three people have rated, which looks like a bug
 in the recommender when it is really a missing vote floor.
 """
@@ -102,7 +102,7 @@ def test_every_mood_has_a_name_worth_reading():
 def test_every_quality_filter_has_a_vote_floor_under_it():
     """"Highly rated" with no vote floor reliably surfaces an unreleased
     film with a single 10 — the most embarrassing possible contents for a
-    row called "Quietly Devastating"."""
+    row called "Quietly devastating"."""
     for mood in moods.CATALOGUE:
         if "vote_average.gte" in mood.params:
             assert mood.params.get("vote_count.gte", 0) >= 100, mood.key

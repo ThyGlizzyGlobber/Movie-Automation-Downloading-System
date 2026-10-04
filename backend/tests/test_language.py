@@ -16,7 +16,7 @@ def test_a_mood_is_asked_in_the_households_language():
 
 def test_the_language_follows_the_region_rather_than_being_english_everywhere():
     """The point is the household's language, not English — a French
-    household asking for "Quietly Devastating" has the same complaint
+    household asking for "Quietly devastating" has the same complaint
     about a page of English films."""
     assert language.with_preferred_language({}, "FR")["with_original_language"] == "fr"
     assert language.with_preferred_language({}, "JP")["with_original_language"] == "ja"

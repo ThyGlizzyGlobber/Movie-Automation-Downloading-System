@@ -11,7 +11,7 @@ English, so nothing here touches them.
 That gap is a property of the query, not of anyone's taste. "Drama, rated
 above 7.5, with a vote floor" is a world query, and the world does not
 mostly make films in English. A household in Australia asking for
-"Quietly Devastating" is not asking for a world survey.
+"Quietly devastating" is not asking for a world survey.
 
 So the named rows ask in the household's own language. Nothing is banned
 anywhere else, and a row that names its own language keeps it — which is

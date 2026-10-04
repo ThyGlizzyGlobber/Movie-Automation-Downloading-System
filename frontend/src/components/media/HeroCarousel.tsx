@@ -12,6 +12,7 @@ import { SAMPLE_SYNOPSIS, Skel, SkelText, SkelWords } from '../ui/Skeleton'
 import { useMediaQuery } from '../../lib/hooks'
 import { useCertificationRegion } from '../../features/auth/useSession'
 import { Link } from 'react-router-dom'
+import { genreLabel } from '../../lib/genres'
 
 const HERO_AUTOPLAY_MS = 7000 // flat dwell time for a poster-only slide
 // How long a trailer slide's poster shows on its own — both before the
@@ -271,7 +272,7 @@ export default function HeroCarousel({ items, loading = false }: { items: HeroSl
   const enrichment = useMemo<Record<number, Enrichment>>(() => {
     const out: Record<number, Enrichment> = {}
     items.forEach((item, i) => {
-      const genres = (item.genres ?? []).slice(0, 2).map((g) => g.name).join(' | ')
+      const genres = (item.genres ?? []).slice(0, 2).map((g) => genreLabel(g.name)).join(' | ')
       const logo = logoUrl(item.logo_path)
       if (item.mediaType === 'tv') {
         const seasons = (item.seasons ?? []).filter((se) => se.season_number > 0).length

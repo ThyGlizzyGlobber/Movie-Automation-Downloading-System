@@ -20,14 +20,14 @@ const MOVIE_GENRES: GenreOption[] = [
   { id: 10402, name: 'Music' },
   { id: 9648, name: 'Mystery' },
   { id: 10749, name: 'Romance' },
-  { id: 878, name: 'Sci-Fi' },
+  { id: 878, name: 'Sci-fi' },
   { id: 53, name: 'Thriller' },
   { id: 10752, name: 'War' },
   { id: 37, name: 'Western' },
 ]
 
 const TV_GENRES: GenreOption[] = [
-  { id: 10759, name: 'Action & Adventure' },
+  { id: 10759, name: 'Action & adventure' },
   { id: 16, name: 'Animation' },
   { id: 35, name: 'Comedy' },
   { id: 80, name: 'Crime' },
@@ -37,12 +37,28 @@ const TV_GENRES: GenreOption[] = [
   { id: 10762, name: 'Kids' },
   { id: 9648, name: 'Mystery' },
   { id: 10764, name: 'Reality' },
-  { id: 10765, name: 'Sci-Fi & Fantasy' },
+  { id: 10765, name: 'Sci-fi & fantasy' },
   { id: 10766, name: 'Soap' },
   { id: 10767, name: 'Talk' },
-  { id: 10768, name: 'War & Politics' },
+  { id: 10768, name: 'War & politics' },
   { id: 37, name: 'Western' },
 ]
+
+// The app writes labels in sentence case, and TMDB's genre names come
+// in title case ("Science Fiction", "Action & Adventure"). Anything
+// shown from TMDB goes through this so a detail page's genres read the
+// same as the browse page's. An all-capitals word ("TV") is an initialism
+// and keeps its capitals.
+export function genreLabel(name: string): string {
+  return name
+    .split(' ')
+    .map((word, i) => {
+      if (word.length > 1 && word === word.toUpperCase()) return word
+      const lower = word.toLowerCase()
+      return i === 0 ? lower.charAt(0).toUpperCase() + lower.slice(1) : lower
+    })
+    .join(' ')
+}
 
 export function genresFor(type: 'movie' | 'tv'): GenreOption[] {
   return type === 'movie' ? MOVIE_GENRES : TV_GENRES
@@ -67,4 +83,17 @@ export function counterpartGenre(from: 'movie' | 'tv', id: number): number | nul
   const mapped = COUNTERPARTS[`${from}:${id}`]
   if (mapped !== undefined) return mapped
   return genresFor(to).some((g) => g.id === id) ? id : null
+}
+
+// TMDB's show statuses as the app writes them: sentence case, and the
+// household's spelling of "Cancelled". The raw value is still what's
+// compared against — this is only ever for display.
+const SHOW_STATUS_LABELS: Record<string, string> = {
+  'Returning Series': 'Returning series',
+  'In Production': 'In production',
+  Canceled: 'Cancelled',
+}
+
+export function showStatusLabel(status: string): string {
+  return SHOW_STATUS_LABELS[status] ?? genreLabel(status)
 }
