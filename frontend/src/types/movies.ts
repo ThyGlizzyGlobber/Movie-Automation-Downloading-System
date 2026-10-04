@@ -60,6 +60,8 @@ export interface ReleaseDatesResult {
 export interface MovieDetail extends Omit<TmdbListItem, 'genre_ids'> {
   // Title logo (transparent art) chosen server-side, or null.
   logo_path?: string | null
+  // Its width over height, for picking the banner logo's encoding.
+  logo_aspect?: number | null
   runtime: number | null
   original_language?: string
   // What's actually spoken in it — see displayLanguageOf.

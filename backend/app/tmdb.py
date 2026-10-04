@@ -204,6 +204,21 @@ def best_logo_path(images: dict | None) -> str | None:
     return best.get("file_path") or None
 
 
+def logo_aspect(images: dict | None, path: str | None) -> float | None:
+    """Width over height of the logo at `path`, from TMDB's own metadata.
+    The page needs it before the image arrives to say how wide the logo
+    will be drawn — a squarish mark is held by the banner's height to a
+    fraction of a wide one's width — and so fetch the smaller encoding
+    when that is all the screen needs (app/logos.py)."""
+    for logo in (images or {}).get("logos") or []:
+        if path and logo.get("file_path") == path:
+            ratio = logo.get("aspect_ratio")
+            if not ratio and logo.get("width") and logo.get("height"):
+                ratio = logo["width"] / logo["height"]
+            return round(float(ratio), 3) if ratio else None
+    return None
+
+
 def _pooled_session() -> requests.Session:
     """A session that can hold HTTP_POOL_SIZE connections to TMDB at once.
     requests' default keeps ten; a landing page asks for a few hundred

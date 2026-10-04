@@ -111,6 +111,7 @@ export default function DetailShell({
   backdropPath,
   posterPath,
   logoPath,
+  logoAspect,
   title,
   onPlex,
   pill,
@@ -127,6 +128,7 @@ export default function DetailShell({
   backdropPath: string | null | undefined
   posterPath: string | null | undefined
   logoPath: string | null | undefined
+  logoAspect?: number | null
   title: string
   onPlex: boolean
   /* The pill under the logo: Watch now on Plex, Just dropped, Coming soon. */
@@ -158,6 +160,12 @@ export default function DetailShell({
   // `original` backdrop (often over 1MB) and two logos, all invisible,
   // racing the one poster on screen. The breakpoint is DetailShell.css's.
   const isPhone = useMediaQuery('(max-width: 639px)')
+  // The banner's own breakpoints (DetailShell.css): its logo is at most
+  // min(720px, 44%) by 240 from 860px up and 70% by 120 below, and from
+  // 1100px up a retina screen can use more than TMDB's w1280 backdrop.
+  const isDesktop = useMediaQuery('(min-width: 860px)')
+  const isLarge = useMediaQuery('(min-width: 1100px)')
+  const logoBox = isDesktop ? { width: Math.min(720, window.innerWidth * 0.44), height: 240 } : { width: window.innerWidth * 0.7, height: 120 }
   const logo = logoUrl(logoPath)
   const backdrop = backdropUrl(backdropPath)
   return (
@@ -170,14 +178,24 @@ export default function DetailShell({
         backdrop &&
         !isPhone && (
           <div className="detail-banner">
-            <Img className="detail-banner-img" src={backdropUrl(backdropPath, 'original')} alt="" fetchPriority="high" />
+            {/* w1280 below 1100px wide, where it is the trailer's poster
+                too (one fetch for both); above, the browser picks it or
+                TMDB's original by the screen's own density. */}
+            <Img
+              className="detail-banner-img"
+              src={backdropUrl(backdropPath, 'w1280')}
+              srcSet={isLarge ? `${backdropUrl(backdropPath, 'w1280')} 1280w, ${backdropUrl(backdropPath, 'original')} 1920w` : undefined}
+              sizes={isLarge ? '100vw' : undefined}
+              alt=""
+              fetchPriority="high"
+            />
             <div className="detail-banner-fade" />
             {service && (
               <img className="detail-banner-service" src={`/icons/${service.icon}`} alt={service.label} title={service.label} />
             )}
             {certification && <div className="detail-banner-cert">{certification}</div>}
             <div className="detail-banner-text">
-              <div className={`detail-title${logo ? ' has-logo' : ''}`}>{logo ? <Img className="detail-logo" src={bannerLogoUrl(logoPath) ?? logo} alt={title} plain /> : title}</div>
+              <div className={`detail-title${logo ? ' has-logo' : ''}`}>{logo ? <Img className="detail-logo" src={bannerLogoUrl(logoPath, logoAspect, logoBox) ?? logo} alt={title} plain /> : title}</div>
               {pill && <span className={`on-plex-badge detail-banner-plex ${pill.tone}`}>{pill.text}</span>}
             </div>
           </div>

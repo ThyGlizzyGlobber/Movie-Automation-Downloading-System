@@ -377,6 +377,7 @@ export default function ShowDetailPage() {
         backdropPath={show.backdrop_path}
         posterPath={show.poster_path}
         logoPath={show.logo_path}
+        logoAspect={show.logo_aspect}
         title={title}
         onPlex={!!show.on_plex}
         pill={showPill(show)}

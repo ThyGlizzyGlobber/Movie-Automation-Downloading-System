@@ -50,11 +50,15 @@ def test_a_logo_is_fitted_to_the_banner_and_stored_as_webp(logo_dir, monkeypatch
 
     path = logos.get(NAME)
 
-    assert path == logo_dir / "abcdEFGH1234.webp"
+    assert path == logo_dir / "abcdEFGH1234.1440.webp"
     stored = Image.open(path)
     assert stored.format == "WEBP"
-    assert stored.size[0] <= logos.MAX_WIDTH and stored.size[1] <= logos.MAX_HEIGHT
+    assert stored.size == (1440, 432)
     assert stored.mode == "RGBA"
+    # The small one comes from the same fetch, at half the size.
+    small = logos.get(NAME, 720)
+    assert Image.open(small).size == (720, 216)
+    assert small.stat().st_size < path.stat().st_size
     assert fetched == [logos.ORIGINAL_SOURCES[0] + NAME]
     # Once on disk, nothing is fetched again.
     assert logos.get(NAME) == path
@@ -83,9 +87,10 @@ def test_the_original_comes_from_tmdb_when_the_local_cache_cannot_answer(logo_di
 def test_ffmpeg_encodes_when_pillow_cannot(logo_dir, monkeypatch):
     monkeypatch.setattr(logos.requests, "get", lambda url, timeout: _Upstream(_png(100, 50)))
     monkeypatch.setattr(logos, "_encode_with_pillow", lambda data: None)
-    monkeypatch.setattr(logos, "_encode_with_ffmpeg", lambda data: b"RIFF-from-ffmpeg")
+    monkeypatch.setattr(logos, "_encode_with_ffmpeg", lambda data: {1440: b"RIFF-big", 720: b"RIFF-small"})
 
-    assert logos.get(NAME).read_bytes() == b"RIFF-from-ffmpeg"
+    assert logos.get(NAME).read_bytes() == b"RIFF-big"
+    assert logos.get(NAME, 720).read_bytes() == b"RIFF-small"
 
 
 def test_a_logo_that_cannot_be_encoded_is_remembered_not_retried(logo_dir, monkeypatch):
@@ -111,7 +116,8 @@ def test_warm_starts_an_encode_without_waiting_and_skips_what_is_on_disk(logo_di
     logos.warm("/" + NAME)
     assert built == [NAME]
 
-    (logo_dir / "abcdEFGH1234.webp").write_bytes(b"done")
+    (logo_dir / "abcdEFGH1234.1440.webp").write_bytes(b"done")
+    (logo_dir / "abcdEFGH1234.720.webp").write_bytes(b"done")
     logos.warm("/" + NAME)
     logos.warm(None)
     assert built == [NAME]

@@ -14,6 +14,9 @@ unless told otherwise; only Pillow can tell it otherwise. Without Pillow
 in the image for the trailers — does the encoding with lossless alpha,
 about 600KB for the same ten. If neither can, the caller is sent to the
 original, so a logo is never lost to this.
+
+Two sizes of each, so a screen that draws the logo small doesn't take the
+retina-desktop one: a tablet showed a 1440px logo at 417px (119KB).
 """
 
 import concurrent.futures
@@ -39,9 +42,12 @@ TMDB_ORIGINAL_URL = "https://image.tmdb.org/t/p/original/"
 # the originals every browser fetched before this existed and is local,
 # then TMDB itself (1.5-2s for a large one, measured).
 ORIGINAL_SOURCES = (os.environ.get("LOGO_LOCAL_IMAGE_URL", "http://frontend/img/original/"), TMDB_ORIGINAL_URL)
-# Twice the banner's largest logo (DetailShell.css: min(720px, 44%) wide,
-# 240px tall), so a retina screen still gets one device pixel per pixel.
-MAX_WIDTH, MAX_HEIGHT = 1440, 480
+# The boxes each logo is fitted into, by width. 1440x480 is twice the
+# banner's largest logo (DetailShell.css: min(720px, 44%) wide, 240px
+# tall), so a retina screen still gets one device pixel per pixel; 720x240
+# is that logo at 1x, and a tablet's at 2x.
+SIZES = {1440: (1440, 480), 720: (720, 240)}
+MAX_WIDTH, MAX_HEIGHT = SIZES[1440]
 QUALITY = 65
 ALPHA_QUALITY = 65
 # How long a request waits for an encode before sending the browser to the
@@ -65,29 +71,43 @@ def is_logo_name(name: str) -> bool:
     return bool(_NAME_RE.match(name))
 
 
-def cached_logo_path(name: str) -> Path:
-    return config.LOGO_CACHE_DIR / f"{Path(name).stem}.webp"
+def cached_logo_path(name: str, width: int = 1440) -> Path:
+    return config.LOGO_CACHE_DIR / f"{Path(name).stem}.{width}.webp"
 
 
-def _encode_with_pillow(data: bytes) -> bytes | None:
+def _encode_with_pillow(data: bytes) -> dict[int, bytes] | None:
     try:
         from PIL import Image
     except ImportError:
         return None
-    image = Image.open(io.BytesIO(data)).convert("RGBA")
-    image.thumbnail((MAX_WIDTH, MAX_HEIGHT), Image.LANCZOS)
-    out = io.BytesIO()
-    # method 4, not 6: 6 took over 5s on one real logo for 3% less.
-    image.save(out, "WEBP", quality=QUALITY, alpha_quality=ALPHA_QUALITY, method=4)
-    return out.getvalue()
+    source = Image.open(io.BytesIO(data)).convert("RGBA")
+    encoded = {}
+    for width, box in SIZES.items():
+        image = source.copy()
+        image.thumbnail(box, Image.LANCZOS)
+        out = io.BytesIO()
+        # method 4, not 6: 6 took over 5s on one real logo for 3% less.
+        image.save(out, "WEBP", quality=QUALITY, alpha_quality=ALPHA_QUALITY, method=4)
+        encoded[width] = out.getvalue()
+    return encoded
 
 
-def _encode_with_ffmpeg(data: bytes) -> bytes | None:
+def _encode_with_ffmpeg(data: bytes) -> dict[int, bytes] | None:
+    encoded = {}
+    for width, (box_w, box_h) in SIZES.items():
+        one = _ffmpeg_one(data, box_w, box_h)
+        if one is None:
+            return None
+        encoded[width] = one
+    return encoded
+
+
+def _ffmpeg_one(data: bytes, max_width: int, max_height: int) -> bytes | None:
     with tempfile.TemporaryDirectory() as tmp:
         src, dest = Path(tmp) / "in.png", Path(tmp) / "out.webp"
         src.write_bytes(data)
         fit = (
-            f"scale='min(iw,{MAX_WIDTH})':'min(ih,{MAX_HEIGHT})'"
+            f"scale='min(iw,{max_width})':'min(ih,{max_height})'"
             ":force_original_aspect_ratio=decrease:force_divisible_by=2"
         )
         cmd = ["ffmpeg", "-v", "error", "-y", "-i", str(src), "-vf", fit, "-frames:v", "1",
@@ -103,7 +123,7 @@ def _encode_with_ffmpeg(data: bytes) -> bytes | None:
         return dest.read_bytes()
 
 
-def _encode(data: bytes) -> bytes | None:
+def _encode(data: bytes) -> dict[int, bytes] | None:
     try:
         encoded = _encode_with_pillow(data)
     except Exception:  # noqa: BLE001 — a file Pillow can't read may still be one ffmpeg can
@@ -124,10 +144,9 @@ def _fetch_original(name: str) -> bytes:
     raise last or RuntimeError("no logo source")
 
 
-def _build(name: str) -> Path | None:
-    dest = cached_logo_path(name)
-    if dest.is_file():
-        return dest
+def _build(name: str) -> bool:
+    if all(cached_logo_path(name, width).is_file() for width in SIZES):
+        return True
     try:
         encoded = _encode(_fetch_original(name))
     except Exception:  # noqa: BLE001 — logged and remembered; the caller falls back to the original
@@ -135,13 +154,17 @@ def _build(name: str) -> Path | None:
         encoded = None
     if not encoded:
         _failed.set((name,), True)
-        return None
-    dest.parent.mkdir(parents=True, exist_ok=True)
-    partial = dest.with_suffix(".part")
-    partial.write_bytes(encoded)
-    os.replace(partial, dest)
+        return False
+    config.LOGO_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    for width, data in encoded.items():
+        dest = cached_logo_path(name, width)
+        partial = dest.with_suffix(".part")
+        partial.write_bytes(data)
+        os.replace(partial, dest)
+    # The single-size file the first version of this stored, if any.
+    (config.LOGO_CACHE_DIR / f"{Path(name).stem}.webp").unlink(missing_ok=True)
     _enforce_retention()
-    return dest
+    return True
 
 
 def _enforce_retention() -> None:
@@ -172,20 +195,22 @@ def warm(logo_path: str | None) -> None:
     waiting. The detail call does this, so the encode runs while the
     browser is still drawing the page that will ask for it."""
     name = (logo_path or "").lstrip("/")
-    if is_logo_name(name) and not cached_logo_path(name).is_file():
+    if is_logo_name(name) and not all(cached_logo_path(name, width).is_file() for width in SIZES):
         _submit(name)
 
 
-def get(name: str) -> Path | None:
-    """The encoded logo, waiting up to WAIT_SECONDS for it; None when it
-    can't be had in that time, and the caller should send the original."""
-    dest = cached_logo_path(name)
+def get(name: str, width: int = 1440) -> Path | None:
+    """The logo encoded at `width` (a SIZES key), waiting up to
+    WAIT_SECONDS for it; None when it can't be had in that time, and the
+    caller should send the original."""
+    dest = cached_logo_path(name, width)
     if dest.is_file():
         return dest
     future = _submit(name)
     if future is None:
         return None
     try:
-        return future.result(timeout=WAIT_SECONDS)
+        built = future.result(timeout=WAIT_SECONDS)
     except concurrent.futures.TimeoutError:
         return None
+    return dest if built and dest.is_file() else None

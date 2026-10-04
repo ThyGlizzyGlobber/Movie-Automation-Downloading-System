@@ -11,7 +11,7 @@ from app import config, logos, trailers
 from app.cache import TTLCache
 from app.db import RequestStore
 from app.plex import local_file_for_title, plex_show_episodes
-from app.tmdb import TMDBClient, TMDBError, best_logo_path, is_movie_coming_soon, is_tv_upcoming, trailer_candidates
+from app.tmdb import TMDBClient, TMDBError, best_logo_path, is_movie_coming_soon, is_tv_upcoming, logo_aspect, trailer_candidates
 from app.api.deps import get_store, get_tmdb, router
 from app.api.helpers import _annotate_on_plex, _on_plex_for
 
@@ -116,6 +116,7 @@ def get_movie_detail(
         "on_plex": on_plex,
         "is_coming_soon": is_coming_soon,
         "logo_path": _warmed(best_logo_path(movie.get("images"))),
+        "logo_aspect": logo_aspect(movie.get("images"), best_logo_path(movie.get("images"))),
         # Frontend migration Part K2 — true only when this app has a
         # confirmed record of having organized a file for this title
         # itself, never derived from the same fuzzy on_plex title/year
@@ -165,15 +166,16 @@ def _warmed(logo_path: str | None) -> str | None:
     return logo_path
 
 
-@router.get("/api/logos/{filename}")
-def get_logo(filename: str):
-    """A banner logo fitted to the banner and stored as WebP (logos.py).
-    When that can't be had within a few seconds, the browser is sent to
-    the original instead — never a missing logo."""
+@router.get("/api/logos/{width}/{filename}")
+def get_logo(width: int, filename: str):
+    """A banner logo fitted to the banner at `width` (720 or 1440) and
+    stored as WebP (logos.py). When that can't be had within a few
+    seconds, the browser is sent to the original instead — never a
+    missing logo."""
     name = f"{filename.removesuffix('.webp')}.png" if filename.endswith(".webp") else ""
-    if not logos.is_logo_name(name):
+    if width not in logos.SIZES or not logos.is_logo_name(name):
         raise HTTPException(status_code=404, detail="logo not found")
-    path = logos.get(name)
+    path = logos.get(name, width)
     if path is None:
         return RedirectResponse(f"/img/original/{name}", status_code=307, headers={"Cache-Control": "no-store"})
     # The name is TMDB's own content hash, so the bytes under it never change.
@@ -304,6 +306,7 @@ def get_tv_detail(tmdb_id: int, store: RequestStore = Depends(get_store), tmdb: 
         "plex_episode_count": have,
         "is_coming_soon": is_tv_upcoming(show),
         "logo_path": _warmed(best_logo_path(show.get("images"))),
+        "logo_aspect": logo_aspect(show.get("images"), best_logo_path(show.get("images"))),
         # Frontend migration Part K3 — TV parity with the movie route
         # above. A show's organized history is episode/pack rows, never
         # a single fixed media_type the way a movie's always is.

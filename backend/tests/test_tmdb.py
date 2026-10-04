@@ -765,3 +765,13 @@ def test_search_tv_within_provider_filters_to_shows_on_that_service(monkeypatch)
     result = client.search_tv_within_provider("some query", provider_id=8, region="US")
 
     assert [s["name"] for s in result["results"]] == ["On Netflix"]
+
+
+def test_logo_aspect_reads_the_chosen_logos_own_shape():
+    from app.tmdb import logo_aspect
+
+    images = {"logos": [{"file_path": "/a.png", "aspect_ratio": 4.21}, {"file_path": "/b.png", "width": 600, "height": 400}]}
+    assert logo_aspect(images, "/a.png") == 4.21
+    assert logo_aspect(images, "/b.png") == 1.5
+    assert logo_aspect(images, "/missing.png") is None
+    assert logo_aspect(None, None) is None

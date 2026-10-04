@@ -1146,6 +1146,7 @@ def test_get_movie_detail_returns_full_movie(client_and_deps):
         is_coming_soon=False,
         on_plex_tracked=False,
         logo_path=None,
+        logo_aspect=None,
         # A film standing alone has no franchise row.
         collection=None,
         # Nothing filed for this movie, so the "On disk" tiles have
@@ -1533,21 +1534,22 @@ def test_banner_logo_is_served_small_or_sends_the_browser_to_the_original(client
     client, _, _, _, _, _ = client_and_deps
     stored = tmp_path / "abcdEFGH1234.webp"
     stored.write_bytes(b"RIFFwebp")
-    monkeypatch.setattr(logos, "get", lambda name: stored if name == "abcdEFGH1234.png" else None)
+    monkeypatch.setattr(logos, "get", lambda name, width: stored if (name, width) == ("abcdEFGH1234.png", 720) else None)
 
-    served = client.get("/api/logos/abcdEFGH1234.webp")
+    served = client.get("/api/logos/720/abcdEFGH1234.webp")
     assert served.status_code == 200
     assert served.content == b"RIFFwebp"
     assert served.headers["content-type"] == "image/webp"
     assert served.headers["cache-control"] == "public, max-age=31536000, immutable"
 
-    fallback = client.get("/api/logos/zyxwVUTS9876.webp", follow_redirects=False)
+    fallback = client.get("/api/logos/1440/zyxwVUTS9876.webp", follow_redirects=False)
     assert fallback.status_code == 307
     assert fallback.headers["location"] == "/img/original/zyxwVUTS9876.png"
     assert fallback.headers["cache-control"] == "no-store"
 
-    assert client.get("/api/logos/..%2Fsecret.webp").status_code == 404
-    assert client.get("/api/logos/abcdEFGH1234.png").status_code == 404
+    assert client.get("/api/logos/1440/..%2Fsecret.webp").status_code == 404
+    assert client.get("/api/logos/1440/abcdEFGH1234.png").status_code == 404
+    assert client.get("/api/logos/999/abcdEFGH1234.webp").status_code == 404
 
 
 def test_get_tv_trailer_502s_on_upstream_error(client_and_deps):
@@ -1679,6 +1681,7 @@ def test_get_tv_detail_returns_full_show(client_and_deps):
         is_coming_soon=False,
         on_plex_tracked=False,
         logo_path=None,
+        logo_aspect=None,
         # Nothing filed for this show, so the show-level "On disk" tiles
         # have nothing to render.
         library={"files": 0, "total_bytes": 0, "added_at": None, "releases": []},

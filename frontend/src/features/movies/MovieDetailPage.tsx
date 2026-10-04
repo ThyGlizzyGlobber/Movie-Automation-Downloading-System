@@ -276,6 +276,7 @@ export default function MovieDetailPage() {
         backdropPath={movie.backdrop_path}
         posterPath={movie.poster_path}
         logoPath={movie.logo_path}
+        logoAspect={movie.logo_aspect}
         title={title}
         onPlex={!!movie.on_plex}
         pill={moviePill(movie)}

@@ -55,10 +55,20 @@ export function logoUrl(path: string | null | undefined, size: 'w500' | 'origina
 
 // The content page's banner logo: TMDB's original fitted to the banner
 // and re-encoded as WebP by the backend (app/logos.py) — 15KB-4.7MB
-// originals down to 4-90KB, indistinguishable at the banner's size. An
+// originals down to 4-130KB, indistinguishable at the banner's size. An
 // SVG logo is small already and goes to TMDB as it is.
-export function bannerLogoUrl(path: string | null | undefined): string | null {
+//
+// Two encodings, fitted to 720x240 and 1440x480. `box` is the most the
+// banner lets the logo take at this width, in CSS px; with the logo's
+// aspect ratio that says how wide it will really be drawn — a squarish
+// mark is held by the height to a fraction of a wide one's width — and so
+// whether the small one already has a device pixel for every pixel drawn.
+export function bannerLogoUrl(path: string | null | undefined, aspect: number | null | undefined, box: { width: number; height: number }): string | null {
   if (!path) return null
   const png = path.match(/^\/([A-Za-z0-9_-]+)\.png$/)
-  return png ? `/api/logos/${png[1]}.webp` : logoUrl(path, 'original')
+  if (!png) return logoUrl(path, 'original')
+  const drawn = aspect ? Math.min(box.width, box.height * aspect) : box.width
+  const smallHolds = aspect ? Math.min(720, 240 * aspect) : 720
+  const size = smallHolds >= drawn * (window.devicePixelRatio || 1) ? 720 : 1440
+  return `/api/logos/${size}/${png[1]}.webp`
 }

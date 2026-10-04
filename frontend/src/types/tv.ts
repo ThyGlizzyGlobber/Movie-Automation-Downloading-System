@@ -30,6 +30,7 @@ export interface EpisodeToAir {
 
 export interface TvDetail extends Omit<TmdbListItem, 'genre_ids'> {
   logo_path?: string | null
+  logo_aspect?: number | null
   status: string // "Returning Series" | "Ended" | "Canceled" | ...
   // "Scripted" | "Miniseries" | "Documentary" | … A limited series is
   // "Miniseries" and TMDB marks it "Ended" from the day it drops.
