@@ -9,6 +9,7 @@ import { locateOnPlex } from '../../api/plex'
 import { getMovieTrailer } from '../../api/movies'
 import { getTvTrailer } from '../../api/tv'
 import { backdropUrl } from '../../lib/tmdbImage'
+import { useMediaQuery } from '../../lib/hooks'
 import { profileUrl } from '../../lib/tmdbImage'
 import { plexWebUrl } from '../../lib/format'
 import type { CastMember } from '../../types/movies'
@@ -190,6 +191,9 @@ export function sourceFromName(name: string | null | undefined): string {
 // The title's trailer, played inline in the card when one is on file
 // (the same self-hosted file the home hero uses).
 export function DetailTrailer({ type, tmdbId, backdropPath }: { type: 'movie' | 'tv'; tmdbId: number; backdropPath: string | null | undefined }) {
+  // A phone's player is the screen's width, which w780 covers; w1280 was
+  // shared with the page's blurred backdrop until that dropped to w300.
+  const isPhone = useMediaQuery('(max-width: 639px)')
   const query = useQuery({
     queryKey: ['trailer', type, tmdbId],
     queryFn: () => (type === 'tv' ? getTvTrailer(tmdbId) : getMovieTrailer(tmdbId)),
@@ -199,7 +203,7 @@ export function DetailTrailer({ type, tmdbId, backdropPath }: { type: 'movie' | 
   if (query.isLoading) return <DetailTrailerSkeleton />
   const url = query.data?.url
   if (!url) return null
-  const poster = backdropUrl(backdropPath) ?? undefined
+  const poster = backdropUrl(backdropPath, isPhone ? 'w780' : undefined) || undefined
   return (
     <>
       <DetailH4>Trailer</DetailH4>

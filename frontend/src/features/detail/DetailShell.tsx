@@ -4,6 +4,7 @@ import Icon from '../../components/ui/Icon'
 import Img from '../../components/ui/Img'
 import { SAMPLE_SYNOPSIS, Skel, SkelText, SkelWords } from '../../components/ui/Skeleton'
 import { backdropUrl, logoUrl, posterUrl } from '../../lib/tmdbImage'
+import { useMediaQuery } from '../../lib/hooks'
 import type { BannerPill } from '../../lib/homeHero'
 import './DetailShell.css'
 
@@ -151,16 +152,25 @@ export default function DetailShell({
   aside?: ReactNode
   children?: ReactNode
 }) {
+  // Only the art this width shows is fetched. The banner and its logo
+  // are hidden on a phone and the poster is hidden above one, but as
+  // plain <img>s each was still downloaded: on a phone that was TMDB's
+  // `original` backdrop (often over 1MB) and two logos, all invisible,
+  // racing the one poster on screen. The breakpoint is DetailShell.css's.
+  const isPhone = useMediaQuery('(max-width: 639px)')
   const logo = logoUrl(logoPath)
   const backdrop = backdropUrl(backdropPath)
   return (
     <DetailFrame
       glowPath={posterPath}
-      backdrop={backdrop && <Img className="detail-bd" src={backdrop} alt="" plain />}
+      // Blurred by 40px at a third of its strength: w300 reads the same
+      // as the w1280 this used to fetch, at a tenth of the bytes.
+      backdrop={backdrop && <Img className="detail-bd" src={backdropUrl(backdropPath, 'w300')} alt="" plain fetchPriority="low" />}
       banner={
-        backdrop && (
+        backdrop &&
+        !isPhone && (
           <div className="detail-banner">
-            <Img className="detail-banner-img" src={backdropUrl(backdropPath, 'original')} alt="" />
+            <Img className="detail-banner-img" src={backdropUrl(backdropPath, 'original')} alt="" fetchPriority="high" />
             <div className="detail-banner-fade" />
             {service && (
               <img className="detail-banner-service" src={`/icons/${service.icon}`} alt={service.label} title={service.label} />
@@ -174,10 +184,14 @@ export default function DetailShell({
         )
       }
       poster={
-        <>
-          <Img className="detail-poster" src={posterUrl(posterPath)} alt="" />
-          {onPlex && <span className="on-plex-badge">On Plex</span>}
-        </>
+        isPhone && (
+          <>
+            {/* The row card's own size, so a poster tapped on to get here
+                is usually already in the cache. */}
+            <Img className="detail-poster" src={posterUrl(posterPath)} alt="" fetchPriority="high" />
+            {onPlex && <span className="on-plex-badge">On Plex</span>}
+          </>
+        )
       }
       tiles={
         tiles.length > 0 && (
@@ -203,7 +217,10 @@ export default function DetailShell({
           </dl>
         )
       }
-      title={<h1 className={`detail-title${logo ? ' has-logo' : ''}`}>{logo ? <Img className="detail-logo" src={logo} alt={title} plain /> : title}</h1>}
+      // The card's own title is hidden at every width (the banner and the
+      // phone's poster carry the name), so it holds the text rather than
+      // fetching a logo nobody sees.
+      title={<h1 className="detail-title">{title}</h1>}
       meta={pills.map((p, i) => (
         <span key={i} className={`detail-pill${p.mute ? ' mute' : ''}`}>
           {p.star && <Icon name="star" className="detail-star" />}

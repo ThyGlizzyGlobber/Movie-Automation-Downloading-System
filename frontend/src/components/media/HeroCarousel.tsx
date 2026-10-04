@@ -12,6 +12,8 @@ import { SAMPLE_SYNOPSIS, Skel, SkelText, SkelWords } from '../ui/Skeleton'
 import { useMediaQuery } from '../../lib/hooks'
 import { useCertificationRegion } from '../../features/auth/useSession'
 import { Link } from 'react-router-dom'
+import { useQueryClient } from '@tanstack/react-query'
+import { prefetchHandlers } from '../../lib/prefetch'
 import { genreLabel } from '../../lib/genres'
 
 const HERO_AUTOPLAY_MS = 7000 // flat dwell time for a poster-only slide
@@ -91,26 +93,26 @@ const HERO_SKELETON_DOTS = 5
 // black, and a title with bright key art — measured: The Scandal's
 // backdrop is mean luma 142/255 against Reacher's 10 — reads far darker
 // here than on its own content page, where that layer lifts the ground
-// by around a fifth before the blobs contribute anything. Above a phone
-// the pane has already loaded this exact URL, so it costs no fetch.
+// by around a fifth before the blobs contribute anything.
 //
-// A phone's pane shows the poster instead, so nothing there has loaded a
-// backdrop, and at w1280 this layer alone was five 240-390KB downloads
-// competing with the first poster. Blurred by 40px at a fifth of its
-// strength, w300 (18-30KB each) is indistinguishable.
-function HeroGlow({ items, activeIndex, small = false }: { items: HeroSlide[]; activeIndex: number; small?: boolean }) {
-  const backdrops = items.map((item) => (small ? backdropUrl(item.backdrop_path, 'w300') : backdropUrl(item.backdrop_path)))
+// w300, not the pane's w1280: blurred by 40px at a fifth of its strength
+// the two are indistinguishable, and at w1280 this layer was five
+// 240-390KB downloads racing the first slide's art (on a phone, which
+// shows the poster, nothing else even used them). Only the slides `warm`
+// names have one, for the same reason the slides' own art does.
+const NO_SLIDES = new Set<number>()
+
+function HeroGlow({ items, activeIndex, warm }: { items: HeroSlide[]; activeIndex: number; warm: Set<number> }) {
+  const backdrops = items.map((item) => backdropUrl(item.backdrop_path, 'w300'))
   return (
     <div className="home-hero-glow" aria-hidden="true">
       <AmbientGlow posterPath={items[activeIndex]?.poster_path} />
       {backdrops.some(Boolean) && (
-        /* Every slide's backdrop, stacked, so the ground can crossfade
-           with the artwork instead of stepping under it. Above a phone
-           they are the URLs the slides themselves load, and every slide
-           sits in the viewport, so the browser has these already. */
+        /* The slides' backdrops, stacked, so the ground can crossfade
+           with the artwork instead of stepping under it. */
         <div className="home-hero-glow-bd">
           {items.map((item, i) =>
-            backdrops[i] ? <img key={item.id} className={i === activeIndex ? 'active' : undefined} src={backdrops[i]} alt="" /> : null,
+            backdrops[i] && warm.has(i) ? <img key={item.id} className={i === activeIndex ? 'active' : undefined} src={backdrops[i]} alt="" /> : null,
           )}
         </div>
       )}
@@ -126,7 +128,7 @@ function HeroGlow({ items, activeIndex, small = false }: { items: HeroSlide[]; a
 function HeroSkeleton() {
   return (
     <div className="home-hero-wrap">
-      <HeroGlow items={[]} activeIndex={0} />
+      <HeroGlow items={[]} activeIndex={0} warm={NO_SLIDES} />
       <div className="home-hero" aria-busy="true">
         <div className="home-hero-slide active" aria-hidden="true">
           <AmbientGlow posterPath={null} />
@@ -186,12 +188,22 @@ export default function HeroCarousel({ items, loading = false }: { items: HeroSl
   // facts line and one button beneath it rather than a scope frame.
   const isPhone = useMediaQuery('(max-width: 639px)')
   const region = useCertificationRegion()
+  const queryClient = useQueryClient()
   // And no trailers there. The phone's art is a portrait poster, which a
   // landscape trailer can't fill without cropping it to a strip, and it
   // would cost a mobile connection a video fetch per slide. Gates the
   // fetch too, not just playback, so nothing is downloaded to sit unused.
   const trailersEnabled = !isPhone
   const [activeIndex, setActiveIndex] = useState(0)
+  // Which slides have their art (and glow, and logo) mounted: the one
+  // showing and the one after it, then each as the carousel reaches it.
+  // Every slide sits stacked in the frame, so `loading="lazy"` held none
+  // of them back — a cold Home fetched all five backdrops and logos up
+  // front, alongside the first slide's. Once mounted a slide stays, so
+  // coming back round to it never reloads.
+  const [warm, setWarm] = useState(() => new Set([0, 1]))
+  const nextIndex = items.length ? (activeIndex + 1) % items.length : 0
+  if (!warm.has(activeIndex) || !warm.has(nextIndex)) setWarm(new Set([...warm, activeIndex, nextIndex]))
   const [muted, setMuted] = useState(true)
   const [videoUrls, setVideoUrls] = useState<Record<number, string | null>>({})
   const [videoVisible, setVideoVisible] = useState<Record<number, boolean>>({})
@@ -563,7 +575,7 @@ export default function HeroCarousel({ items, loading = false }: { items: HeroSl
           strength while a trailer plays — it is the page's ground now,
           not a layer inside the pane, and dimming it pulsed the whole
           page dark every time a trailer started. */}
-      <HeroGlow items={items} activeIndex={activeIndex} small={isPhone} />
+      <HeroGlow items={items} activeIndex={activeIndex} warm={warm} />
       <div
         className="home-hero"
         ref={heroRef}
@@ -582,24 +594,23 @@ export default function HeroCarousel({ items, loading = false }: { items: HeroSl
           const onPlex = !!item.on_plex
           const info = enrichment[i]
           const hasVideo = !!videoUrls[i]
+          const prefetch = prefetchHandlers(queryClient, isTv ? 'tv' : 'movie', item.id)
 
           return (
             <div className={`home-hero-slide${i === activeIndex ? ' active' : ''}`} key={item.id}>
-                <Link className="home-hero-media" to={href} aria-label={title}>
+                <Link className="home-hero-media" to={href} aria-label={title} {...prefetch}>
                 {/* Portrait key art on a phone, the landscape backdrop
                     everywhere else: the phone's hero is the 2:3 poster,
                     and a 16:9 backdrop cropped into it loses almost
                     everything either side of centre. */}
-                <img
-                  className={videoVisible[i] ? 'home-hero-poster-hidden' : ''}
-                  src={isPhone ? posterUrl(item.poster_path) : backdropUrl(item.backdrop_path)}
-                  alt=""
-                  loading={i === 0 ? 'eager' : 'lazy'}
-                  // Every slide is stacked in the viewport, so `lazy`
-                  // defers none of them; this is what puts the one
-                  // showing ahead of the other four.
-                  fetchPriority={i === 0 ? 'high' : 'low'}
-                />
+                {warm.has(i) && (
+                  <img
+                    className={videoVisible[i] ? 'home-hero-poster-hidden' : ''}
+                    src={isPhone ? posterUrl(item.poster_path) : backdropUrl(item.backdrop_path)}
+                    alt=""
+                    fetchPriority={i === activeIndex ? 'high' : 'low'}
+                  />
+                )}
                 {/* Only the active slide has a <video> at all, not
                     merely a quiet one. Each element takes a decoder, and
                     on a Mac that is VideoToolbox — a hardware decoder
@@ -678,8 +689,11 @@ export default function HeroCarousel({ items, loading = false }: { items: HeroSl
                   {/* The title logo when TMDB has one, the text title
                       otherwise; the h1 keeps the name for screen readers
                       either way. */}
-                  <h1 className={info?.logo ? 'has-logo' : undefined}>
-                    {info?.logo ? <img className="hero-logo" src={info.logo} alt={title} fetchPriority={i === 0 ? 'high' : 'low'} /> : title}
+                  <h1 className={info?.logo && !isPhone && warm.has(i) ? 'has-logo' : undefined}>
+                    {/* A phone hides the heading (its poster carries the title), so
+                      there it is the text, for screen readers, rather than
+                      a logo fetched to be clipped to a pixel. */}
+                  {info?.logo && !isPhone && warm.has(i) ? <img className="hero-logo" src={info.logo} alt={title} fetchPriority={i === activeIndex ? 'high' : 'low'} /> : title}
                   </h1>
                   <div className="hero-line">
                     <Icon name={info?.badge ? 'megaphone' : 'chart'} />
@@ -704,13 +718,13 @@ export default function HeroCarousel({ items, loading = false }: { items: HeroSl
                     <p className={`hero-syn${videoVisible[i] && !cursorNear ? ' hidden-for-video' : ''}`}>{item.overview}</p>
                   )}
                   <div className="home-hero-actions">
-                    <Link className="btn pri" to={href}>
+                    <Link className="btn pri" to={href} {...prefetch}>
                       <Icon name={onPlex ? 'play' : 'plus'} />
                       <FlipLabel first={onPlex ? 'On Plex' : 'Not on Plex yet'} second={onPlex ? 'Watch now' : 'Add to Plex'} active={i === activeIndex} />
                     </Link>
                     {/* Icon-only on desktop; hidden on a phone, where the
                         poster is already the way in. */}
-                    <Link className="btn sec circ home-hero-info" to={href} aria-label="More info">
+                    <Link className="btn sec circ home-hero-info" to={href} aria-label="More info" {...prefetch}>
                       <Icon name="info" />
                     </Link>
                     {i === activeIndex && hasVideo && (
