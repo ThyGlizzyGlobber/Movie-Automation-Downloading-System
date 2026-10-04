@@ -138,6 +138,7 @@ def titles_match(a: str, b: str) -> bool:
 #    shape doesn't depend on what kind of thing it is. --
 
 _SUBTITLE_SEPARATORS = (":", " - ")
+_APOSTROPHE_RE = re.compile(r"(?<=\w)['\u2019\u02bc`](?=\w)")
 MAX_VARIANTS = 5
 
 
@@ -188,6 +189,17 @@ def generate_variants(title: str, original_title: str, release_year: int | None)
 
     if normalize_text(original_title) != normalize_text(title):
         candidates.append(original_title)
+
+    # Release names drop an apostrophe rather than spacing it: TMDB's
+    # "Wonka's The Golden Ticket" is Wonkas.The.Golden.Ticket on every
+    # tracker, and normalizing the title as punctuation reads it "wonka
+    # s the golden ticket", which no release says (2026-10-05). Both
+    # spellings are kept — some groups do write "Wonka.s" — with the
+    # dropped one first after the title itself, since it is the norm.
+    for name in list(candidates):
+        joined = _APOSTROPHE_RE.sub("", name)
+        if joined != name:
+            candidates.insert(candidates.index(name) + 1, joined)
 
     split = _title_subtitle_split(title)
     if split and normalize_text(split[1]) in _FILM_OF_SUBTITLES:

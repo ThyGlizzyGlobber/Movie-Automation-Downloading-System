@@ -59,3 +59,26 @@ def test_a_film_of_a_show_is_not_split_into_the_shows_name():
 
 def test_an_ordinary_subtitle_is_still_split():
     assert "Dune" in generate_variants("Dune: Part Two", "Dune: Part Two", 2024)
+
+
+def test_an_apostrophe_is_also_searched_dropped():
+    """Wonka's The Golden Ticket is Wonkas.The.Golden.Ticket on every
+    tracker; normalizing the apostrophe to a space alone ("wonka s")
+    matched none of them."""
+    variants = generate_variants("Wonka's The Golden Ticket", "Wonka's The Golden Ticket", None)
+    assert variants == ["Wonka's The Golden Ticket", "Wonkas The Golden Ticket"]
+
+
+def test_a_curly_apostrophe_is_dropped_too():
+    variants = generate_variants("Ocean’s Eleven", "Ocean’s Eleven", 2001)
+    assert variants[1] == "Oceans Eleven"
+
+
+def test_a_release_without_the_apostrophe_now_matches():
+    from app.normalize import tokenize
+    from app.score import matches_any_variant
+
+    variants = generate_variants("Wonka's The Golden Ticket", "Wonka's The Golden Ticket", None)
+    release = tokenize("Wonkas.The.Golden.Ticket.S01.1080p.NF.WEB-DL.DDP5.1.H.264-FLUX")
+    assert matches_any_variant(release, variants)
+    assert matches_any_variant(tokenize("Wonka.s.The.Golden.Ticket.S01E01.720p"), variants)
