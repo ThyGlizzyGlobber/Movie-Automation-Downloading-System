@@ -5,6 +5,7 @@ A single connection with `check_same_thread=False` guarded by a
 `asyncio.to_thread` so a query never blocks the event loop."""
 
 import json
+import logging
 import os
 import secrets
 import sqlite3
@@ -16,6 +17,8 @@ from threading import RLock
 # they stay importable from here.
 from app.db_rows import RequestRow, SessionRow, ShowEpisodeRow, ShowRow, UserRow
 from app.db_schema import StoreSchema
+
+logger = logging.getLogger(__name__)
 
 # Rows in these statuses are still live — an active job, or a torrent the
 # download watcher is still tracking. Retention purges (automatic or the
@@ -116,6 +119,7 @@ class RequestStore(StoreSchema):
         self._conn = _SerializedConnection(connection, self._lock)
         self._init_schema()
         self._backfill_library_items()
+        self._backfill_split_packs()
 
     # -- requests --
 
@@ -719,6 +723,35 @@ class RequestStore(StoreSchema):
                 if paths:
                     self._record_library_items(row["id"], paths, result)
             self._conn.commit()
+
+    # A pack that handed its work to seasons or episodes, in every wording
+    # the worker has used for it. Matched on the message because, before
+    # "split" existed, the message was the only place the outcome lived.
+    _SPLIT_MESSAGES = (
+        "% requested one at a time.",
+        "% requested one by one.",
+        "%every season is already requested or on Plex.",
+        "%every season is already requested or in Plex.",
+        "%every aired episode is already requested.",
+    )
+
+    def _backfill_split_packs(self) -> None:
+        """One-off on start: packs recorded as "no qualifying results"
+        for handing off to seasons or episodes, from before that outcome
+        had its own status. Left alone they read "No match" over shows
+        that are entirely on Plex — The Pitt's whole-series row, filed
+        hours before the fix that stopped new ones (2026-10-05). A pack
+        with nothing to hand off keeps its no-match: that one is true."""
+        clause = " OR ".join("error_message LIKE ?" for _ in self._SPLIT_MESSAGES)
+        with self._lock:
+            cursor = self._conn.execute(
+                f"UPDATE requests SET status = 'split' WHERE media_type = 'pack' "
+                f"AND status = 'no qualifying results' AND ({clause})",
+                self._SPLIT_MESSAGES,
+            )
+            self._conn.commit()
+        if cursor.rowcount:
+            logger.info("relabelled %d handed-off pack request(s) as split", cursor.rowcount)
 
     def all_library_paths(self) -> list[str]:
         """Every path this app has filed into the library, whatever it

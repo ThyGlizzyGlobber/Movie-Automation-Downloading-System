@@ -76,9 +76,13 @@ function SeasonStrip({ season, onChanged }: { season: SeasonGroup; onChanged: ()
     <div className="rq-season">
       <div className="rq-season-head">
         <b>{season.label}</b>
-        <small>
-          {ready} of {total} on Plex
-        </small>
+        {/* A request that only split into others has nothing of its own
+            to count — "0 of 0" would read as a problem. */}
+        {total > 0 && (
+          <small>
+            {ready} of {total} on Plex
+          </small>
+        )}
       </div>
       <div className="rq-eps">
         {rows.map((r) => {

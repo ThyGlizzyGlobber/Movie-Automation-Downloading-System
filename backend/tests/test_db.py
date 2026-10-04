@@ -873,3 +873,35 @@ def test_get_requests_fetches_many_rows_by_id_in_one_call():
     assert set(rows) == {a.id, b.id}
     assert rows[b.id].title == "B"
     assert store.get_requests([]) == {}
+
+
+def test_a_pack_that_handed_off_before_split_existed_is_relabelled(tmp_path):
+    """The Pitt's whole-series row was recorded as a no-match hours before
+    "split" existed, and went on reading "No match" over a show that was
+    all on Plex. Reopening the store fixes rows like it; a pack that
+    genuinely had nothing to hand off keeps its no-match."""
+    path = tmp_path / "requests.db"
+    store = RequestStore(path)
+    show = store.create_show(tmdb_id=250307, title="The Pitt")
+    covered = store.create_pack_request(250307, show.id, "The Pitt", None)
+    handed = store.create_pack_request(250307, show.id, "The Pitt", 2)
+    empty = store.create_pack_request(250307, show.id, "The Pitt", 3)
+    store.update_status(
+        covered.id, "no qualifying results",
+        error_message="No series pack found, so nothing was added: every season is already requested or on Plex.",
+    )
+    store.update_status(
+        handed.id, "no qualifying results",
+        error_message="No season pack found, so its 15 episodes were requested one by one.",
+    )
+    store.update_status(
+        empty.id, "no qualifying results",
+        error_message="No season pack found, and no aired episodes to ask for instead.",
+    )
+    store.close()
+
+    reopened = RequestStore(path)
+
+    assert reopened.get_request(covered.id).status == "split"
+    assert reopened.get_request(handed.id).status == "split"
+    assert reopened.get_request(empty.id).status == "no qualifying results"
