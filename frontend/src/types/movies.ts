@@ -109,6 +109,8 @@ export interface CrewMember {
 
 export interface MovieTrailer {
   url: string | null
+  /* No file yet, but the server is downloading one: ask again shortly. */
+  pending?: boolean
 }
 
 export interface PersonCredit {

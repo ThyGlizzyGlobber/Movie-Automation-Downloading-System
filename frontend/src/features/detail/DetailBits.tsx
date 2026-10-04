@@ -199,8 +199,11 @@ export function DetailTrailer({ type, tmdbId, backdropPath }: { type: 'movie' | 
     queryFn: () => (type === 'tv' ? getTvTrailer(tmdbId) : getMovieTrailer(tmdbId)),
     staleTime: 600_000,
     retry: false,
+    // Still downloading on the server: ask again until it is there (or
+    // the server gives up and says so).
+    refetchInterval: (q) => (q.state.data?.pending ? 5_000 : false),
   })
-  if (query.isLoading) return <DetailTrailerSkeleton />
+  if (query.isLoading || query.data?.pending) return <DetailTrailerSkeleton />
   const url = query.data?.url
   if (!url) return null
   const poster = backdropUrl(backdropPath, isPhone ? 'w780' : undefined) || undefined

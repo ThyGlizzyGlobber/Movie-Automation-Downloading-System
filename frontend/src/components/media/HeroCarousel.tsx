@@ -100,6 +100,11 @@ const HERO_SKELETON_DOTS = 5
 // 240-390KB downloads racing the first slide's art (on a phone, which
 // shows the poster, nothing else even used them). Only the slides `warm`
 // names have one, for the same reason the slides' own art does.
+// How often, and how many times, the hero asks again for a trailer the
+// server is still downloading.
+const TRAILER_RECHECK_MS = 15_000
+const TRAILER_RECHECKS = 8
+
 const NO_SLIDES = new Set<number>()
 
 function HeroGlow({ items, activeIndex, warm }: { items: HeroSlide[]; activeIndex: number; warm: Set<number> }) {
@@ -244,14 +249,12 @@ export default function HeroCarousel({ items, loading = false }: { items: HeroSl
   // never autoplaying on its own; playback is entirely driven by the
   // scheduling effect below, gated on the slide actually being active.
   //
-  // One at a time, in the order the slides come up, rather than all at
-  // once. A hit is a cached file and answers immediately, so a warm
-  // hero fills in as fast either way; a miss makes the backend fetch
-  // the clip from YouTube, and firing five of those in parallel puts
-  // five yt-dlp downloads on the NAS at once for a carousel that shows
-  // one slide every seven seconds. Sequential, the work arrives roughly
-  // in the order it is needed and a cold hero simply gains its trailers
-  // over the first pass or two.
+  // One at a time, in the order the slides come up. A clip not yet on the
+  // server comes back `pending` at once (it downloads in the background
+  // there, two at a time, rather than holding this request open for it),
+  // and the slide keeps its poster; those are asked again every
+  // TRAILER_RECHECK_MS, so a cold hero gains its trailers over the first
+  // minute or two.
   useEffect(() => {
     if (!trailersEnabled) {
       // Also clears anything fetched before the viewport narrowed, so
@@ -262,16 +265,23 @@ export default function HeroCarousel({ items, loading = false }: { items: HeroSl
     }
     let cancelled = false
     void (async () => {
-      for (let i = 0; i < items.length; i++) {
-        if (cancelled) return
-        const item = items[i]
-        try {
-          const { url } = item.mediaType === 'tv' ? await getTvTrailer(item.id) : await getMovieTrailer(item.id)
+      let waiting = items.map((_, i) => i)
+      for (let round = 0; round <= TRAILER_RECHECKS && waiting.length; round++) {
+        if (round) await new Promise((resolve) => window.setTimeout(resolve, TRAILER_RECHECK_MS))
+        const still: number[] = []
+        for (const i of waiting) {
           if (cancelled) return
-          setVideoUrls((prev) => ({ ...prev, [i]: url }))
-        } catch {
-          // no trailer on file — the poster stays as the slide's art
+          const item = items[i]
+          try {
+            const { url, pending } = item.mediaType === 'tv' ? await getTvTrailer(item.id) : await getMovieTrailer(item.id)
+            if (cancelled) return
+            setVideoUrls((prev) => ({ ...prev, [i]: url }))
+            if (!url && pending) still.push(i)
+          } catch {
+            // no trailer on file — the poster stays as the slide's art
+          }
         }
+        waiting = still
       }
     })()
     return () => {

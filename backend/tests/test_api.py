@@ -1443,36 +1443,68 @@ def unmeasured_trailers(monkeypatch):
     monkeypatch.setattr(trailers, "probe_duration", lambda key: None)
 
 
-def test_get_movie_trailer_returns_cached_file_url(client_and_deps, monkeypatch, tmp_path, unmeasured_trailers):
+class _InlinePool:
+    """Runs a background trailer download on the spot, so a test can see
+    what the next ask finds without waiting on a thread."""
+
+    def submit(self, fn, *args):
+        fn(*args)
+
+
+@pytest.fixture
+def trailer_downloads(monkeypatch, tmp_path):
+    monkeypatch.setattr(config, "TRAILER_CACHE_DIR", tmp_path)
+    monkeypatch.setattr(trailers, "_download_pool", _InlinePool())
+    trailers._no_trailer.clear()
+    trailers._in_flight.clear()
+    return tmp_path
+
+
+def test_get_movie_trailer_returns_cached_file_url(client_and_deps, trailer_downloads):
     client, _, tmdb, _, _, _ = client_and_deps
     tmdb._movie_videos = [{"site": "YouTube", "type": "Trailer", "official": True, "key": "abc123"}]
-    monkeypatch.setattr(
-        trailers, "ensure_downloaded", lambda media_type, tmdb_id, key: tmp_path / f"{media_type}-{tmdb_id}-{key}.mp4"
-    )
+    (trailer_downloads / "movie-693134-abc123.mp4").write_bytes(b"clip")
 
     response = client.get("/api/movies/693134/trailer")
 
     assert response.status_code == 200
-    assert response.json() == {"url": "/api/trailers/movie-693134-abc123.mp4"}
+    assert response.json() == {"url": "/api/trailers/movie-693134-abc123.mp4", "pending": False}
 
 
-def test_get_movie_trailer_returns_null_url_when_none_found(client_and_deps):
+def test_a_missing_trailer_downloads_in_the_background_and_is_there_next_time(client_and_deps, monkeypatch, trailer_downloads, unmeasured_trailers):
+    """The download used to happen inside the request — 7s typical,
+    measured, with the page and a browser connection waiting on it."""
+    client, _, tmdb, _, _, _ = client_and_deps
+    tmdb._movie_videos = [{"site": "YouTube", "type": "Trailer", "official": True, "key": "abc123"}]
+
+    def download(media_type, tmdb_id, key):
+        path = trailer_downloads / f"{media_type}-{tmdb_id}-{key}.mp4"
+        path.write_bytes(b"clip")
+        return path
+
+    monkeypatch.setattr(trailers, "ensure_downloaded", download)
+
+    assert client.get("/api/movies/693134/trailer").json() == {"url": None, "pending": True}
+    assert client.get("/api/movies/693134/trailer").json() == {"url": "/api/trailers/movie-693134-abc123.mp4", "pending": False}
+
+
+def test_get_movie_trailer_returns_null_url_when_none_found(client_and_deps, trailer_downloads):
     client, _, _, _, _, _ = client_and_deps
     response = client.get("/api/movies/693134/trailer")
 
     assert response.status_code == 200
-    assert response.json() == {"url": None}
+    assert response.json() == {"url": None, "pending": False}
 
 
-def test_get_movie_trailer_returns_null_url_when_download_fails(client_and_deps, monkeypatch, unmeasured_trailers):
+def test_a_failed_download_is_not_queued_again_on_every_view(client_and_deps, monkeypatch, trailer_downloads, unmeasured_trailers):
     client, _, tmdb, _, _, _ = client_and_deps
     tmdb._movie_videos = [{"site": "YouTube", "type": "Trailer", "official": True, "key": "abc123"}]
-    monkeypatch.setattr(trailers, "ensure_downloaded", lambda media_type, tmdb_id, key: None)
+    attempts = []
+    monkeypatch.setattr(trailers, "ensure_downloaded", lambda media_type, tmdb_id, key: attempts.append(key))
 
-    response = client.get("/api/movies/693134/trailer")
-
-    assert response.status_code == 200
-    assert response.json() == {"url": None}
+    assert client.get("/api/movies/693134/trailer").json() == {"url": None, "pending": True}
+    assert client.get("/api/movies/693134/trailer").json() == {"url": None, "pending": False}
+    assert attempts == ["abc123"]
 
 
 def test_get_movie_trailer_502s_on_upstream_error(client_and_deps):
@@ -1484,17 +1516,38 @@ def test_get_movie_trailer_502s_on_upstream_error(client_and_deps):
     assert response.status_code == 502
 
 
-def test_get_tv_trailer_returns_cached_file_url(client_and_deps, monkeypatch, tmp_path, unmeasured_trailers):
+def test_get_tv_trailer_returns_cached_file_url(client_and_deps, trailer_downloads):
     client, _, tmdb, _, _, _ = client_and_deps
     tmdb._tv_videos = [{"site": "YouTube", "type": "Teaser", "official": True, "key": "xyz789"}]
-    monkeypatch.setattr(
-        trailers, "ensure_downloaded", lambda media_type, tmdb_id, key: tmp_path / f"{media_type}-{tmdb_id}-{key}.mp4"
-    )
+    (trailer_downloads / "tv-97546-xyz789.mp4").write_bytes(b"clip")
 
     response = client.get("/api/tv/97546/trailer")
 
     assert response.status_code == 200
-    assert response.json() == {"url": "/api/trailers/tv-97546-xyz789.mp4"}
+    assert response.json() == {"url": "/api/trailers/tv-97546-xyz789.mp4", "pending": False}
+
+
+def test_banner_logo_is_served_small_or_sends_the_browser_to_the_original(client_and_deps, monkeypatch, tmp_path):
+    from app import logos
+
+    client, _, _, _, _, _ = client_and_deps
+    stored = tmp_path / "abcdEFGH1234.webp"
+    stored.write_bytes(b"RIFFwebp")
+    monkeypatch.setattr(logos, "get", lambda name: stored if name == "abcdEFGH1234.png" else None)
+
+    served = client.get("/api/logos/abcdEFGH1234.webp")
+    assert served.status_code == 200
+    assert served.content == b"RIFFwebp"
+    assert served.headers["content-type"] == "image/webp"
+    assert served.headers["cache-control"] == "public, max-age=31536000, immutable"
+
+    fallback = client.get("/api/logos/zyxwVUTS9876.webp", follow_redirects=False)
+    assert fallback.status_code == 307
+    assert fallback.headers["location"] == "/img/original/zyxwVUTS9876.png"
+    assert fallback.headers["cache-control"] == "no-store"
+
+    assert client.get("/api/logos/..%2Fsecret.webp").status_code == 404
+    assert client.get("/api/logos/abcdEFGH1234.png").status_code == 404
 
 
 def test_get_tv_trailer_502s_on_upstream_error(client_and_deps):

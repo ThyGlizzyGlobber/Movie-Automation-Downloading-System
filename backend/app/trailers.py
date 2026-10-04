@@ -11,11 +11,13 @@ sandbox.
 import concurrent.futures
 import logging
 import os
+import threading
 from pathlib import Path
 
 import yt_dlp
 
 from app import config
+from app.cache import TTLCache
 
 logger = logging.getLogger("app.trailers")
 
@@ -164,6 +166,15 @@ def pick_shortest_suitable(candidates: list[dict]) -> str | None:
     return chosen
 
 
+def cached_clip(media_type: str, tmdb_id: int, candidates: list[dict]) -> Path | None:
+    """Whichever of this title's candidates is already on disk, if any."""
+    for video in candidates:
+        cached = cached_trailer_path(media_type, tmdb_id, video["key"])
+        if cached.exists():
+            return _mark_used(cached)
+    return None
+
+
 def resolve(media_type: str, tmdb_id: int, candidates: list[dict]) -> Path | None:
     """The hero's entry point: the local file for whichever of this
     title's candidates should play, downloading it on the first ask.
@@ -172,11 +183,58 @@ def resolve(media_type: str, tmdb_id: int, candidates: list[dict]) -> Path | Non
     which is what keeps the probing to once per title — the second
     request finds the file the first one chose and never calls YouTube
     at all. Eviction simply costs one more round of that."""
-    for video in candidates:
-        cached = cached_trailer_path(media_type, tmdb_id, video["key"])
-        if cached.exists():
-            return _mark_used(cached)
+    cached = cached_clip(media_type, tmdb_id, candidates)
+    if cached is not None:
+        return cached
     key = pick_shortest_suitable(candidates)
     if key is None:
         return None
     return ensure_downloaded(media_type, tmdb_id, key)
+
+
+# Downloads happen here rather than inside the request that asked. Measuring
+# a title's candidates and fetching the winner can take a minute (7s was
+# typical, measured), and the hero, the content page and every viewer's
+# browser all held a connection open for it — on the LAN, one of the six a
+# browser allows per host, so posters queued behind a trailer. Two at a
+# time: these share the NAS's line with everything else.
+_download_pool = concurrent.futures.ThreadPoolExecutor(max_workers=2, thread_name_prefix="trailer")
+_in_flight: set[tuple[str, int]] = set()
+_in_flight_lock = threading.Lock()
+# A title whose download came to nothing (no usable clip, YouTube said no)
+# isn't queued again on every page view; it gets another try after this.
+_NO_TRAILER_RETRY_SECONDS = 60 * 60
+_no_trailer = TTLCache(_NO_TRAILER_RETRY_SECONDS, max_entries=2048)
+
+
+def _download_in_background(media_type: str, tmdb_id: int, candidates: list[dict]) -> None:
+    key = (media_type, tmdb_id)
+    try:
+        if resolve(media_type, tmdb_id, candidates) is None:
+            _no_trailer.set(key, True)
+    except Exception:  # noqa: BLE001 — a failed download is a title without a trailer, not a crash
+        logger.warning("background trailer download failed for %s %s", media_type, tmdb_id, exc_info=True)
+        _no_trailer.set(key, True)
+    finally:
+        with _in_flight_lock:
+            _in_flight.discard(key)
+
+
+def resolve_without_waiting(media_type: str, tmdb_id: int, candidates: list[dict]) -> tuple[Path | None, bool]:
+    """`(file, pending)`: the file when it is already on disk, otherwise
+    None and whether a download is now under way — started here if it
+    wasn't already — so the caller can come back for it."""
+    if not candidates:
+        return None, False
+    cached = cached_clip(media_type, tmdb_id, candidates)
+    if cached is not None:
+        return cached, False
+    key = (media_type, tmdb_id)
+    if _no_trailer.get(key)[1]:
+        return None, False
+    with _in_flight_lock:
+        if key in _in_flight:
+            return None, True
+        _in_flight.add(key)
+    _download_pool.submit(_download_in_background, media_type, tmdb_id, candidates)
+    return None, True
