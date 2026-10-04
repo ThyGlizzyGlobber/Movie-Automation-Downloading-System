@@ -52,3 +52,13 @@ export function sampleUrl(path: string | null | undefined): string {
 export function logoUrl(path: string | null | undefined, size: 'w500' | 'original' = 'w500'): string | null {
   return path ? `${IMG_BASE}${size}${path}` : null
 }
+
+// The content page's banner logo: TMDB's original fitted to the banner
+// and re-encoded as WebP by the backend (app/logos.py) — 15KB-4.7MB
+// originals down to 4-90KB, indistinguishable at the banner's size. An
+// SVG logo is small already and goes to TMDB as it is.
+export function bannerLogoUrl(path: string | null | undefined): string | null {
+  if (!path) return null
+  const png = path.match(/^\/([A-Za-z0-9_-]+)\.png$/)
+  return png ? `/api/logos/${png[1]}.webp` : logoUrl(path, 'original')
+}

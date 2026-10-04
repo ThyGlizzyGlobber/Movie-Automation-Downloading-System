@@ -8,3 +8,6 @@ yt-dlp>=2024.1
 # /api/setup/*, the routes an internet attacker would actually script
 # against once remote access is enabled.
 slowapi>=0.1.9
+# Encodes the content page's banner logos small (app/logos.py). Optional at
+# runtime: without it ffmpeg does the encoding, a little less tightly.
+pillow>=10.0

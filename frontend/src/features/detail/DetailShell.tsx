@@ -3,7 +3,7 @@ import AmbientGlow from '../../components/ui/AmbientGlow'
 import Icon from '../../components/ui/Icon'
 import Img from '../../components/ui/Img'
 import { SAMPLE_SYNOPSIS, Skel, SkelText, SkelWords } from '../../components/ui/Skeleton'
-import { backdropUrl, logoUrl, posterUrl } from '../../lib/tmdbImage'
+import { backdropUrl, bannerLogoUrl, logoUrl, posterUrl } from '../../lib/tmdbImage'
 import { useMediaQuery } from '../../lib/hooks'
 import type { BannerPill } from '../../lib/homeHero'
 import './DetailShell.css'
@@ -177,7 +177,7 @@ export default function DetailShell({
             )}
             {certification && <div className="detail-banner-cert">{certification}</div>}
             <div className="detail-banner-text">
-              <div className={`detail-title${logo ? ' has-logo' : ''}`}>{logo ? <Img className="detail-logo" src={logoUrl(logoPath, 'original') ?? logo} alt={title} plain /> : title}</div>
+              <div className={`detail-title${logo ? ' has-logo' : ''}`}>{logo ? <Img className="detail-logo" src={bannerLogoUrl(logoPath) ?? logo} alt={title} plain /> : title}</div>
               {pill && <span className={`on-plex-badge detail-banner-plex ${pill.tone}`}>{pill.text}</span>}
             </div>
           </div>

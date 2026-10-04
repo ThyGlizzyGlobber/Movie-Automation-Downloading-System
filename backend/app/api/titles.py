@@ -5,9 +5,9 @@ import re
 from datetime import datetime, timezone
 
 from fastapi import Depends, HTTPException
-from fastapi.responses import FileResponse, Response as RawResponse
+from fastapi.responses import FileResponse, RedirectResponse, Response as RawResponse
 
-from app import config, trailers
+from app import config, logos, trailers
 from app.cache import TTLCache
 from app.db import RequestStore
 from app.plex import local_file_for_title, plex_show_episodes
@@ -115,7 +115,7 @@ def get_movie_detail(
         "collection": collection,
         "on_plex": on_plex,
         "is_coming_soon": is_coming_soon,
-        "logo_path": best_logo_path(movie.get("images")),
+        "logo_path": _warmed(best_logo_path(movie.get("images"))),
         # Frontend migration Part K2 — true only when this app has a
         # confirmed record of having organized a file for this title
         # itself, never derived from the same fuzzy on_plex title/year
@@ -158,6 +158,37 @@ def get_movie_plex_file(
     return {"available": _plex_file_available(store, title, year, tmdb_id)}
 
 
+def _warmed(logo_path: str | None) -> str | None:
+    """The banner logo's path, its small encoding started on the way past
+    (see logos.py) so it is ready by the time the page asks for it."""
+    logos.warm(logo_path)
+    return logo_path
+
+
+@router.get("/api/logos/{filename}")
+def get_logo(filename: str):
+    """A banner logo fitted to the banner and stored as WebP (logos.py).
+    When that can't be had within a few seconds, the browser is sent to
+    the original instead — never a missing logo."""
+    name = f"{filename.removesuffix('.webp')}.png" if filename.endswith(".webp") else ""
+    if not logos.is_logo_name(name):
+        raise HTTPException(status_code=404, detail="logo not found")
+    path = logos.get(name)
+    if path is None:
+        return RedirectResponse(f"/img/original/{name}", status_code=307, headers={"Cache-Control": "no-store"})
+    # The name is TMDB's own content hash, so the bytes under it never change.
+    return FileResponse(path, media_type="image/webp", headers={"Cache-Control": "public, max-age=31536000, immutable"})
+
+
+def _trailer_answer(media_type: str, tmdb_id: int, videos: list[dict]) -> dict:
+    """The clip's URL when it is on disk. Otherwise `url: null`, with
+    `pending: true` while it downloads in the background: the page shows
+    the poster and asks again, rather than holding this request open for
+    the download (seconds, sometimes a minute) as it used to."""
+    path, pending = trailers.resolve_without_waiting(media_type, tmdb_id, trailer_candidates(videos))
+    return {"url": f"/api/trailers/{path.name}" if path else None, "pending": pending}
+
+
 @router.get("/api/movies/{tmdb_id}/trailer")
 def get_movie_trailer(tmdb_id: int, tmdb: TMDBClient = Depends(get_tmdb)) -> dict:
     """Backs the hero carousel's background video — a separate call from
@@ -175,8 +206,7 @@ def get_movie_trailer(tmdb_id: int, tmdb: TMDBClient = Depends(get_tmdb)) -> dic
         videos = tmdb.get_movie_videos(tmdb_id)
     except TMDBError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
-    path = trailers.resolve("movie", tmdb_id, trailer_candidates(videos))
-    return {"url": f"/api/trailers/{path.name}" if path else None}
+    return _trailer_answer("movie", tmdb_id, videos)
 
 
 def _collection_for(movie: dict, tmdb: TMDBClient, store: RequestStore) -> dict | None:
@@ -273,7 +303,7 @@ def get_tv_detail(tmdb_id: int, store: RequestStore = Depends(get_store), tmdb: 
         # re-downloaded episode twice; this counts episodes.
         "plex_episode_count": have,
         "is_coming_soon": is_tv_upcoming(show),
-        "logo_path": best_logo_path(show.get("images")),
+        "logo_path": _warmed(best_logo_path(show.get("images"))),
         # Frontend migration Part K3 — TV parity with the movie route
         # above. A show's organized history is episode/pack rows, never
         # a single fixed media_type the way a movie's always is.
@@ -293,8 +323,7 @@ def get_tv_trailer(tmdb_id: int, tmdb: TMDBClient = Depends(get_tmdb)) -> dict:
         videos = tmdb.get_tv_videos(tmdb_id)
     except TMDBError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
-    path = trailers.resolve("tv", tmdb_id, trailer_candidates(videos))
-    return {"url": f"/api/trailers/{path.name}" if path else None}
+    return _trailer_answer("tv", tmdb_id, videos)
 
 
 @router.get("/api/trailers/{filename}")

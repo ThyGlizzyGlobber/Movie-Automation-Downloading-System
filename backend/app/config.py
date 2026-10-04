@@ -558,6 +558,12 @@ TRAILER_CACHE_MAX_FILES = int(os.environ.get("TRAILER_CACHE_MAX_FILES", "150"))
 
 TRAILER_DOWNLOAD_TIMEOUT_SECONDS = int(os.environ.get("TRAILER_DOWNLOAD_TIMEOUT_SECONDS", "45"))
 
+# The content page's banner logos, re-encoded small (logos.py). Same data
+# volume as the trailers. A logo comes out at 5-90KB, so the cap is about
+# what a household browses in a long while, at a few hundred MB at most.
+LOGO_CACHE_DIR = Path(os.environ.get("LOGO_CACHE_DIR", Path(__file__).resolve().parent.parent / "data" / "logos"))
+LOGO_CACHE_MAX_FILES = int(os.environ.get("LOGO_CACHE_MAX_FILES", "4000"))
+
 # The hero prefers the shortest preview that is still a preview. Under
 # this many seconds a clip is a social-media sting rather than a trailer
 # — measured on TMDB's own data, the sub-45s "Teasers" on file are
