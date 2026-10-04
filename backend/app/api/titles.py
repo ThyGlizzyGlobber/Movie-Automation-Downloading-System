@@ -25,10 +25,10 @@ _TRAILER_FILENAME_RE = re.compile(r"^[a-z]+-\d+-[\w-]+\.mp4$")
 
 # Whether Plex can point at a file for a title this app didn't add — two
 # live Plex calls, and when Plex's path doesn't exist here, a walk of the
-# whole movie library, on every view of every such title. Kept per title
-# for a while: it only decides whether the page offers "Replace it", and
-# the redownload itself looks again before touching anything. Keyed on
-# the store too, so each store (one per test) has its own answers.
+# whole movie library. Kept per title for a while: it only decides whether
+# the page offers "Replace it", and the redownload itself looks again
+# before touching anything. Keyed on the store too, so each store (one per
+# test) has its own answers.
 _PLEX_FILE_TTL_SECONDS = 10 * 60
 _plex_file_cache = TTLCache(_PLEX_FILE_TTL_SECONDS, max_entries=1024)
 
@@ -114,9 +114,6 @@ def get_movie_detail(
         **detail,
         "collection": collection,
         "on_plex": on_plex,
-        # A file this app didn't add, but Plex can point at from here: enough
-        # to offer "Replace it" and "This copy is broken" for it.
-        "plex_file_available": bool(on_plex and not tracked and _plex_file_available(store, movie.get("title") or "", year, tmdb_id)),
         "is_coming_soon": is_coming_soon,
         "logo_path": best_logo_path(movie.get("images")),
         # Frontend migration Part K2 — true only when this app has a
@@ -133,6 +130,32 @@ def get_movie_detail(
         # real on-disk one rather than the torrent's advertised size.
         "library": store.library_summary(tmdb_id, ("movie",)),
     }
+
+
+@router.get("/api/movies/{tmdb_id}/plex-file")
+def get_movie_plex_file(
+    tmdb_id: int, store: RequestStore = Depends(get_store), tmdb: TMDBClient = Depends(get_tmdb)
+) -> dict:
+    """Whether there is a file this app didn't add that Plex can point at
+    from here: enough for the page to offer "Replace it" and "This copy is
+    broken" for it.
+
+    Its own call, which the page makes once it has drawn. It used to ride
+    in the detail itself, and so held up every view of every title already
+    on Plex (most of the library, which predates this app) for its Plex
+    round trips — ~0.5s measured — when only the redownload dialog reads
+    it."""
+    try:
+        movie = tmdb.get_movie(tmdb_id)
+    except TMDBError as exc:
+        raise HTTPException(status_code=404, detail=f"tmdb_id {tmdb_id} not found") from exc
+    title = movie.get("title") or ""
+    year_str = (movie.get("release_date") or "")[:4]
+    year = int(year_str) if year_str.isdigit() else None
+    tracked = bool(store.get_library_items(tmdb_id, "movie")) or store.get_latest_organized_request(tmdb_id, ("movie",)) is not None
+    if tracked or not _on_plex_for(title, year, "movie", store, tmdb_id):
+        return {"available": False}
+    return {"available": _plex_file_available(store, title, year, tmdb_id)}
 
 
 @router.get("/api/movies/{tmdb_id}/trailer")

@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useParams } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { getMovie, rejectCurrentMovieCopy } from '../../api/movies'
+import { getMovie, getMoviePlexFile, rejectCurrentMovieCopy } from '../../api/movies'
 import { createRequest, rejectRequest } from '../../api/requests'
 import MediaRow from '../../components/media/MediaRow'
 import RedownloadModal from '../detail/RedownloadModal'
@@ -64,6 +64,15 @@ export default function MovieDetailPage() {
 
   const movieQuery = useQuery({ queryKey: ['movie', tmdbId], queryFn: () => getMovie(tmdbId) })
   const movie = movieQuery.data
+  // On Plex but not added by Obsidian: whether Plex can point at the file,
+  // which is what lets the redownload dialog offer Replace / This copy is
+  // broken. Its own call, after the page has drawn — see api/movies.ts.
+  const plexFile = useQuery({
+    queryKey: ['movie', tmdbId, 'plex-file'],
+    queryFn: () => getMoviePlexFile(tmdbId),
+    enabled: !!movie?.on_plex && !movie.on_plex_tracked,
+    staleTime: 10 * 60_000,
+  })
   useRecordView('movie', tmdbId, movie?.title)
   usePageTitle(movie ? movie.title || movie.original_title || null : null)
 
@@ -315,7 +324,7 @@ export default function MovieDetailPage() {
       <RedownloadModal
         open={modalOpen}
         targetLabel={title}
-        trackedAvailable={movie.on_plex_tracked || !!movie.plex_file_available}
+        trackedAvailable={movie.on_plex_tracked || !!plexFile.data?.available}
         canReject
         onClose={() => setModalOpen(false)}
         onChoose={async (mode) => {

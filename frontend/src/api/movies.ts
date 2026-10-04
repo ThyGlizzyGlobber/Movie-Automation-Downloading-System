@@ -13,6 +13,13 @@ export function getMovie(tmdbId: number) {
   return request<MovieDetail>(`/api/movies/${tmdbId}`)
 }
 
+// Whether a file Obsidian didn't add is one Plex can point at, so the
+// redownload dialog can offer to replace or reject it. Asked after the
+// page has drawn rather than inside the detail, which it used to slow.
+export function getMoviePlexFile(tmdbId: number) {
+  return request<{ available: boolean }>(`/api/movies/${tmdbId}/plex-file`)
+}
+
 // "This copy is broken" for the filed copy of a movie: the library ledger
 // (or, for a file Obsidian never added, Plex) points at it; it's deleted
 // and its release blacklisted for the title.

@@ -1143,7 +1143,6 @@ def test_get_movie_detail_returns_full_movie(client_and_deps):
     assert response.json() == dict(
         MOVIE,
         on_plex=False,
-        plex_file_available=False,
         is_coming_soon=False,
         on_plex_tracked=False,
         logo_path=None,
@@ -4172,7 +4171,8 @@ def test_overwrite_is_allowed_when_plex_can_point_at_the_file(client_and_deps, m
     monkeypatch.setattr(titles, "local_file_for_title", lambda store, media_type, title, year, tmdb_id=None: filed)
     assert client.post("/api/requests", json={"tmdb_id": 693134, "redownload_mode": "overwrite"}).status_code == 201
     detail = client.get("/api/movies/693134").json()
-    assert detail["plex_file_available"] is (detail["on_plex"] is True)
+    assert "plex_file_available" not in detail  # its own call now, off the page's critical path
+    assert client.get("/api/movies/693134/plex-file").json() == {"available": detail["on_plex"] is True}
 
 
 # Long enough that an episode airing today is inside it whatever the
