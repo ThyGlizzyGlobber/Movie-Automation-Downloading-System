@@ -1264,6 +1264,73 @@ def test_get_movie_detail_flags_is_coming_soon_for_a_theatrical_only_release(cli
     assert response.json()["is_coming_soon"] is True
 
 
+DUNE_COLLECTION = {
+    "id": 726871,
+    "name": "Dune Collection",
+    "parts": [
+        # TMDB's own order is whenever a part was added, not release order.
+        {"id": 1170608, "title": "Dune: Part Three", "release_date": ""},
+        {"id": 693134, "title": "Dune: Part Two", "release_date": "2024-03-01"},
+        {"id": 438631, "title": "Dune", "release_date": "2021-09-15"},
+    ],
+}
+
+
+def _in_a_collection(tmdb, monkeypatch, recs=()):
+    tmdb._movie = dict(
+        MOVIE,
+        belongs_to_collection={"id": 726871, "name": "Dune Collection"},
+        recommendations={"page": 1, "results": list(recs)},
+    )
+    monkeypatch.setattr(tmdb, "get_collection", lambda collection_id: DUNE_COLLECTION, raising=False)
+
+
+def test_a_film_in_a_franchise_carries_the_rest_of_it_in_release_order(client_and_deps, monkeypatch):
+    """The franchise row: every other film, oldest first, an announced
+    part with no date yet last — and never the film the page is for."""
+    client, _, tmdb, _, _, _ = client_and_deps
+    _in_a_collection(tmdb, monkeypatch)
+
+    collection = client.get("/api/movies/693134").json()["collection"]
+
+    assert collection["name"] == "Dune Collection"
+    assert [p["title"] for p in collection["parts"]] == ["Dune", "Dune: Part Three"]
+    assert all("on_plex" in p for p in collection["parts"])
+
+
+def test_a_franchise_film_is_not_repeated_under_more_like_this(client_and_deps, monkeypatch):
+    client, _, tmdb, _, _, _ = client_and_deps
+    recs = [{"id": 438631, "title": "Dune", "release_date": "2021-09-15"}, {"id": 2, "title": "Arrival", "release_date": "2016-11-11"}]
+    _in_a_collection(tmdb, monkeypatch, recs)
+
+    body = client.get("/api/movies/693134").json()
+
+    assert [r["title"] for r in body["recommendations"]["results"]] == ["Arrival"]
+
+
+def test_a_film_standing_alone_has_no_collection(client_and_deps):
+    client, _, _, _, _, _ = client_and_deps
+
+    assert client.get("/api/movies/693134").json()["collection"] is None
+
+
+def test_a_collection_tmdb_cannot_serve_is_just_no_row(client_and_deps, monkeypatch):
+    """The page must still load; the row is a nicety."""
+    from app.tmdb import TMDBError
+
+    client, _, tmdb, _, _, _ = client_and_deps
+    _in_a_collection(tmdb, monkeypatch)
+
+    def fail(collection_id):
+        raise TMDBError("TMDB /collection/726871 failed: 503")
+
+    monkeypatch.setattr(tmdb, "get_collection", fail, raising=False)
+
+    response = client.get("/api/movies/693134")
+    assert response.status_code == 200
+    assert response.json()["collection"] is None
+
+
 def test_detail_more_like_this_carries_on_plex(client_and_deps, monkeypatch):
     """The "More like this" row rides in on the detail's own
     append_to_response rather than a list route, and was the one row that

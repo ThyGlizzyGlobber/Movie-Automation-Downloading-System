@@ -70,6 +70,9 @@ export interface MovieDetail extends Omit<TmdbListItem, 'genre_ids'> {
   credits?: { cast?: CastMember[]; crew?: CrewMember[] }
   release_dates?: { results?: ReleaseDatesResult[] }
   recommendations?: { results?: TmdbListItem[] }
+  /** The rest of the film's franchise, in release order; null when it
+   *  stands alone. */
+  collection?: { id: number; name: string; parts: TmdbListItem[] } | null
   // Annotated server-side — see api.py's get_movie_detail.
   is_coming_soon: boolean
   // On Plex but not added by Obsidian, and Plex can point at the file from

@@ -287,6 +287,14 @@ export default function MovieDetailPage() {
       </DetailShell>
 
       <div className="detail-rows">
+        {movie.collection && (
+          <MediaRow
+            title={movie.collection.name.replace(/\s+collection$/i, '')}
+            qualifier="collection"
+            items={movie.collection.parts}
+            mediaType="movie"
+          />
+        )}
         <MediaRow title="More" qualifier="like this" items={movie.recommendations?.results ?? []} mediaType="movie" />
       </div>
 

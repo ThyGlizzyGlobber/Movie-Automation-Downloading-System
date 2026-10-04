@@ -75,9 +75,23 @@ def get_movie_detail(
     is_coming_soon = is_movie_coming_soon(movie, release_dates)
     on_plex = _on_plex_for(movie.get("title") or "", year, "movie", store, tmdb_id)
     tracked = bool(store.get_library_items(tmdb_id, "movie")) or store.get_latest_organized_request(tmdb_id, ("movie",)) is not None
-    return {
+    collection = _collection_for(movie, tmdb, store)
+    detail = {
         **movie,
         **_recommendations_on_plex(movie, "movie", store, title_key="title", date_key="release_date"),
+    }
+    if collection:
+        # A sequel already in the franchise row would only appear twice.
+        in_collection = {part.get("id") for part in collection["parts"]}
+        recs = detail.get("recommendations")
+        if isinstance(recs, dict):
+            detail["recommendations"] = {
+                **recs,
+                "results": [r for r in recs.get("results") or [] if r.get("id") not in in_collection],
+            }
+    return {
+        **detail,
+        "collection": collection,
         "on_plex": on_plex,
         # A file this app didn't add, but Plex can point at from here: enough
         # to offer "Replace it" and "This copy is broken" for it.
@@ -119,6 +133,36 @@ def get_movie_trailer(tmdb_id: int, tmdb: TMDBClient = Depends(get_tmdb)) -> dic
         raise HTTPException(status_code=502, detail=str(exc)) from exc
     path = trailers.resolve("movie", tmdb_id, trailer_candidates(videos))
     return {"url": f"/api/trailers/{path.name}" if path else None}
+
+
+def _collection_for(movie: dict, tmdb: TMDBClient, store: RequestStore) -> dict | None:
+    """The franchise this film belongs to — every other film in TMDB's
+    collection for it, in release order, each carrying `on_plex` — or
+    None when it stands alone.
+
+    Release order rather than TMDB's own, which is whatever order parts
+    were added in. A part with no date yet (an announced sequel) goes
+    last, where it would land. The film itself is left out: the row is
+    "what else is there", and the page is already this one.
+
+    Never fails the page: a collection that can't be fetched is a page
+    without the row, the same as a film without a franchise."""
+    belongs = movie.get("belongs_to_collection")
+    if not isinstance(belongs, dict) or not belongs.get("id"):
+        return None
+    try:
+        collection = tmdb.get_collection(int(belongs["id"]))
+    except TMDBError:
+        return None
+    parts = [p for p in collection.get("parts") or [] if p.get("id") != movie.get("id")]
+    if not parts:
+        return None
+    parts.sort(key=lambda p: (not p.get("release_date"), p.get("release_date") or ""))
+    return {
+        "id": belongs["id"],
+        "name": collection.get("name") or belongs.get("name") or "",
+        "parts": _annotate_on_plex(parts, "movie", store, title_key="title", date_key="release_date"),
+    }
 
 
 def _recommendations_on_plex(detail: dict, media_type: str, store: RequestStore, *, title_key: str, date_key: str) -> dict:

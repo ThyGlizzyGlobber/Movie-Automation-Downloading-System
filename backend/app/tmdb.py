@@ -11,6 +11,7 @@ from app.cache import ttl_cache
 
 BASE_URL = "https://api.themoviedb.org/3"
 POPULAR_DISCOVER_TTL_SECONDS = 300
+COLLECTION_TTL_SECONDS = 6 * 60 * 60
 
 # Release-date lookups run at once per page of results (see
 # _digitally_released). Bounded because a landing page asks for many pages
@@ -250,6 +251,14 @@ class TMDBClient:
                 "include_image_language": "en,null",
             },
         )
+
+    @ttl_cache(COLLECTION_TTL_SECONDS)
+    def get_collection(self, collection_id: int) -> dict:
+        """A franchise as TMDB groups it — "National Treasure Collection"
+        and every film in it. Cached for longer than the browse rows: a
+        collection gains a part once in years, and every film in it asks
+        for the same one."""
+        return self._get(f"/collection/{collection_id}")
 
     def get_movie_videos(self, tmdb_id: int) -> list[dict]:
         return self._get(f"/movie/{tmdb_id}/videos").get("results", [])
