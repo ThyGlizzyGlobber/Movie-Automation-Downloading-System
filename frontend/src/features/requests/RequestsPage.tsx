@@ -14,7 +14,7 @@ import EmptyState from '../../components/ui/EmptyState'
 import { usePageTitle } from '../../lib/chrome'
 import { relativeTime } from '../../lib/format'
 import { FAILED_STATES, NON_TERMINAL, statusDetail } from '../../lib/status'
-import { dominantStatus, groupProgress, groupRequestsForDisplay, packScopeLabel, requestLabelAndHref, type DisplayItem } from '../../lib/requestGrouping'
+import { dominantStatus, groupProgress, groupRequestsForDisplay, onPlexTally, packScopeLabel, requestLabelAndHref, type DisplayItem } from '../../lib/requestGrouping'
 import { RETENTION_OPTIONS } from '../../lib/retention'
 import { errorText, useToast } from '../../lib/toast'
 import type { RequestOut } from '../../types/requests'
@@ -94,7 +94,7 @@ function cardModel(item: DisplayItem): CardModel {
     }
   }
   const status = dominantStatus(item.rows)
-  const ready = item.rows.filter((r) => r.status === 'complete').length
+  const { ready, total } = onPlexTally(item.rows)
   const explained = FAILED_STATES.has(status) ? item.rows.filter((r) => FAILED_STATES.has(r.status)).sort((a, b) => b.id - a.id)[0] : null
   const reason = explained ? statusDetail(explained.status, explained.download_progress, explained.error_message) : null
   return {
@@ -105,8 +105,8 @@ function cardModel(item: DisplayItem): CardModel {
     href: `#/tv/${item.tmdbId}`,
     status,
     progress: groupProgress(item.rows),
-    meta: reason ?? `Series | ${ready} of ${item.rows.length} on Plex`,
-    hint: reason ?? `${ready} of ${item.rows.length} on Plex`,
+    meta: reason ?? `Series | ${ready} of ${total} on Plex`,
+    hint: reason ?? `${ready} of ${total} on Plex`,
   }
 }
 

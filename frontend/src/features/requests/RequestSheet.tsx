@@ -9,7 +9,7 @@ import DownloadBar from '../../components/media/DownloadBar'
 import { posterUrl } from '../../lib/tmdbImage'
 import { relativeTime } from '../../lib/format'
 import { CANCELLABLE, FAILED_STATES, NON_TERMINAL, statusDetail, statusMeta } from '../../lib/status'
-import { dominantStatus, groupProgress, packScopeLabel, requestLabelAndHref, type DisplayItem, type SeasonGroup } from '../../lib/requestGrouping'
+import { dominantStatus, groupProgress, onPlexTally, packScopeLabel, requestLabelAndHref, type DisplayItem, type SeasonGroup } from '../../lib/requestGrouping'
 import { errorText, useToast } from '../../lib/toast'
 import type { RequestOut } from '../../types/requests'
 import '../detail/RequestModal.css'
@@ -71,13 +71,13 @@ function SeasonStrip({ season, onChanged }: { season: SeasonGroup; onChanged: ()
     if (a.media_type !== b.media_type) return a.media_type === 'pack' ? -1 : 1
     return (a.episode_number ?? 0) - (b.episode_number ?? 0)
   })
-  const ready = rows.filter((r) => r.status === 'complete').length
+  const { ready, total } = onPlexTally(rows)
   return (
     <div className="rq-season">
       <div className="rq-season-head">
         <b>{season.label}</b>
         <small>
-          {ready} of {rows.length} on Plex
+          {ready} of {total} on Plex
         </small>
       </div>
       <div className="rq-eps">
@@ -140,12 +140,12 @@ export default function RequestSheet({ item, onClose, onChanged }: { item: Displ
     detail = r.status === 'downloading' ? 'Downloading now' : statusDetail(r.status, r.download_progress, r.error_message)
     if (r.status === 'downloading') progress = r.download_progress
   } else {
-    const ready = item.rows.filter((r) => r.status === 'complete').length
+    const { ready, total } = onPlexTally(item.rows)
     const active = item.rows.filter((r) => NON_TERMINAL.has(r.status)).length
     const people = [...new Set(item.rows.map((r) => r.requested_by_username).filter(Boolean))]
     sub = [
       'Series',
-      `${ready} of ${item.rows.length} on Plex`,
+      `${ready} of ${total} on Plex`,
       active ? `${active} on the way` : null,
       people.length ? `Requested by ${people.join(', ')}` : null,
     ]

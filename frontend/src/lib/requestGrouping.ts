@@ -1,5 +1,5 @@
 import type { RequestOut } from '../types/requests'
-import { NON_TERMINAL } from './status'
+import { FAILED_STATES, NON_TERMINAL } from './status'
 
 function pad2(n: number): string {
   return String(n).padStart(2, '0')
@@ -59,6 +59,45 @@ export function dominantStatus(rows: RequestOut[]): string {
   return rows[0].status
 }
 
+// What a row asks for: one episode, one season's pack, a range, the
+// whole series. Two rows with the same scope are two attempts at the
+// same thing.
+function scopeKey(r: RequestOut): string {
+  return [r.media_type, r.season_number ?? '', r.season_range_end ?? '', r.episode_number ?? ''].join('|')
+}
+
+const GAVE_UP = new Set([...FAILED_STATES, 'cancelled'])
+
+// A show's rows without the attempts a later one has replaced. Asking
+// again after a failure leaves the failure behind, and it used to go on
+// speaking for the show: Wonka's The Golden Ticket had every episode on
+// Plex and still read "No match", 9 of 20, because the first search's
+// nine misses sat beside the nine that worked (2026-10-05).
+//
+// A failed or cancelled attempt goes once anything newer asks for the
+// same thing. Anything goes once something newer for it has worked or
+// is under way. What's left alone is the one case where the older row
+// is still the truth: a file on Plex whose replacement attempt failed —
+// the file is still there.
+export function withoutSuperseded(rows: RequestOut[]): RequestOut[] {
+  const byScope = new Map<string, RequestOut[]>()
+  for (const r of rows) {
+    const key = scopeKey(r)
+    byScope.set(key, [...(byScope.get(key) ?? []), r])
+  }
+  return rows.filter((r) =>
+    !(byScope.get(scopeKey(r)) ?? []).some((s) => s.id > r.id && (GAVE_UP.has(r.status) || !GAVE_UP.has(s.status))),
+  )
+}
+
+// "9 of 9 on Plex": the rows that deliver something. A row that split
+// into seasons or episodes delivers nothing itself — its parts are
+// counted instead — so it would only ever sit in the total, unfillable.
+export function onPlexTally(rows: RequestOut[]): { ready: number; total: number } {
+  const deliverable = rows.filter((r) => r.status !== 'split')
+  return { ready: deliverable.filter((r) => r.status === 'complete').length, total: deliverable.length }
+}
+
 export interface StandaloneItem {
   type: 'standalone'
   repId: number
@@ -100,7 +139,8 @@ export function groupRequestsForDisplay(rows: RequestOut[]): DisplayItem[] {
   const showsById = new Map<number, ShowGroup>()
   const items: DisplayItem[] = []
 
-  for (const r of rows) {
+  // Movies too: a film asked for again after a miss is one card.
+  for (const r of withoutSuperseded(rows)) {
     if (r.media_type === 'movie' || r.show_id == null) {
       items.push({ type: 'standalone', repId: r.id, row: r })
       continue

@@ -9,6 +9,8 @@ export type RequestStatus =
   | 'downloaded, not filed'
   | 'failed'
   | 'cancelled'
+  // A series or season request handed off to smaller ones.
+  | 'split'
 
 export type MediaType = 'movie' | 'episode' | 'pack'
 
