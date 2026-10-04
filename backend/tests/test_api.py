@@ -4164,6 +4164,9 @@ def test_an_airstamp_holds_an_episode_the_date_rule_would_have_released(client_a
 
     body = client.get("/api/tv/95350/season/1/episodes").json()
     assert body["episodes"][0]["state"] == "holding"
+    # The exact moment goes to the page too, so it can say the episode
+    # is still due today rather than that it's waiting on a copy.
+    assert datetime.fromisoformat(body["episodes"][0]["airs_at"]) == out_in_an_hour
 
     refused = client.post("/api/tv/95350/episodes/1/6")
     assert refused.status_code == 409
@@ -4182,6 +4185,7 @@ def test_without_an_airstamp_the_date_rule_still_applies(client_and_deps, monkey
 
     body = client.get("/api/tv/95350/season/1/episodes").json()
     assert body["episodes"][0]["state"] == "missing"
+    assert body["episodes"][0]["airs_at"] is None
     assert client.post("/api/tv/95350/episodes/1/6").status_code == 201
 
 

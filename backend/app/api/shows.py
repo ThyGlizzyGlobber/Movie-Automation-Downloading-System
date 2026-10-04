@@ -315,6 +315,10 @@ def get_season_episodes(
                 "name": ep.get("name"),
                 "overview": ep.get("overview"),
                 "air_date": air_date,
+                # TVmaze's exact release moment, when it has one. The date
+                # alone can't tell the page whether a held episode has
+                # come out yet or is still due later the same day.
+                "airs_at": stamps[number].isoformat() if number in stamps else None,
                 "runtime": ep.get("runtime"),
                 "still_path": ep.get("still_path"),
                 "state": state,

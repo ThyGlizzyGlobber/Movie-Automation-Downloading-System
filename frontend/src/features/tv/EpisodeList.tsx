@@ -3,6 +3,8 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { getSeasonEpisodes, requestEpisode } from '../../api/tv'
 import { stillUrl } from '../../lib/tmdbImage'
 import { statusMeta } from '../../lib/status'
+import { REGION_TIMEZONE } from '../../lib/regions'
+import { useCertificationRegion } from '../auth/useSession'
 import { errorText, useToast } from '../../lib/toast'
 import Icon from '../../components/ui/Icon'
 import Img from '../../components/ui/Img'
@@ -15,7 +17,24 @@ import type { EpisodeStatus } from '../../types/features'
 // reference's episode rows): in Plex, requested (live status), failed,
 // unaired, or missing — the last with a per-episode Request button.
 
+/** "Airs today | 12:00 pm" while the release moment is still ahead,
+ *  null once it has passed. TVmaze gives the moment in UTC; it's shown
+ *  on the household's clock (Settings › Region), not whichever one the
+ *  viewing device happens to be set to — the same calendar every other
+ *  date in the app is on. */
+export function airsLater(airsAt: string | null | undefined, region: string, now = new Date()): string | null {
+  if (!airsAt) return null
+  const at = new Date(airsAt)
+  if (Number.isNaN(at.getTime()) || at <= now) return null
+  const timeZone = REGION_TIMEZONE[region.toUpperCase()]
+  const dayOf = (d: Date) => d.toLocaleDateString('en-CA', { timeZone })
+  const time = at.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit', timeZone })
+  const day = dayOf(at) === dayOf(now) ? 'today' : at.toLocaleDateString(undefined, { weekday: 'short', timeZone })
+  return `Airs ${day} | ${time}`
+}
+
 function EpisodePill({ ep }: { ep: EpisodeStatus }) {
+  const region = useCertificationRegion()
   if (ep.state === 'in_plex') {
     return (
       <span className="status-pill status-complete">
@@ -39,8 +58,12 @@ function EpisodePill({ ep }: { ep: EpisodeStatus }) {
     return <span className="status-pill status-queued episode-pill-muted">Not yet aired</span>
   }
   if (ep.state === 'holding') {
-    // Out, but deliberately not searched for yet — see the air buffer in
-    // Settings › TV scheduling.
+    // Held either side of its release: due later today, or out but
+    // deliberately not searched for yet — see the air buffer in
+    // Settings › TV scheduling. Only the exact release time can tell
+    // the two apart; without one it reads as the latter, as before.
+    const due = airsLater(ep.airs_at, region)
+    if (due) return <span className="status-pill status-queued episode-pill-muted">{due}</span>
     return <span className="status-pill status-queued episode-pill-muted">Waiting for a good copy</span>
   }
   return <span className="status-pill status-queued episode-pill-muted">Not requested</span>

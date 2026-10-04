@@ -12,6 +12,8 @@ export interface EpisodeStatus {
   name: string | null
   overview: string | null
   air_date: string | null
+  /** The exact release moment (UTC ISO), when TVmaze knows it. */
+  airs_at?: string | null
   runtime: number | null
   still_path: string | null
   state: EpisodeState
