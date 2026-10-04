@@ -743,6 +743,19 @@ class RequestStore(StoreSchema):
             grouped.setdefault(row["torrent_hash"].lower(), []).append(row["path"])
         return grouped
 
+    def library_paths_by_release(self) -> dict[str, list[str]]:
+        """Every filed path, grouped by the name of the release it came
+        from — the indexer's name for it, which is also how a download
+        folder is found again once qBittorrent has forgotten the torrent
+        (see media_organizer.find_release_dir)."""
+        rows = self._conn.execute(
+            "SELECT release_name, path FROM library_items WHERE release_name IS NOT NULL AND release_name != ''"
+        ).fetchall()
+        grouped: dict[str, list[str]] = {}
+        for row in rows:
+            grouped.setdefault(row["release_name"], []).append(row["path"])
+        return grouped
+
     def get_library_items(self, tmdb_id: int, media_type: str | None = None) -> list[dict]:
         """The files this app filed for a title, newest first."""
         if media_type:

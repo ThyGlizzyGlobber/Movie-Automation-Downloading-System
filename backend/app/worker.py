@@ -1088,6 +1088,16 @@ class Worker:
     async def _sweep_orphaned_downloads(self) -> list[dict]:
         roots = [str(config.MOVIE_LIBRARY_ROOT), str(config.TV_LIBRARY_ROOT)]
         swept = await asyncio.to_thread(reconcile.remove_orphaned_download_dirs, self.store, roots, True)
+        # Then the folders whose files were rewritten rather than linked
+        # on the way in, which share no inode to match on. Separately
+        # guarded: it needs qBittorrent, and qBittorrent being down must
+        # not stop the half above.
+        try:
+            swept += await asyncio.to_thread(
+                reconcile.remove_stranded_release_dirs, self.store, self.qbt, roots, True
+            )
+        except Exception:
+            logger.exception("orphan sweep: couldn't check for stranded release folders")
         removed = [item for item in swept if item.get("removed")]
         if removed:
             logger.info(
@@ -1216,8 +1226,9 @@ class Worker:
                 # else: the torrent is already gone (this app's own doing, a
                 # share-limit rule, or a manual removal), so there is nothing
                 # left here to delete *through*. Its files may well still be on
-                # disk; _watch_orphaned_downloads is what collects those, by
-                # hardlink identity rather than by a path this code guessed at.
+                # disk; _watch_orphaned_downloads is what collects those — by
+                # hardlink identity, or by the release name the ledger keeps
+                # for a file that was rewritten rather than linked.
             except Exception:
                 logger.exception("source cleanup failed for torrent %s (%s) — will retry", torrent_hash, label)
                 remaining_hashes.append(torrent_hash)

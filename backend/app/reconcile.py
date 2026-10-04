@@ -21,6 +21,8 @@ import shutil
 from pathlib import Path
 
 from app import config
+from app.media_organizer import find_release_dir
+from app.normalize import normalize_text
 
 logger = logging.getLogger(__name__)
 
@@ -199,6 +201,100 @@ def remove_orphaned_download_dirs(store, roots, apply: bool = False) -> list[dic
             shutil.rmtree(item["path"])
             item["removed"] = True
             logger.info("reconcile: removed orphaned download folder %s", item["path"])
+        except OSError as exc:
+            item["removed"] = False
+            item["error"] = str(exc)
+            logger.exception("reconcile: couldn't remove %s", item["path"])
+    return found
+
+
+# ---------------------------------------------------------------------------
+# Download folders whose files were rewritten on the way into the library.
+# ---------------------------------------------------------------------------
+
+
+def find_stranded_release_dirs(store, qbt, roots) -> list[dict]:
+    """Download folders this app filed from, found by the release's own
+    name, for the files the hardlink rule above can never recognise.
+
+    Filing writes a new file rather than a link whenever it has to
+    change something — the preferred-language audio made default,
+    cover art stripped, an MP4 rewrapped — so the library copy is its
+    own inode and the download no longer shares anything with it. The
+    per-request cleanup still removes it through qBittorrent, but only
+    while qBittorrent holds the torrent, and rewriting a 4K season takes
+    long enough that a share-limit rule removes the torrent first (The
+    Penguin: half an hour of remuxing, the torrent dropped ten minutes
+    in). After that the folder was nobody's to remove.
+
+    The link back is the ledger instead: it records the release each
+    filed path came from, and that name finds the folder exactly as
+    organizing's own disk fallback does. Removing it finishes what the
+    per-request cleanup would have done — qBittorrent deletes a
+    torrent's files whole, extras included — under the same gates:
+
+    - every path filed from that release is still in place;
+    - qBittorrent holds no torrent by that name, so a download in
+      progress, or a fresh grab of the same release, is never touched;
+    - the folder is not a library folder and holds no filed path.
+    """
+    releases = store.library_paths_by_release()
+    if not releases:
+        return []
+    active = {normalize_text(str(t.get("name") or "")) for t in qbt.list_torrents()}
+    filed = {str(Path(p)) for paths in releases.values() for p in paths}
+    filed.update(store.all_library_paths())
+
+    found: list[dict] = []
+    seen: set[str] = set()
+    for release_name, paths in sorted(releases.items()):
+        if not all(Path(p).exists() for p in paths):
+            continue
+        for root in roots:
+            root_path = Path(root)
+            if not root_path.is_dir():
+                continue
+            folder = find_release_dir(root_path, release_name)
+            if folder is None or str(folder) in seen:
+                continue
+            if "{tmdb-" in folder.name or normalize_text(folder.name) in active:
+                continue
+            videos, total, holds_filed = [], 0, False
+            for path in sorted(folder.rglob("*")):
+                if not path.is_file():
+                    continue
+                if str(path) in filed:
+                    holds_filed = True
+                    break
+                total += path.stat().st_size
+                if path.suffix.lower() in config.VIDEO_EXTENSIONS:
+                    videos.append(str(path))
+            if holds_filed or not videos:
+                continue
+            seen.add(str(folder))
+            found.append(
+                {
+                    "path": str(folder),
+                    "release": release_name,
+                    "size_bytes": total,
+                    "videos": videos,
+                    "filed_as": sorted(paths),
+                }
+            )
+    return found
+
+
+def remove_stranded_release_dirs(store, qbt, roots, apply: bool = False) -> list[dict]:
+    """What `find_stranded_release_dirs` found, deleted when `apply`."""
+    found = find_stranded_release_dirs(store, qbt, roots)
+    for item in found:
+        if not apply:
+            item["removed"] = False
+            continue
+        try:
+            shutil.rmtree(item["path"])
+            item["removed"] = True
+            logger.info("reconcile: removed stranded download folder %s", item["path"])
         except OSError as exc:
             item["removed"] = False
             item["error"] = str(exc)

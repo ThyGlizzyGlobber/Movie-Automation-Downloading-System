@@ -17,7 +17,7 @@ from app.media_organizer import (
 from app.pipeline_settings import resolve_pipeline_settings
 from app.plex import PlexClient, PlexError, apply_audio_selection, plan_audio_selection
 from app.qbt import QBTClient
-from app.reconcile import remove_orphaned_download_dirs, remove_redundant_sources
+from app.reconcile import remove_orphaned_download_dirs, remove_redundant_sources, remove_stranded_release_dirs
 from app.tmdb import TMDBClient
 from app.tv_resolve import resolve_show
 from app.worker import Worker
@@ -164,6 +164,25 @@ def cmd_cleanup_orphans(args: argparse.Namespace) -> int:
             print(f"                       filed as: {filed}")
         if item.get("error"):
             print(f"                       error: {item['error']}")
+
+    # Folders whose files were rewritten on the way in (audio default,
+    # artwork, MP4 rewrap), so share no inode — found by release name.
+    listed = {item["path"] for item in folders}
+    stranded = [
+        item
+        for item in remove_stranded_release_dirs(store, qbt, roots, apply=args.apply)
+        if item["path"] not in listed
+    ]
+    for item in stranded:
+        total += item["size_bytes"] or 0
+        failures += 1 if item.get("error") else 0
+        print(f"{_state(item, args.apply):>12}  release  {item['path']}")
+        print(f"                       {len(item['videos'])} video(s); filed as:")
+        for filed in item["filed_as"]:
+            print(f"                       {filed}")
+        if item.get("error"):
+            print(f"                       error: {item['error']}")
+    folders = folders + stranded
 
     found = len(torrents) + len(folders)
     if not found:

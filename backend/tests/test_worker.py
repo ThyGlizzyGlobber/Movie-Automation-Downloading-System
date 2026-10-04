@@ -3054,6 +3054,36 @@ def test_orphan_sweep_leaves_the_library_alone(tmp_path, monkeypatch):
     assert filed.parent.parent.exists()
 
 
+def test_orphan_sweep_removes_a_release_folder_whose_files_were_rewritten(tmp_path, monkeypatch):
+    """The Penguin: filed as remuxed copies (English made default), so
+    no inode is shared, and qBittorrent dropped the torrent while the
+    remux ran. The ledger's release name is what still ties the folder
+    to what was filed from it."""
+    library = tmp_path / "tv"
+    download = library / "The.Penguin.S01.2160p-GRP"
+    (download / "Extra").mkdir(parents=True)
+    (download / "The.Penguin.S01E01.2160p-GRP.mkv").write_bytes(b"italian default")
+    (download / "Extra" / "Featurette.mkv").write_bytes(b"extra")
+    season = library / "The Penguin (2024) {tmdb-194764}" / "Season 01"
+    season.mkdir(parents=True)
+    filed = season / "The Penguin - s01e01.mkv"
+    filed.write_bytes(b"english default")
+    monkeypatch.setattr(config, "TV_LIBRARY_ROOT", library)
+    monkeypatch.setattr(config, "MOVIE_LIBRARY_ROOT", tmp_path / "movies")
+    store = RequestStore(":memory:")
+    row = store.create_request(tmdb_id=194764, title="The Penguin", release_year=2024, query=None)
+    store.update_status(
+        row.id, "downloading", result={"torrent_hash": "pp", "winner": {"fileName": "The Penguin S01 2160p-GRP"}}
+    )
+    store.mark_organized(row.id, [str(filed)], ["pp"], "2000-01-01T00:00:00+00:00")
+    worker = Worker(store, FakeTMDBClient(), FakeQBTClient())
+
+    asyncio.run(worker._sweep_orphaned_downloads())
+
+    assert not download.exists()
+    assert filed.read_bytes() == b"english default"
+
+
 def test_a_split_pack_is_not_attempted_again():
     """The other half of the Pitt bug. A handed-off series request sitting
     in "no qualifying results" looked like a failed attempt to the retry

@@ -5,8 +5,10 @@ from app.db import RequestStore
 from app.reconcile import (
     find_orphaned_download_dirs,
     find_redundant_sources,
+    find_stranded_release_dirs,
     remove_orphaned_download_dirs,
     remove_redundant_sources,
+    remove_stranded_release_dirs,
 )
 
 
@@ -303,3 +305,111 @@ def test_cli_dry_run_reports_both_kinds_and_deletes_nothing(tmp_path, monkeypatc
     assert str(leftover) in out
     assert "Re-run with --apply" in out
     assert leftover.exists()  # dry run really is read-only
+
+
+# ---------------------------------------------------------------------------
+# Release folders whose files were rewritten, not linked, into the library.
+# ---------------------------------------------------------------------------
+
+RELEASE = "The Penguin S01 ITA ENG 2160p UHD BluRay x265-MeM GP"
+FOLDER = "The.Penguin.S01.ITA.ENG.2160p.UHD.BluRay.x265-MeM.GP"
+
+
+def _rewritten_pack(tmp_path, *, filed_exists=True):
+    """The Penguin's shape: a season filed as remuxed copies (English
+    made the default audio track), so the library files are their own
+    inodes, beside a download folder that also carries extras nobody
+    filed."""
+    root = tmp_path / "tv"
+    download = root / FOLDER
+    (download / "Extra").mkdir(parents=True)
+    (download / "The.Penguin.S01E01.mkv").write_bytes(b"italian default")
+    (download / "Extra" / "Becoming.the.Penguin.mkv").write_bytes(b"featurette")
+    (download / "release.nfo").write_bytes(b"nfo")
+    season = root / "The Penguin (2024) {tmdb-194764}" / "Season 01"
+    season.mkdir(parents=True)
+    filed = season / "The Penguin - s01e01 - After Hours.mkv"
+    if filed_exists:
+        filed.write_bytes(b"english default")
+
+    store = RequestStore(":memory:")
+    row = store.create_request(tmdb_id=194764, title="The Penguin", release_year=2024, query=None)
+    store.update_status(row.id, "downloading", result={"torrent_hash": "pp", "winner": {"fileName": RELEASE}})
+    store.mark_organized(row.id, [str(filed)], ["pp"], "2000-01-01T00:00:00+00:00")
+    return store, root, download, filed
+
+
+def test_a_rewritten_release_folder_is_found_by_its_name(tmp_path):
+    """The hardlink rule can't see this one — nothing is shared with the
+    library copy — so it was stranded for good once qBittorrent dropped
+    the torrent."""
+    store, root, download, filed = _rewritten_pack(tmp_path)
+
+    assert find_orphaned_download_dirs(store, [root]) == []  # the gap
+    found = find_stranded_release_dirs(store, FakeQBT([]), [root])
+
+    assert [f["path"] for f in found] == [str(download)]
+    assert found[0]["filed_as"] == [str(filed)]
+
+
+def test_removing_it_takes_the_extras_and_keeps_the_library(tmp_path):
+    """The same outcome qBittorrent's own delete would have had."""
+    store, root, download, filed = _rewritten_pack(tmp_path)
+
+    found = remove_stranded_release_dirs(store, FakeQBT([]), [root], apply=True)
+
+    assert [f["removed"] for f in found] == [True]
+    assert not download.exists()
+    assert filed.read_bytes() == b"english default"
+
+
+def test_dry_run_removes_no_release_folder(tmp_path):
+    store, root, download, _ = _rewritten_pack(tmp_path)
+
+    remove_stranded_release_dirs(store, FakeQBT([]), [root], apply=False)
+
+    assert download.exists()
+
+
+def test_a_release_whose_filed_copy_is_gone_is_left(tmp_path):
+    """The download may be the only copy left."""
+    store, root, download, _ = _rewritten_pack(tmp_path, filed_exists=False)
+
+    assert find_stranded_release_dirs(store, FakeQBT([]), [root]) == []
+
+
+def test_a_release_qbittorrent_still_holds_is_left(tmp_path):
+    """Whether it is still seeding or a fresh grab of the same release
+    is downloading into the same folder, it's qBittorrent's to remove."""
+    store, root, download, _ = _rewritten_pack(tmp_path)
+    qbt = FakeQBT([_torrent("other", name=FOLDER, progress=0.4)])
+
+    assert find_stranded_release_dirs(store, qbt, [root]) == []
+
+
+def test_a_library_folder_is_never_a_release_folder(tmp_path):
+    """Even when a release happens to be named like the show's own
+    folder, a folder holding a filed path stays."""
+    root = tmp_path / "tv"
+    show = root / "Some Show"
+    show.mkdir(parents=True)
+    filed = show / "Some Show - s01e01.mkv"
+    filed.write_bytes(b"ep")
+    store = RequestStore(":memory:")
+    row = store.create_request(tmdb_id=5, title="Some Show", release_year=2024, query=None)
+    store.update_status(row.id, "downloading", result={"torrent_hash": "ss", "winner": {"fileName": "Some Show"}})
+    store.mark_organized(row.id, [str(filed)], ["ss"], "2000-01-01T00:00:00+00:00")
+
+    assert find_stranded_release_dirs(store, FakeQBT([]), [root]) == []
+
+
+def test_a_folder_no_filed_release_names_is_left(tmp_path):
+    """A download this app never filed has no ledger row to name it."""
+    store, root, _, _ = _rewritten_pack(tmp_path)
+    stranger = root / "Someone.Elses.Show.S01.1080p"
+    stranger.mkdir()
+    (stranger / "Someone.Elses.Show.S01E01.mkv").write_bytes(b"theirs")
+
+    found = find_stranded_release_dirs(store, FakeQBT([]), [root])
+
+    assert str(stranger) not in [f["path"] for f in found]
