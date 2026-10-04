@@ -1,3 +1,6 @@
+import threading
+import time
+
 from app import cache
 from app.cache import TTLCache, ttl_cache
 
@@ -38,4 +41,70 @@ def test_ttl_cache_still_serves_hits_within_the_ttl():
 
     assert lookup(1) == 2
     assert lookup(1) == 2
+    assert calls == [1]
+
+
+def test_a_stale_entry_is_served_at_once_and_refreshed_behind(monkeypatch):
+    clock = [0.0]
+    monkeypatch.setattr(cache.time, "monotonic", lambda: clock[0])
+    answers = iter(["old", "new"])
+    refreshed = threading.Event()
+
+    @ttl_cache(60, stale_seconds=3600)
+    def lookup():
+        value = next(answers)
+        if value == "new":
+            refreshed.set()
+        return value
+
+    assert lookup() == "old"
+    clock[0] = 61.0
+    assert lookup() == "old"  # past the TTL, inside the stale window: no wait
+    assert refreshed.wait(5)
+    for _ in range(100):
+        if lookup.cache.get(((), ()))[1]:
+            break
+        time.sleep(0.01)
+    assert lookup() == "new"
+
+
+def test_a_stale_entry_past_its_window_is_fetched_again(monkeypatch):
+    clock = [0.0]
+    monkeypatch.setattr(cache.time, "monotonic", lambda: clock[0])
+    calls = []
+
+    @ttl_cache(60, stale_seconds=100)
+    def lookup():
+        calls.append(clock[0])
+        return len(calls)
+
+    assert lookup() == 1
+    clock[0] = 200.0
+    assert lookup() == 2
+    assert calls == [0.0, 200.0]
+
+
+def test_simultaneous_misses_share_one_fetch():
+    calls = []
+    started = threading.Event()
+    release = threading.Event()
+
+    @ttl_cache(60)
+    def lookup():
+        calls.append(1)
+        started.set()
+        release.wait(5)
+        return "answer"
+
+    results = []
+    threads = [threading.Thread(target=lambda: results.append(lookup())) for _ in range(5)]
+    threads[0].start()
+    assert started.wait(5)
+    for t in threads[1:]:
+        t.start()
+    release.set()
+    for t in threads:
+        t.join(5)
+
+    assert results == ["answer"] * 5
     assert calls == [1]

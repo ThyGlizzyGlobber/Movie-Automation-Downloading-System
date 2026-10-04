@@ -8,6 +8,7 @@ from fastapi import Depends, HTTPException
 from fastapi.responses import FileResponse, Response as RawResponse
 
 from app import config, trailers
+from app.cache import TTLCache
 from app.db import RequestStore
 from app.plex import local_file_for_title, plex_show_episodes
 from app.tmdb import TMDBClient, TMDBError, best_logo_path, is_movie_coming_soon, is_tv_upcoming, trailer_candidates
@@ -20,6 +21,25 @@ from app.api.helpers import _annotate_on_plex, _on_plex_for
 # the filesystem so a crafted filename can't path-traverse out of
 # TRAILER_CACHE_DIR.
 _TRAILER_FILENAME_RE = re.compile(r"^[a-z]+-\d+-[\w-]+\.mp4$")
+
+
+# Whether Plex can point at a file for a title this app didn't add — two
+# live Plex calls, and when Plex's path doesn't exist here, a walk of the
+# whole movie library, on every view of every such title. Kept per title
+# for a while: it only decides whether the page offers "Replace it", and
+# the redownload itself looks again before touching anything. Keyed on
+# the store too, so each store (one per test) has its own answers.
+_PLEX_FILE_TTL_SECONDS = 10 * 60
+_plex_file_cache = TTLCache(_PLEX_FILE_TTL_SECONDS, max_entries=1024)
+
+
+def _plex_file_available(store: RequestStore, title: str, year: int | None, tmdb_id: int) -> bool:
+    key = (store, tmdb_id, title, year)
+    available, hit = _plex_file_cache.get(key)
+    if not hit:
+        available = local_file_for_title(store, "movie", title, year, tmdb_id) is not None
+        _plex_file_cache.set(key, available)
+    return available
 
 
 def _aired_episode_count(show: dict) -> int:
@@ -96,7 +116,7 @@ def get_movie_detail(
         "on_plex": on_plex,
         # A file this app didn't add, but Plex can point at from here: enough
         # to offer "Replace it" and "This copy is broken" for it.
-        "plex_file_available": bool(on_plex and not tracked and local_file_for_title(store, "movie", movie.get("title") or "", year, tmdb_id) is not None),
+        "plex_file_available": bool(on_plex and not tracked and _plex_file_available(store, movie.get("title") or "", year, tmdb_id)),
         "is_coming_soon": is_coming_soon,
         "logo_path": best_logo_path(movie.get("images")),
         # Frontend migration Part K2 — true only when this app has a

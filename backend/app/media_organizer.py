@@ -25,9 +25,11 @@ import shutil
 import subprocess
 from typing import NamedTuple
 from collections.abc import Callable
+from threading import Lock
 from pathlib import Path, PurePosixPath
 
 from app import config
+from app.cache import TTLCache
 from app.language import audio_quality_key, is_audio_language
 from app.normalize import extract_episode_identity, has_token, normalize_text, tokenize
 from app.qbt import QBTClient
@@ -163,22 +165,50 @@ def find_existing_episode_file(show_identity: ShowIdentity, season: int, episode
     return None
 
 
+# The show page's episode list asked for a walk of the whole TV library on
+# every load, and again every five seconds while anything on it was
+# downloading — measured at 0.5-2.3s a time on the NAS, slowing every
+# other request it shared the disk with. The walk is kept briefly instead.
+# A file that lands meanwhile is still shown, by its request row; one put
+# there by hand appears within the TTL.
+_TV_LIBRARY_LISTING_TTL_SECONDS = 120
+_tv_library_listing = TTLCache(_TV_LIBRARY_LISTING_TTL_SECONDS, max_entries=4)
+_tv_library_listing_lock = Lock()
+
+
+def _tv_library_videos(root: Path) -> list[tuple[Path, list[str]]]:
+    """Every video file under `root` with its tokenised name, from a walk
+    at most _TV_LIBRARY_LISTING_TTL_SECONDS old."""
+    key = (str(root),)
+    listing, hit = _tv_library_listing.get(key)
+    if hit:
+        return listing
+    with _tv_library_listing_lock:
+        listing, hit = _tv_library_listing.get(key)
+        if not hit:
+            listing = [
+                (path, tokenize(path.stem))
+                for path in root.rglob("*")
+                if path.suffix.lower() in config.VIDEO_EXTENSIONS and path.is_file()
+            ]
+            _tv_library_listing.set(key, listing)
+    return listing
+
+
 def find_existing_episode_files(show_identity: ShowIdentity, season: int, episodes: list[int]) -> dict[int, Path]:
     """`find_existing_episode_file` for a whole season at once — one walk
     of `TV_LIBRARY_ROOT`, then each candidate file (one whose name matches
     the show) is checked against every wanted episode number. Backs the
     show page's per-episode status list, which would otherwise re-walk
     the library once per episode. Same matching rules and the same
-    named gap (only `TV_LIBRARY_ROOT` is looked at)."""
+    named gap (only `TV_LIBRARY_ROOT` is looked at). The walk itself is
+    shared and briefly kept — see _tv_library_videos."""
     found: dict[int, Path] = {}
     root = config.TV_LIBRARY_ROOT
     if not root.is_dir() or not episodes:
         return found
     wanted = set(episodes)
-    for path in root.rglob("*"):
-        if not path.is_file() or path.suffix.lower() not in config.VIDEO_EXTENSIONS:
-            continue
-        tokens = tokenize(path.stem)
+    for path, tokens in _tv_library_videos(root):
         if not matches_any_variant(tokens, show_identity.variants):
             continue
         for episode in wanted - found.keys():

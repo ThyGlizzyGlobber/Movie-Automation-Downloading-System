@@ -10,8 +10,21 @@ import requests
 from app.cache import ttl_cache
 
 BASE_URL = "https://api.themoviedb.org/3"
-POPULAR_DISCOVER_TTL_SECONDS = 300
+POPULAR_DISCOVER_TTL_SECONDS = 60 * 60
+# Past the TTL a list is still served, at once, while it refreshes in the
+# background (see app.cache.ttl_cache). TMDB's lists move daily at most;
+# what cost time was every five-minute expiry making whoever came next
+# wait 1-3s while a landing page's worth of them was fetched again.
+LIST_STALE_SECONDS = 24 * 60 * 60
 COLLECTION_TTL_SECONDS = 6 * 60 * 60
+# One title's detail, season or videos. Every content page view went to
+# TMDB live (250-650ms measured), and the hero rebuilt five of them at a
+# time. Half an hour is also the most the worker's show checks can lag
+# behind TMDB for a new season or episode, against a check interval
+# measured in hours. Capped lower than the lists: a detail with credits,
+# images and recommendations appended runs to a couple of hundred KB.
+DETAIL_TTL_SECONDS = 30 * 60
+DETAIL_CACHE_ENTRIES = 300
 
 # Release-date lookups run at once per page of results (see
 # _digitally_released). Bounded because a landing page asks for many pages
@@ -224,7 +237,8 @@ class TMDBClient:
             raise TMDBError(f"TMDB {path} failed: {response.status_code} {response.text[:200]}")
         return response.json()
 
-    # -- per-query lookups (not cached: each call is for a distinct title) --
+    # -- per-query lookups. Searches are not cached; a title's own detail
+    #    is, briefly (DETAIL_TTL_SECONDS) — every page view of it asks. --
 
     def search_movie(self, query: str, year: int | None = None) -> dict:
         params = {"query": query}
@@ -232,6 +246,7 @@ class TMDBClient:
             params["year"] = year
         return self._get("/search/movie", params)
 
+    @ttl_cache(DETAIL_TTL_SECONDS, max_entries=DETAIL_CACHE_ENTRIES)
     def get_movie(self, tmdb_id: int) -> dict:
         # append_to_response folds cast/crew, per-region certifications,
         # recommendations, and watch providers into the one call the
@@ -260,24 +275,26 @@ class TMDBClient:
         for the same one."""
         return self._get(f"/collection/{collection_id}")
 
+    @ttl_cache(DETAIL_TTL_SECONDS, max_entries=DETAIL_CACHE_ENTRIES)
     def get_movie_videos(self, tmdb_id: int) -> list[dict]:
         return self._get(f"/movie/{tmdb_id}/videos").get("results", [])
 
+    @ttl_cache(DETAIL_TTL_SECONDS, max_entries=DETAIL_CACHE_ENTRIES)
     def get_tv_videos(self, tmdb_id: int) -> list[dict]:
         return self._get(f"/tv/{tmdb_id}/videos").get("results", [])
 
     # -- browse surface: TTL-cached, since these are repeatedly hit by the
     #    home grid and provider rows rather than being per-title lookups --
 
-    @ttl_cache(POPULAR_DISCOVER_TTL_SECONDS)
+    @ttl_cache(POPULAR_DISCOVER_TTL_SECONDS, stale_seconds=LIST_STALE_SECONDS)
     def get_popular(self, page: int = 1) -> dict:
         return self._get("/movie/popular", {"page": page})
 
-    @ttl_cache(POPULAR_DISCOVER_TTL_SECONDS)
+    @ttl_cache(POPULAR_DISCOVER_TTL_SECONDS, stale_seconds=LIST_STALE_SECONDS)
     def get_trending(self, time_window: str = "week", page: int = 1) -> dict:
         return self._get(f"/trending/movie/{time_window}", {"page": page})
 
-    @ttl_cache(POPULAR_DISCOVER_TTL_SECONDS)
+    @ttl_cache(POPULAR_DISCOVER_TTL_SECONDS, stale_seconds=LIST_STALE_SECONDS)
     def discover_by_provider(self, provider_id: int, region: str = "US", page: int = 1) -> dict:
         return self._get(
             "/discover/movie",
@@ -289,7 +306,7 @@ class TMDBClient:
             },
         )
 
-    @ttl_cache(POPULAR_DISCOVER_TTL_SECONDS)
+    @ttl_cache(POPULAR_DISCOVER_TTL_SECONDS, stale_seconds=LIST_STALE_SECONDS)
     def discover_curated(self, media_type: str, **params) -> dict:
         """A discover call with the filters passed straight through.
 
@@ -306,7 +323,7 @@ class TMDBClient:
         path = "/discover/tv" if media_type == "tv" else "/discover/movie"
         return self._get(path, {"include_adult": "false", **params})
 
-    @ttl_cache(POPULAR_DISCOVER_TTL_SECONDS)
+    @ttl_cache(POPULAR_DISCOVER_TTL_SECONDS, stale_seconds=LIST_STALE_SECONDS)
     def get_movie_recommendations(self, tmdb_id: int, page: int = 1) -> dict:
         """TMDB's own "if you liked this" for a movie — the seed of every
         "Because you watched…" row.
@@ -322,25 +339,25 @@ class TMDBClient:
         the same Home page shouldn't each pay for the lookup."""
         return self._get(f"/movie/{tmdb_id}/recommendations", {"page": page})
 
-    @ttl_cache(POPULAR_DISCOVER_TTL_SECONDS)
+    @ttl_cache(POPULAR_DISCOVER_TTL_SECONDS, stale_seconds=LIST_STALE_SECONDS)
     def get_tv_recommendations(self, tmdb_id: int, page: int = 1) -> dict:
         """The TV half of `get_movie_recommendations` — same reasoning, and
         kept separate because TMDB keys movies and shows in different
         namespaces, so an id alone can't tell you which endpoint it wants."""
         return self._get(f"/tv/{tmdb_id}/recommendations", {"page": page})
 
-    @ttl_cache(POPULAR_DISCOVER_TTL_SECONDS)
+    @ttl_cache(POPULAR_DISCOVER_TTL_SECONDS, stale_seconds=LIST_STALE_SECONDS)
     def discover_by_genre(self, genre_id: int, region: str = "US", page: int = 1) -> dict:
         return self._get(
             "/discover/movie",
             {"with_genres": genre_id, "region": region, "page": page, "sort_by": "popularity.desc"},
         )
 
-    @ttl_cache(POPULAR_DISCOVER_TTL_SECONDS)
+    @ttl_cache(POPULAR_DISCOVER_TTL_SECONDS, stale_seconds=LIST_STALE_SECONDS)
     def get_now_playing(self, region: str = "US", page: int = 1) -> dict:
         return self._get("/movie/now_playing", {"region": region, "page": page})
 
-    @ttl_cache(POPULAR_DISCOVER_TTL_SECONDS)
+    @ttl_cache(POPULAR_DISCOVER_TTL_SECONDS, stale_seconds=LIST_STALE_SECONDS)
     def get_release_dates(self, tmdb_id: int) -> list[dict]:
         data = self._get(f"/movie/{tmdb_id}/release_dates")
         return data.get("results", [])
@@ -373,7 +390,7 @@ class TMDBClient:
         applied to the Trending row. `region` is unused, as there."""
         return self._digitally_released(self.get_trending(time_window=time_window, page=page))
 
-    @ttl_cache(POPULAR_DISCOVER_TTL_SECONDS)
+    @ttl_cache(POPULAR_DISCOVER_TTL_SECONDS, stale_seconds=LIST_STALE_SECONDS)
     def get_movie_watch_providers(self, tmdb_id: int) -> dict:
         data = self._get(f"/movie/{tmdb_id}/watch/providers")
         return data.get("results", {})
@@ -400,6 +417,7 @@ class TMDBClient:
             params["first_air_date_year"] = year
         return self._get("/search/tv", params)
 
+    @ttl_cache(DETAIL_TTL_SECONDS, max_entries=DETAIL_CACHE_ENTRIES)
     def get_tv(self, tmdb_id: int) -> dict:
         # content_ratings folds in the show's own per-country age ratings
         # (TV's equivalent of a movie's release_dates.certification) —
@@ -424,6 +442,7 @@ class TMDBClient:
         # get_tv already use for their own credits.
         return self._get(f"/person/{person_id}", {"append_to_response": "combined_credits"})
 
+    @ttl_cache(DETAIL_TTL_SECONDS, max_entries=DETAIL_CACHE_ENTRIES)
     def get_tv_season(self, tmdb_id: int, season_number: int) -> list[dict]:
         """Episode list (each carrying `episode_number`/`air_date`) for one
         season — the data `tv_resolve.py`'s show-checking logic diffs
@@ -431,11 +450,11 @@ class TMDBClient:
         data = self._get(f"/tv/{tmdb_id}/season/{season_number}")
         return data.get("episodes", [])
 
-    @ttl_cache(POPULAR_DISCOVER_TTL_SECONDS)
+    @ttl_cache(POPULAR_DISCOVER_TTL_SECONDS, stale_seconds=LIST_STALE_SECONDS)
     def get_tv_popular(self, page: int = 1) -> dict:
         return self._get("/tv/popular", {"page": page})
 
-    @ttl_cache(POPULAR_DISCOVER_TTL_SECONDS)
+    @ttl_cache(POPULAR_DISCOVER_TTL_SECONDS, stale_seconds=LIST_STALE_SECONDS)
     def get_tv_trending(self, time_window: str = "week", page: int = 1) -> dict:
         return self._get(f"/trending/tv/{time_window}", {"page": page})
 
@@ -446,7 +465,7 @@ class TMDBClient:
     #    existing curated provider list needs no changes, just a TV-shaped
     #    call for each. --
 
-    @ttl_cache(POPULAR_DISCOVER_TTL_SECONDS)
+    @ttl_cache(POPULAR_DISCOVER_TTL_SECONDS, stale_seconds=LIST_STALE_SECONDS)
     def discover_tv_by_provider(self, provider_id: int, region: str = "US", page: int = 1) -> dict:
         return self._get(
             "/discover/tv",
@@ -458,14 +477,14 @@ class TMDBClient:
             },
         )
 
-    @ttl_cache(POPULAR_DISCOVER_TTL_SECONDS)
+    @ttl_cache(POPULAR_DISCOVER_TTL_SECONDS, stale_seconds=LIST_STALE_SECONDS)
     def discover_tv_by_genre(self, genre_id: int, region: str = "US", page: int = 1) -> dict:
         return self._get(
             "/discover/tv",
             {"with_genres": genre_id, "region": region, "page": page, "sort_by": "popularity.desc"},
         )
 
-    @ttl_cache(POPULAR_DISCOVER_TTL_SECONDS)
+    @ttl_cache(POPULAR_DISCOVER_TTL_SECONDS, stale_seconds=LIST_STALE_SECONDS)
     def get_tv_watch_providers(self, tmdb_id: int) -> dict:
         data = self._get(f"/tv/{tmdb_id}/watch/providers")
         return data.get("results", {})
@@ -490,7 +509,7 @@ class TMDBClient:
     def get_available_tv_by_provider(self, provider_id: int, region: str = "US", page: int = 1) -> dict:
         return _aired_only(self.discover_tv_by_provider(provider_id, region=region, page=page))
 
-    @ttl_cache(POPULAR_DISCOVER_TTL_SECONDS)
+    @ttl_cache(POPULAR_DISCOVER_TTL_SECONDS, stale_seconds=LIST_STALE_SECONDS)
     def _discover_tv_upcoming(self, region: str = "US", page: int = 1) -> dict:
         # From tomorrow: a show premiering today already counts as aired
         # (is_tv_upcoming), and sorted soonest first, today's premieres
@@ -546,7 +565,7 @@ class TMDBClient:
         ]
         return {**now_playing, "results": filtered}
 
-    @ttl_cache(POPULAR_DISCOVER_TTL_SECONDS)
+    @ttl_cache(POPULAR_DISCOVER_TTL_SECONDS, stale_seconds=LIST_STALE_SECONDS)
     def get_digital_calendar(self, region: str = "US", days: int = 60, page: int = 1) -> dict:
         """Films whose digital or disc release lands in the next `days`,
         most popular first — "what is about to become gettable".
@@ -595,7 +614,7 @@ class TMDBClient:
     #    genre row's "See all" and the filter chips on the page it opens
     #    share one code path. Availability-filtered like the rows. --
 
-    @ttl_cache(POPULAR_DISCOVER_TTL_SECONDS)
+    @ttl_cache(POPULAR_DISCOVER_TTL_SECONDS, stale_seconds=LIST_STALE_SECONDS)
     def discover_movies(
         self,
         *,
@@ -632,7 +651,7 @@ class TMDBClient:
     def browse_movies(self, *, region: str = "US", **filters) -> dict:
         return self._digitally_released(self.discover_movies(region=region, **filters))
 
-    @ttl_cache(POPULAR_DISCOVER_TTL_SECONDS)
+    @ttl_cache(POPULAR_DISCOVER_TTL_SECONDS, stale_seconds=LIST_STALE_SECONDS)
     def discover_tv(
         self,
         *,
