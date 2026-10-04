@@ -1,4 +1,5 @@
 import { Link } from 'react-router-dom'
+import { usePrefetchTitle } from '../../lib/prefetch'
 import type { ReactNode } from 'react'
 import { posterUrl } from '../../lib/tmdbImage'
 import Img from '../ui/Img'
@@ -61,6 +62,10 @@ export default function PosterCard({
   // item with no TMDB id links straight out to Plex (see
   // RecentlyAddedRow), and that has to stay an anchor.
   const internal = to.startsWith('#/')
+  // Only a title page of this app's own is worth warming; a "See all" or
+  // a Plex link goes elsewhere.
+  const titleRoute = to.match(/^#\/(movies|tv)\/(\d+)$/)
+  const prefetch = usePrefetchTitle(titleRoute?.[1] === 'tv' ? 'tv' : 'movie', titleRoute ? Number(titleRoute[2]) : null)
   const meta = caption ? cardMeta(item, mediaType, mixed) : ''
   // <Link> rather than <a href="#/…"> for the app's own routes. Setting
   // location.hash by hand means the router never initiates the
@@ -87,7 +92,7 @@ export default function PosterCard({
     // to.slice(1) turns "#/movies/12" into the "/movies/12" the router
     // wants, so every caller can keep handing this component the hash
     // form it always has.
-    <Link className="poster-card" to={to.slice(1)}>
+    <Link className="poster-card" to={to.slice(1)} {...prefetch}>
       {body}
     </Link>
   ) : (

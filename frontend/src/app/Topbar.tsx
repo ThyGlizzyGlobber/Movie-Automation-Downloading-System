@@ -12,6 +12,7 @@ import { useTopbarHeight } from '../lib/chrome'
 import { SECTIONS } from './sections'
 import './Topbar.css'
 import Icon from '../components/ui/Icon'
+import { forgetPersistedQueries } from '../lib/queryPersistence'
 
 const isMac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform)
 
@@ -102,6 +103,7 @@ function AccountMenu({ session, initials, settingsActive }: { session: SessionIn
     try {
       await logout()
     } finally {
+      forgetPersistedQueries(queryClient)
       queryClient.invalidateQueries({ queryKey: ['session'] })
     }
   }

@@ -6,6 +6,7 @@ import { logout } from '../../api/auth'
 import { usePageTitle } from '../../lib/chrome'
 import './AccountPage.css'
 import Avatar from '../../components/ui/Avatar'
+import { forgetPersistedQueries } from '../../lib/queryPersistence'
 
 // Deliberately small — this app has almost no per-user preferences to
 // hold (dark-only theme, no notifications system, the request queue is
@@ -24,6 +25,7 @@ export default function AccountPage() {
     try {
       await logout()
     } finally {
+      forgetPersistedQueries(queryClient)
       queryClient.invalidateQueries({ queryKey: ['session'] })
     }
   }

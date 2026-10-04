@@ -4,6 +4,11 @@ import react from '@vitejs/plugin-react'
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [react()],
+  define: {
+    // Different on every build, so data the browser saved under an older
+    // one is never read back (lib/queryPersistence.ts).
+    __BUILD_ID__: JSON.stringify(Date.now().toString(36)),
+  },
   server: {
     proxy: {
       '/api': 'http://127.0.0.1:8000',

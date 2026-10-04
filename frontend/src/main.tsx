@@ -1,6 +1,7 @@
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { QueryClient } from '@tanstack/react-query'
+import { PersistQueryClientProvider } from '@tanstack/react-query-persist-client'
 // Self-hosted, see tokens.css. Mono is only Settings' paths and hosts, so
 // just the two weights it uses.
 import '@fontsource-variable/outfit'
@@ -11,12 +12,14 @@ import './styles/global.css'
 import App from './App.tsx'
 import { getHeroSlides } from './api/hero'
 import { getRecommendations } from './api/recommendations'
+import { persistOptions } from './lib/queryPersistence'
 
 // Most of what the app shows (TMDB lists, details, settings) changes on
 // the order of hours, and every write invalidates what it touched. The
 // default staleTime of 0 refetched all of it on every mount and every
 // return to the tab. Anything live polls on its own interval.
 const queryClient = new QueryClient({ defaultOptions: { queries: { staleTime: 5 * 60_000 } } })
+const persisted = persistOptions(queryClient)
 
 // Opening on Home, its two slowest asks — the hero, whose poster is the
 // first thing anyone sees, and the dealt rows — start now, alongside the
@@ -45,8 +48,8 @@ if ('serviceWorker' in navigator) {
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <QueryClientProvider client={queryClient}>
+    <PersistQueryClientProvider client={queryClient} persistOptions={persisted}>
       <App />
-    </QueryClientProvider>
+    </PersistQueryClientProvider>
   </StrictMode>,
 )
