@@ -14,7 +14,11 @@ const LoginPage = lazy(() => import('./features/auth/LoginPage'))
 function App() {
   const setupStatus = useSetupStatus()
   const setupComplete = setupStatus.data?.setup_complete === true
-  const session = useSession(setupComplete)
+  // Asked alongside the setup check, not after it: waiting cost every
+  // visit a round trip for the sake of the one before setup, when the
+  // answer is simply a 401 (no session can exist yet) and PlexLinkStep
+  // asks again once it has signed the admin in.
+  const session = useSession()
 
   if (setupStatus.isLoading) return <BootSkeleton />
   if (setupStatus.isError) {

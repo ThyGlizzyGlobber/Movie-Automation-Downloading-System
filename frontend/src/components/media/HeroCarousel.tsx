@@ -91,18 +91,23 @@ const HERO_SKELETON_DOTS = 5
 // black, and a title with bright key art — measured: The Scandal's
 // backdrop is mean luma 142/255 against Reacher's 10 — reads far darker
 // here than on its own content page, where that layer lifts the ground
-// by around a fifth before the blobs contribute anything. The pane has
-// already loaded this exact URL, so it costs no fetch.
-function HeroGlow({ items, activeIndex }: { items: HeroSlide[]; activeIndex: number }) {
-  const backdrops = items.map((item) => backdropUrl(item.backdrop_path))
+// by around a fifth before the blobs contribute anything. Above a phone
+// the pane has already loaded this exact URL, so it costs no fetch.
+//
+// A phone's pane shows the poster instead, so nothing there has loaded a
+// backdrop, and at w1280 this layer alone was five 240-390KB downloads
+// competing with the first poster. Blurred by 40px at a fifth of its
+// strength, w300 (18-30KB each) is indistinguishable.
+function HeroGlow({ items, activeIndex, small = false }: { items: HeroSlide[]; activeIndex: number; small?: boolean }) {
+  const backdrops = items.map((item) => (small ? backdropUrl(item.backdrop_path, 'w300') : backdropUrl(item.backdrop_path)))
   return (
     <div className="home-hero-glow" aria-hidden="true">
       <AmbientGlow posterPath={items[activeIndex]?.poster_path} />
       {backdrops.some(Boolean) && (
         /* Every slide's backdrop, stacked, so the ground can crossfade
-           with the artwork instead of stepping under it. They are the
-           URLs the slides themselves load, and every slide sits in the
-           viewport, so the browser has all of these already. */
+           with the artwork instead of stepping under it. Above a phone
+           they are the URLs the slides themselves load, and every slide
+           sits in the viewport, so the browser has these already. */
         <div className="home-hero-glow-bd">
           {items.map((item, i) =>
             backdrops[i] ? <img key={item.id} className={i === activeIndex ? 'active' : undefined} src={backdrops[i]} alt="" /> : null,
@@ -558,7 +563,7 @@ export default function HeroCarousel({ items, loading = false }: { items: HeroSl
           strength while a trailer plays — it is the page's ground now,
           not a layer inside the pane, and dimming it pulsed the whole
           page dark every time a trailer started. */}
-      <HeroGlow items={items} activeIndex={activeIndex} />
+      <HeroGlow items={items} activeIndex={activeIndex} small={isPhone} />
       <div
         className="home-hero"
         ref={heroRef}
@@ -590,6 +595,10 @@ export default function HeroCarousel({ items, loading = false }: { items: HeroSl
                   src={isPhone ? posterUrl(item.poster_path) : backdropUrl(item.backdrop_path)}
                   alt=""
                   loading={i === 0 ? 'eager' : 'lazy'}
+                  // Every slide is stacked in the viewport, so `lazy`
+                  // defers none of them; this is what puts the one
+                  // showing ahead of the other four.
+                  fetchPriority={i === 0 ? 'high' : 'low'}
                 />
                 {/* Only the active slide has a <video> at all, not
                     merely a quiet one. Each element takes a decoder, and
@@ -670,7 +679,7 @@ export default function HeroCarousel({ items, loading = false }: { items: HeroSl
                       otherwise; the h1 keeps the name for screen readers
                       either way. */}
                   <h1 className={info?.logo ? 'has-logo' : undefined}>
-                    {info?.logo ? <img className="hero-logo" src={info.logo} alt={title} /> : title}
+                    {info?.logo ? <img className="hero-logo" src={info.logo} alt={title} fetchPriority={i === 0 ? 'high' : 'low'} /> : title}
                   </h1>
                   <div className="hero-line">
                     <Icon name={info?.badge ? 'megaphone' : 'chart'} />
