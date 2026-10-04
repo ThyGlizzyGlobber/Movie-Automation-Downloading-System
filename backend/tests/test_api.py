@@ -1147,6 +1147,8 @@ def test_get_movie_detail_returns_full_movie(client_and_deps):
         is_coming_soon=False,
         on_plex_tracked=False,
         logo_path=None,
+        # A film standing alone has no franchise row.
+        collection=None,
         # Nothing filed for this movie, so the "On disk" tiles have
         # nothing to render.
         library={"files": 0, "total_bytes": 0, "added_at": None, "releases": []},
