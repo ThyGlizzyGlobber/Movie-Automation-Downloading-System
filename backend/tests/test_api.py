@@ -4030,6 +4030,36 @@ def test_session_reports_avatar_and_proxy_404s_without_one(client_and_deps):
     assert client.get("/api/me/avatar").status_code == 404
 
 
+def test_avatar_revalidates_with_an_etag_and_asks_plex_once_a_minute(client_and_deps, monkeypatch):
+    """The page used to ask for a new URL every minute, re-downloading a
+    picture that can run to ~700KB on every app open. Now one URL, a 304
+    while it is unchanged, and plex.tv asked at most once per TTL."""
+    from app.api import household
+
+    client, store, _, _, _, _ = client_and_deps
+    store.upsert_user("admin-plex-id", "admin", True, "https://plex.tv/users/abc/avatar")
+    household._avatar_cache.clear()
+    fetched = []
+
+    class Upstream:
+        ok = True
+        content = b"picture-bytes"
+        headers = {"Content-Type": "image/png"}
+
+    monkeypatch.setattr(household._http_requests, "get", lambda url, timeout: fetched.append(url) or Upstream())
+
+    first = client.get("/api/me/avatar")
+    assert first.status_code == 200
+    assert first.content == b"picture-bytes"
+    assert first.headers["cache-control"] == "private, no-cache"
+    etag = first.headers["etag"]
+
+    again = client.get("/api/me/avatar", headers={"If-None-Match": etag})
+    assert again.status_code == 304
+    assert again.content == b""
+    assert fetched == ["https://plex.tv/users/abc/avatar"]
+
+
 def test_upsert_user_keeps_an_avatar_when_login_brings_none(tmp_path):
     from app.db import RequestStore
 
