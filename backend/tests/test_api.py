@@ -3583,6 +3583,23 @@ def test_catalogue_rows_say_where_see_all_goes(client_and_deps):
     assert rows["provider:8"]["qualifier"] == "on Netflix"
 
 
+def _asked_in(params: dict, language: str) -> bool:
+    """A named row was asked in `language`, or it is one of the rows that
+    names its own language and was rightly left alone.
+
+    The second half is what these tests were missing. Named rows are
+    dealt by a date-seeded draw, and "Worth Reading the Subtitles" keeps
+    its Korean by design — so asserting every row came back in the
+    household's language passed on the day it was written and failed on
+    any day the draw included that row, which on 2026-10-04 it did.
+    Behaviour was correct throughout; the test was not."""
+    from app import moods
+
+    if params.get("with_original_language") == language:
+        return True
+    return any(m.params == params for m in moods.CATALOGUE if "with_original_language" in m.params)
+
+
 def test_named_rows_are_asked_for_in_the_households_language(client_and_deps):
     """Measured 2026-09-26, the 45 named rows came back 66% English —
     "Animated, and Not for the Kids" was 20%, and several were majority
@@ -3599,7 +3616,7 @@ def test_named_rows_are_asked_for_in_the_households_language(client_and_deps):
 
     assert client.get("/api/recommendations").status_code == 200
     assert asked, "no named row was built, so this test proves nothing"
-    assert all(p.get("with_original_language") == "en" for p in asked)
+    assert all(_asked_in(p, "en") for p in asked)
 
 
 def test_a_french_household_gets_french_named_rows(client_and_deps):
@@ -3613,7 +3630,7 @@ def test_a_french_household_gets_french_named_rows(client_and_deps):
     store.update_settings({"certification_region": "FR"})
 
     assert client.get("/api/recommendations").status_code == 200
-    assert asked and all(p.get("with_original_language") == "fr" for p in asked)
+    assert asked and all(_asked_in(p, "fr") for p in asked)
 
 
 def test_recommendations_need_a_session(client_and_deps):
