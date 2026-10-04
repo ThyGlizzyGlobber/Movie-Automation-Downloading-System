@@ -2,6 +2,7 @@
 cached for them."""
 
 import re
+from datetime import datetime, timezone
 
 from fastapi import Depends, HTTPException
 from fastapi.responses import FileResponse, Response as RawResponse
@@ -141,9 +142,15 @@ def _collection_for(movie: dict, tmdb: TMDBClient, store: RequestStore) -> dict 
     None when it stands alone.
 
     Release order rather than TMDB's own, which is whatever order parts
-    were added in. A part with no date yet (an announced sequel) goes
-    last, where it would land. The film itself is left out: the row is
-    "what else is there", and the page is already this one.
+    were added in. The film itself is left out: the row is "what else is
+    there", and the page is already this one.
+
+    Only films that exist, or plainly will. TMDB lists a sequel the day
+    it is rumoured — "Untitled National Treasure 3", no date, years on —
+    and a row that offers it reads as a promise. A part is kept once it
+    is out, or when it has a date and a trailer: a studio cutting a
+    trailer is the point a sequel is really coming. A part with a date
+    alone stays out, since dates on unmade sequels are placeholders.
 
     Never fails the page: a collection that can't be fetched is a page
     without the row, the same as a film without a franchise."""
@@ -154,15 +161,33 @@ def _collection_for(movie: dict, tmdb: TMDBClient, store: RequestStore) -> dict 
         collection = tmdb.get_collection(int(belongs["id"]))
     except TMDBError:
         return None
-    parts = [p for p in collection.get("parts") or [] if p.get("id") != movie.get("id")]
+    today = datetime.now(timezone.utc).date().isoformat()
+    parts = [
+        p
+        for p in collection.get("parts") or []
+        if p.get("id") != movie.get("id") and _part_is_real(p, today, tmdb)
+    ]
     if not parts:
         return None
-    parts.sort(key=lambda p: (not p.get("release_date"), p.get("release_date") or ""))
+    parts.sort(key=lambda p: p.get("release_date") or "")
     return {
         "id": belongs["id"],
         "name": collection.get("name") or belongs.get("name") or "",
         "parts": _annotate_on_plex(parts, "movie", store, title_key="title", date_key="release_date"),
     }
+
+
+def _part_is_real(part: dict, today: str, tmdb: TMDBClient) -> bool:
+    """See _collection_for: out already, or dated with a trailer."""
+    released = part.get("release_date") or ""
+    if not released:
+        return False
+    if released <= today:
+        return True
+    try:
+        return bool(trailer_candidates(tmdb.get_movie_videos(int(part["id"]))))
+    except (TMDBError, KeyError, TypeError, ValueError):
+        return False
 
 
 def _recommendations_on_plex(detail: dict, media_type: str, store: RequestStore, *, title_key: str, date_key: str) -> dict:

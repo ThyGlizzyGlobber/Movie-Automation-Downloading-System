@@ -289,8 +289,11 @@ export default function MovieDetailPage() {
       <div className="detail-rows">
         {movie.collection && (
           <MediaRow
-            title={movie.collection.name.replace(/\s+collection$/i, '')}
-            qualifier="collection"
+            // TMDB's own name, as written: "National Treasure Collection"
+            // is a title, so its capital stays. The heading's muted half
+            // is the word "Collection" when the name ends in it.
+            title={movie.collection.name.replace(/\s+Collection$/i, '') || movie.collection.name}
+            qualifier={/\sCollection$/i.test(movie.collection.name) ? 'Collection' : undefined}
             items={movie.collection.parts}
             mediaType="movie"
           />

@@ -1271,7 +1271,8 @@ DUNE_COLLECTION = {
     "name": "Dune Collection",
     "parts": [
         # TMDB's own order is whenever a part was added, not release order.
-        {"id": 1170608, "title": "Dune: Part Three", "release_date": ""},
+        {"id": 1170608, "title": "Dune: Part Three", "release_date": "2099-12-18"},
+        {"id": 9999999, "title": "Untitled Dune Sequel", "release_date": ""},
         {"id": 693134, "title": "Dune: Part Two", "release_date": "2024-03-01"},
         {"id": 438631, "title": "Dune", "release_date": "2021-09-15"},
     ],
@@ -1285,11 +1286,16 @@ def _in_a_collection(tmdb, monkeypatch, recs=()):
         recommendations={"page": 1, "results": list(recs)},
     )
     monkeypatch.setattr(tmdb, "get_collection", lambda collection_id: DUNE_COLLECTION, raising=False)
+    # Part Three has a trailer out; nothing else is asked about.
+    trailer = [{"site": "YouTube", "type": "Trailer", "key": "abc", "official": True, "name": "Trailer"}]
+    monkeypatch.setattr(
+        tmdb, "get_movie_videos", lambda tmdb_id: trailer if tmdb_id == 1170608 else [], raising=False
+    )
 
 
 def test_a_film_in_a_franchise_carries_the_rest_of_it_in_release_order(client_and_deps, monkeypatch):
-    """The franchise row: every other film, oldest first, an announced
-    part with no date yet last — and never the film the page is for."""
+    """The franchise row: every other film, oldest first, a dated sequel
+    with a trailer included — and never the film the page is for."""
     client, _, tmdb, _, _, _ = client_and_deps
     _in_a_collection(tmdb, monkeypatch)
 
@@ -1298,6 +1304,18 @@ def test_a_film_in_a_franchise_carries_the_rest_of_it_in_release_order(client_an
     assert collection["name"] == "Dune Collection"
     assert [p["title"] for p in collection["parts"]] == ["Dune", "Dune: Part Three"]
     assert all("on_plex" in p for p in collection["parts"])
+
+
+def test_a_rumoured_sequel_is_left_out_of_the_franchise_row(client_and_deps, monkeypatch):
+    """Untitled National Treasure 3: on TMDB, with no date, for years.
+    Nor does a date alone get a part in — only a date and a trailer."""
+    client, _, tmdb, _, _, _ = client_and_deps
+    _in_a_collection(tmdb, monkeypatch)
+    monkeypatch.setattr(tmdb, "get_movie_videos", lambda tmdb_id: [], raising=False)
+
+    collection = client.get("/api/movies/693134").json()["collection"]
+
+    assert [p["title"] for p in collection["parts"]] == ["Dune"]
 
 
 def test_a_franchise_film_is_not_repeated_under_more_like_this(client_and_deps, monkeypatch):
