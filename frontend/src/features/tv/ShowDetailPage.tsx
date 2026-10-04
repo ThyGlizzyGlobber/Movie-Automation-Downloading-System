@@ -205,7 +205,8 @@ export default function ShowDetailPage() {
   }
   if (year) pills.push({ text: year })
   if (certification) pills.push({ text: certification })
-  if (limited) pills.push({ text: show.number_of_episodes ? `Limited series | ${show.number_of_episodes} episodes` : 'Limited series' })
+  // The episode count already has its own tile in the side column.
+  if (limited) pills.push({ text: 'Limited series' })
   else if (seasons.length) pills.push({ text: `${seasons.length} season${seasons.length === 1 ? '' : 's'}` })
   if (genres.length) pills.push({ text: genreLinks(genres, 'tv'), mute: true })
 
