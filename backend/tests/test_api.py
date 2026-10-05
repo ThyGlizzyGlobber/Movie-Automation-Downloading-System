@@ -1441,7 +1441,8 @@ def unmeasured_trailers(monkeypatch):
     the best type guess, which is the single key these tests set up.
     Their subject is the URL the endpoint builds, not which clip wins —
     that is test_trailers.py's."""
-    monkeypatch.setattr(trailers, "probe_duration", lambda key: None)
+    monkeypatch.setattr(trailers, "probe_clip", lambda key: (None, False))
+    monkeypatch.setattr(trailers, "is_portrait_file", lambda path: False)
 
 
 class _InlinePool:

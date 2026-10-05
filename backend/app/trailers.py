@@ -11,6 +11,7 @@ sandbox.
 import concurrent.futures
 import logging
 import os
+import subprocess
 import threading
 from pathlib import Path
 
@@ -117,18 +118,47 @@ def enforce_cache_retention() -> None:
         f.unlink(missing_ok=True)
 
 
-def probe_duration(key: str) -> int | None:
-    """The clip's length in seconds, without downloading it. None if
-    YouTube won't say (age gate, region block, removed video), which the
-    caller treats as "unmeasurable" rather than as zero."""
+# Keys found to be vertical clips, by measurement or after downloading one.
+# Studios file 9:16 social cuts on TMDB as Trailers and Teasers (Runner and
+# Lanterns, 2026: 480x854). The hero and the content page fill a landscape
+# frame by cropping, so one plays as a sliver of its middle, enormously
+# zoomed. Remembered so a title isn't measured into the same clip again.
+_portrait_keys: set[str] = set()
+
+
+def probe_clip(key: str) -> tuple[int | None, bool]:
+    """The clip's length in seconds and whether it is vertical, without
+    downloading it. Length None if YouTube won't say (age gate, region
+    block, removed video), which the caller treats as "unmeasurable"
+    rather than as zero."""
     try:
         with yt_dlp.YoutubeDL({"quiet": True, "no_warnings": True, "skip_download": True}) as ydl:
             info = ydl.extract_info(f"https://www.youtube.com/watch?v={key}", download=False)
     except Exception:
-        logger.info("trailer duration probe failed for key=%s", key)
-        return None
-    duration = (info or {}).get("duration")
-    return int(duration) if duration else None
+        logger.info("trailer probe failed for key=%s", key)
+        return None, False
+    info = info or {}
+    width, height = info.get("width"), info.get("height")
+    portrait = bool(width and height and height > width)
+    duration = info.get("duration")
+    return (int(duration) if duration else None), portrait
+
+
+def is_portrait_file(path: Path) -> bool:
+    """Whether a downloaded clip is taller than it is wide, per ffprobe
+    (installed with ffmpeg). False when it can't tell — a clip is only
+    ever thrown out on evidence."""
+    try:
+        result = subprocess.run(
+            ["ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries", "stream=width,height", "-of", "csv=p=0", str(path)],
+            capture_output=True,
+            text=True,
+            timeout=15,
+        )
+        width, height = (int(n) for n in result.stdout.strip().splitlines()[0].split(",")[:2])
+    except (OSError, subprocess.TimeoutExpired, ValueError, IndexError):
+        return False
+    return height > width
 
 
 def pick_shortest_suitable(candidates: list[dict]) -> str | None:
@@ -149,13 +179,24 @@ def pick_shortest_suitable(candidates: list[dict]) -> str | None:
     the hero used before any of this."""
     if not candidates:
         return None
-    shortlist = candidates[: config.TRAILER_PROBE_LIMIT]
+    shortlist = [v for v in candidates if v["key"] not in _portrait_keys][: config.TRAILER_PROBE_LIMIT]
+    if not shortlist:
+        return None
     with concurrent.futures.ThreadPoolExecutor(max_workers=len(shortlist)) as pool:
-        durations = list(pool.map(lambda v: probe_duration(v["key"]), shortlist))
+        probes = list(pool.map(lambda v: probe_clip(v["key"]), shortlist))
 
-    measured = [(d, v["key"]) for v, d in zip(shortlist, durations) if d]
+    # A vertical clip is never picked: no trailer, and the poster stays,
+    # beats one played as a zoomed sliver.
+    for v, (_, portrait) in zip(shortlist, probes):
+        if portrait:
+            _portrait_keys.add(v["key"])
+    landscape = [(v, d) for v, (d, portrait) in zip(shortlist, probes) if not portrait]
+    if not landscape:
+        logger.info("trailer pick: every candidate is vertical (%s)", ", ".join(v["key"] for v in shortlist))
+        return None
+    measured = [(d, v["key"]) for v, d in landscape if d]
     if not measured:
-        return shortlist[0]["key"]
+        return landscape[0][0]["key"]
     long_enough = [m for m in measured if m[0] >= config.TRAILER_MIN_SECONDS]
     chosen = min(long_enough)[1] if long_enough else max(measured)[1]
     logger.info(
@@ -166,12 +207,28 @@ def pick_shortest_suitable(candidates: list[dict]) -> str | None:
     return chosen
 
 
+# Files already checked for being vertical, so each is ffprobed once.
+_checked_files: set[str] = set()
+
+
 def cached_clip(media_type: str, tmdb_id: int, candidates: list[dict]) -> Path | None:
-    """Whichever of this title's candidates is already on disk, if any."""
+    """Whichever of this title's candidates is already on disk, if any.
+
+    A vertical one found there — downloaded before vertical clips were
+    turned away — is deleted instead, so the title gets a landscape clip
+    on its next pick (or none, and keeps its poster)."""
     for video in candidates:
         cached = cached_trailer_path(media_type, tmdb_id, video["key"])
-        if cached.exists():
-            return _mark_used(cached)
+        if not cached.exists():
+            continue
+        if cached.name not in _checked_files:
+            if is_portrait_file(cached):
+                logger.info("discarding vertical trailer %s", cached.name)
+                _portrait_keys.add(video["key"])
+                cached.unlink(missing_ok=True)
+                continue
+            _checked_files.add(cached.name)
+        return _mark_used(cached)
     return None
 
 
@@ -189,7 +246,16 @@ def resolve(media_type: str, tmdb_id: int, candidates: list[dict]) -> Path | Non
     key = pick_shortest_suitable(candidates)
     if key is None:
         return None
-    return ensure_downloaded(media_type, tmdb_id, key)
+    path = ensure_downloaded(media_type, tmdb_id, key)
+    # When the probe couldn't say, the file can.
+    if path is not None and is_portrait_file(path):
+        logger.info("downloaded trailer %s is vertical; discarding it", path.name)
+        _portrait_keys.add(key)
+        path.unlink(missing_ok=True)
+        return resolve(media_type, tmdb_id, candidates)
+    if path is not None:
+        _checked_files.add(path.name)
+    return path
 
 
 # Downloads happen here rather than inside the request that asked. Measuring

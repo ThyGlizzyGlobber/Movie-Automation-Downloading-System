@@ -14,6 +14,11 @@ from app import config, trailers
 def _cache_dir(tmp_path, monkeypatch):
     monkeypatch.setattr(config, "TRAILER_CACHE_DIR", tmp_path / "trailers")
     monkeypatch.setattr(config, "TRAILER_CACHE_MAX_FILES", 20)
+    trailers._portrait_keys.clear()
+    trailers._checked_files.clear()
+    # Test files are stand-in bytes, not video; a real ffprobe would only
+    # fail on them. Tests about shape set this themselves.
+    monkeypatch.setattr(trailers, "is_portrait_file", lambda path: False)
     return tmp_path / "trailers"
 
 
@@ -211,8 +216,8 @@ def _videos(*keys):
     return [{"key": k, "site": "YouTube", "type": "Trailer"} for k in keys]
 
 
-def _durations(monkeypatch, by_key):
-    monkeypatch.setattr(trailers, "probe_duration", lambda key: by_key.get(key))
+def _durations(monkeypatch, by_key, portrait=()):
+    monkeypatch.setattr(trailers, "probe_clip", lambda key: (by_key.get(key), key in portrait))
 
 
 def test_pick_shortest_suitable_takes_the_shortest_above_the_floor(monkeypatch):
@@ -255,9 +260,9 @@ def test_pick_shortest_suitable_measures_at_most_the_probe_limit(monkeypatch):
 
     def probe(key):
         probed.append(key)
-        return 60
+        return 60, False
 
-    monkeypatch.setattr(trailers, "probe_duration", probe)
+    monkeypatch.setattr(trailers, "probe_clip", probe)
     trailers.pick_shortest_suitable(_videos("a", "b", "c", "d"))
     assert probed == ["a", "b"]
 
@@ -272,7 +277,7 @@ def test_resolve_uses_a_cached_clip_without_measuring_anything(_cache_dir, monke
     among the candidates rather than measuring them all again."""
     _cache_dir.mkdir(parents=True, exist_ok=True)
     (_cache_dir / "movie-42-mid.mp4").write_bytes(b"cached")
-    monkeypatch.setattr(trailers, "probe_duration", lambda key: pytest.fail("probed a title already on disk"))
+    monkeypatch.setattr(trailers, "probe_clip", lambda key: pytest.fail("probed a title already on disk"))
 
     path = trailers.resolve("movie", 42, _videos("long", "mid"))
 
@@ -292,3 +297,52 @@ def test_resolve_downloads_the_measured_pick(_cache_dir, monkeypatch):
 
 def test_resolve_returns_none_without_candidates(_cache_dir):
     assert trailers.resolve("movie", 42, []) is None
+
+
+# ---------------------------------------------------------------------------
+# Vertical clips. Runner and Lanterns (2026) had 480x854 social cuts filed
+# as their trailers, which the landscape hero and content page could only
+# show as a hugely zoomed sliver.
+# ---------------------------------------------------------------------------
+
+
+def test_a_vertical_clip_is_never_picked(monkeypatch):
+    monkeypatch.setattr(config, "TRAILER_MIN_SECONDS", 45)
+    _durations(monkeypatch, {"short-vertical": 48, "landscape": 120}, portrait={"short-vertical"})
+    assert trailers.pick_shortest_suitable(_videos("short-vertical", "landscape")) == "landscape"
+
+
+def test_a_title_with_only_vertical_clips_gets_no_trailer(monkeypatch):
+    _durations(monkeypatch, {"a": 48, "b": 85}, portrait={"a", "b"})
+    assert trailers.pick_shortest_suitable(_videos("a", "b")) is None
+
+
+def test_a_vertical_clip_already_on_disk_is_discarded_for_a_landscape_one(_cache_dir, monkeypatch):
+    _cache_dir.mkdir(parents=True, exist_ok=True)
+    vertical = _cache_dir / "movie-42-tall.mp4"
+    vertical.write_bytes(b"cached")
+    monkeypatch.setattr(trailers, "is_portrait_file", lambda path: path.name == "movie-42-tall.mp4")
+    monkeypatch.setattr(config, "TRAILER_MIN_SECONDS", 45)
+    _durations(monkeypatch, {"tall": 48, "wide": 120})
+    monkeypatch.setattr(trailers, "ensure_downloaded", lambda mt, tid, key: _cache_dir / f"{mt}-{tid}-{key}.mp4")
+
+    assert trailers.cached_clip("movie", 42, _videos("tall", "wide")) is None
+    assert not vertical.exists()
+    assert trailers.resolve("movie", 42, _videos("tall", "wide")) == _cache_dir / "movie-42-wide.mp4"
+
+
+def test_a_download_that_turns_out_vertical_is_thrown_away_and_the_next_tried(_cache_dir, monkeypatch):
+    """When YouTube didn't say how big a clip is, the file does."""
+    _cache_dir.mkdir(parents=True, exist_ok=True)
+    _durations(monkeypatch, {})
+    monkeypatch.setattr(trailers, "is_portrait_file", lambda path: path.name.endswith("-first.mp4"))
+
+    def download(mt, tid, key):
+        path = _cache_dir / f"{mt}-{tid}-{key}.mp4"
+        path.write_bytes(b"clip")
+        return path
+
+    monkeypatch.setattr(trailers, "ensure_downloaded", download)
+
+    assert trailers.resolve("movie", 42, _videos("first", "second")) == _cache_dir / "movie-42-second.mp4"
+    assert not (_cache_dir / "movie-42-first.mp4").exists()
