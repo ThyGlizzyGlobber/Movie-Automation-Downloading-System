@@ -4074,6 +4074,19 @@ def test_best_logo_prefers_english_png_with_votes():
     assert best_logo_path({"logos": logos}) == "/en-top.png"
 
 
+def test_best_logo_ranks_rating_over_vote_count():
+    """Pacific Rim's real numbers: the wrong title's logo, voted down on
+    more votes than the right one has."""
+    from app.tmdb import best_logo_path
+
+    logos = [
+        {"iso_639_1": "en", "file_path": "/ready-player-one.png", "vote_count": 5, "vote_average": 0.5},
+        {"iso_639_1": "en", "file_path": "/pacific-rim.png", "vote_count": 1, "vote_average": 3.334},
+        {"iso_639_1": "en", "file_path": "/unvoted.png", "vote_count": 0, "vote_average": 0.0},
+    ]
+    assert best_logo_path({"logos": logos}) == "/pacific-rim.png"
+
+
 def test_movie_and_tv_detail_carry_a_logo_path(client_and_deps):
     client, _, _, _, _, _ = client_and_deps
     assert "logo_path" in client.get("/api/movies/1").json()

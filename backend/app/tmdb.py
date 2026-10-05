@@ -184,8 +184,9 @@ BROWSE_SORTS_TV = {"popular": "popularity.desc", "newest": "first_air_date.desc"
 
 def best_logo_path(images: dict | None) -> str | None:
     """The one title logo worth showing: English over language-less,
-    PNG over SVG (the browser gets a plain <img>), then the most-voted.
-    None when TMDB has no logo for the title."""
+    PNG over SVG (the browser gets a plain <img>), then the best-rated,
+    as TMDB's own "rating" sort orders them. None when TMDB has no logo
+    for the title."""
     logos = (images or {}).get("logos") or []
     if not logos:
         return None
@@ -196,8 +197,12 @@ def best_logo_path(images: dict | None) -> str | None:
         return (
             0 if lang == "en" else 1 if lang in (None, "") else 2,
             0 if path.lower().endswith(".png") else 1,
-            -(logo.get("vote_count") or 0),
+            # Rating before vote count: a vote can be a thumbs-down. Pacific
+            # Rim (68726) carries Ready Player One's logo, voted down to 0.5
+            # on five votes, and counting votes first put it over the real
+            # one at 3.3 on one.
             -(logo.get("vote_average") or 0),
+            -(logo.get("vote_count") or 0),
         )
 
     best = sorted(logos, key=rank)[0]
