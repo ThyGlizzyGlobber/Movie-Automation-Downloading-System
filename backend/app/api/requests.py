@@ -13,7 +13,17 @@ from app.resolve import resolve
 from app.tv_resolve import resolve_show
 from app.tmdb import TMDBClient, TMDBError
 from app.worker import Worker
-from app.api.deps import get_qbt, get_store, get_tmdb, get_worker, logger, require_can_request, router
+from app.api.deps import (
+    can_clear_requests,
+    get_qbt,
+    get_store,
+    get_tmdb,
+    get_worker,
+    logger,
+    require_can_request,
+    require_session,
+    router,
+)
 from app.api.schemas import RequestOut
 
 
@@ -90,10 +100,13 @@ def get_request(request_id: int, store: RequestStore = Depends(get_store)) -> Re
 
 
 @router.post("/api/requests/clear")
-def clear_requests(store: RequestStore = Depends(get_store)) -> dict:
+def clear_requests(store: RequestStore = Depends(get_store), session: SessionRow = Depends(require_session)) -> dict:
     """"Clear My Requests": wipes settled history (reuses the same
     active-job-safe query the automatic retention cleanup runs, with
-    days=0 so age never excludes anything terminal)."""
+    days=0 so age never excludes anything terminal). Admins only, when
+    Settings › History says so."""
+    if not can_clear_requests(store, session):
+        raise HTTPException(status_code=403, detail="only an admin can clear requests")
     return {"removed": store.purge_requests_older_than(days=0)}
 
 

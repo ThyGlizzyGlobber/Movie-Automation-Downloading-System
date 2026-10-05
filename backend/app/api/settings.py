@@ -82,6 +82,23 @@ def set_retention(body: RetentionSettings, store: RequestStore = Depends(get_sto
     return {"days": body.days}
 
 
+class RequestClearingSettings(BaseModel):
+    admin_only: bool = False
+
+
+# Whether "Clear finished" on the Requests page is the admin's alone. It
+# rides down to everyone else as the session's can_clear_requests.
+@admin_router.get("/api/settings/request-clearing")
+def get_request_clearing(store: RequestStore = Depends(get_store)) -> dict:
+    return {"admin_only": bool(store.get_settings().get("admin_only_clear_requests"))}
+
+
+@admin_router.put("/api/settings/request-clearing")
+def set_request_clearing(body: RequestClearingSettings, store: RequestStore = Depends(get_store)) -> dict:
+    store.update_settings({"admin_only_clear_requests": body.admin_only})
+    return {"admin_only": body.admin_only}
+
+
 # -- Stage 7: the pipeline preferences a household is actually likely to
 #    want to tune (resolution floor, size range, language lists, category)
 #    — see pipeline_settings.py for why the deeper scoring weights aren't

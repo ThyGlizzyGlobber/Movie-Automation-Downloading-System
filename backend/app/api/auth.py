@@ -17,6 +17,7 @@ from app.api.deps import (
     _cookie_secure,
     _new_session_expiry,
     _set_session_cookie,
+    can_clear_requests,
     get_login_session,
     get_store,
     limiter,
@@ -159,6 +160,8 @@ def get_current_session(store: RequestStore = Depends(get_store), session: Sessi
         # client makes — a second boot request for one string would be a
         # round trip in front of the first thing anyone sees.
         "certification_region": store.get_settings().get("certification_region") or DEFAULT_CERTIFICATION_REGION,
+        # Whether the Requests page shows "Clear finished" (Settings › History).
+        "can_clear_requests": can_clear_requests(store, session),
     }
 
 

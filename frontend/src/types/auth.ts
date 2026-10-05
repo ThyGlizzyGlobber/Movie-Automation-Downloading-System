@@ -8,6 +8,9 @@ export interface SessionInfo {
   avatar?: boolean
   // Household-wide: which country's age ratings the UI shows.
   certification_region?: string
+  // Whether the Requests page offers "Clear finished" (Settings › History
+  // can keep it to admins).
+  can_clear_requests?: boolean
 }
 
 export interface LoginStartResponse {

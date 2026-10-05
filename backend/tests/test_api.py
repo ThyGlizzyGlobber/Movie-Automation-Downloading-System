@@ -722,6 +722,33 @@ def test_clear_requests_removes_terminal_rows_only(client_and_deps):
     assert store.get_request(active["id"]) is not None
 
 
+def test_request_clearing_is_open_to_everyone_by_default_and_admin_set(client_and_deps):
+    client, store, _, _, _, _ = client_and_deps
+    assert client.get("/api/settings/request-clearing").json() == {"admin_only": False}
+
+    response = client.put("/api/settings/request-clearing", json={"admin_only": True})
+
+    assert response.status_code == 200
+    assert client.get("/api/settings/request-clearing").json() == {"admin_only": True}
+    assert store.get_settings()["admin_only_clear_requests"] is True
+    # The admin themselves can still clear.
+    assert client.get("/api/auth/session").json()["can_clear_requests"] is True
+    assert client.post("/api/requests/clear").status_code == 200
+
+
+def test_admin_only_clearing_refuses_everyone_else(non_admin_client):
+    client, store, _, _, _, _ = non_admin_client
+    terminal = store.create_request(tmdb_id=1, title="Done", release_year=2020, query=None)
+    store.update_status(terminal.id, "failed", error_message="boom")
+    store.update_settings({"admin_only_clear_requests": True})
+
+    assert client.get("/api/auth/session").json()["can_clear_requests"] is False
+    assert client.post("/api/requests/clear").status_code == 403
+    assert store.get_request(terminal.id) is not None
+    # And the switch itself is the admin's.
+    assert client.put("/api/settings/request-clearing", json={"admin_only": False}).status_code == 403
+
+
 def test_get_retention_defaults_to_none(client_and_deps):
     client, _, _, _, _, _ = client_and_deps
     response = client.get("/api/settings/retention")
@@ -3040,6 +3067,7 @@ def test_get_current_session_reflects_the_signed_in_user(non_admin_client):
         "has_seen_tutorial": False,
         "avatar": False,
         "certification_region": deps.DEFAULT_CERTIFICATION_REGION,
+        "can_clear_requests": True,
     }
 
 
@@ -3167,6 +3195,7 @@ def test_select_plex_server_during_bootstrap_also_signs_the_admin_in(tmp_path, m
             "has_seen_tutorial": False,
             "avatar": False,
             "certification_region": deps.DEFAULT_CERTIFICATION_REGION,
+            "can_clear_requests": True,
         }
 
 

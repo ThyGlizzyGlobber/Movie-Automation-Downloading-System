@@ -1,8 +1,10 @@
 import { useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { getRetention, setRetention } from '../../api/settings'
+import { getRequestClearing, getRetention, setRequestClearing, setRetention } from '../../api/settings'
 import { RETENTION_OPTIONS } from '../../lib/retention'
 import { SettingsCardSkeleton } from './SettingsSkeleton'
+import SettingRow from './SettingRow'
+import Toggle from '../../components/ui/Toggle'
 import ErrorState from '../../components/ui/ErrorState'
 import { ApiError } from '../../api/client'
 
@@ -11,7 +13,9 @@ const RETENTION_SUB = 'Finished, cancelled and failed requests leave the list af
 export default function RetentionPanel() {
   const queryClient = useQueryClient()
   const query = useQuery({ queryKey: ['retention'], queryFn: getRetention })
+  const clearingQuery = useQuery({ queryKey: ['request-clearing'], queryFn: getRequestClearing })
   const [saving, setSaving] = useState<number | null | undefined>(undefined)
+  const [savingClearing, setSavingClearing] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   if (query.isLoading) return <SettingsCardSkeleton title="History" sub={RETENTION_SUB} rows={4} />
@@ -29,6 +33,19 @@ export default function RetentionPanel() {
       setError(err instanceof ApiError ? err.message : 'Something went wrong.')
     } finally {
       setSaving(undefined)
+    }
+  }
+
+  async function chooseAdminOnly(adminOnly: boolean) {
+    setSavingClearing(true)
+    setError(null)
+    try {
+      await setRequestClearing(adminOnly)
+      queryClient.invalidateQueries({ queryKey: ['request-clearing'] })
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Something went wrong.')
+    } finally {
+      setSavingClearing(false)
     }
   }
 
@@ -52,6 +69,15 @@ export default function RetentionPanel() {
           )
         })}
       </div>
+      <SettingRow label="Only admins can clear" hint="Everyone else stops seeing Clear finished on the Requests page.">
+        <Toggle
+          checked={!!clearingQuery.data?.admin_only}
+          onChange={(v) => {
+            if (clearingQuery.data && !savingClearing) void chooseAdminOnly(v)
+          }}
+          label="Only admins can clear requests"
+        />
+      </SettingRow>
       {error && <div className="settings-save-error">{error}</div>}
     </div>
   )

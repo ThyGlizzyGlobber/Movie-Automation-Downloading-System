@@ -250,6 +250,12 @@ def require_can_request(
     return session
 
 
+def can_clear_requests(store: RequestStore, session: SessionRow) -> bool:
+    """Settings › History can keep "Clear finished" to admins; off, as it
+    always was, anyone signed in can clear."""
+    return session.is_admin or not store.get_settings().get("admin_only_clear_requests")
+
+
 def require_admin(session: SessionRow = Depends(require_session)) -> SessionRow:
     if not session.is_admin:
         raise HTTPException(status_code=403, detail="admin access required")

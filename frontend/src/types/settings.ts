@@ -48,6 +48,10 @@ export interface RetentionSettings {
   days: number | null
 }
 
+export interface RequestClearingSettings {
+  admin_only: boolean
+}
+
 export interface PlexStatus {
   linked: boolean
   username: string | null

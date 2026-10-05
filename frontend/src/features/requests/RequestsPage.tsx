@@ -151,6 +151,8 @@ export default function RequestsPage() {
   const queryClient = useQueryClient()
   const session = useSession()
   const isAdmin = !!session.data?.is_admin
+  // Settings › History can keep clearing to admins; then no one else sees it.
+  const canClear = isAdmin || session.data?.can_clear_requests === true
   const { toast } = useToast()
 
   const requestsQuery = useRequests()
@@ -177,6 +179,9 @@ export default function RequestsPage() {
       onChanged()
     } catch (err) {
       toast({ tone: 'error', title: "Couldn't clear requests", body: errorText(err) })
+      // An admin may have just kept clearing to themselves; the session
+      // says so, and the button goes.
+      queryClient.invalidateQueries({ queryKey: ['session'] })
     } finally {
       setClearing(false)
     }
@@ -236,7 +241,7 @@ export default function RequestsPage() {
             </button>
           ))}
         </div>
-        {loading ? (
+        {!canClear ? null : loading ? (
           <div className="rq-clear" aria-hidden="true">
             <Skel className="rq-clear-btn">
               <Icon name="trash" />

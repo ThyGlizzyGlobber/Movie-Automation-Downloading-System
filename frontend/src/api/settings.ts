@@ -7,6 +7,7 @@ import type {
   PipelineSettingsBody,
   QbtSettingsResult,
   RemoteAccessSettings,
+  RequestClearingSettings,
   RetentionSettings,
   TmdbSettingsResult,
   TvScheduleSettings,
@@ -21,6 +22,14 @@ export function getRetention() {
 
 export function setRetention(days: number | null) {
   return putJson<RetentionSettings>('/api/settings/retention', { days })
+}
+
+export function getRequestClearing() {
+  return request<RequestClearingSettings>('/api/settings/request-clearing')
+}
+
+export function setRequestClearing(adminOnly: boolean) {
+  return putJson<RequestClearingSettings>('/api/settings/request-clearing', { admin_only: adminOnly })
 }
 
 export function getPipelineSettings() {
