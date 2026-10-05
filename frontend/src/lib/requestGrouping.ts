@@ -59,11 +59,12 @@ export function dominantStatus(rows: RequestOut[]): string {
   return rows[0].status
 }
 
-// What a row asks for: one episode, one season's pack, a range, the
-// whole series. Two rows with the same scope are two attempts at the
-// same thing.
+// What a row asks for: a film, or one episode, one season's pack, a
+// range, the whole series of a show. Two rows with the same scope are two
+// attempts at the same thing. The title is part of it: without it every
+// film was one scope, and each new request hid every film before it.
 function scopeKey(r: RequestOut): string {
-  return [r.media_type, r.season_number ?? '', r.season_range_end ?? '', r.episode_number ?? ''].join('|')
+  return [r.media_type, r.tmdb_id, r.season_number ?? '', r.season_range_end ?? '', r.episode_number ?? ''].join('|')
 }
 
 const GAVE_UP = new Set([...FAILED_STATES, 'cancelled'])
