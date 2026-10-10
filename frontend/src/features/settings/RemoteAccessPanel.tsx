@@ -125,6 +125,10 @@ function eventLabel(eventType: string): string {
       return 'Sign-in blocked'
     case 'plex_server_selected':
       return 'Plex server changed'
+    case 'plex_server_added':
+      return 'Plex server added'
+    case 'plex_server_removed':
+      return 'Plex server removed'
     case 'plex_unlinked':
       return 'Plex disconnected'
     case 'tmdb_key_changed':

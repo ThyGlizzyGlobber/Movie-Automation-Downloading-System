@@ -17,6 +17,7 @@ from app.api.deps import (
     _set_session_cookie,
     get_plex_linker,
     get_plex_server,
+    admin_router,
     get_store,
     logger,
     require_admin,
@@ -83,8 +84,11 @@ def list_plex_servers(store: RequestStore = Depends(get_store)) -> list[dict]:
     Part C1). Backs both the setup wizard's server picker (an account can
     own more than one server) and Settings' "Switch Server" action."""
     client, token, resources = _linked_account_resources(store)
+    linked = {s.machine_id for s in store.list_plex_servers()}
     return [
-        {"name": r["name"], "machine_identifier": r["machine_identifier"]} for r in resources if r["owned"]
+        {"name": r["name"], "machine_identifier": r["machine_identifier"], "linked": r["machine_identifier"] in linked}
+        for r in resources
+        if r["owned"]
     ]
 
 
@@ -145,6 +149,100 @@ def select_plex_server(
             store.create_session(session_id, user.plex_user_id, user.username, True, _new_session_expiry())
             _set_session_cookie(response, request, session_id)
     return {"server_name": match["name"]}
+
+
+# -- The servers this app serves (see PlexServerRow). PUT /api/plex/server
+#    above still replaces them all with one; these add to the list and
+#    manage it. Admin-only, and never return a server's token. --
+
+
+def _linked_server_out(server: PlexServerRow, members: dict[int, int]) -> dict:
+    return {
+        "id": server.id,
+        "machine_identifier": server.machine_id,
+        "name": server.name,
+        "label": server.label,
+        "display_name": server.display_name,
+        "priority": server.priority,
+        "members": members.get(server.id, 0),
+    }
+
+
+def _linked_servers_out(store: RequestStore) -> list[dict]:
+    members = store.count_plex_server_members()
+    return [_linked_server_out(s, members) for s in store.list_plex_servers()]
+
+
+@admin_router.get("/api/admin/plex-servers")
+def list_linked_plex_servers(store: RequestStore = Depends(get_store)) -> list[dict]:
+    """Every linked server, primary first, with how many people have
+    signed in through each."""
+    return _linked_servers_out(store)
+
+
+@admin_router.post("/api/admin/plex-servers", status_code=201)
+def add_plex_server(
+    request: Request, body: SelectPlexServerRequest, store: RequestStore = Depends(get_store)
+) -> list[dict]:
+    """Links another server the account owns, after the ones already
+    here. Nobody is signed out: people shared on it reach it from their
+    next sign-in."""
+    client, token, resources = _linked_account_resources(store)
+    match = next(
+        (r for r in resources if r["owned"] and r["machine_identifier"] == body.machine_identifier), None
+    )
+    if match is None:
+        raise HTTPException(status_code=404, detail="server not found among this account's owned servers")
+    store.save_plex_server(match["machine_identifier"], match["name"], match["url"], match["token"])
+    store.record_auth_event("plex_server_added", ip_address=_client_ip(request), detail=f"added {match['name']}")
+    return _linked_servers_out(store)
+
+
+class PlexServerUpdate(BaseModel):
+    label: str | None = Field(default=None, max_length=60)
+
+
+@admin_router.patch("/api/admin/plex-servers/{server_id}")
+def update_plex_server(server_id: int, body: PlexServerUpdate, store: RequestStore = Depends(get_store)) -> list[dict]:
+    """Names a server for the household — "Immediate family", "Friends".
+    Blank goes back to Plex's own name for it."""
+    if store.get_plex_server(server_id) is None:
+        raise HTTPException(status_code=404, detail="no such Plex server")
+    store.set_plex_server_label(server_id, (body.label or "").strip() or None)
+    return _linked_servers_out(store)
+
+
+class PlexServerOrder(BaseModel):
+    server_ids: list[int]
+
+
+@admin_router.put("/api/admin/plex-servers/order")
+def reorder_plex_servers(body: PlexServerOrder, store: RequestStore = Depends(get_store)) -> list[dict]:
+    """Sets the order, first being the primary: where someone shared on
+    more than one server lands, and the one the worker asks. Applies from
+    each person's next sign-in."""
+    if sorted(body.server_ids) != sorted(s.id for s in store.list_plex_servers()):
+        raise HTTPException(status_code=400, detail="list every linked server exactly once")
+    store.reorder_plex_servers(body.server_ids)
+    return _linked_servers_out(store)
+
+
+@admin_router.delete("/api/admin/plex-servers/{server_id}")
+def remove_plex_server(server_id: int, request: Request, store: RequestStore = Depends(get_store)) -> list[dict]:
+    """Unlinks one server. Everyone signed in through it is signed out;
+    an admin viewing it moves back to the primary. The last server can't
+    go this way — that is disconnecting Plex, which has its own route."""
+    servers = store.list_plex_servers()
+    server = next((s for s in servers if s.id == server_id), None)
+    if server is None:
+        raise HTTPException(status_code=404, detail="no such Plex server")
+    if len(servers) == 1:
+        raise HTTPException(status_code=409, detail="that's the only server — disconnect Plex instead")
+    store.remove_plex_servers(keep=tuple(s.machine_id for s in servers if s.id != server_id))
+    store.record_auth_event(
+        "plex_server_removed", ip_address=_client_ip(request), detail=f"removed {server.display_name}"
+    )
+    return _linked_servers_out(store)
 
 
 _ON_DECK_MAX = 12
@@ -223,7 +321,7 @@ def get_plex_on_deck(
     episodes, which is both wrong and a small privacy leak between members.
 
     The token is captured during the access check every sign-in already makes
-    (app/plex.py's check_server_access), so it arrives without an extra round
+    (app/plex.py's access_by_server), so it arrives without an extra round
     trip. Someone whose session predates that has none stored yet; rather
     than fall back to the admin's and quietly reintroduce the bug for the
     people it most affects, the row simply stays empty until they next sign
@@ -233,7 +331,7 @@ def get_plex_on_deck(
     if server is None:
         return {"available": False, "items": []}
     url = server.url
-    token = store.get_user_server_token(session.plex_user_id)
+    token = store.get_user_server_token(session.plex_user_id, server.id)
     if not token and session.is_admin:
         token = server.token
     if not token:

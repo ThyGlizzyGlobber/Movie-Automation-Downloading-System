@@ -1093,13 +1093,41 @@ class RequestStore(StoreSchema):
 
     def remove_plex_servers(self, keep: tuple[str, ...] = ()) -> int:
         """Removes every server whose machine id isn't in `keep` — all of
-        them when unlinking the account."""
+        them when unlinking the account. Whoever was signed in through a
+        removed server is signed out, since the server their access was
+        checked against is gone; an admin's session moves back to the
+        primary instead."""
         with self._lock:
             marks = ", ".join("?" for _ in keep)
-            sql = f"DELETE FROM plex_servers WHERE machine_id NOT IN ({marks})" if keep else "DELETE FROM plex_servers"
-            cur = self._conn.execute(sql, tuple(keep))
+            where = f"machine_id NOT IN ({marks})" if keep else "1"
+            gone = [r["id"] for r in self._conn.execute(f"SELECT id FROM plex_servers WHERE {where}", tuple(keep))]
+            if gone:
+                ids = ", ".join("?" for _ in gone)
+                self._conn.execute(f"DELETE FROM sessions WHERE is_admin = 0 AND server_id IN ({ids})", gone)
+                self._conn.execute(f"UPDATE sessions SET server_id = NULL WHERE server_id IN ({ids})", gone)
+                self._conn.execute(f"DELETE FROM user_servers WHERE server_id IN ({ids})", gone)
+                self._conn.execute(f"DELETE FROM plex_servers WHERE id IN ({ids})", gone)
             self._conn.commit()
-            return cur.rowcount
+            return len(gone)
+
+    def set_plex_server_label(self, server_id: int, label: str | None) -> PlexServerRow | None:
+        with self._lock:
+            self._conn.execute("UPDATE plex_servers SET label = ? WHERE id = ?", (label, server_id))
+            self._conn.commit()
+        return self.get_plex_server(server_id)
+
+    def reorder_plex_servers(self, server_ids: list[int]) -> list[PlexServerRow]:
+        """Puts the servers in this order, first being the primary. The
+        caller passes every server's id exactly once."""
+        with self._lock:
+            for priority, server_id in enumerate(server_ids):
+                self._conn.execute("UPDATE plex_servers SET priority = ? WHERE id = ?", (priority, server_id))
+            self._conn.commit()
+        return self.list_plex_servers()
+
+    def count_plex_server_members(self) -> dict[int, int]:
+        rows = self._conn.execute("SELECT server_id, COUNT(*) AS n FROM user_servers GROUP BY server_id").fetchall()
+        return {r["server_id"]: r["n"] for r in rows}
 
     # -- users / sessions (frontend migration Part C2) --
 
@@ -1109,7 +1137,7 @@ class RequestStore(StoreSchema):
         username: str | None,
         is_admin: bool,
         avatar_url: str | None = None,
-        server_token: str | None = None,
+        server_tokens: dict[int, str | None] | None = None,
     ) -> UserRow:
         """Called on every successful login — `is_admin` is re-derived
         fresh each time from a live Plex access check (see api/auth.py), so a
@@ -1136,7 +1164,13 @@ class RequestStore(StoreSchema):
 
         What it costs is the historical record of what someone was called
         at the time — deliberate. This app's requests list exists to answer
-        "who do I go and ask about this", which is a question about now."""
+        "who do I go and ask about this", which is a question about now.
+
+        `server_tokens` is what a sign-in found: every server this person
+        can reach, by plex_servers.id, with their own token for it. It
+        replaces what was known before — a server they've since lost
+        access to stops counting them — and a token Plex didn't hand back
+        doesn't blank one already stored. None leaves memberships alone."""
         now = _now()
         with self._lock:
             existing = self._conn.execute(
@@ -1145,9 +1179,8 @@ class RequestStore(StoreSchema):
             if existing:
                 self._conn.execute(
                     "UPDATE users SET username = ?, is_admin = ?, last_login_at = ?, "
-                    "avatar_url = COALESCE(?, avatar_url), "
-                    "plex_server_token = COALESCE(?, plex_server_token) WHERE plex_user_id = ?",
-                    (username, int(is_admin), now, avatar_url, server_token, plex_user_id),
+                    "avatar_url = COALESCE(?, avatar_url) WHERE plex_user_id = ?",
+                    (username, int(is_admin), now, avatar_url, plex_user_id),
                 )
                 # Only on an actual change, and never blanking a stored
                 # name with a NULL Plex didn't answer with.
@@ -1159,10 +1192,25 @@ class RequestStore(StoreSchema):
             else:
                 self._conn.execute(
                     "INSERT INTO users (plex_user_id, username, is_admin, has_seen_tutorial, "
-                    "first_seen_at, last_login_at, avatar_url, plex_server_token) "
-                    "VALUES (?, ?, ?, 0, ?, ?, ?, ?)",
-                    (plex_user_id, username, int(is_admin), now, now, avatar_url, server_token),
+                    "first_seen_at, last_login_at, avatar_url) "
+                    "VALUES (?, ?, ?, 0, ?, ?, ?)",
+                    (plex_user_id, username, int(is_admin), now, now, avatar_url),
                 )
+            if server_tokens is not None:
+                ids = list(server_tokens)
+                marks = ", ".join("?" for _ in ids)
+                self._conn.execute(
+                    f"DELETE FROM user_servers WHERE plex_user_id = ? AND server_id NOT IN ({marks})"
+                    if ids else "DELETE FROM user_servers WHERE plex_user_id = ?",
+                    [plex_user_id, *ids],
+                )
+                for server_id, token in server_tokens.items():
+                    self._conn.execute(
+                        "INSERT INTO user_servers (plex_user_id, server_id, server_token) VALUES (?, ?, ?) "
+                        "ON CONFLICT(plex_user_id, server_id) DO UPDATE SET "
+                        "server_token = COALESCE(excluded.server_token, server_token)",
+                        (plex_user_id, server_id, token),
+                    )
             self._conn.commit()
         return self.get_user(plex_user_id)
 
@@ -1178,15 +1226,27 @@ class RequestStore(StoreSchema):
             self._conn.commit()
 
     def create_session(
-        self, session_id: str, plex_user_id: str, username: str | None, is_admin: bool, expires_at: str
+        self,
+        session_id: str,
+        plex_user_id: str,
+        username: str | None,
+        is_admin: bool,
+        expires_at: str,
+        server_id: int | None = None,
     ) -> SessionRow:
         now = _now()
         with self._lock:
             self._conn.execute(
-                "INSERT INTO sessions (id, plex_user_id, username, is_admin, created_at, expires_at) "
-                "VALUES (?, ?, ?, ?, ?, ?)",
-                (session_id, plex_user_id, username, int(is_admin), now, expires_at),
+                "INSERT INTO sessions (id, plex_user_id, username, is_admin, created_at, expires_at, server_id) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (session_id, plex_user_id, username, int(is_admin), now, expires_at, server_id),
             )
+            self._conn.commit()
+        return self.get_session(session_id)
+
+    def set_session_server(self, session_id: str, server_id: int) -> SessionRow | None:
+        with self._lock:
+            self._conn.execute("UPDATE sessions SET server_id = ? WHERE id = ?", (server_id, session_id))
             self._conn.commit()
         return self.get_session(session_id)
 
@@ -1232,8 +1292,8 @@ class RequestStore(StoreSchema):
             self._conn.commit()
             return cur.rowcount
 
-    def get_user_server_token(self, plex_user_id: str) -> str | None:
-        """That user's own access token for the linked server.
+    def get_user_server_token(self, plex_user_id: str, server_id: int) -> str | None:
+        """That user's own access token for one of the linked servers.
 
         Its own method rather than a field on UserRow so it cannot be
         serialised by accident: UserRow is what /api/admin/users returns,
@@ -1241,9 +1301,9 @@ class RequestStore(StoreSchema):
         Callers here want it for exactly one thing — asking Plex a question
         *as that person* — and the answer, not the token, is what travels."""
         row = self._conn.execute(
-            "SELECT plex_server_token FROM users WHERE plex_user_id = ?", (plex_user_id,)
+            "SELECT server_token FROM user_servers WHERE plex_user_id = ? AND server_id = ?", (plex_user_id, server_id)
         ).fetchone()
-        return row["plex_server_token"] if row else None
+        return row["server_token"] if row else None
 
     def list_users(self) -> list[UserRow]:
         rows = self._conn.execute("SELECT * FROM users ORDER BY is_admin DESC, last_login_at DESC").fetchall()
@@ -1269,6 +1329,7 @@ class RequestStore(StoreSchema):
     def delete_user(self, plex_user_id: str) -> bool:
         with self._lock:
             self._conn.execute("DELETE FROM sessions WHERE plex_user_id = ?", (plex_user_id,))
+            self._conn.execute("DELETE FROM user_servers WHERE plex_user_id = ?", (plex_user_id,))
             cur = self._conn.execute("DELETE FROM users WHERE plex_user_id = ?", (plex_user_id,))
             self._conn.commit()
             return cur.rowcount > 0

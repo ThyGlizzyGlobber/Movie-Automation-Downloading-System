@@ -215,13 +215,9 @@ class StoreSchema:
             # Household controls per user.
             self._ensure_column("users", "can_request", "can_request INTEGER NOT NULL DEFAULT 1")
             self._ensure_column("users", "avatar_url", "avatar_url TEXT")
-            # That user's *own* access token for the linked server, kept so
-            # per-user Plex reads (Continue Watching) can be made as them
-            # rather than as the admin. Deliberately not a field on UserRow:
-            # that dataclass is what /api/admin/users serialises, and a token
-            # that never enters the object can't leave in a response. Read it
-            # through get_user_server_token() instead, which exists to be the
-            # one path.
+            # Each person's own token for the one linked server, from before
+            # there could be several. Superseded by user_servers below, and
+            # kept only so an older database's tokens can be moved there.
             self._ensure_column("users", "plex_server_token", "plex_server_token TEXT")
             # The notification system was removed: drop its tables from
             # databases created before that.
@@ -295,7 +291,44 @@ class StoreSchema:
                 """
             )
             self._move_linked_server_out_of_settings()
+            # Which server a session is served by — the one its sign-in
+            # came in through, or the one an admin switched it to. NULL
+            # (every session from before this) means the primary.
+            self._ensure_column("sessions", "server_id", "server_id INTEGER")
+            # Which servers each person can reach, as of their last
+            # sign-in, with their own access token for each. Replaces
+            # users.plex_server_token, which assumed there was one server.
+            first_time = not self._conn.execute(
+                "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'user_servers'"
+            ).fetchone()
+            self._conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS user_servers (
+                    plex_user_id TEXT NOT NULL,
+                    server_id INTEGER NOT NULL,
+                    server_token TEXT,
+                    PRIMARY KEY (plex_user_id, server_id)
+                )
+                """
+            )
+            if first_time:
+                self._move_user_tokens_to_user_servers()
             self._conn.commit()
+
+    def _move_user_tokens_to_user_servers(self) -> None:
+        """Everyone who signed in before there could be more than one
+        server signed in to the primary: each becomes a member of it,
+        keeping the token they had. The old column is cleared rather
+        than left as a second copy of every token."""
+        primary = self._conn.execute("SELECT id FROM plex_servers ORDER BY priority, id LIMIT 1").fetchone()
+        if primary is None:
+            return
+        self._conn.execute(
+            "INSERT OR IGNORE INTO user_servers (plex_user_id, server_id, server_token) "
+            "SELECT plex_user_id, ?, plex_server_token FROM users",
+            (primary["id"],),
+        )
+        self._conn.execute("UPDATE users SET plex_server_token = NULL")
 
     def _move_linked_server_out_of_settings(self) -> None:
         """Before plex_servers existed, the one linked server was four

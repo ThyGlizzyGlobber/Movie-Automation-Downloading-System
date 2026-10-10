@@ -983,3 +983,33 @@ def test_a_plex_servers_token_stays_out_of_its_repr():
     server = _store().save_plex_server("family", "Plex-1", "http://a", "secret-token")
 
     assert "secret-token" not in repr(server)
+
+
+def test_a_sign_in_replaces_which_servers_someone_can_reach():
+    store = _store()
+    family = store.save_plex_server("family", "Plex-1", "http://a", "t")
+    friends = store.save_plex_server("friends", "Plex-2", "http://b", "t")
+    store.upsert_user("p1", "someone", False, server_tokens={family.id: "f1", friends.id: "f2"})
+
+    store.upsert_user("p1", "someone", False, server_tokens={friends.id: None})
+
+    assert store.get_user_server_token("p1", family.id) is None
+    # A token Plex didn't hand back this time doesn't blank the one stored.
+    assert store.get_user_server_token("p1", friends.id) == "f2"
+    assert store.count_plex_server_members() == {friends.id: 1}
+
+
+def test_existing_users_become_members_of_the_primary_with_their_token(tmp_path):
+    path = str(tmp_path / "app.db")
+    old = RequestStore(path)
+    server = old.save_plex_server("family", "Plex-1", "http://a", "t")
+    old.upsert_user("p1", "someone", False)
+    old._conn.execute("UPDATE users SET plex_server_token = 'their-token'")
+    old._conn.execute("DROP TABLE user_servers")
+    old._conn.commit()
+    old.close()
+
+    store = RequestStore(path)
+
+    assert store.get_user_server_token("p1", server.id) == "their-token"
+    assert store._conn.execute("SELECT plex_server_token FROM users").fetchone()[0] is None

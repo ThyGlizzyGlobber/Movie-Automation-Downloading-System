@@ -158,7 +158,7 @@ def test_list_resources_prefers_a_local_non_relay_connection():
     assert server["url"] == "http://192.168.0.133:32400"
 
 
-def test_check_server_access_matches_by_machine_identifier():
+def test_access_by_server_is_keyed_by_machine_identifier():
     resources = [
         {
             "provides": "server",
@@ -175,14 +175,14 @@ def test_check_server_access_matches_by_machine_identifier():
     # The access token comes back too: it is this account's own token for
     # that server, and it is what lets a per-user Plex read be made as them
     # rather than as the admin.
-    assert client.check_server_access("account-token", "our-machine-id") == {"owned": False, "token": "tok"}
+    assert client.access_by_server("account-token") == {"our-machine-id": {"owned": False, "token": "tok"}}
 
 
-def test_check_server_access_returns_none_when_server_not_in_list():
+def test_access_by_server_is_empty_when_the_account_reaches_no_server():
     session = FakeSession(get_responses=[FakeResponse(json_data=[])])
     client = PlexClient("client-1", session=session)
 
-    assert client.check_server_access("account-token", "our-machine-id") is None
+    assert client.access_by_server("account-token") == {}
 
 
 def test_get_account_identity_returns_id_and_username():
@@ -611,7 +611,7 @@ def test_login_session_persists_result_once_signed_in_with_server_access(monkeyp
     monkeypatch.setattr(PlexClient, "create_pin", lambda self: {"id": 1, "code": "ABCD"})
     monkeypatch.setattr(PlexClient, "check_pin", lambda self, pin_id: "user-token")
     monkeypatch.setattr(
-        PlexClient, "check_server_access", lambda self, token, machine_id: {"owned": False, "token": "their-token"}
+        PlexClient, "access_by_server", lambda self, token: {"our-machine": {"owned": False, "token": "their-token"}}
     )
     monkeypatch.setattr(
         PlexClient, "get_account_identity", lambda self, token: {"id": 99, "username": "friend"}
@@ -630,16 +630,78 @@ def test_login_session_persists_result_once_signed_in_with_server_access(monkeyp
     asyncio.run(run())
 
     status = login.status(attempt[0])
+    server = store.primary_plex_server()
     assert status["result"] == {
         "plex_user_id": "99",
         "username": "friend",
         "is_admin": False,
         "thumb": None,
+        "server_id": server.id,
         # Carried through to be stored against the user; never sent onward
         # to the browser.
-        "server_token": "their-token",
+        "server_tokens": {server.id: "their-token"},
     }
     assert status["error"] is None
+
+
+def _sign_in_reaching(monkeypatch, store, reachable):
+    """A completed sign-in by an account that can reach `reachable`
+    (machine id -> access), and the result it came to."""
+    monkeypatch.setattr(PlexClient, "create_pin", lambda self: {"id": 1, "code": "ABCD"})
+    monkeypatch.setattr(PlexClient, "check_pin", lambda self, pin_id: "user-token")
+    monkeypatch.setattr(PlexClient, "access_by_server", lambda self, token: reachable)
+    monkeypatch.setattr(PlexClient, "get_account_identity", lambda self, token: {"id": 99, "username": "someone"})
+    login = LoginSession(store)
+
+    async def run():
+        attempt_id, _ = await login.start()
+        await login._attempts[attempt_id].task
+        return login.status(attempt_id)
+
+    return asyncio.run(run())
+
+
+def test_a_friend_lands_on_the_only_server_shared_with_them(monkeypatch):
+    store = RequestStore(":memory:")
+    store.save_plex_server("family", "Plex-1", "http://a", "t")
+    friends = store.save_plex_server("friends", "Plex-2", "http://b", "t")
+
+    status = _sign_in_reaching(monkeypatch, store, {"friends": {"owned": False, "token": "theirs"}})
+
+    assert status["result"]["server_id"] == friends.id
+    assert status["result"]["server_tokens"] == {friends.id: "theirs"}
+    assert status["result"]["is_admin"] is False
+
+
+def test_someone_shared_on_both_servers_lands_on_the_higher_priority_one(monkeypatch):
+    store = RequestStore(":memory:")
+    friends = store.save_plex_server("friends", "Plex-2", "http://b", "t")
+    family = store.save_plex_server("family", "Plex-1", "http://a", "t")
+    store.reorder_plex_servers([family.id, friends.id])
+
+    status = _sign_in_reaching(
+        monkeypatch,
+        store,
+        {"friends": {"owned": False, "token": "f"}, "family": {"owned": False, "token": "g"}},
+    )
+
+    assert status["result"]["server_id"] == family.id
+    assert status["result"]["server_tokens"] == {family.id: "g", friends.id: "f"}
+
+
+def test_the_owner_of_the_servers_signs_in_as_admin(monkeypatch):
+    store = RequestStore(":memory:")
+    family = store.save_plex_server("family", "Plex-1", "http://a", "t")
+    store.save_plex_server("friends", "Plex-2", "http://b", "t")
+
+    status = _sign_in_reaching(
+        monkeypatch,
+        store,
+        {"family": {"owned": True, "token": "o1"}, "friends": {"owned": True, "token": "o2"}},
+    )
+
+    assert status["result"]["is_admin"] is True
+    assert status["result"]["server_id"] == family.id
 
 
 def test_login_session_records_error_when_account_has_no_server_access(monkeypatch):
@@ -647,7 +709,7 @@ def test_login_session_records_error_when_account_has_no_server_access(monkeypat
     store.save_plex_server("our-machine", "Home", "http://server", "tok")
     monkeypatch.setattr(PlexClient, "create_pin", lambda self: {"id": 1, "code": "ABCD"})
     monkeypatch.setattr(PlexClient, "check_pin", lambda self, pin_id: "user-token")
-    monkeypatch.setattr(PlexClient, "check_server_access", lambda self, token, machine_id: None)
+    monkeypatch.setattr(PlexClient, "access_by_server", lambda self, token: {"someone-elses": {"owned": True, "token": "t"}})
     login = LoginSession(store)
     attempt: list[str] = []
 
@@ -695,7 +757,7 @@ def _resolving_client(monkeypatch, pins, resolves_pin_id=1):
     monkeypatch.setattr(
         PlexClient, "check_pin", lambda self, pin_id: "user-token" if pin_id == resolves_pin_id else None
     )
-    monkeypatch.setattr(PlexClient, "check_server_access", lambda self, token, machine_id: {"owned": False})
+    monkeypatch.setattr(PlexClient, "access_by_server", lambda self, token: {"our-machine": {"owned": False, "token": None}})
     monkeypatch.setattr(
         PlexClient, "get_account_identity", lambda self, token: {"id": 99, "username": "friend"}
     )

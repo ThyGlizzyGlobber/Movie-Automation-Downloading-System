@@ -11,6 +11,15 @@ export interface SessionInfo {
   // Whether the Requests page offers "Clear finished" (Settings › History
   // can keep it to admins).
   can_clear_requests?: boolean
+  // The Plex server this session is served by, and — for an admin, who
+  // can switch between them — every linked server. Empty for anyone else.
+  server?: SessionServer | null
+  servers?: SessionServer[]
+}
+
+export interface SessionServer {
+  id: number
+  name: string
 }
 
 export interface LoginStartResponse {
@@ -47,4 +56,6 @@ export interface SetupMutationResult {
 export interface PlexServerSummary {
   name: string
   machine_identifier: string
+  // Already one of the servers this app serves.
+  linked?: boolean
 }

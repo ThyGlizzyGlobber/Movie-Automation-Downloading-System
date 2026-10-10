@@ -224,14 +224,6 @@ def get_login_session(request: Request) -> LoginSession:
     return request.app.state.login_session
 
 
-def get_plex_server(store: RequestStore = Depends(get_store)) -> PlexServerRow | None:
-    """The Plex server this request's reads and lookups go to, or None
-    when none is linked. Every route that asks Plex anything takes its
-    server from here rather than finding one itself, so which server a
-    person is served by is decided in exactly one place. For now that is
-    always the primary; once sign-in ties a session to the server it
-    came in through, this is where that choice is read."""
-    return store.primary_plex_server()
 
 
 # ---------------------------------------------------------------------------
@@ -247,6 +239,26 @@ def require_session(request: Request, store: RequestStore = Depends(get_store)) 
     if session is None:
         raise HTTPException(status_code=401, detail="session expired or invalid")
     return session
+
+
+def get_plex_server(
+    session: SessionRow = Depends(require_session), store: RequestStore = Depends(get_store)
+) -> PlexServerRow | None:
+    """The Plex server this request's reads and lookups go to, or None
+    when none is linked: the one the session is served by, else the
+    primary. Every route that asks Plex anything takes its server from
+    here rather than finding one itself, so which server a person is
+    served by is decided in exactly one place.
+
+    A session only ever names a server that still exists for an admin —
+    removing a server signs out everyone else who came in through it
+    (RequestStore.remove_plex_servers) — so the primary fallback covers
+    sessions from before there were several, and nothing else."""
+    if session.server_id is not None:
+        server = store.get_plex_server(session.server_id)
+        if server is not None:
+            return server
+    return store.primary_plex_server()
 
 
 def require_can_request(

@@ -217,26 +217,26 @@ class PlexClient:
         thumb = (data.get("thumb") or "").split("?")[0] or None
         return {"id": data.get("id"), "username": data.get("username") or data.get("title"), "thumb": thumb}
 
-    def check_server_access(self, token: str, machine_identifier: str) -> dict | None:
-        """Whether this account has access — owned or shared — to the
-        Plex server identified by `machine_identifier` (one of this app's
-        servers, from the plex_servers table). None
-        means no access at all, which is a hard refusal for end-user
-        login (frontend migration Part C3); otherwise `{"owned": bool,
-        "token": str}` — `owned` is what distinguishes the admin from every
-        other authorized user, and `token` is this account's *own* access
-        token for that server.
+    def access_by_server(self, token: str) -> dict[str, dict]:
+        """Every Plex server this account can reach — owned or shared —
+        keyed by machine id, as `{"owned": bool, "token": str}`: one
+        plex.tv call however many servers a sign-in is checked against.
+        A server of this app's missing from it is a hard refusal for
+        end-user login on that server (frontend migration Part C3);
+        `owned` is what distinguishes the admin from every other
+        authorized user, and `token` is this account's *own* access token
+        for that server.
 
-        The token was already being fetched and thrown away here. It is what
-        makes a per-user Plex read possible at all: /library/onDeck answers
-        for whoever's token asked, so Continue Watching built on the admin's
-        token shows the admin's viewing to the whole household, no matter who
-        is signed in. This is the only moment it can be captured — it comes
-        back with the access check that every sign-in already performs."""
-        for resource in self.list_resources(token):
-            if resource["machine_identifier"] == machine_identifier:
-                return {"owned": resource["owned"], "token": resource["token"]}
-        return None
+        The token was once fetched and thrown away here. It is what makes
+        a per-user Plex read possible at all: /library/onDeck answers for
+        whoever's token asked, so Continue Watching built on the admin's
+        token shows the admin's viewing to the whole household, no matter
+        who is signed in. This is the only moment it can be captured — it
+        comes back with the access check that every sign-in already
+        performs."""
+        return {
+            r["machine_identifier"]: {"owned": r["owned"], "token": r["token"]} for r in self.list_resources(token)
+        }
 
     def has_movie(self, server_url: str, server_token: str, title: str, year: int | None, tmdb_id: int | None = None) -> bool:
         """True if a movie matching `title` (and `year`, within a year of
@@ -615,7 +615,7 @@ def user_watch_history(store, server: PlexServerRow | None, plex_user_id: str, i
     if server is None:
         return {"movie": [], "tv": []}
     server_url = server.url
-    token = store.get_user_server_token(plex_user_id)
+    token = store.get_user_server_token(plex_user_id, server.id)
     if not token and is_admin:
         token = server.token
     if not token:
@@ -704,7 +704,7 @@ class PlexLinker:
         none — the setup wizard's starting point, and a re-link that keeps
         the servers it can rather than trading them for whichever one
         plex.tv happened to list first. Each server's machine id is what
-        end-user access checks compare against — see check_server_access."""
+        end-user access checks compare against — see access_by_server."""
         by_machine = {r["machine_identifier"]: r for r in owned}
         keep = [s.machine_id for s in self.store.list_plex_servers() if s.machine_id in by_machine]
         keep = keep or [owned[0]["machine_identifier"]]
@@ -757,7 +757,7 @@ class LoginSession:
     migration Part C3) — same plex.tv PIN mechanism, different purpose:
     PlexLinker links *this app* to a Plex server (persisted, survives
     restarts); LoginSession authenticates *one person* against the
-    already-linked server (a signed-in app session, not app-wide state).
+    already-linked servers (a signed-in app session, not app-wide state).
     Deliberately in-memory only, unlike PlexLinker — an interrupted login
     attempt has nothing worth surviving a restart for, the user just
     starts over.
@@ -827,12 +827,16 @@ class LoginSession:
             while time.monotonic() < deadline:
                 token = await asyncio.to_thread(client.check_pin, pin_id)
                 if token:
-                    server = self.store.primary_plex_server()
-                    if server is None:
+                    servers = self.store.list_plex_servers()
+                    if not servers:
                         attempt.error = "This server hasn't linked a Plex account yet."
                         return
-                    access = await asyncio.to_thread(client.check_server_access, token, server.machine_id)
-                    if access is None:
+                    reachable = await asyncio.to_thread(client.access_by_server, token)
+                    # In priority order, so the first is where they land:
+                    # someone shared on more than one server gets the one
+                    # ranked highest.
+                    granted = [(s, reachable[s.machine_id]) for s in servers if s.machine_id in reachable]
+                    if not granted:
                         attempt.error = "Your Plex account doesn't have access to this server."
                         return
                     identity = await asyncio.to_thread(client.get_account_identity, token)
@@ -842,11 +846,14 @@ class LoginSession:
                     attempt.result = {
                         "plex_user_id": str(identity["id"]),
                         "username": identity.get("username"),
-                        "is_admin": access["owned"],
+                        # One account owns every server here, so owning
+                        # any of them is owning all of them.
+                        "is_admin": any(access["owned"] for _, access in granted),
                         "thumb": identity.get("thumb"),
+                        "server_id": granted[0][0].id,
                         # Stored against the user, never sent to the browser
                         # — see db.get_user_server_token.
-                        "server_token": access.get("token"),
+                        "server_tokens": {server.id: access.get("token") for server, access in granted},
                     }
                     return
                 await asyncio.sleep(PIN_POLL_INTERVAL_SECONDS)

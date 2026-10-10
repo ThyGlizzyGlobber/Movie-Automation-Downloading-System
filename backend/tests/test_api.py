@@ -289,6 +289,11 @@ class FakePlexLinker:
         self._status = {"linked": False, "username": None, "server_name": None, "pending": False, "error": None}
 
 
+# What a completed sign-in carries about servers, for one that reached
+# only the fixture's own server (the first one linked, so id 1).
+_ON_TEST_SERVER = {"server_id": 1, "server_tokens": {1: None}}
+
+
 class FakeLoginSession:
     """Stands in for app.plex.LoginSession: API tests exercise route
     wiring, not the real PIN polling flow (see test_plex.py for that).
@@ -3029,7 +3034,7 @@ def test_login_status_sets_session_cookie_once_resolved(client_and_deps):
     login_session = api_state_login_session(client)
     login_session._status = {
         "pending": False,
-        "result": {"plex_user_id": "friend-1", "username": "friend", "is_admin": False},
+        "result": {"plex_user_id": "friend-1", "username": "friend", "is_admin": False, **_ON_TEST_SERVER},
         "error": None,
     }
 
@@ -3062,7 +3067,8 @@ def test_login_status_reports_pending_error_without_a_cookie(client_and_deps):
 
 
 def test_get_current_session_reflects_the_signed_in_user(non_admin_client):
-    client, _, _, _, _, _ = non_admin_client
+    client, store, _, _, _, _ = non_admin_client
+    _link_plex(store, "http://plex.local:32400", "admin-token")
 
     response = client.get("/api/auth/session")
 
@@ -3076,6 +3082,9 @@ def test_get_current_session_reflects_the_signed_in_user(non_admin_client):
         "avatar": False,
         "certification_region": deps.DEFAULT_CERTIFICATION_REGION,
         "can_clear_requests": True,
+        # Only an admin is told which other servers there are.
+        "server": {"id": 1, "name": "Test server"},
+        "servers": [],
     }
 
 
@@ -3114,7 +3123,7 @@ def test_list_plex_servers_returns_only_owned_ones(client_and_deps, monkeypatch)
     response = client.get("/api/plex/servers")
 
     assert response.status_code == 200
-    assert response.json() == [{"name": "Mine", "machine_identifier": "mid-a"}]
+    assert response.json() == [{"name": "Mine", "machine_identifier": "mid-a", "linked": False}]
 
 
 def test_select_plex_server_switches_and_signs_out_other_sessions(client_and_deps, monkeypatch):
@@ -3204,6 +3213,8 @@ def test_select_plex_server_during_bootstrap_also_signs_the_admin_in(tmp_path, m
             "avatar": False,
             "certification_region": deps.DEFAULT_CERTIFICATION_REGION,
             "can_clear_requests": True,
+            "server": {"id": 1, "name": "Home NAS"},
+            "servers": [{"id": 1, "name": "Home NAS"}],
         }
 
 
@@ -3262,7 +3273,7 @@ def test_session_cookie_is_not_secure_by_default(client_and_deps):
     login_session = api_state_login_session(client)
     login_session._status = {
         "pending": False,
-        "result": {"plex_user_id": "cookie-user", "username": "cookie-user", "is_admin": False},
+        "result": {"plex_user_id": "cookie-user", "username": "cookie-user", "is_admin": False, **_ON_TEST_SERVER},
         "error": None,
     }
 
@@ -3281,7 +3292,7 @@ def test_session_cookie_is_secure_when_the_request_arrived_over_https(client_and
     login_session = api_state_login_session(client)
     login_session._status = {
         "pending": False,
-        "result": {"plex_user_id": "cookie-user-2", "username": "cookie-user-2", "is_admin": False},
+        "result": {"plex_user_id": "cookie-user-2", "username": "cookie-user-2", "is_admin": False, **_ON_TEST_SERVER},
         "error": None,
     }
 
@@ -3325,7 +3336,7 @@ def test_enabling_remote_access_no_longer_decides_the_cookie_flag(client_and_dep
     login_session = api_state_login_session(client)
     login_session._status = {
         "pending": False,
-        "result": {"plex_user_id": "lan-user", "username": "lan-user", "is_admin": False},
+        "result": {"plex_user_id": "lan-user", "username": "lan-user", "is_admin": False, **_ON_TEST_SERVER},
         "error": None,
     }
 
@@ -3376,7 +3387,7 @@ def test_audit_log_records_login_success_and_failure(client_and_deps):
 
     login_session._status = {
         "pending": False,
-        "result": {"plex_user_id": "audit-user", "username": "audit-user", "is_admin": False},
+        "result": {"plex_user_id": "audit-user", "username": "audit-user", "is_admin": False, **_ON_TEST_SERVER},
         "error": None,
     }
     client.post("/api/auth/login/start")
@@ -3516,7 +3527,7 @@ def _finished_login(client, plex_user_id: str) -> "FakeLoginSession":
     login_session = api_state_login_session(client)
     login_session._status = {
         "pending": False,
-        "result": {"plex_user_id": plex_user_id, "username": plex_user_id, "is_admin": False},
+        "result": {"plex_user_id": plex_user_id, "username": plex_user_id, "is_admin": False, **_ON_TEST_SERVER},
         "error": None,
     }
     return login_session
@@ -3981,8 +3992,8 @@ def test_continue_watching_asks_plex_as_the_signed_in_user(non_admin_client, mon
     episodes on their own Home page — wrong, and a small privacy leak
     between people who share a server."""
     client, store, _, _, _, _ = non_admin_client
-    _link_plex(store, "http://plex.local:32400", "admin-token")
-    store.upsert_user("regular-plex-id", "regular-user", False, server_token="their-own-token")
+    server = _link_plex(store, "http://plex.local:32400", "admin-token")
+    store.upsert_user("regular-plex-id", "regular-user", False, server_tokens={server.id: "their-own-token"})
     seen = _capture_on_deck_token(monkeypatch)
 
     client.get("/api/plex/on-deck")
@@ -4021,12 +4032,16 @@ def test_a_users_server_token_never_leaves_the_backend(client_and_deps):
     """It is stored deliberately off UserRow so it cannot be serialised by
     accident; this is the assertion that says so out loud."""
     client, store, _, _, _, _ = client_and_deps
-    store.upsert_user("admin-plex-id", "admin", True, server_token="secret-token")
+    server = store.primary_plex_server()
+    store.upsert_user("admin-plex-id", "admin", True, server_tokens={server.id: "secret-token"})
 
-    body = client.get("/api/admin/users").text
+    users = client.get("/api/admin/users").text
+    session = client.get("/api/auth/session").text
+    servers = client.get("/api/admin/plex-servers").text
 
-    assert "secret-token" not in body
-    assert store.get_user_server_token("admin-plex-id") == "secret-token"
+    assert all("secret-token" not in body for body in (users, session, servers))
+    assert "test-server-token" not in servers
+    assert store.get_user_server_token("admin-plex-id", server.id) == "secret-token"
 
 
 def test_discover_browse_passes_every_filter_through(client_and_deps):
@@ -4536,3 +4551,161 @@ def test_rejecting_a_season_this_app_never_filed_is_refused(client_and_deps):
     client, _, _, _, _, _ = client_and_deps
 
     assert client.post("/api/tv/95350/seasons/2/reject-current").status_code == 409
+
+
+# ---------------------------------------------------------------------------
+# More than one Plex server: a session is served by the server its sign-in
+# came in through, and an admin can move between them.
+# ---------------------------------------------------------------------------
+
+
+def _two_servers(store):
+    """The fixture's server as Family, plus a Friends server, with Plex
+    reads switched back on."""
+    family = _link_plex(store, "http://family:32400", "family-admin")
+    friends = store.save_plex_server("friends-machine", "Plex-2", "http://friends:32400", "friends-admin")
+    store.set_plex_server_label(family.id, "Immediate family")
+    store.set_plex_server_label(friends.id, "Friends")
+    return store.get_plex_server(family.id), store.get_plex_server(friends.id)
+
+
+def _capture_on_deck_server(monkeypatch):
+    seen = {}
+
+    def fake_on_deck(self, server_url, server_token):
+        seen["url"] = server_url
+        seen["token"] = server_token
+        return []
+
+    monkeypatch.setattr(PlexClient, "on_deck", fake_on_deck)
+    return seen
+
+
+def test_a_sign_in_lands_on_the_server_it_came_in_through(client_and_deps, monkeypatch):
+    client, store, _, _, _, _ = client_and_deps
+    family, friends = _two_servers(store)
+    client.cookies.delete(deps.SESSION_COOKIE_NAME)
+    login_session = api_state_login_session(client)
+    login_session._status = {
+        "pending": False,
+        "result": {
+            "plex_user_id": "friend-1",
+            "username": "friend",
+            "is_admin": False,
+            "server_id": friends.id,
+            "server_tokens": {friends.id: "friend-token"},
+        },
+        "error": None,
+    }
+    client.post("/api/auth/login/start")
+    client.get("/api/auth/login/status")
+    seen = _capture_on_deck_server(monkeypatch)
+
+    session = client.get("/api/auth/session").json()
+    client.get("/api/plex/on-deck")
+
+    assert session["server"] == {"id": friends.id, "name": "Friends"}
+    assert session["servers"] == []
+    assert seen == {"url": "http://friends:32400", "token": "friend-token"}
+    assert store.list_auth_events(limit=1)[0]["detail"] == "user on Friends"
+
+
+def test_an_admin_can_switch_which_server_they_are_viewing(client_and_deps, monkeypatch):
+    client, store, _, _, _, _ = client_and_deps
+    family, friends = _two_servers(store)
+    seen = _capture_on_deck_server(monkeypatch)
+
+    before = client.get("/api/auth/session").json()
+    response = client.put("/api/auth/session/server", json={"server_id": friends.id})
+    after = client.get("/api/auth/session").json()
+    client.get("/api/plex/on-deck")
+
+    assert before["server"] == {"id": family.id, "name": "Immediate family"}
+    assert before["servers"] == [{"id": family.id, "name": "Immediate family"}, {"id": friends.id, "name": "Friends"}]
+    assert response.json() == {"server": {"id": friends.id, "name": "Friends"}}
+    assert after["server"] == {"id": friends.id, "name": "Friends"}
+    # The admin owns both, so their fallback token is that server's own.
+    assert seen == {"url": "http://friends:32400", "token": "friends-admin"}
+
+
+def test_only_an_admin_can_switch_servers(non_admin_client):
+    client, store, _, _, _, _ = non_admin_client
+    _, friends = _two_servers(store)
+
+    response = client.put("/api/auth/session/server", json={"server_id": friends.id})
+
+    assert response.status_code == 403
+
+
+def test_switching_to_a_server_that_isnt_linked_is_refused(client_and_deps):
+    client, _, _, _, _, _ = client_and_deps
+
+    assert client.put("/api/auth/session/server", json={"server_id": 99}).status_code == 404
+
+
+def test_an_admin_can_add_another_owned_server(client_and_deps, monkeypatch):
+    client, store, _, _, _, _ = client_and_deps
+    monkeypatch.setattr(
+        PlexClient,
+        "list_resources",
+        lambda self, token: [
+            {"name": "Plex-2", "url": "http://b", "token": "t2", "owned": True, "machine_identifier": "friends-machine"},
+            {"name": "Not mine", "url": "http://c", "token": "t3", "owned": False, "machine_identifier": "shared"},
+        ],
+    )
+    other = store.upsert_user("other-user", "other", False)
+    store.create_session("other-session", other.plex_user_id, other.username, False, "2999-01-01T00:00:00+00:00")
+
+    added = client.post("/api/admin/plex-servers", json={"machine_identifier": "friends-machine"})
+    refused = client.post("/api/admin/plex-servers", json={"machine_identifier": "shared"})
+
+    assert added.status_code == 201
+    assert [s["machine_identifier"] for s in added.json()] == ["test-machine-id", "friends-machine"]
+    assert all("token" not in s and "url" not in s for s in added.json())
+    assert refused.status_code == 404
+    # Adding a server signs nobody out.
+    assert store.get_session("other-session") is not None
+    assert client.get("/api/plex/servers").json()[0]["linked"] is True
+
+
+def test_an_admin_can_name_and_reorder_servers(client_and_deps):
+    client, store, _, _, _, _ = client_and_deps
+    family, friends = _two_servers(store)
+
+    named = client.patch(f"/api/admin/plex-servers/{friends.id}", json={"label": "  Mates  "})
+    cleared = client.patch(f"/api/admin/plex-servers/{family.id}", json={"label": ""})
+    reordered = client.put("/api/admin/plex-servers/order", json={"server_ids": [friends.id, family.id]})
+    partial = client.put("/api/admin/plex-servers/order", json={"server_ids": [friends.id]})
+
+    assert [s["display_name"] for s in named.json()] == ["Immediate family", "Mates"]
+    assert cleared.json()[0]["display_name"] == "Test server"
+    assert [s["id"] for s in reordered.json()] == [friends.id, family.id]
+    assert store.primary_plex_server().id == friends.id
+    assert partial.status_code == 400
+
+
+def test_removing_a_server_signs_out_whoever_came_in_through_it(client_and_deps):
+    client, store, _, _, _, _ = client_and_deps
+    family, friends = _two_servers(store)
+    friend = store.upsert_user("friend-1", "friend", False, server_tokens={friends.id: "t"})
+    store.create_session("friend-session", friend.plex_user_id, "friend", False, "2999-01-01T00:00:00+00:00", friends.id)
+    relative = store.upsert_user("family-1", "relative", False, server_tokens={family.id: "t"})
+    store.create_session("family-session", relative.plex_user_id, "relative", False, "2999-01-01T00:00:00+00:00", family.id)
+    client.put("/api/auth/session/server", json={"server_id": friends.id})
+
+    response = client.delete(f"/api/admin/plex-servers/{friends.id}")
+
+    assert [s["id"] for s in response.json()] == [family.id]
+    assert store.get_session("friend-session") is None
+    assert store.get_session("family-session") is not None
+    assert store.get_user_server_token("friend-1", friends.id) is None
+    # The admin doing it is moved back to the primary, not signed out.
+    assert client.get("/api/auth/session").json()["server"]["id"] == family.id
+    assert client.delete(f"/api/admin/plex-servers/{family.id}").status_code == 409
+
+
+def test_managing_servers_is_admin_only(non_admin_client):
+    client, _, _, _, _, _ = non_admin_client
+
+    assert client.get("/api/admin/plex-servers").status_code == 403
+    assert client.post("/api/admin/plex-servers", json={"machine_identifier": "x"}).status_code == 403

@@ -229,6 +229,10 @@ class SessionRow:
     is_admin: bool
     created_at: str
     expires_at: str
+    # The Plex server this session is served by (plex_servers.id): the
+    # first one its sign-in had access to, or one an admin switched to.
+    # None means the primary.
+    server_id: int | None = None
 
     @classmethod
     def _from_row(cls, row: sqlite3.Row) -> "SessionRow":
@@ -239,6 +243,7 @@ class SessionRow:
             is_admin=bool(row["is_admin"]),
             created_at=row["created_at"],
             expires_at=row["expires_at"],
+            server_id=row["server_id"] if "server_id" in row.keys() else None,
         )
 
 
