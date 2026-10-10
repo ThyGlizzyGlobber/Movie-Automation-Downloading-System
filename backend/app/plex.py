@@ -651,6 +651,57 @@ def has_in_library(store, server: PlexServerRow | None, title: str, year: int | 
     return client.has_movie(server_url, server_token, title, year)
 
 
+# -- Asking every server. The worker's questions are about the library,
+#    not about anyone's view of it, and every server reads the same mounts
+#    — but each only sees the libraries it was set up with, so one server
+#    not having a title isn't the library not having it. --
+
+
+def has_in_any_library(store, title: str, year: int | None, tmdb_id: int | None = None) -> bool | None:
+    """has_in_library across every linked server: True once any has it,
+    None when none is linked. A server that couldn't be asked only
+    matters when no other server has it — then its error is raised, as
+    has_in_library's would be, rather than read as "not there"."""
+    answers: list[bool | None] = []
+    failure: Exception | None = None
+    for server in store.list_plex_servers():
+        try:
+            found = has_in_library(store, server, title, year, tmdb_id)
+        except Exception as exc:  # noqa: BLE001 — only decisive if nobody has it
+            failure = failure or exc
+            continue
+        if found:
+            return True
+        answers.append(found)
+    if failure is not None:
+        raise failure
+    return False if any(a is not None for a in answers) else None
+
+
+def local_file_on_any_server(
+    store, media_type: str, title: str, year: int | None, tmdb_id: int | None = None
+) -> Path | None:
+    """local_file_for_title from the first server that can point at one."""
+    for server in store.list_plex_servers():
+        found = local_file_for_title(store, server, media_type, title, year, tmdb_id)
+        if found is not None:
+            return found
+    return None
+
+
+def show_episodes_on_any_server(
+    store, title: str, year: int | None, tmdb_id: int | None = None
+) -> set[tuple[int, int]] | None:
+    """plex_show_episodes from every server together: an episode any of
+    them holds is one the household has. None when none has the show."""
+    found: set[tuple[int, int]] | None = None
+    for server in store.list_plex_servers():
+        episodes = plex_show_episodes(store, server, title, year, tmdb_id)
+        if episodes is not None:
+            found = (found or set()) | episodes
+    return found
+
+
 class PlexLinker:
     """Drives the PIN sign-in flow in the background: creates a PIN, hands
     the frontend a URL to open, then polls plex.tv itself until the

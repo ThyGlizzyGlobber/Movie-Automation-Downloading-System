@@ -612,11 +612,20 @@ class Worker:
         tmdb_id: int | None = None,
     ) -> None:
         folder = str(target_path.parent) if target_path is not None else None
-        server = await asyncio.to_thread(self.store.primary_plex_server)
-        try:
-            await asyncio.to_thread(plex.refresh_after_import, self.store, server, media_type, folder)
-        except Exception:
-            logger.exception("plex refresh after import failed")
+        # Every server, not just the primary: they all read the same
+        # library mounts, so a file filed for one is new to each of them,
+        # and a server left to find it on its own schedule shows it hours
+        # late. Asked together, since one server being slow or down is no
+        # reason to hold up the others.
+        servers = await asyncio.to_thread(self.store.list_plex_servers)
+
+        async def _refresh(server) -> None:
+            try:
+                await asyncio.to_thread(plex.refresh_after_import, self.store, server, media_type, folder)
+            except Exception:
+                logger.exception("plex refresh after import failed on %s", server.display_name)
+
+        await asyncio.gather(*(_refresh(server) for server in servers))
         if not title:
             return
         # And then tell Plex which track to use, rather than trusting it
@@ -629,8 +638,10 @@ class Worker:
         # English as its only default while Plex played the Russian dub.
         # Not awaited: Plex has to finish scanning before the part
         # exists, so this waits and retries, and a download completing
-        # must not sit behind that. Failures are its own to log.
-        async def _nudge() -> None:
+        # must not sit behind that. Failures are its own to log. Once per
+        # server, each on its own: every server keeps its own idea of
+        # which track a part plays, and scans at its own pace.
+        async def _nudge(server) -> None:
             try:
                 settings = await asyncio.to_thread(resolve_pipeline_settings, self.store)
                 raw = await asyncio.to_thread(self.store.get_settings)
@@ -641,10 +652,11 @@ class Worker:
                     settings.preferred_audio_language,
                 )
             except Exception:
-                logger.exception("plex audio selection after import failed")
+                logger.exception("plex audio selection after import failed on %s", server.display_name)
 
-        self._audio_nudges.add(task := asyncio.create_task(_nudge()))
-        task.add_done_callback(self._audio_nudges.discard)
+        for server in servers:
+            self._audio_nudges.add(task := asyncio.create_task(_nudge(server)))
+            task.add_done_callback(self._audio_nudges.discard)
 
     async def _retry_stalled_download(self, row, torrent_hash: str) -> None:
         """Abandon a pick whose swarm never showed up, and search again
@@ -709,7 +721,7 @@ class Worker:
             info = infos.get(torrent_hash.lower())
             if info is None:
                 if row.media_type in ("episode", "pack"):
-                    # plex.has_in_library only supports a movie lookup
+                    # plex.has_in_any_library only supports a movie lookup
                     # (PlexClient.has_movie is type=1 only) — a TV
                     # equivalent is a real, documented gap, same style as
                     # this project's other named-not-solved gaps, so an
@@ -726,8 +738,7 @@ class Worker:
                 # someone deleted it, or qBittorrent's own "remove torrent
                 # after completion" setting just cleaned up a *finished*
                 # download. Ask Plex before assuming the worse one.
-                server = await asyncio.to_thread(self.store.primary_plex_server)
-                found = await asyncio.to_thread(plex.has_in_library, self.store, server, row.title, row.release_year, row.tmdb_id)
+                found = await asyncio.to_thread(plex.has_in_any_library, self.store, row.title, row.release_year, row.tmdb_id)
                 if found:
                     logger.info("request %d (%s) downloading -> complete (confirmed via Plex)", row.id, row.title)
                     await asyncio.to_thread(self.store.update_status, row.id, "complete")
@@ -881,9 +892,8 @@ class Worker:
             items = await asyncio.to_thread(self.store.get_library_items, row.tmdb_id, "movie")
             superseded_paths = [it["path"] for it in items if it["path"] != str(target_path) and it["request_id"] != row.id]
             if not superseded_paths:
-                server = await asyncio.to_thread(self.store.primary_plex_server)
                 previous = await asyncio.to_thread(
-                    plex.local_file_for_title, self.store, server, "movie", row.title, row.release_year, row.tmdb_id
+                    plex.local_file_on_any_server, self.store, "movie", row.title, row.release_year, row.tmdb_id
                 )
                 if previous is not None and str(previous) != str(target_path):
                     superseded_paths = [str(previous)]
@@ -1368,8 +1378,7 @@ class Worker:
         """What Plex holds of this show, or nothing when Plex isn't linked
         or can't be reached (never a reason to stop a check)."""
         try:
-            server = self.store.primary_plex_server()
-            return plex.plex_show_episodes(self.store, server, identity.title, identity.first_air_year, identity.tmdb_id) or set()
+            return plex.show_episodes_on_any_server(self.store, identity.title, identity.first_air_year, identity.tmdb_id) or set()
         except Exception:  # noqa: BLE001 — a Plex hiccup must not break a check
             logger.exception("show check: couldn't list %s on Plex", identity.title)
             return set()
