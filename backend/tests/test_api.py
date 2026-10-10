@@ -4871,3 +4871,15 @@ def test_with_two_servers_only_an_admin_can_replace_a_copy(client_and_deps):
         client.post("/api/tv/95350/bulk-download", json={"scope": "series", "redownload_mode": "upgrade"}).status_code
         == 403
     )
+
+
+def test_the_household_list_says_which_servers_each_person_is_on(client_and_deps):
+    client, store, _, _, _, _ = client_and_deps
+    family, friends = _two_servers(store)
+    store.upsert_user("friend-1", "friend", False, server_tokens={friends.id: "t"})
+    store.upsert_user("cousin-1", "cousin", False, server_tokens={friends.id: "t", family.id: "t"})
+
+    by_name = {u["username"]: u["server_ids"] for u in client.get("/api/admin/users").json()}
+
+    assert by_name["friend"] == [friends.id]
+    assert by_name["cousin"] == [family.id, friends.id]

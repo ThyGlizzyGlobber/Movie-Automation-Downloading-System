@@ -7,6 +7,7 @@ import { errorText, useToast } from '../../lib/toast'
 import Toggle from '../../components/ui/Toggle'
 import { SettingsCardSkeleton } from './SettingsSkeleton'
 import Icon from '../../components/ui/Icon'
+import { useSession } from '../auth/useSession'
 
 // Settings › Household: everyone who has signed in, whether they can
 // request, and a way to remove someone who no longer should be here.
@@ -17,6 +18,10 @@ export default function HouseholdPanel() {
   const query = useQuery({ queryKey: ['household'], queryFn: listHousehold })
   const { toast } = useToast()
   const [busy, setBusy] = useState<string | null>(null)
+  // With more than one Plex server, each person's row says which they're
+  // on — the session carries every server's name for an admin.
+  const servers = useSession().data?.servers ?? []
+  const serverName = new Map(servers.map((s) => [s.id, s.name]))
 
   if (query.isLoading || !query.data) return <SettingsCardSkeleton title="Household" sub={HOUSEHOLD_SUB} rows={3} />
   const users = query.data
@@ -34,7 +39,7 @@ export default function HouseholdPanel() {
   }
 
   async function remove(id: string, name: string) {
-    if (!confirm(`Remove ${name}? They are signed out everywhere and can sign in again only if they still have access to the Plex server.`)) return
+    if (!confirm(`Remove ${name}? They are signed out everywhere and can sign in again only if they still have access to a Plex server here.`)) return
     setBusy(id)
     try {
       await removeHouseholdUser(id)
@@ -64,6 +69,11 @@ export default function HouseholdPanel() {
                     {u.is_admin && <span className="household-tag">Admin</span>}
                   </b>
                   <small>
+                    {servers.length > 1 && (u.server_ids ?? []).length > 0 && (
+                      <>
+                        {(u.server_ids ?? []).map((id) => serverName.get(id)).filter(Boolean).join(' and ')} |{' '}
+                      </>
+                    )}
                     {u.requests} request{u.requests === 1 ? '' : 's'} | signed in {relativeTime(u.last_login_at)}
                   </small>
                 </div>

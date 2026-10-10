@@ -1423,6 +1423,17 @@ class RequestStore(StoreSchema):
             self._conn.commit()
         return self.list_plex_servers()
 
+    def user_server_ids(self) -> dict[str, list[int]]:
+        """Each person's servers as of their last sign-in, primary first."""
+        rows = self._conn.execute(
+            "SELECT u.plex_user_id, u.server_id FROM user_servers u JOIN plex_servers s ON s.id = u.server_id "
+            "ORDER BY s.priority, s.id"
+        ).fetchall()
+        out: dict[str, list[int]] = {}
+        for r in rows:
+            out.setdefault(r["plex_user_id"], []).append(r["server_id"])
+        return out
+
     def count_plex_server_members(self) -> dict[int, int]:
         rows = self._conn.execute("SELECT server_id, COUNT(*) AS n FROM user_servers GROUP BY server_id").fetchall()
         return {r["server_id"]: r["n"] for r in rows}

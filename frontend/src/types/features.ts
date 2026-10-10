@@ -84,6 +84,8 @@ export interface HouseholdUser {
   first_seen_at: string
   last_login_at: string
   requests: number
+  // The Plex servers they could reach at their last sign-in, primary first.
+  server_ids?: number[]
 }
 export interface LibrarySettings {
   movie_library_root: string

@@ -13,6 +13,7 @@ import { SECTIONS } from './sections'
 import './Topbar.css'
 import Icon from '../components/ui/Icon'
 import { forgetPersistedQueries } from '../lib/queryPersistence'
+import { useSwitchServer } from '../lib/useSwitchServer'
 
 const isMac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform)
 
@@ -98,6 +99,10 @@ function AccountMenu({ session, initials, settingsActive }: { session: SessionIn
     setOpen(false)
     navigate(path)
   }
+  const { switchTo, switching } = useSwitchServer()
+  // Only an admin is told there is more than one server, and only then
+  // is there anything to choose.
+  const servers = session?.is_admin && (session.servers?.length ?? 0) > 1 ? session.servers! : []
   async function signOut() {
     setOpen(false)
     try {
@@ -138,6 +143,31 @@ function AccountMenu({ session, initials, settingsActive }: { session: SessionIn
                   <small>{session?.is_admin ? 'Admin' : 'Household'}</small>
                 </div>
               </div>
+              {servers.map((server) => {
+                const current = server.id === session?.server?.id
+                return (
+                  <button
+                    key={server.id}
+                    role="menuitemradio"
+                    aria-checked={current}
+                    className={`account-sheet-item${current ? ' on' : ''}`}
+                    disabled={switching !== null}
+                    onClick={() => {
+                      setOpen(false)
+                      if (!current) switchTo(server.id, server.name)
+                    }}
+                  >
+                    <span className="account-sheet-icon">
+                      <Icon name="plex" />
+                    </span>
+                    <span>
+                      {server.name}
+                      <small>{current ? 'Viewing now' : 'Switch to its requests and library'}</small>
+                    </span>
+                    {current && <Icon name="check" className="account-sheet-go" />}
+                  </button>
+                )
+              })}
               <button role="menuitem" className={`account-sheet-item${onAccountPage ? ' on' : ''}`} onClick={() => go('/account')}>
                 <span className="account-sheet-icon">
                   <Icon name="user" />

@@ -399,6 +399,22 @@ def test_plex_library_lookup_fails_safe_on_plex_error(monkeypatch):
     assert matcher("Anything", 2024) is False
 
 
+def test_plex_library_lookup_fails_safe_when_the_server_cant_be_reached(monkeypatch):
+    """Found live: a server whose address doesn't resolve raised straight
+    through, and every browse page came back 500."""
+    import requests
+
+    store = RequestStore(":memory:")
+    server = _link(store, "http://server-unreachable")
+
+    def unreachable(self, url, token, media_type):
+        raise requests.ConnectionError("Failed to resolve")
+
+    monkeypatch.setattr(PlexClient, "library_index", unreachable)
+
+    assert plex_library_lookup(store, server, "movie")("Anything", 2024) is False
+
+
 def test_plex_library_lookup_caches_within_ttl(monkeypatch):
     store = RequestStore(":memory:")
     server = _link(store, "http://server-d")

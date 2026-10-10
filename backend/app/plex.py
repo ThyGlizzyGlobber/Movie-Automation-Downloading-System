@@ -571,7 +571,9 @@ def _cached_library_index(store, server: PlexServerRow | None, media_type: str) 
         client = client_from_settings(store.get_settings())
         try:
             index = client.library_index(server.url, server.token, media_type)
-        except PlexError:
+        except (PlexError, requests.RequestException):
+            # A server that can't be reached at all, too — not just one
+            # that answers badly.
             index = LibraryIndex([])
         _library_index_cache.set(cache_key, index)
     return index
@@ -1160,7 +1162,7 @@ def plex_show_episodes(store, server: PlexServerRow | None, title: str, year: in
     try:
         item = locate_title(store, server, client, "show", title, year, tmdb_id)
         episodes = client.show_episodes(server_url, server_token, item["rating_key"]) if item else None
-    except PlexError:
+    except (PlexError, requests.RequestException):
         episodes = None
     _show_episodes_cache[key] = (now, episodes)
     return episodes
@@ -1192,7 +1194,7 @@ def plex_title_files(
     try:
         item = locate_title(store, server, client, media_type, title, year, tmdb_id)
         return client.file_paths(server.url, server.token, item["rating_key"]) if item else None
-    except PlexError:
+    except (PlexError, requests.RequestException):
         return None
 
 

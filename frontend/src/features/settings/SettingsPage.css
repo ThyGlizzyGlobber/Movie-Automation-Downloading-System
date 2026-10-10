@@ -619,6 +619,18 @@
   font-weight: 800;
   flex: 0 0 auto;
 }
+/* Settings › Plex: one row per linked server, under the account. Wraps
+   rather than overflowing: up to four buttons don't fit a phone's width
+   on one line. */
+.plex-server-rows {
+  margin-top: 18px;
+}
+.plex-server-rows .setting-row-control {
+  flex-wrap: wrap;
+}
+.plex-server-rows .setting-row-text .setting-row-control input {
+  width: min(260px, 100%);
+}
 .household-tag {
   display: inline-block;
   margin-left: 8px;

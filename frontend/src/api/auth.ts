@@ -1,5 +1,5 @@
-import { ApiError, request } from './client'
-import type { LoginStartResponse, LoginStatusResponse, SessionInfo } from '../types/auth'
+import { ApiError, putJson, request } from './client'
+import type { LoginStartResponse, LoginStatusResponse, SessionInfo, SessionServer } from '../types/auth'
 
 export function startLogin() {
   return request<LoginStartResponse>('/api/auth/login/start', { method: 'POST' })
@@ -38,4 +38,9 @@ export function logout() {
 
 export function markTutorialSeen() {
   return request<{ has_seen_tutorial: true }>('/api/auth/tutorial-seen', { method: 'PUT' })
+}
+
+// Admins: which Plex server this session views and requests for.
+export function switchSessionServer(serverId: number) {
+  return putJson<{ server: SessionServer }>('/api/auth/session/server', { server_id: serverId })
 }

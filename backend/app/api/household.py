@@ -27,6 +27,9 @@ class HouseholdUserOut(BaseModel):
     first_seen_at: str
     last_login_at: str
     requests: int
+    # The Plex servers (plex_servers ids) they could reach at their last
+    # sign-in, primary first.
+    server_ids: list[int] = []
 
 
 class HouseholdUserIn(BaseModel):
@@ -36,6 +39,7 @@ class HouseholdUserIn(BaseModel):
 @admin_router.get("/api/admin/users")
 def list_household(store: RequestStore = Depends(get_store)) -> list[HouseholdUserOut]:
     counts = {s["plex_user_id"]: s["total_requests"] for s in store.get_requester_stats()}
+    servers = store.user_server_ids()
     return [
         HouseholdUserOut(
             plex_user_id=u.plex_user_id,
@@ -46,6 +50,7 @@ def list_household(store: RequestStore = Depends(get_store)) -> list[HouseholdUs
             first_seen_at=u.first_seen_at,
             last_login_at=u.last_login_at,
             requests=counts.get(u.plex_user_id, 0),
+            server_ids=servers.get(u.plex_user_id, []),
         )
         for u in store.list_users()
     ]
