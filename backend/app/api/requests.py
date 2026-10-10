@@ -6,7 +6,7 @@ from pathlib import Path
 from fastapi import Depends, HTTPException
 from pydantic import BaseModel, field_validator
 
-from app.db import RequestRow, RequestStore, SessionRow
+from app.db import PlexServerRow, RequestRow, RequestStore, SessionRow
 from app.plex import local_file_for_title
 from app.qbt import QBTClient
 from app.resolve import resolve
@@ -15,6 +15,7 @@ from app.tmdb import TMDBClient, TMDBError
 from app.worker import Worker
 from app.api.deps import (
     can_clear_requests,
+    get_plex_server,
     get_qbt,
     get_store,
     get_tmdb,
@@ -49,6 +50,7 @@ class CreateRequest(BaseModel):
 def create_request(
     body: CreateRequest,
     store: RequestStore = Depends(get_store),
+    server: PlexServerRow | None = Depends(get_plex_server),
     tmdb: TMDBClient = Depends(get_tmdb),
     worker: Worker = Depends(get_worker),
     session: SessionRow = Depends(require_can_request),
@@ -62,7 +64,7 @@ def create_request(
         body.redownload_mode == "overwrite"
         and not store.get_library_items(body.tmdb_id, "movie")
         and store.get_latest_organized_request(body.tmdb_id, ("movie",)) is None
-        and local_file_for_title(store, "movie", identity.title, identity.release_year, body.tmdb_id) is None
+        and local_file_for_title(store, server, "movie", identity.title, identity.release_year, body.tmdb_id) is None
     ):
         # Defense in depth — never trust the frontend's button state
         # alone. "Overwrite" is only ever offered against a file this
@@ -193,6 +195,7 @@ def cancel_request(
 def reject_current_movie_copy(
     tmdb_id: int,
     store: RequestStore = Depends(get_store),
+    server: PlexServerRow | None = Depends(get_plex_server),
     tmdb: TMDBClient = Depends(get_tmdb),
     session: SessionRow = Depends(require_can_request),
 ) -> dict:
@@ -226,7 +229,7 @@ def reject_current_movie_copy(
             store.remove_library_item(item["path"])
             removed.append(path.name)
     else:
-        path = local_file_for_title(store, "movie", identity.title, identity.release_year, tmdb_id)
+        path = local_file_for_title(store, server, "movie", identity.title, identity.release_year, tmdb_id)
         if path is None:
             raise HTTPException(status_code=409, detail="Plex can't point at a file for this title from here")
         try:

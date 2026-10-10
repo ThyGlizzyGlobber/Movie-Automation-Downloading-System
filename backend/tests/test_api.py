@@ -372,13 +372,13 @@ def client_and_deps(tmp_path):
         # unauthenticated/non-admin/setup-bootstrap behavior use the
         # separate `unauthenticated_client`/`non_admin_client` fixtures
         # below instead of this one.
-        store.update_settings(
-            {
-                "plex_token": "admin-plex-token",
-                "plex_client_id": "test-client-id",
-                "plex_server_machine_id": "test-machine-id",
-            }
-        )
+        store.update_settings({"plex_token": "admin-plex-token", "plex_client_id": "test-client-id"})
+        # A linked server is what completes setup. Its address is
+        # unreachable on purpose and Plex reads are switched off, so no
+        # test reaches for a network it doesn't have; a test that wants
+        # them stubs the PlexClient calls it expects and calls _link_plex.
+        store.save_plex_server("test-machine-id", "Test server", "http://plex.invalid", "test-server-token")
+        api.app.dependency_overrides[deps.get_plex_server] = lambda: None
         admin = store.upsert_user("admin-plex-id", "admin", True)
         session = store.create_session(
             "test-admin-session",
@@ -389,6 +389,14 @@ def client_and_deps(tmp_path):
         )
         client.cookies.set(deps.SESSION_COOKIE_NAME, session.id)
         yield client, store, tmdb, worker, qbt, plex_linker
+    api.app.dependency_overrides.pop(deps.get_plex_server, None)
+
+
+def _link_plex(store, url, token):
+    """Turns Plex reads back on, against a server at `url`."""
+    server = store.save_plex_server("test-machine-id", "Test server", url, token)
+    api.app.dependency_overrides.pop(deps.get_plex_server, None)
+    return server
 
 
 @pytest.fixture
@@ -1386,7 +1394,7 @@ def test_detail_more_like_this_carries_on_plex(client_and_deps, monkeypatch):
     owned = {("Owned Film", 2020), ("Owned Show", 2019)}
     asked = set()
 
-    def lookup(store, media_type):
+    def lookup(store, server, media_type):
         asked.add(media_type)
         return lambda title, year, tmdb_id=None: (title, year) in owned
 
@@ -1740,15 +1748,15 @@ def test_get_tv_detail_plex_complete_when_plex_holds_every_aired_episode(client_
         seasons=[{"season_number": 1, "episode_count": 8}],
         last_episode_to_air={"season_number": 1, "episode_number": 8},
     )
-    monkeypatch.setattr(titles, "_on_plex_for", lambda title, year, media_type, store, tmdb_id=None: True)
+    monkeypatch.setattr(titles, "_on_plex_for", lambda title, year, media_type, store, server, tmdb_id=None: True)
 
-    monkeypatch.setattr(titles, "_plex_episode_count", lambda store, title, year, tmdb_id=None: 8)
+    monkeypatch.setattr(titles, "_plex_episode_count", lambda store, server, title, year, tmdb_id=None: 8)
     assert client.get("/api/tv/95350").json()["plex_complete"] is True
 
-    monkeypatch.setattr(titles, "_plex_episode_count", lambda store, title, year, tmdb_id=None: 6)
+    monkeypatch.setattr(titles, "_plex_episode_count", lambda store, server, title, year, tmdb_id=None: 6)
     assert client.get("/api/tv/95350").json()["plex_complete"] is False
 
-    monkeypatch.setattr(titles, "_plex_episode_count", lambda store, title, year, tmdb_id=None: None)
+    monkeypatch.setattr(titles, "_plex_episode_count", lambda store, server, title, year, tmdb_id=None: None)
     assert client.get("/api/tv/95350").json()["plex_complete"] is False
 
 
@@ -1758,10 +1766,10 @@ def test_plex_episode_count_counts_episodes_not_files(client_and_deps, monkeypat
     # a re-download can't inflate this the way counting filed files does.
     # Specials (season 0) aren't episodes of a season here or anywhere
     # else on the show page.
-    monkeypatch.setattr(titles, "plex_show_episodes", lambda store, title, year, tmdb_id=None: {(0, 1), (1, 1), (1, 2)})
+    monkeypatch.setattr(titles, "plex_show_episodes", lambda store, server, title, year, tmdb_id=None: {(0, 1), (1, 1), (1, 2)})
     assert titles._plex_episode_count(store, "Show", 2026, 95350) == 2
 
-    monkeypatch.setattr(titles, "plex_show_episodes", lambda store, title, year, tmdb_id=None: None)
+    monkeypatch.setattr(titles, "plex_show_episodes", lambda store, server, title, year, tmdb_id=None: None)
     assert titles._plex_episode_count(store, "Show", 2026, 95350) is None
 
 
@@ -1774,8 +1782,8 @@ def test_get_tv_detail_reports_how_many_episodes_plex_holds(client_and_deps, mon
         seasons=[{"season_number": 1, "episode_count": 8}],
         last_episode_to_air={"season_number": 1, "episode_number": 8},
     )
-    monkeypatch.setattr(titles, "_on_plex_for", lambda title, year, media_type, store, tmdb_id=None: True)
-    monkeypatch.setattr(titles, "plex_show_episodes", lambda store, title, year, tmdb_id=None: {(1, 1), (1, 2), (1, 3)})
+    monkeypatch.setattr(titles, "_on_plex_for", lambda title, year, media_type, store, server, tmdb_id=None: True)
+    monkeypatch.setattr(titles, "plex_show_episodes", lambda store, server, title, year, tmdb_id=None: {(1, 1), (1, 2), (1, 3)})
 
     body = client.get("/api/tv/95350").json()
     assert body["plex_episode_count"] == 3
@@ -2648,7 +2656,7 @@ def test_setup_mutation_refuses_missing_token_before_setup_completes(tmp_path, m
 
 def test_setup_tmdb_refuses_to_override_an_env_configured_key(unauthenticated_client, monkeypatch):
     client, store, _, _, _, _ = unauthenticated_client
-    store.update_settings({"plex_server_machine_id": None})  # reopen the bootstrap window
+    store.remove_plex_servers()  # reopen the bootstrap window
     monkeypatch.setattr(config, "TMDB_API_KEY", "from-env")
     token = store.get_or_create_setup_token()
 
@@ -2659,7 +2667,7 @@ def test_setup_tmdb_refuses_to_override_an_env_configured_key(unauthenticated_cl
 
 def test_plex_link_bootstrap_requires_setup_token(unauthenticated_client):
     client, store, _, _, _, _ = unauthenticated_client
-    store.update_settings({"plex_server_machine_id": None})  # reopen the bootstrap window
+    store.remove_plex_servers()  # reopen the bootstrap window
 
     response = client.post("/api/plex/link")
     assert response.status_code == 401
@@ -2944,7 +2952,7 @@ def test_hero_refreshes_on_plex_without_waiting_for_the_cache(client_and_deps, m
     tmdb.get_movie = counted
     on_plex = {"value": False}
 
-    def fake_lookup(store, media_type):
+    def fake_lookup(store, server, media_type):
         return lambda *a, **k: on_plex["value"]
 
     monkeypatch.setattr(hero, "plex_library_lookup", fake_lookup)
@@ -3129,7 +3137,7 @@ def test_select_plex_server_switches_and_signs_out_other_sessions(client_and_dep
 
     assert response.status_code == 200
     assert response.json() == {"server_name": "Second NAS"}
-    assert store.get_settings()["plex_server_machine_id"] == "mid-2"
+    assert [s.machine_id for s in store.list_plex_servers()] == ["mid-2"]
     assert store.get_session("other-session") is None
 
 
@@ -3704,7 +3712,7 @@ def test_what_someone_has_watched_is_not_recommended_back(client_and_deps, monke
     monkeypatch.setattr(
         recommendations,
         "user_watch_history",
-        lambda store, who, is_admin: {"movie": [{"tmdb_id": 30, "title": "Watched", "last_viewed_at": None}], "tv": []},
+        lambda store, server, who, is_admin: {"movie": [{"tmdb_id": 30, "title": "Watched", "last_viewed_at": None}], "tv": []},
     )
 
     rows = _titles_by_row(client.get("/api/recommendations", params={"page": "movies"}).json())
@@ -3718,7 +3726,7 @@ def test_their_watch_history_seeds_their_rows(client_and_deps, monkeypatch):
     monkeypatch.setattr(
         recommendations,
         "user_watch_history",
-        lambda store, who, is_admin: {"movie": [{"tmdb_id": 603, "title": "The Matrix", "last_viewed_at": None}], "tv": []},
+        lambda store, server, who, is_admin: {"movie": [{"tmdb_id": 603, "title": "The Matrix", "last_viewed_at": None}], "tv": []},
     )
 
     rows = client.get("/api/recommendations", params={"page": "movies"}).json()["rows"]
@@ -3916,7 +3924,7 @@ def test_recommended_shows_are_looked_up_in_plexs_show_library(client_and_deps, 
     _stub_recommendation_sources(tmdb)
     asked = set()
 
-    def lookup(store, media_type):
+    def lookup(store, server, media_type):
         assert media_type in ("movie", "show"), media_type
         asked.add(media_type)
         return lambda *a, **k: False
@@ -3973,7 +3981,7 @@ def test_continue_watching_asks_plex_as_the_signed_in_user(non_admin_client, mon
     episodes on their own Home page — wrong, and a small privacy leak
     between people who share a server."""
     client, store, _, _, _, _ = non_admin_client
-    store.update_settings({"plex_server_url": "http://plex.local:32400", "plex_server_token": "admin-token"})
+    _link_plex(store, "http://plex.local:32400", "admin-token")
     store.upsert_user("regular-plex-id", "regular-user", False, server_token="their-own-token")
     seen = _capture_on_deck_token(monkeypatch)
 
@@ -3988,7 +3996,7 @@ def test_continue_watching_stays_empty_rather_than_showing_someone_elses(non_adm
     people it affected; an empty row until their next sign-in is the honest
     answer."""
     client, store, _, _, _, _ = non_admin_client
-    store.update_settings({"plex_server_url": "http://plex.local:32400", "plex_server_token": "admin-token"})
+    _link_plex(store, "http://plex.local:32400", "admin-token")
     seen = _capture_on_deck_token(monkeypatch)
 
     body = client.get("/api/plex/on-deck").json()
@@ -3997,11 +4005,11 @@ def test_continue_watching_stays_empty_rather_than_showing_someone_elses(non_adm
     assert "token" not in seen
 
 
-def test_continue_watching_falls_back_to_the_settings_token_for_the_admin(client_and_deps, monkeypatch):
+def test_continue_watching_falls_back_to_the_server_token_for_the_admin(client_and_deps, monkeypatch):
     """Same account either way, so the admin's row keeps working through
     the changeover instead of going blank until they sign in again."""
     client, store, _, _, _, _ = client_and_deps
-    store.update_settings({"plex_server_url": "http://plex.local:32400", "plex_server_token": "admin-token"})
+    _link_plex(store, "http://plex.local:32400", "admin-token")
     seen = _capture_on_deck_token(monkeypatch)
 
     client.get("/api/plex/on-deck")
@@ -4244,7 +4252,7 @@ def test_reject_current_copy_for_a_file_this_app_never_added(client_and_deps, mo
     file; it's deleted and its release name blacklisted."""
     filed = tmp_path / "The.End.of.Oak.Street.2025.2160p.WEB-DL.mkv"
     filed.write_bytes(b"broken")
-    monkeypatch.setattr(api_requests, "local_file_for_title", lambda store, media_type, title, year, tmdb_id=None: filed)
+    monkeypatch.setattr(api_requests, "local_file_for_title", lambda store, server, media_type, title, year, tmdb_id=None: filed)
     client, store, _, _, _, _ = client_and_deps
 
     response = client.post("/api/movies/693134/reject-current")
@@ -4254,20 +4262,20 @@ def test_reject_current_copy_for_a_file_this_app_never_added(client_and_deps, mo
     assert not filed.exists()
     assert store.get_rejected_releases(693134) == [{"name": "The.End.of.Oak.Street.2025.2160p.WEB-DL", "size_bytes": 6}]
 
-    monkeypatch.setattr(api_requests, "local_file_for_title", lambda store, media_type, title, year, tmdb_id=None: None)
+    monkeypatch.setattr(api_requests, "local_file_for_title", lambda store, server, media_type, title, year, tmdb_id=None: None)
     assert client.post("/api/movies/693134/reject-current").status_code == 409
 
 
 def test_overwrite_is_allowed_when_plex_can_point_at_the_file(client_and_deps, monkeypatch, tmp_path):
     client, _, _, _, _, _ = client_and_deps
-    monkeypatch.setattr(api_requests, "local_file_for_title", lambda store, media_type, title, year, tmdb_id=None: None)
-    monkeypatch.setattr(titles, "local_file_for_title", lambda store, media_type, title, year, tmdb_id=None: None)
+    monkeypatch.setattr(api_requests, "local_file_for_title", lambda store, server, media_type, title, year, tmdb_id=None: None)
+    monkeypatch.setattr(titles, "local_file_for_title", lambda store, server, media_type, title, year, tmdb_id=None: None)
     assert client.post("/api/requests", json={"tmdb_id": 693134, "redownload_mode": "overwrite"}).status_code == 400
 
     filed = tmp_path / "Dune.mkv"
     filed.write_bytes(b"x")
-    monkeypatch.setattr(api_requests, "local_file_for_title", lambda store, media_type, title, year, tmdb_id=None: filed)
-    monkeypatch.setattr(titles, "local_file_for_title", lambda store, media_type, title, year, tmdb_id=None: filed)
+    monkeypatch.setattr(api_requests, "local_file_for_title", lambda store, server, media_type, title, year, tmdb_id=None: filed)
+    monkeypatch.setattr(titles, "local_file_for_title", lambda store, server, media_type, title, year, tmdb_id=None: filed)
     assert client.post("/api/requests", json={"tmdb_id": 693134, "redownload_mode": "overwrite"}).status_code == 201
     detail = client.get("/api/movies/693134").json()
     assert "plex_file_available" not in detail  # its own call now, off the page's critical path

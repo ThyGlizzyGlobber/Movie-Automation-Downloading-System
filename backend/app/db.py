@@ -15,7 +15,7 @@ from threading import RLock
 
 # Callers import the row types from app.db rather than app.db_rows, so
 # they stay importable from here.
-from app.db_rows import RequestRow, SessionRow, ShowEpisodeRow, ShowRow, UserRow
+from app.db_rows import PlexServerRow, RequestRow, SessionRow, ShowEpisodeRow, ShowRow, UserRow
 from app.db_schema import StoreSchema
 
 logger = logging.getLogger(__name__)
@@ -1057,6 +1057,49 @@ class RequestStore(StoreSchema):
             self._conn.execute("UPDATE settings SET data_json = ? WHERE id = 1", (json.dumps(merged),))
             self._conn.commit()
             return merged
+
+    # -- Plex servers --
+
+    def list_plex_servers(self) -> list[PlexServerRow]:
+        rows = self._conn.execute("SELECT * FROM plex_servers ORDER BY priority, id").fetchall()
+        return [PlexServerRow._from_row(r) for r in rows]
+
+    def primary_plex_server(self) -> PlexServerRow | None:
+        """The first server by priority: the one the worker asks, and the
+        one anyone shared on more than one server lands on. None until
+        setup has linked one — which is also what "setup complete" means."""
+        row = self._conn.execute("SELECT * FROM plex_servers ORDER BY priority, id LIMIT 1").fetchone()
+        return PlexServerRow._from_row(row) if row else None
+
+    def get_plex_server(self, server_id: int) -> PlexServerRow | None:
+        row = self._conn.execute("SELECT * FROM plex_servers WHERE id = ?", (server_id,)).fetchone()
+        return PlexServerRow._from_row(row) if row else None
+
+    def save_plex_server(self, machine_id: str, name: str | None, url: str, token: str) -> PlexServerRow:
+        """Adds a server, or refreshes one already here with fresh
+        connection details (a server's URL and token can both change).
+        A refresh keeps its label and place in the order; a new server
+        goes last."""
+        with self._lock:
+            self._conn.execute(
+                "INSERT INTO plex_servers (machine_id, name, url, token, priority, created_at) "
+                "VALUES (?, ?, ?, ?, (SELECT COALESCE(MAX(priority) + 1, 0) FROM plex_servers), ?) "
+                "ON CONFLICT(machine_id) DO UPDATE SET name = excluded.name, url = excluded.url, token = excluded.token",
+                (machine_id, name, url, token, _now()),
+            )
+            self._conn.commit()
+            row = self._conn.execute("SELECT * FROM plex_servers WHERE machine_id = ?", (machine_id,)).fetchone()
+        return PlexServerRow._from_row(row)
+
+    def remove_plex_servers(self, keep: tuple[str, ...] = ()) -> int:
+        """Removes every server whose machine id isn't in `keep` — all of
+        them when unlinking the account."""
+        with self._lock:
+            marks = ", ".join("?" for _ in keep)
+            sql = f"DELETE FROM plex_servers WHERE machine_id NOT IN ({marks})" if keep else "DELETE FROM plex_servers"
+            cur = self._conn.execute(sql, tuple(keep))
+            self._conn.commit()
+            return cur.rowcount
 
     # -- users / sessions (frontend migration Part C2) --
 

@@ -3,7 +3,7 @@ ever sees, each built from a `sqlite3.Row` by its own `_from_row`."""
 
 import json
 import sqlite3
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 
 @dataclass
@@ -239,4 +239,48 @@ class SessionRow:
             is_admin=bool(row["is_admin"]),
             created_at=row["created_at"],
             expires_at=row["expires_at"],
+        )
+
+
+@dataclass
+class PlexServerRow:
+    """One Plex Media Server this app serves. The admin's account owns
+    every one of them; each server's own sharing decides who signs in to
+    it, so a household can run one server for family and another for
+    friends off the same library mounts.
+
+    `priority` orders them, lowest first: the first is the primary, which
+    the worker and anyone shared on more than one server default to.
+
+    `token` is the admin's access token for this server. Kept out of
+    `repr` so it can't land in a log line, and never sent to a browser:
+    anything that lists servers builds its own response from the other
+    fields rather than serialising this row."""
+
+    id: int
+    machine_id: str
+    name: str | None
+    label: str | None
+    url: str
+    token: str = field(repr=False)
+    priority: int = 0
+    created_at: str = ""
+
+    @property
+    def display_name(self) -> str:
+        """What the household calls it: the label an admin gave it, else
+        Plex's own server name."""
+        return self.label or self.name or self.machine_id
+
+    @classmethod
+    def _from_row(cls, row: sqlite3.Row) -> "PlexServerRow":
+        return cls(
+            id=row["id"],
+            machine_id=row["machine_id"],
+            name=row["name"],
+            label=row["label"],
+            url=row["url"],
+            token=row["token"],
+            priority=row["priority"],
+            created_at=row["created_at"],
         )

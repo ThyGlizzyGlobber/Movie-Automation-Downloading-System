@@ -3,6 +3,7 @@ migrations that bring a database file written by an older version up to
 date. Runs once, from RequestStore's constructor."""
 
 import json
+from datetime import datetime, timezone
 
 from app import config
 
@@ -275,7 +276,52 @@ class StoreSchema:
                 )
                 """
             )
+            # The Plex servers this app serves — see PlexServerRow. The
+            # account-level sign-in (plex_token, plex_username,
+            # plex_client_id) stays in settings: one admin account owns
+            # every server here.
+            self._conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS plex_servers (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    machine_id TEXT NOT NULL UNIQUE,
+                    name TEXT,
+                    label TEXT,
+                    url TEXT NOT NULL,
+                    token TEXT NOT NULL,
+                    priority INTEGER NOT NULL DEFAULT 0,
+                    created_at TEXT NOT NULL
+                )
+                """
+            )
+            self._move_linked_server_out_of_settings()
             self._conn.commit()
+
+    def _move_linked_server_out_of_settings(self) -> None:
+        """Before plex_servers existed, the one linked server was four
+        keys in the settings row. Those become the first server, and the
+        keys are removed rather than nulled, so nothing can go on reading
+        a stale copy of a server that has since been changed."""
+        keys = ("plex_server_url", "plex_server_token", "plex_server_name", "plex_server_machine_id")
+        row = self._conn.execute("SELECT data_json FROM settings WHERE id = 1").fetchone()
+        saved = json.loads(row["data_json"]) if row else {}
+        if not any(k in saved for k in keys):
+            return
+        has_servers = self._conn.execute("SELECT 1 FROM plex_servers LIMIT 1").fetchone()
+        if not has_servers and saved.get("plex_server_machine_id") and saved.get("plex_server_url") and saved.get("plex_server_token"):
+            self._conn.execute(
+                "INSERT INTO plex_servers (machine_id, name, url, token, priority, created_at) VALUES (?, ?, ?, ?, 0, ?)",
+                (
+                    saved["plex_server_machine_id"],
+                    saved.get("plex_server_name"),
+                    saved["plex_server_url"],
+                    saved["plex_server_token"],
+                    datetime.now(timezone.utc).isoformat(),
+                ),
+            )
+        for k in keys:
+            saved.pop(k, None)
+        self._conn.execute("UPDATE settings SET data_json = ? WHERE id = 1", (json.dumps(saved),))
 
     def _recheck_enabled_now(self) -> bool:
         """The saved value of `episode_recheck_enabled`, falling back to

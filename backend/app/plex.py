@@ -24,6 +24,7 @@ from pathlib import Path
 import requests
 
 from app.cache import TTLCache
+from app.db_rows import PlexServerRow
 from app.language import audio_quality_key, is_audio_language
 from app.normalize import normalize_text, titles_match
 
@@ -218,8 +219,8 @@ class PlexClient:
 
     def check_server_access(self, token: str, machine_identifier: str) -> dict | None:
         """Whether this account has access — owned or shared — to the
-        Plex server identified by `machine_identifier` (this app's own
-        linked server, from settings' `plex_server_machine_id`). None
+        Plex server identified by `machine_identifier` (one of this app's
+        servers, from the plex_servers table). None
         means no access at all, which is a hard refusal for end-user
         login (frontend migration Part C3); otherwise `{"owned": bool,
         "token": str}` — `owned` is what distinguishes the admin from every
@@ -558,35 +559,33 @@ _LIBRARY_INDEX_TTL_SECONDS = 120
 _library_index_cache = TTLCache(_LIBRARY_INDEX_TTL_SECONDS)
 
 
-def _cached_library_index(store, media_type: str) -> LibraryIndex | None:
-    """The cached whole-library snapshot, or None if Plex isn't linked.
-    A Plex hiccup yields an empty index: browsing must not break."""
-    settings = store.get_settings()
-    server_url = settings.get("plex_server_url")
-    server_token = settings.get("plex_server_token")
-    if not server_url or not server_token:
+def _cached_library_index(store, server: PlexServerRow | None, media_type: str) -> LibraryIndex | None:
+    """The cached whole-library snapshot of `server`, or None if no
+    server is linked. A Plex hiccup yields an empty index: browsing must
+    not break."""
+    if server is None:
         return None
-    cache_key = (server_url, server_token, media_type)
+    cache_key = (server.url, server.token, media_type)
     index, hit = _library_index_cache.get(cache_key)
     if not hit:
-        client = client_from_settings(settings)
+        client = client_from_settings(store.get_settings())
         try:
-            index = client.library_index(server_url, server_token, media_type)
+            index = client.library_index(server.url, server.token, media_type)
         except PlexError:
             index = LibraryIndex([])
         _library_index_cache.set(cache_key, index)
     return index
 
 
-def plex_library_lookup(store, media_type: str) -> Callable[..., bool] | None:
+def plex_library_lookup(store, server: PlexServerRow | None, media_type: str) -> Callable[..., bool] | None:
     """Returns a matcher `(title, year, tmdb_id=None) -> bool` backed by one cached,
     whole-library snapshot, or `None` if Plex isn't linked. Meant to be
     called once per API request (not once per item) so a whole page of
     discover/search results can be annotated with a single Plex round trip
-    every ~2 minutes rather than one per item. Reads settings fresh each
-    call (Plex can be linked/unlinked while the backend is running), same
-    as `has_in_library`."""
-    index = _cached_library_index(store, media_type)
+    every ~2 minutes rather than one per item. The caller resolves
+    `server` per request (Plex can be linked/unlinked while the backend
+    is running), same as `has_in_library`."""
+    index = _cached_library_index(store, server, media_type)
     if index is None:
         return None
 
@@ -603,7 +602,7 @@ _WATCH_HISTORY_TTL_SECONDS = 600
 _watch_history_cache = TTLCache(_WATCH_HISTORY_TTL_SECONDS)
 
 
-def user_watch_history(store, plex_user_id: str, is_admin: bool) -> dict[str, list[dict]]:
+def user_watch_history(store, server: PlexServerRow | None, plex_user_id: str, is_admin: bool) -> dict[str, list[dict]]:
     """This person's watched movies and shows (`{"movie": [...], "tv":
     [...]}`, keyed by TMDB's namespaces), from Plex, cached per person.
 
@@ -613,19 +612,19 @@ def user_watch_history(store, plex_user_id: str, is_admin: bool) -> dict[str, li
     admin's viewing, not theirs. Empty rather than an error when Plex isn't
     linked, the token isn't known yet, or Plex doesn't answer: it feeds
     recommendations, and those degrade to the other signals."""
-    settings = store.get_settings()
-    server_url = settings.get("plex_server_url")
+    if server is None:
+        return {"movie": [], "tv": []}
+    server_url = server.url
     token = store.get_user_server_token(plex_user_id)
     if not token and is_admin:
-        token = settings.get("plex_server_token")
-    empty: dict[str, list[dict]] = {"movie": [], "tv": []}
-    if not server_url or not token:
-        return empty
+        token = server.token
+    if not token:
+        return {"movie": [], "tv": []}
     cache_key = (server_url, plex_user_id, token)
     history, hit = _watch_history_cache.get(cache_key)
     if hit:
         return history
-    client = client_from_settings(settings)
+    client = client_from_settings(store.get_settings())
     history = {"movie": [], "tv": []}
     for plex_type, tmdb_type in (("movie", "movie"), ("show", "tv")):
         try:
@@ -636,17 +635,15 @@ def user_watch_history(store, plex_user_id: str, is_admin: bool) -> dict[str, li
     return history
 
 
-def has_in_library(store, title: str, year: int | None, tmdb_id: int | None = None) -> bool | None:
+def has_in_library(store, server: PlexServerRow | None, title: str, year: int | None, tmdb_id: int | None = None) -> bool | None:
     """None if Plex isn't linked (caller falls back to its own default);
-    True/False once we can actually check. Reads settings fresh each call
-    rather than caching a client, since the household can link/unlink
-    while the backend is running."""
-    settings = store.get_settings()
-    server_url = settings.get("plex_server_url")
-    server_token = settings.get("plex_server_token")
-    if not server_url or not server_token:
+    True/False once we can actually check. The caller resolves `server`
+    fresh each time rather than holding on to one, since the household
+    can link/unlink while the backend is running."""
+    if server is None:
         return None
-    client = client_from_settings(settings)
+    server_url, server_token = server.url, server.token
+    client = client_from_settings(store.get_settings())
     if tmdb_id is not None:
         # A fresh whole-library read: the title-filtered search can't find
         # a movie Plex spells differently, and a cached one may predate it.
@@ -685,38 +682,47 @@ class PlexLinker:
                 token = await asyncio.to_thread(client.check_pin, pin_id)
                 if token:
                     resources = await asyncio.to_thread(client.list_resources, token)
-                    server = next((r for r in resources if r["owned"]), None)
-                    if not server:
+                    owned = [r for r in resources if r["owned"]]
+                    if not owned:
                         self._error = "Signed in, but no Plex server was found on this account."
                         return
                     username = await asyncio.to_thread(client.get_account_username, token)
                     await asyncio.to_thread(
-                        self.store.update_settings,
-                        {
-                            "plex_token": token,
-                            "plex_username": username,
-                            "plex_server_url": server["url"],
-                            "plex_server_token": server["token"],
-                            "plex_server_name": server["name"],
-                            # Frontend migration Part C1: what end-user
-                            # access checks compare against — see
-                            # check_server_access above.
-                            "plex_server_machine_id": server["machine_identifier"],
-                        },
+                        self.store.update_settings, {"plex_token": token, "plex_username": username}
                     )
+                    await asyncio.to_thread(self._keep_linked_servers, owned)
                     return
                 await asyncio.sleep(PIN_POLL_INTERVAL_SECONDS)
             self._error = "Plex sign-in timed out — try again."
         except Exception as exc:  # fail safe — never leave the frontend polling forever
             self._error = str(exc)
 
+    def _keep_linked_servers(self, owned: list[dict]) -> None:
+        """After a sign-in: every server already linked that this account
+        still owns gets fresh connection details, and one it no longer
+        owns is dropped. The first owned server is linked when that leaves
+        none — the setup wizard's starting point, and a re-link that keeps
+        the servers it can rather than trading them for whichever one
+        plex.tv happened to list first. Each server's machine id is what
+        end-user access checks compare against — see check_server_access."""
+        by_machine = {r["machine_identifier"]: r for r in owned}
+        keep = [s.machine_id for s in self.store.list_plex_servers() if s.machine_id in by_machine]
+        keep = keep or [owned[0]["machine_identifier"]]
+        # Saved before the rest are removed, so there is never a moment
+        # with no server linked — which would read as setup not done.
+        for machine_id in keep:
+            r = by_machine[machine_id]
+            self.store.save_plex_server(r["machine_identifier"], r["name"], r["url"], r["token"])
+        self.store.remove_plex_servers(keep=tuple(keep))
+
     def status(self) -> dict:
         settings = self.store.get_settings()
         linked = bool(settings.get("plex_token"))
+        primary = self.store.primary_plex_server() if linked else None
         return {
             "linked": linked,
             "username": settings.get("plex_username") if linked else None,
-            "server_name": settings.get("plex_server_name") if linked else None,
+            "server_name": primary.name if primary else None,
             "pending": bool(self._task and not self._task.done()),
             "error": self._error,
         }
@@ -725,17 +731,9 @@ class PlexLinker:
         if self._task and not self._task.done():
             self._task.cancel()
         self._error = None
-        self.store.update_settings(
-            {
-                "plex_token": None,
-                "plex_username": None,
-                "plex_server_url": None,
-                "plex_server_token": None,
-                "plex_server_name": None,
-                "plex_server_machine_id": None,
-            }
-        )
-        # Unlinking removes the only server anyone's access was ever
+        self.store.update_settings({"plex_token": None, "plex_username": None})
+        self.store.remove_plex_servers()
+        # Unlinking removes every server anyone's access was ever
         # checked against — every session (including the admin's own)
         # must re-authenticate rather than keep working against a server
         # that's no longer configured at all.
@@ -829,11 +827,11 @@ class LoginSession:
             while time.monotonic() < deadline:
                 token = await asyncio.to_thread(client.check_pin, pin_id)
                 if token:
-                    machine_id = self.store.get_settings().get("plex_server_machine_id")
-                    if not machine_id:
+                    server = self.store.primary_plex_server()
+                    if server is None:
                         attempt.error = "This server hasn't linked a Plex account yet."
                         return
-                    access = await asyncio.to_thread(client.check_server_access, token, machine_id)
+                    access = await asyncio.to_thread(client.check_server_access, token, server.machine_id)
                     if access is None:
                         attempt.error = "Your Plex account doesn't have access to this server."
                         return
@@ -901,7 +899,7 @@ class AudioSelection:
     languages: list[str]
 
 
-def plan_audio_selection(store, client: "PlexClient", preferred: str) -> list[AudioSelection]:
+def plan_audio_selection(server: PlexServerRow | None, client: "PlexClient", preferred: str) -> list[AudioSelection]:
     """Every part in Plex whose chosen audio track should change.
 
     Reads Plex rather than the filesystem on purpose: the question here
@@ -913,10 +911,9 @@ def plan_audio_selection(store, client: "PlexClient", preferred: str) -> list[Au
     already on the right language is left alone — the point is to change
     as little as possible.
     """
-    settings = store.get_settings()
-    url, token = settings.get("plex_server_url"), settings.get("plex_server_token")
-    if not url or not token:
+    if server is None:
         raise PlexError("no Plex server is linked yet")
+    url, token = server.url, server.token
 
     out: list[AudioSelection] = []
     for section in client.sections(url, token):
@@ -976,6 +973,7 @@ def _selections_in(detail: dict | None, preferred: str) -> list[AudioSelection]:
 
 def select_audio_after_import(
     store,
+    server: PlexServerRow | None,
     client: "PlexClient",
     media_type: str,
     title: str,
@@ -1006,27 +1004,24 @@ def select_audio_after_import(
     logged and never raised into the worker, because a correct file
     filed in the right place is still a success.
     """
-    settings = store.get_settings()
-    if not settings.get("plex_server_url") or not settings.get("plex_server_token"):
+    if server is None:
         return 0
 
     for attempt in range(attempts):
         if attempt:
             time.sleep(delay)
         try:
-            found = locate_title(store, client, media_type, title, year, tmdb_id)
+            found = locate_title(store, server, client, media_type, title, year, tmdb_id)
         except Exception as exc:  # noqa: BLE001
             logger.info("plex audio selection: couldn't locate %r yet (%s)", title, exc)
             continue
         if not found:
             continue
         try:
-            url = settings.get("plex_server_url")
-            token = settings.get("plex_server_token")
-            detail = client.metadata(url, token, str(found["rating_key"]))
+            detail = client.metadata(server.url, server.token, str(found["rating_key"]))
             changed = 0
             for choice in _selections_in(detail, preferred):
-                if apply_audio_selection(store, client, choice) is None:
+                if apply_audio_selection(server, client, choice) is None:
                     changed += 1
             if changed:
                 logger.info(
@@ -1040,18 +1035,16 @@ def select_audio_after_import(
     return 0
 
 
-def apply_audio_selection(store, client: "PlexClient", choice: AudioSelection) -> str | None:
+def apply_audio_selection(server: PlexServerRow, client: "PlexClient", choice: AudioSelection) -> str | None:
     """Makes one selection stick. None on success, the reason otherwise."""
-    settings = store.get_settings()
-    url, token = settings.get("plex_server_url"), settings.get("plex_server_token")
     try:
-        client.select_audio_stream(url, token, choice.part_id, choice.stream_id)
+        client.select_audio_stream(server.url, server.token, choice.part_id, choice.stream_id)
     except (PlexError, requests.RequestException) as exc:
         return str(exc)
     return None
 
 
-def refresh_after_import(store, media_type: str, organized_path: str | None) -> bool:
+def refresh_after_import(store, server: PlexServerRow | None, media_type: str, organized_path: str | None) -> bool:
     """Settings › Plex "Refresh Plex after import": scans the movie or show
     library once a file has been placed. The organized path is passed as
     a partial scan when it sits under one of the section's own locations
@@ -1060,9 +1053,9 @@ def refresh_after_import(store, media_type: str, organized_path: str | None) -> 
     settings = store.get_settings()
     if settings.get("plex_refresh_after_import", True) is False:
         return False
-    url, token = settings.get("plex_server_url"), settings.get("plex_server_token")
-    if not url or not token:
+    if server is None:
         return False
+    url, token = server.url, server.token
     client = client_from_settings(settings)
     wanted = "movie" if media_type == "movie" else "show"
     try:
@@ -1088,22 +1081,21 @@ _show_episodes_cache: dict[tuple[str, str, int | None], tuple[float, set[tuple[i
 _SHOW_EPISODES_TTL_SECONDS = 60.0
 
 
-def plex_show_episodes(store, title: str, year: int | None, tmdb_id: int | None = None) -> set[tuple[int, int]] | None:
+def plex_show_episodes(store, server: PlexServerRow | None, title: str, year: int | None, tmdb_id: int | None = None) -> set[tuple[int, int]] | None:
     """The (season, episode) pairs Plex holds for `title`, or None when
     Plex isn't linked or doesn't have the show at all. Cached a minute
     per show so a check that walks every season asks once."""
-    settings = store.get_settings()
-    server_url, server_token = settings.get("plex_server_url"), settings.get("plex_server_token")
-    if not server_url or not server_token:
+    if server is None:
         return None
+    server_url, server_token = server.url, server.token
     key = (server_url, title, year, tmdb_id)
     hit = _show_episodes_cache.get(key)
     now = time.monotonic()
     if hit and now - hit[0] < _SHOW_EPISODES_TTL_SECONDS:
         return hit[1]
-    client = client_from_settings(settings)
+    client = client_from_settings(store.get_settings())
     try:
-        item = locate_title(store, client, "show", title, year, tmdb_id)
+        item = locate_title(store, server, client, "show", title, year, tmdb_id)
         episodes = client.show_episodes(server_url, server_token, item["rating_key"]) if item else None
     except PlexError:
         episodes = None
@@ -1111,36 +1103,39 @@ def plex_show_episodes(store, title: str, year: int | None, tmdb_id: int | None 
     return episodes
 
 
-def locate_title(store, client: "PlexClient", media_type: str, title: str, year: int | None, tmdb_id: int | None = None) -> dict | None:
+def locate_title(
+    store, server: PlexServerRow, client: "PlexClient", media_type: str, title: str, year: int | None, tmdb_id: int | None = None
+) -> dict | None:
     """`PlexClient.locate`, falling back to the cached library index by
     TMDB id: Plex's title-filtered search misses a title it spells
     differently from TMDB."""
-    settings = store.get_settings()
-    found = client.locate(settings["plex_server_url"], settings["plex_server_token"], media_type, title, year, tmdb_id)
+    found = client.locate(server.url, server.token, media_type, title, year, tmdb_id)
     if found is None and tmdb_id is not None:
-        index = _cached_library_index(store, media_type)
+        index = _cached_library_index(store, server, media_type)
         item = index.find(title, year, tmdb_id) if index else None
         if item and item.get("tmdb_id") == tmdb_id and item.get("rating_key"):
             found = {"rating_key": item["rating_key"], "title": item["title"], "year": item["year"]}
     return found
 
 
-def plex_title_files(store, media_type: str, title: str, year: int | None, tmdb_id: int | None = None) -> list[str] | None:
+def plex_title_files(
+    store, server: PlexServerRow | None, media_type: str, title: str, year: int | None, tmdb_id: int | None = None
+) -> list[str] | None:
     """The file paths Plex holds for a title, or None when Plex isn't
     linked or doesn't have it."""
-    settings = store.get_settings()
-    server_url, server_token = settings.get("plex_server_url"), settings.get("plex_server_token")
-    if not server_url or not server_token:
+    if server is None:
         return None
-    client = client_from_settings(settings)
+    client = client_from_settings(store.get_settings())
     try:
-        item = locate_title(store, client, media_type, title, year, tmdb_id)
-        return client.file_paths(server_url, server_token, item["rating_key"]) if item else None
+        item = locate_title(store, server, client, media_type, title, year, tmdb_id)
+        return client.file_paths(server.url, server.token, item["rating_key"]) if item else None
     except PlexError:
         return None
 
 
-def local_file_for_title(store, media_type: str, title: str, year: int | None, tmdb_id: int | None = None) -> Path | None:
+def local_file_for_title(
+    store, server: PlexServerRow | None, media_type: str, title: str, year: int | None, tmdb_id: int | None = None
+) -> Path | None:
     """Where a title's file (per Plex) is from this app's point of view.
     Plex's own path is used when it exists here; otherwise the file is
     looked up by name under the library root, since Plex and this app
@@ -1149,7 +1144,7 @@ def local_file_for_title(store, media_type: str, title: str, year: int | None, t
     on a guess."""
     from app import config  # late: config reads library roots at call time
 
-    paths = plex_title_files(store, media_type, title, year, tmdb_id)
+    paths = plex_title_files(store, server, media_type, title, year, tmdb_id)
     if not paths:
         return None
     root = config.MOVIE_LIBRARY_ROOT if media_type == "movie" else config.TV_LIBRARY_ROOT

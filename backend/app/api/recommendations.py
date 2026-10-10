@@ -21,10 +21,10 @@ from fastapi import Depends, Query
 from pydantic import BaseModel, Field
 
 from app import feed, language, moods, taste
-from app.db import RequestStore, SessionRow
+from app.db import PlexServerRow, RequestStore, SessionRow
 from app.plex import user_watch_history
 from app.tmdb import TMDBClient
-from app.api.deps import get_store, get_tmdb, require_session, resolve_region, router
+from app.api.deps import get_plex_server, get_store, get_tmdb, require_session, resolve_region, router
 from app.api.helpers import _annotate_on_plex
 
 logger = logging.getLogger(__name__)
@@ -278,7 +278,7 @@ def _seed_recommendations(
     return out
 
 
-def _with_on_plex(rows: list[dict], store: RequestStore) -> list[dict]:
+def _with_on_plex(rows: list[dict], store: RequestStore, server: PlexServerRow | None) -> list[dict]:
     """Mark what the household already has, rather than hiding it.
 
     A recommendation the house already owns is the most useful card on the
@@ -305,6 +305,7 @@ def _with_on_plex(rows: list[dict], store: RequestStore) -> list[dict]:
             # TMDB calls it "tv"; Plex's library type is "show".
             "movie" if media_type == "movie" else "show",
             store,
+            server,
             title_key="title" if media_type == "movie" else "name",
             date_key="release_date" if media_type == "movie" else "first_air_date",
         ):
@@ -321,6 +322,7 @@ def get_recommendations(
     rows_param: str = Query("", alias="rows"),
     region: str = Depends(resolve_region),
     store: RequestStore = Depends(get_store),
+    server: PlexServerRow | None = Depends(get_plex_server),
     tmdb: TMDBClient = Depends(get_tmdb),
     session: SessionRow = Depends(require_session),
 ) -> dict:
@@ -349,7 +351,7 @@ def get_recommendations(
     with concurrent.futures.ThreadPoolExecutor(max_workers=FETCH_WORKERS) as pool:
         plan = _catalogue_plan(page, tmdb, region)
         catalogue = _submit_catalogue(plan, pool)
-        return _deal_page(page, rows_param, region, store, tmdb, session, pool, plan, catalogue)
+        return _deal_page(page, rows_param, region, store, server, tmdb, session, pool, plan, catalogue)
 
 
 def _deal_page(
@@ -357,6 +359,7 @@ def _deal_page(
     rows_param: str,
     region: str,
     store: RequestStore,
+    server: PlexServerRow | None,
     tmdb: TMDBClient,
     session: SessionRow,
     pool: concurrent.futures.Executor,
@@ -370,7 +373,7 @@ def _deal_page(
     day = taste.today(now)
     who = session.plex_user_id
 
-    history = user_watch_history(store, who, session.is_admin)
+    history = user_watch_history(store, server, who, session.is_admin)
     seeds = taste.merge_seeds(
         taste.seeds_from_watch_history(history, now),
         taste.seeds_from_requests(store.list_requests_for_user(who), now),
@@ -456,7 +459,7 @@ def _deal_page(
         for key in layout
         if key in dealt
     ]
-    return {"day": day, "page": page, "rows": _with_on_plex(rows, store), "layout": layout}
+    return {"day": day, "page": page, "rows": _with_on_plex(rows, store, server), "layout": layout}
 
 
 class TitleView(BaseModel):

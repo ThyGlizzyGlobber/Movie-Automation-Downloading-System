@@ -5,9 +5,9 @@ result annotated with whether it is already on Plex."""
 from fastapi import Depends, HTTPException
 from pydantic import BaseModel, Field
 
-from app.db import RequestStore
+from app.db import PlexServerRow, RequestStore
 from app.tmdb import BROWSE_SORTS, TMDBClient, TMDBError
-from app.api.deps import get_store, get_tmdb, resolve_region, router
+from app.api.deps import get_plex_server, get_store, get_tmdb, resolve_region, router
 from app.api.helpers import _annotate_on_plex
 
 
@@ -19,7 +19,10 @@ class SearchRequest(BaseModel):
 
 @router.post("/api/search")
 def search(
-    body: SearchRequest, store: RequestStore = Depends(get_store), tmdb: TMDBClient = Depends(get_tmdb)
+    body: SearchRequest,
+    store: RequestStore = Depends(get_store),
+    server: PlexServerRow | None = Depends(get_plex_server),
+    tmdb: TMDBClient = Depends(get_tmdb),
 ) -> list[dict]:
     try:
         if body.provider_id is not None:
@@ -29,7 +32,7 @@ def search(
     except TMDBError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
     results = data.get("results", [])
-    return _annotate_on_plex(results, "movie", store, title_key="title", date_key="release_date")
+    return _annotate_on_plex(results, "movie", store, server, title_key="title", date_key="release_date")
 
 
 # -- Stage 4: the browse surface the home grid and provider rows are built
@@ -46,6 +49,7 @@ def discover_browse(
     region: str = Depends(resolve_region),
     page: int = 1,
     store: RequestStore = Depends(get_store),
+    server: PlexServerRow | None = Depends(get_plex_server),
     tmdb: TMDBClient = Depends(get_tmdb),
 ) -> dict:
     """The browse page's one endpoint: every filter at once. Digital-
@@ -56,31 +60,40 @@ def discover_browse(
         data = tmdb.browse_movies(genre_id=genre, provider_id=provider, year=year, sort=sort, region=region, page=page)
     except TMDBError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
-    data["results"] = _annotate_on_plex(data.get("results", []), "movie", store, title_key="title", date_key="release_date")
+    data["results"] = _annotate_on_plex(data.get("results", []), "movie", store, server, title_key="title", date_key="release_date")
     return data
 
 
 @router.get("/api/discover/popular")
-def discover_popular(page: int = 1, store: RequestStore = Depends(get_store), tmdb: TMDBClient = Depends(get_tmdb)) -> dict:
+def discover_popular(
+    page: int = 1,
+    store: RequestStore = Depends(get_store),
+    server: PlexServerRow | None = Depends(get_plex_server),
+    tmdb: TMDBClient = Depends(get_tmdb),
+) -> dict:
     # Digital-availability filtered: Coming Soon is the dedicated tab for
     # theatrical-only titles, so Discover shouldn't also surface them.
     try:
         data = tmdb.get_available_popular(page=page)
     except TMDBError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
-    data["results"] = _annotate_on_plex(data.get("results", []), "movie", store, title_key="title", date_key="release_date")
+    data["results"] = _annotate_on_plex(data.get("results", []), "movie", store, server, title_key="title", date_key="release_date")
     return data
 
 
 @router.get("/api/discover/trending")
 def discover_trending(
-    time_window: str = "week", page: int = 1, store: RequestStore = Depends(get_store), tmdb: TMDBClient = Depends(get_tmdb)
+    time_window: str = "week",
+    page: int = 1,
+    store: RequestStore = Depends(get_store),
+    server: PlexServerRow | None = Depends(get_plex_server),
+    tmdb: TMDBClient = Depends(get_tmdb),
 ) -> dict:
     try:
         data = tmdb.get_available_trending(time_window=time_window, page=page)
     except TMDBError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
-    data["results"] = _annotate_on_plex(data.get("results", []), "movie", store, title_key="title", date_key="release_date")
+    data["results"] = _annotate_on_plex(data.get("results", []), "movie", store, server, title_key="title", date_key="release_date")
     return data
 
 
@@ -90,6 +103,7 @@ def discover_by_provider(
     region: str = Depends(resolve_region),
     page: int = 1,
     store: RequestStore = Depends(get_store),
+    server: PlexServerRow | None = Depends(get_plex_server),
     tmdb: TMDBClient = Depends(get_tmdb),
 ) -> dict:
     # Digital-availability filtered — same reasoning as Discover Popular/
@@ -99,7 +113,7 @@ def discover_by_provider(
         data = tmdb.get_available_by_provider(provider_id, region=region, page=page)
     except TMDBError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
-    data["results"] = _annotate_on_plex(data.get("results", []), "movie", store, title_key="title", date_key="release_date")
+    data["results"] = _annotate_on_plex(data.get("results", []), "movie", store, server, title_key="title", date_key="release_date")
     return data
 
 
@@ -109,6 +123,7 @@ def discover_by_genre(
     region: str = Depends(resolve_region),
     page: int = 1,
     store: RequestStore = Depends(get_store),
+    server: PlexServerRow | None = Depends(get_plex_server),
     tmdb: TMDBClient = Depends(get_tmdb),
 ) -> dict:
     # Digital-availability filtered — same reasoning as Discover Popular/
@@ -117,19 +132,23 @@ def discover_by_genre(
         data = tmdb.get_available_by_genre(genre_id, region=region, page=page)
     except TMDBError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
-    data["results"] = _annotate_on_plex(data.get("results", []), "movie", store, title_key="title", date_key="release_date")
+    data["results"] = _annotate_on_plex(data.get("results", []), "movie", store, server, title_key="title", date_key="release_date")
     return data
 
 
 @router.get("/api/discover/coming-soon")
 def discover_coming_soon(
-    region: str = Depends(resolve_region), page: int = 1, store: RequestStore = Depends(get_store), tmdb: TMDBClient = Depends(get_tmdb)
+    region: str = Depends(resolve_region),
+    page: int = 1,
+    store: RequestStore = Depends(get_store),
+    server: PlexServerRow | None = Depends(get_plex_server),
+    tmdb: TMDBClient = Depends(get_tmdb),
 ) -> dict:
     try:
         data = tmdb.get_coming_soon(region=region, page=page)
     except TMDBError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
-    data["results"] = _annotate_on_plex(data.get("results", []), "movie", store, title_key="title", date_key="release_date")
+    data["results"] = _annotate_on_plex(data.get("results", []), "movie", store, server, title_key="title", date_key="release_date")
     return data
 
 
@@ -147,6 +166,7 @@ def tv_discover_browse(
     region: str = Depends(resolve_region),
     page: int = 1,
     store: RequestStore = Depends(get_store),
+    server: PlexServerRow | None = Depends(get_plex_server),
     tmdb: TMDBClient = Depends(get_tmdb),
 ) -> dict:
     # Registered ahead of /api/tv/{tmdb_id} so the literal segment wins.
@@ -156,13 +176,16 @@ def tv_discover_browse(
         data = tmdb.browse_tv(genre_id=genre, provider_id=provider, year=year, sort=sort, region=region, page=page)
     except TMDBError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
-    data["results"] = _annotate_on_plex(data.get("results", []), "show", store, title_key="name", date_key="first_air_date")
+    data["results"] = _annotate_on_plex(data.get("results", []), "show", store, server, title_key="name", date_key="first_air_date")
     return data
 
 
 @router.get("/api/tv/discover/popular")
 def tv_discover_popular(
-    page: int = 1, store: RequestStore = Depends(get_store), tmdb: TMDBClient = Depends(get_tmdb)
+    page: int = 1,
+    store: RequestStore = Depends(get_store),
+    server: PlexServerRow | None = Depends(get_plex_server),
+    tmdb: TMDBClient = Depends(get_tmdb),
 ) -> dict:
     # Filtered to shows that have aired at least one episode — Coming Soon
     # is the dedicated place for anything that hasn't, same rule as the
@@ -171,19 +194,23 @@ def tv_discover_popular(
         data = tmdb.get_available_tv_popular(page=page)
     except TMDBError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
-    data["results"] = _annotate_on_plex(data.get("results", []), "show", store, title_key="name", date_key="first_air_date")
+    data["results"] = _annotate_on_plex(data.get("results", []), "show", store, server, title_key="name", date_key="first_air_date")
     return data
 
 
 @router.get("/api/tv/discover/trending")
 def tv_discover_trending(
-    time_window: str = "week", page: int = 1, store: RequestStore = Depends(get_store), tmdb: TMDBClient = Depends(get_tmdb)
+    time_window: str = "week",
+    page: int = 1,
+    store: RequestStore = Depends(get_store),
+    server: PlexServerRow | None = Depends(get_plex_server),
+    tmdb: TMDBClient = Depends(get_tmdb),
 ) -> dict:
     try:
         data = tmdb.get_available_tv_trending(time_window=time_window, page=page)
     except TMDBError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
-    data["results"] = _annotate_on_plex(data.get("results", []), "show", store, title_key="name", date_key="first_air_date")
+    data["results"] = _annotate_on_plex(data.get("results", []), "show", store, server, title_key="name", date_key="first_air_date")
     return data
 
 
@@ -193,13 +220,14 @@ def tv_discover_by_provider(
     region: str = Depends(resolve_region),
     page: int = 1,
     store: RequestStore = Depends(get_store),
+    server: PlexServerRow | None = Depends(get_plex_server),
     tmdb: TMDBClient = Depends(get_tmdb),
 ) -> dict:
     try:
         data = tmdb.get_available_tv_by_provider(provider_id, region=region, page=page)
     except TMDBError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
-    data["results"] = _annotate_on_plex(data.get("results", []), "show", store, title_key="name", date_key="first_air_date")
+    data["results"] = _annotate_on_plex(data.get("results", []), "show", store, server, title_key="name", date_key="first_air_date")
     return data
 
 
@@ -209,25 +237,30 @@ def tv_discover_by_genre(
     region: str = Depends(resolve_region),
     page: int = 1,
     store: RequestStore = Depends(get_store),
+    server: PlexServerRow | None = Depends(get_plex_server),
     tmdb: TMDBClient = Depends(get_tmdb),
 ) -> dict:
     try:
         data = tmdb.get_available_tv_by_genre(genre_id, region=region, page=page)
     except TMDBError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
-    data["results"] = _annotate_on_plex(data.get("results", []), "show", store, title_key="name", date_key="first_air_date")
+    data["results"] = _annotate_on_plex(data.get("results", []), "show", store, server, title_key="name", date_key="first_air_date")
     return data
 
 
 @router.get("/api/tv/discover/coming-soon")
 def tv_discover_coming_soon(
-    region: str = Depends(resolve_region), page: int = 1, store: RequestStore = Depends(get_store), tmdb: TMDBClient = Depends(get_tmdb)
+    region: str = Depends(resolve_region),
+    page: int = 1,
+    store: RequestStore = Depends(get_store),
+    server: PlexServerRow | None = Depends(get_plex_server),
+    tmdb: TMDBClient = Depends(get_tmdb),
 ) -> dict:
     try:
         data = tmdb.get_tv_coming_soon(region=region, page=page)
     except TMDBError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
-    data["results"] = _annotate_on_plex(data.get("results", []), "show", store, title_key="name", date_key="first_air_date")
+    data["results"] = _annotate_on_plex(data.get("results", []), "show", store, server, title_key="name", date_key="first_air_date")
     return data
 
 
@@ -267,7 +300,10 @@ def get_person_detail(person_id: int, tmdb: TMDBClient = Depends(get_tmdb)) -> d
 
 @router.post("/api/tv/search")
 def search_tv(
-    body: SearchRequest, store: RequestStore = Depends(get_store), tmdb: TMDBClient = Depends(get_tmdb)
+    body: SearchRequest,
+    store: RequestStore = Depends(get_store),
+    server: PlexServerRow | None = Depends(get_plex_server),
+    tmdb: TMDBClient = Depends(get_tmdb),
 ) -> list[dict]:
     try:
         if body.provider_id is not None:
@@ -277,4 +313,4 @@ def search_tv(
     except TMDBError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
     results = data.get("results", [])
-    return _annotate_on_plex(results, "show", store, title_key="name", date_key="first_air_date")
+    return _annotate_on_plex(results, "show", store, server, title_key="name", date_key="first_air_date")

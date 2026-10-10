@@ -610,8 +610,9 @@ class Worker:
         tmdb_id: int | None = None,
     ) -> None:
         folder = str(target_path.parent) if target_path is not None else None
+        server = await asyncio.to_thread(self.store.primary_plex_server)
         try:
-            await asyncio.to_thread(plex.refresh_after_import, self.store, media_type, folder)
+            await asyncio.to_thread(plex.refresh_after_import, self.store, server, media_type, folder)
         except Exception:
             logger.exception("plex refresh after import failed")
         if not title:
@@ -634,7 +635,7 @@ class Worker:
                 client = plex.client_from_settings(raw)
                 await asyncio.to_thread(
                     plex.select_audio_after_import,
-                    self.store, client, media_type, title, year, tmdb_id,
+                    self.store, server, client, media_type, title, year, tmdb_id,
                     settings.preferred_audio_language,
                 )
             except Exception:
@@ -723,7 +724,8 @@ class Worker:
                 # someone deleted it, or qBittorrent's own "remove torrent
                 # after completion" setting just cleaned up a *finished*
                 # download. Ask Plex before assuming the worse one.
-                found = await asyncio.to_thread(plex.has_in_library, self.store, row.title, row.release_year, row.tmdb_id)
+                server = await asyncio.to_thread(self.store.primary_plex_server)
+                found = await asyncio.to_thread(plex.has_in_library, self.store, server, row.title, row.release_year, row.tmdb_id)
                 if found:
                     logger.info("request %d (%s) downloading -> complete (confirmed via Plex)", row.id, row.title)
                     await asyncio.to_thread(self.store.update_status, row.id, "complete")
@@ -877,7 +879,10 @@ class Worker:
             items = await asyncio.to_thread(self.store.get_library_items, row.tmdb_id, "movie")
             superseded_paths = [it["path"] for it in items if it["path"] != str(target_path) and it["request_id"] != row.id]
             if not superseded_paths:
-                previous = await asyncio.to_thread(plex.local_file_for_title, self.store, "movie", row.title, row.release_year, row.tmdb_id)
+                server = await asyncio.to_thread(self.store.primary_plex_server)
+                previous = await asyncio.to_thread(
+                    plex.local_file_for_title, self.store, server, "movie", row.title, row.release_year, row.tmdb_id
+                )
                 if previous is not None and str(previous) != str(target_path):
                     superseded_paths = [str(previous)]
 
@@ -1360,7 +1365,8 @@ class Worker:
         """What Plex holds of this show, or nothing when Plex isn't linked
         or can't be reached (never a reason to stop a check)."""
         try:
-            return plex.plex_show_episodes(self.store, identity.title, identity.first_air_year, identity.tmdb_id) or set()
+            server = self.store.primary_plex_server()
+            return plex.plex_show_episodes(self.store, server, identity.title, identity.first_air_year, identity.tmdb_id) or set()
         except Exception:  # noqa: BLE001 — a Plex hiccup must not break a check
             logger.exception("show check: couldn't list %s on Plex", identity.title)
             return set()

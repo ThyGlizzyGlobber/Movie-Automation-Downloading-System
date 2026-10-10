@@ -145,7 +145,7 @@ def _request_counters(store: RequestStore) -> dict:
 def about(request: Request, store: RequestStore = Depends(get_store)) -> dict:
     import platform
 
-    settings = store.get_settings()
+    primary = store.primary_plex_server()
     started = getattr(request.app.state, "started_at", None)
     try:
         db_bytes = os.path.getsize(config.DB_PATH)
@@ -157,7 +157,7 @@ def about(request: Request, store: RequestStore = Depends(get_store)) -> dict:
         "python": platform.python_version(),
         "started_at": started.isoformat() if started else None,
         "uptime_seconds": int((datetime.now(timezone.utc) - started).total_seconds()) if started else None,
-        "plex_server_name": settings.get("plex_server_name"),
+        "plex_server_name": primary.name if primary else None,
         "requests": store.count_requests(),
         "users": len(store.list_users()),
         "db_bytes": db_bytes,

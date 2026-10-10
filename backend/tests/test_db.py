@@ -905,3 +905,81 @@ def test_a_pack_that_handed_off_before_split_existed_is_relabelled(tmp_path):
     assert reopened.get_request(covered.id).status == "split"
     assert reopened.get_request(handed.id).status == "split"
     assert reopened.get_request(empty.id).status == "no qualifying results"
+
+
+# -- Plex servers --
+
+
+def test_the_server_linked_in_settings_becomes_the_first_plex_server(tmp_path):
+    """Before plex_servers, the one linked server was four settings keys.
+    Opening an old database moves them into the table and removes them,
+    so nothing can read a stale copy afterwards."""
+    path = str(tmp_path / "app.db")
+    old = RequestStore(path)
+    old.update_settings(
+        {
+            "plex_token": "account-token",
+            "plex_server_url": "http://plex:32400",
+            "plex_server_token": "server-token",
+            "plex_server_name": "Home NAS",
+            "plex_server_machine_id": "machine-1",
+        }
+    )
+    old.close()
+
+    store = RequestStore(path)
+
+    [server] = store.list_plex_servers()
+    assert (server.machine_id, server.name, server.url, server.token) == (
+        "machine-1", "Home NAS", "http://plex:32400", "server-token",
+    )
+    settings = store.get_settings()
+    assert settings["plex_token"] == "account-token"
+    assert not any(k.startswith("plex_server_") for k in settings)
+
+
+def test_unlinked_server_keys_are_dropped_without_making_a_server(tmp_path):
+    """An unlink used to null the keys rather than remove them."""
+    path = str(tmp_path / "app.db")
+    old = RequestStore(path)
+    old.update_settings({"plex_server_url": None, "plex_server_token": None, "plex_server_machine_id": None})
+    old.close()
+
+    store = RequestStore(path)
+
+    assert store.list_plex_servers() == []
+    assert not any(k.startswith("plex_server_") for k in store.get_settings())
+
+
+def test_saving_a_known_server_refreshes_it_in_place():
+    store = _store()
+    first = store.save_plex_server("family", "Plex-1", "http://a:32400", "t1")
+    second = store.save_plex_server("friends", "Plex-2", "http://b:32400", "t2")
+    store._conn.execute("UPDATE plex_servers SET label = 'Immediate family' WHERE id = ?", (first.id,))
+    store._conn.commit()
+
+    refreshed = store.save_plex_server("family", "Plex-1", "http://a:32401", "t1-new")
+
+    assert refreshed.id == first.id
+    assert (refreshed.url, refreshed.token, refreshed.label, refreshed.priority) == (
+        "http://a:32401", "t1-new", "Immediate family", 0,
+    )
+    assert second.priority == 1
+    assert store.primary_plex_server().machine_id == "family"
+
+
+def test_removing_plex_servers_keeps_the_ones_asked_for():
+    store = _store()
+    store.save_plex_server("family", "Plex-1", "http://a", "t1")
+    store.save_plex_server("friends", "Plex-2", "http://b", "t2")
+
+    assert store.remove_plex_servers(keep=("friends",)) == 1
+    assert [s.machine_id for s in store.list_plex_servers()] == ["friends"]
+    assert store.remove_plex_servers() == 1
+    assert store.primary_plex_server() is None
+
+
+def test_a_plex_servers_token_stays_out_of_its_repr():
+    server = _store().save_plex_server("family", "Plex-1", "http://a", "secret-token")
+
+    assert "secret-token" not in repr(server)

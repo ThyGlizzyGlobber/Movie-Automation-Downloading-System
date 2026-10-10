@@ -5,10 +5,10 @@ import concurrent.futures
 from fastapi import Depends, HTTPException
 
 from app.cache import ttl_cache
-from app.db import RequestStore
+from app.db import PlexServerRow, RequestStore
 from app.plex import plex_library_lookup
 from app.tmdb import TMDBClient, TMDBError
-from app.api.deps import get_store, get_tmdb, logger, resolve_region, router
+from app.api.deps import get_plex_server, get_store, get_tmdb, logger, resolve_region, router
 from app.api.titles import get_movie_detail, get_tv_detail
 
 
@@ -170,22 +170,26 @@ def _hero_picks(kind: str, tmdb: TMDBClient, region: str) -> list[tuple[str, dic
 
 
 @ttl_cache(HERO_TTL_SECONDS)
-def _hero_slides_cached(kind: str, region: str, store: RequestStore, tmdb: TMDBClient) -> list[dict]:
-    """Keyed on the kind plus the two singletons on app.state, so this
-    holds three entries rather than one per title — which matters,
-    because app.cache's TTLCache has no size bound and only drops an
-    entry when it is next read. A per-title cache here would grow
-    without end."""
+def _hero_slides_cached(
+    kind: str, region: str, store: RequestStore, tmdb: TMDBClient, server_id: int | None
+) -> list[dict]:
+    """Keyed on the kind, the two singletons on app.state and the server
+    asked, so this holds three entries per server rather than one per
+    title — which matters, because app.cache's TTLCache has no size bound
+    and only drops an entry when it is next read. A per-title cache here
+    would grow without end. The server goes in by id because the row
+    itself isn't hashable."""
     picks = _hero_picks(kind, tmdb, region)
     if not picks:
         return []
+    server = store.get_plex_server(server_id) if server_id is not None else None
 
     def build(media_type: str, item: dict) -> dict | None:
         try:
             detail = (
-                get_movie_detail(item["id"], store, tmdb)
+                get_movie_detail(item["id"], store, server, tmdb)
                 if media_type == "movie"
-                else get_tv_detail(item["id"], store, tmdb)
+                else get_tv_detail(item["id"], store, server, tmdb)
             )
         except Exception:
             # One title TMDB won't answer for shouldn't cost the carousel
@@ -202,7 +206,7 @@ def _hero_slides_cached(kind: str, region: str, store: RequestStore, tmdb: TMDBC
     return [s for s in built if s]
 
 
-def _with_fresh_plex_state(slides: list[dict], store: RequestStore) -> list[dict]:
+def _with_fresh_plex_state(slides: list[dict], store: RequestStore, server: PlexServerRow | None) -> list[dict]:
     """Re-answer `on_plex` for slides that came out of the cache.
 
     Everything else a slide carries — the logo, the genres, the rating —
@@ -220,7 +224,7 @@ def _with_fresh_plex_state(slides: list[dict], store: RequestStore) -> list[dict
     for slide in slides:
         media_type = slide["media_type"]
         if media_type not in matchers:
-            matchers[media_type] = plex_library_lookup(store, "movie" if media_type == "movie" else "show")
+            matchers[media_type] = plex_library_lookup(store, server, "movie" if media_type == "movie" else "show")
         matcher = matchers[media_type]
         date = slide.get("release_date") or slide.get("first_air_date") or ""
         year = int(date[:4]) if date[:4].isdigit() else None
@@ -234,10 +238,12 @@ def hero_slides(
     kind: str = "home",
     region: str = Depends(resolve_region),
     store: RequestStore = Depends(get_store),
+    server: PlexServerRow | None = Depends(get_plex_server),
     tmdb: TMDBClient = Depends(get_tmdb),
 ) -> list[dict]:
     """`kind` picks which landing page's carousel this is: mixed
     movies+TV for home, one or the other for the movies and TV pages."""
     if kind not in ("home", "movies", "tv"):
         raise HTTPException(status_code=422, detail="kind must be home, movies or tv")
-    return _with_fresh_plex_state(_hero_slides_cached(kind, region, store, tmdb), store)
+    slides = _hero_slides_cached(kind, region, store, tmdb, server.id if server else None)
+    return _with_fresh_plex_state(slides, store, server)

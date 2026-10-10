@@ -294,9 +294,10 @@ def cmd_fix_plex_audio(args: argparse.Namespace) -> int:
     try:
         language = args.language or resolve_pipeline_settings(store).preferred_audio_language
         client = PlexClient(store.get_settings().get("plex_client_id") or "obsidian-cli")
+        server = store.primary_plex_server()
         print(f"asking Plex which parts are not on {language}...")
         try:
-            choices = plan_audio_selection(store, client, language)
+            choices = plan_audio_selection(server, client, language)
         except PlexError as exc:
             print(f"  {exc}")
             return 1
@@ -312,7 +313,7 @@ def cmd_fix_plex_audio(args: argparse.Namespace) -> int:
 
         failures = 0
         for choice in choices:
-            error = apply_audio_selection(store, client, choice)
+            error = apply_audio_selection(server, client, choice)
             if error:
                 failures += 1
                 print(f"  FAILED {choice.title[:60]}: {error}")
