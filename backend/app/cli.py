@@ -294,30 +294,42 @@ def cmd_fix_plex_audio(args: argparse.Namespace) -> int:
     try:
         language = args.language or resolve_pipeline_settings(store).preferred_audio_language
         client = PlexClient(store.get_settings().get("plex_client_id") or "obsidian-cli")
-        print(f"asking Plex which parts are not on {language}...")
-        try:
-            choices = plan_audio_selection(store, client, language)
-        except PlexError as exc:
-            print(f"  {exc}")
+        servers = store.list_plex_servers()
+        if not servers:
+            print("  no Plex server is linked yet")
             return 1
+        # Each server keeps its own idea of which track a part plays, so
+        # each is asked, and set, on its own.
+        failed = False
+        for server in servers:
+            print(f"asking {server.display_name} which parts are not on {language}...")
+            try:
+                choices = plan_audio_selection(server, client, language)
+            except PlexError as exc:
+                print(f"  {exc}")
+                failed = True
+                continue
 
-        for choice in choices:
-            arrow = f"{choice.from_language or 'none'} -> {choice.to_language}"
-            print(f"  {'SET  ' if args.apply else 'WOULD'}  [{' '.join(choice.languages)}]  {arrow}  {choice.title[:60]}")
+            for choice in choices:
+                arrow = f"{choice.from_language or 'none'} -> {choice.to_language}"
+                print(f"  {'SET  ' if args.apply else 'WOULD'}  [{' '.join(choice.languages)}]  {arrow}  {choice.title[:60]}")
 
+            if not args.apply:
+                print(f"\n{len(choices)} part(s) would change on {server.display_name}.")
+                continue
+
+            failures = 0
+            for choice in choices:
+                error = apply_audio_selection(server, client, choice)
+                if error:
+                    failures += 1
+                    print(f"  FAILED {choice.title[:60]}: {error}")
+            print(f"\n{len(choices) - failures} part(s) changed on {server.display_name}, {failures} failed.")
+            failed = failed or bool(failures)
         if not args.apply:
-            print(f"\n{len(choices)} part(s) would change. Re-run with --apply to set them.")
+            print("Re-run with --apply to set them.")
             print("This changes which track Plex picks, for everyone — no file is touched.")
-            return 0
-
-        failures = 0
-        for choice in choices:
-            error = apply_audio_selection(store, client, choice)
-            if error:
-                failures += 1
-                print(f"  FAILED {choice.title[:60]}: {error}")
-        print(f"\n{len(choices) - failures} part(s) changed, {failures} failed.")
-        return 1 if failures else 0
+        return 1 if failed else 0
     finally:
         store.close()
 

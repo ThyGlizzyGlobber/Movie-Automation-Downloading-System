@@ -9,10 +9,10 @@ from fastapi.responses import FileResponse, RedirectResponse, Response as RawRes
 
 from app import config, logos, trailers
 from app.cache import TTLCache
-from app.db import RequestStore
+from app.db import PlexServerRow, RequestStore
 from app.plex import local_file_for_title, plex_show_episodes
 from app.tmdb import TMDBClient, TMDBError, best_logo_path, is_movie_coming_soon, is_tv_upcoming, logo_aspect, trailer_candidates
-from app.api.deps import get_store, get_tmdb, router
+from app.api.deps import get_plex_server, get_store, get_tmdb, router
 from app.api.helpers import _annotate_on_plex, _on_plex_for
 
 
@@ -28,16 +28,18 @@ _TRAILER_FILENAME_RE = re.compile(r"^[a-z]+-\d+-[\w-]+\.mp4$")
 # whole movie library. Kept per title for a while: it only decides whether
 # the page offers "Replace it", and the redownload itself looks again
 # before touching anything. Keyed on the store too, so each store (one per
-# test) has its own answers.
+# test) has its own answers, and on the server, since each has its own.
 _PLEX_FILE_TTL_SECONDS = 10 * 60
 _plex_file_cache = TTLCache(_PLEX_FILE_TTL_SECONDS, max_entries=1024)
 
 
-def _plex_file_available(store: RequestStore, title: str, year: int | None, tmdb_id: int) -> bool:
-    key = (store, tmdb_id, title, year)
+def _plex_file_available(
+    store: RequestStore, server: PlexServerRow | None, title: str, year: int | None, tmdb_id: int
+) -> bool:
+    key = (store, server.machine_id if server else None, tmdb_id, title, year)
     available, hit = _plex_file_cache.get(key)
     if not hit:
-        available = local_file_for_title(store, "movie", title, year, tmdb_id) is not None
+        available = local_file_for_title(store, server, "movie", title, year, tmdb_id) is not None
         _plex_file_cache.set(key, available)
     return available
 
@@ -59,7 +61,9 @@ def _aired_episode_count(show: dict) -> int:
     return before + int(last_episode)
 
 
-def _plex_episode_count(store: RequestStore, title: str, year: int | None, tmdb_id: int | None = None) -> int | None:
+def _plex_episode_count(
+    store: RequestStore, server: PlexServerRow | None, title: str, year: int | None, tmdb_id: int | None = None
+) -> int | None:
     """How many episodes of this show Plex has, or None when Plex isn't
     linked or can't find the show.
 
@@ -70,7 +74,7 @@ def _plex_episode_count(store: RequestStore, title: str, year: int | None, tmdb_
     took to get it. Specials are left out for the same reason
     `_aired_episode_count` leaves them out: nothing else on the show page
     counts them as episodes of a season."""
-    episodes = plex_show_episodes(store, title, year, tmdb_id)
+    episodes = plex_show_episodes(store, server, title, year, tmdb_id)
     if episodes is None:
         return None
     return sum(1 for season, _episode in episodes if season >= 1)
@@ -78,7 +82,10 @@ def _plex_episode_count(store: RequestStore, title: str, year: int | None, tmdb_
 
 @router.get("/api/movies/{tmdb_id}")
 def get_movie_detail(
-    tmdb_id: int, store: RequestStore = Depends(get_store), tmdb: TMDBClient = Depends(get_tmdb)
+    tmdb_id: int,
+    store: RequestStore = Depends(get_store),
+    server: PlexServerRow | None = Depends(get_plex_server),
+    tmdb: TMDBClient = Depends(get_tmdb),
 ) -> dict:
     """Full TMDB detail for the detail view — overview, runtime, genres,
     poster/backdrop paths. The frontend hotlinks poster/backdrop images
@@ -94,12 +101,12 @@ def get_movie_detail(
     # Soon titles use this to grey out their own Add to Plex button.
     release_dates = movie.get("release_dates", {}).get("results", [])
     is_coming_soon = is_movie_coming_soon(movie, release_dates)
-    on_plex = _on_plex_for(movie.get("title") or "", year, "movie", store, tmdb_id)
+    on_plex = _on_plex_for(movie.get("title") or "", year, "movie", store, server, tmdb_id)
     tracked = bool(store.get_library_items(tmdb_id, "movie")) or store.get_latest_organized_request(tmdb_id, ("movie",)) is not None
-    collection = _collection_for(movie, tmdb, store)
+    collection = _collection_for(movie, tmdb, store, server)
     detail = {
         **movie,
-        **_recommendations_on_plex(movie, "movie", store, title_key="title", date_key="release_date"),
+        **_recommendations_on_plex(movie, "movie", store, server, title_key="title", date_key="release_date"),
     }
     if collection:
         # A sequel already in the franchise row would only appear twice.
@@ -135,7 +142,10 @@ def get_movie_detail(
 
 @router.get("/api/movies/{tmdb_id}/plex-file")
 def get_movie_plex_file(
-    tmdb_id: int, store: RequestStore = Depends(get_store), tmdb: TMDBClient = Depends(get_tmdb)
+    tmdb_id: int,
+    store: RequestStore = Depends(get_store),
+    server: PlexServerRow | None = Depends(get_plex_server),
+    tmdb: TMDBClient = Depends(get_tmdb),
 ) -> dict:
     """Whether there is a file this app didn't add that Plex can point at
     from here: enough for the page to offer "Replace it" and "This copy is
@@ -154,9 +164,9 @@ def get_movie_plex_file(
     year_str = (movie.get("release_date") or "")[:4]
     year = int(year_str) if year_str.isdigit() else None
     tracked = bool(store.get_library_items(tmdb_id, "movie")) or store.get_latest_organized_request(tmdb_id, ("movie",)) is not None
-    if tracked or not _on_plex_for(title, year, "movie", store, tmdb_id):
+    if tracked or not _on_plex_for(title, year, "movie", store, server, tmdb_id):
         return {"available": False}
-    return {"available": _plex_file_available(store, title, year, tmdb_id)}
+    return {"available": _plex_file_available(store, server, title, year, tmdb_id)}
 
 
 def _warmed(logo_path: str | None) -> str | None:
@@ -211,7 +221,7 @@ def get_movie_trailer(tmdb_id: int, tmdb: TMDBClient = Depends(get_tmdb)) -> dic
     return _trailer_answer("movie", tmdb_id, videos)
 
 
-def _collection_for(movie: dict, tmdb: TMDBClient, store: RequestStore) -> dict | None:
+def _collection_for(movie: dict, tmdb: TMDBClient, store: RequestStore, server: PlexServerRow | None) -> dict | None:
     """The franchise this film belongs to — every other film in TMDB's
     collection for it, in release order, each carrying `on_plex` — or
     None when it stands alone.
@@ -248,7 +258,7 @@ def _collection_for(movie: dict, tmdb: TMDBClient, store: RequestStore) -> dict 
     return {
         "id": belongs["id"],
         "name": collection.get("name") or belongs.get("name") or "",
-        "parts": _annotate_on_plex(parts, "movie", store, title_key="title", date_key="release_date"),
+        "parts": _annotate_on_plex(parts, "movie", store, server, title_key="title", date_key="release_date"),
     }
 
 
@@ -265,7 +275,9 @@ def _part_is_real(part: dict, today: str, tmdb: TMDBClient) -> bool:
         return False
 
 
-def _recommendations_on_plex(detail: dict, media_type: str, store: RequestStore, *, title_key: str, date_key: str) -> dict:
+def _recommendations_on_plex(
+    detail: dict, media_type: str, store: RequestStore, server: PlexServerRow | None, *, title_key: str, date_key: str
+) -> dict:
     """The detail's "More like this" titles, carrying `on_plex` like every
     other row. They arrive inside the detail's own append_to_response,
     not through a list route, so they were the one row the annotation
@@ -275,12 +287,17 @@ def _recommendations_on_plex(detail: dict, media_type: str, store: RequestStore,
     recs = detail.get("recommendations")
     if not isinstance(recs, dict):
         return {}
-    results = _annotate_on_plex(recs.get("results") or [], media_type, store, title_key=title_key, date_key=date_key)
+    results = _annotate_on_plex(recs.get("results") or [], media_type, store, server, title_key=title_key, date_key=date_key)
     return {"recommendations": {**recs, "results": results}}
 
 
 @router.get("/api/tv/{tmdb_id}")
-def get_tv_detail(tmdb_id: int, store: RequestStore = Depends(get_store), tmdb: TMDBClient = Depends(get_tmdb)) -> dict:
+def get_tv_detail(
+    tmdb_id: int,
+    store: RequestStore = Depends(get_store),
+    server: PlexServerRow | None = Depends(get_plex_server),
+    tmdb: TMDBClient = Depends(get_tmdb),
+) -> dict:
     """Full TMDB show detail — overview, seasons, status (Returning
     Series/Ended/Canceled), genres, poster/backdrop paths. Backs the show
     detail view's subscribe/unsubscribe/bulk-download controls."""
@@ -290,14 +307,14 @@ def get_tv_detail(tmdb_id: int, store: RequestStore = Depends(get_store), tmdb: 
         raise HTTPException(status_code=404, detail=f"tmdb_id {tmdb_id} not found") from exc
     year_str = (show.get("first_air_date") or "")[:4]
     year = int(year_str) if year_str.isdigit() else None
-    on_plex = _on_plex_for(show.get("name") or "", year, "show", store, tmdb_id)
+    on_plex = _on_plex_for(show.get("name") or "", year, "show", store, server, tmdb_id)
     # Every aired episode is already on Plex: the show page hides "Add
     # all to Plex" rather than offering a download that would add nothing.
     aired = _aired_episode_count(show)
-    have = _plex_episode_count(store, show.get("name") or "", year, tmdb_id) if on_plex else None
+    have = _plex_episode_count(store, server, show.get("name") or "", year, tmdb_id) if on_plex else None
     return {
         **show,
-        **_recommendations_on_plex(show, "show", store, title_key="name", date_key="first_air_date"),
+        **_recommendations_on_plex(show, "show", store, server, title_key="name", date_key="first_air_date"),
         "on_plex": on_plex,
         "plex_complete": bool(have is not None and have >= aired > 0),
         # How many episodes the household actually has, for the "On disk"

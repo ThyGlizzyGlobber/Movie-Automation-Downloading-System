@@ -5,8 +5,9 @@ import secrets
 from urllib.parse import urlparse
 
 from fastapi import Depends, HTTPException, Request, Response
+from pydantic import BaseModel
 
-from app.db import RequestStore, SessionRow
+from app.db import PlexServerRow, RequestStore, SessionRow
 from app.plex import PIN_TIMEOUT_SECONDS, LoginSession, PlexError
 from app.api.deps import (
     DEFAULT_CERTIFICATION_REGION,
@@ -19,8 +20,10 @@ from app.api.deps import (
     _set_session_cookie,
     can_clear_requests,
     get_login_session,
+    get_session_server,
     get_store,
     limiter,
+    require_admin,
     require_session,
     router,
 )
@@ -30,8 +33,8 @@ from app.api.main import app
 # ---------------------------------------------------------------------------
 # End-user login (frontend migration Part C3) — Plex PIN sign-in, same
 # mechanism as admin server-linking (app/api/plex.py), different purpose:
-# authenticates *one person* against the already-linked server rather than
-# linking the server itself. See app/plex.py's LoginSession.
+# authenticates *one person* against the already-linked servers rather than
+# linking a server itself. See app/plex.py's LoginSession.
 # ---------------------------------------------------------------------------
 
 
@@ -117,20 +120,25 @@ def login_status(
             result["username"],
             result["is_admin"],
             result.get("thumb"),
-            server_token=result.get("server_token"),
+            server_tokens=result["server_tokens"],
         )
         session_id = secrets.token_urlsafe(32)
-        store.create_session(session_id, user.plex_user_id, user.username, user.is_admin, _new_session_expiry())
+        store.create_session(
+            session_id, user.plex_user_id, user.username, user.is_admin, _new_session_expiry(), result["server_id"]
+        )
         _set_session_cookie(response, request, session_id)
         # Spent server-side above; clear the browser's copy too rather
         # than leave a dead id sitting in the jar for its full 15 minutes.
         response.delete_cookie(LOGIN_ATTEMPT_COOKIE_NAME, path="/")
+        server = store.get_plex_server(result["server_id"])
+        role = "admin" if user.is_admin else "user"
         store.record_auth_event(
             "login_success",
             plex_user_id=user.plex_user_id,
             username=user.username,
             ip_address=_client_ip(request),
-            detail="admin" if user.is_admin else "user",
+            # Which server only says something once there's a choice.
+            detail=f"{role} on {server.display_name}" if server and len(store.list_plex_servers()) > 1 else role,
         )
     elif status["error"]:
         store.record_auth_event(
@@ -146,8 +154,16 @@ def login_status(
     }
 
 
+def _server_out(server: PlexServerRow) -> dict:
+    return {"id": server.id, "name": server.display_name}
+
+
 @router.get("/api/auth/session")
-def get_current_session(store: RequestStore = Depends(get_store), session: SessionRow = Depends(require_session)) -> dict:
+def get_current_session(
+    store: RequestStore = Depends(get_store),
+    session: SessionRow = Depends(require_session),
+    server: PlexServerRow | None = Depends(get_session_server),
+) -> dict:
     user = store.get_user(session.plex_user_id)
     return {
         "username": session.username,
@@ -162,7 +178,32 @@ def get_current_session(store: RequestStore = Depends(get_store), session: Sessi
         "certification_region": store.get_settings().get("certification_region") or DEFAULT_CERTIFICATION_REGION,
         # Whether the Requests page shows "Clear finished" (Settings › History).
         "can_clear_requests": can_clear_requests(store, session),
+        # The Plex server this session is served by, and — for an admin,
+        # the only one who can switch — every server there is to switch to.
+        "server": _server_out(server) if server else None,
+        "servers": [_server_out(s) for s in store.list_plex_servers()] if session.is_admin else [],
     }
+
+
+class SessionServerIn(BaseModel):
+    server_id: int
+
+
+@router.put("/api/auth/session/server")
+def switch_session_server(
+    body: SessionServerIn,
+    store: RequestStore = Depends(get_store),
+    session: SessionRow = Depends(require_admin),
+) -> dict:
+    """An admin moving their own session to another server — what every
+    Plex read and, later, every request they make goes to. Admins only:
+    anyone else is shared on the servers they're meant to see, and lands
+    on the first of them by priority."""
+    server = store.get_plex_server(body.server_id)
+    if server is None:
+        raise HTTPException(status_code=404, detail="no such Plex server")
+    store.set_session_server(session.id, server.id)
+    return {"server": _server_out(server)}
 
 
 @app.post("/api/auth/logout")

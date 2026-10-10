@@ -481,10 +481,11 @@ def test_check_downloading_marks_complete_when_gone_but_plex_has_it(monkeypatch)
     *finished* download disappear the same way a deleted one would — Plex
     is the tie-breaker before assuming the worse case."""
     store = RequestStore(":memory:")
+    store.save_plex_server("machine-1", "Home", "http://plex", "tok")
     row = store.create_request(tmdb_id=693134, title="Dune: Part Two", release_year=2024, query=None)
     store.update_status(row.id, "downloading", result={"torrent_hash": "aaaa"})
     qbt = FakeQBTClient(torrent_states={})
-    monkeypatch.setattr("app.worker.plex.has_in_library", lambda store, title, year, tmdb_id=None: True)
+    monkeypatch.setattr("app.worker.plex.has_in_library", lambda store, server, title, year, tmdb_id=None: True)
     worker = Worker(store, FakeTMDBClient(), qbt)
 
     asyncio.run(worker._check_downloading())
@@ -495,10 +496,11 @@ def test_check_downloading_marks_complete_when_gone_but_plex_has_it(monkeypatch)
 
 def test_check_downloading_marks_cancelled_with_plex_checked_message_when_not_found(monkeypatch):
     store = RequestStore(":memory:")
+    store.save_plex_server("machine-1", "Home", "http://plex", "tok")
     row = store.create_request(tmdb_id=693134, title="Dune: Part Two", release_year=2024, query=None)
     store.update_status(row.id, "downloading", result={"torrent_hash": "aaaa"})
     qbt = FakeQBTClient(torrent_states={})
-    monkeypatch.setattr("app.worker.plex.has_in_library", lambda store, title, year, tmdb_id=None: False)
+    monkeypatch.setattr("app.worker.plex.has_in_library", lambda store, server, title, year, tmdb_id=None: False)
     worker = Worker(store, FakeTMDBClient(), qbt)
 
     asyncio.run(worker._check_downloading())
@@ -1215,8 +1217,9 @@ def test_plex_is_the_verifier_for_the_follow_check(monkeypatch):
     whatever the ledger says."""
     from app import plex as plex_module
 
-    monkeypatch.setattr(plex_module, "plex_show_episodes", lambda store, title, year, tmdb_id=None: {(1, 1)})
+    monkeypatch.setattr(plex_module, "plex_show_episodes", lambda store, server, title, year, tmdb_id=None: {(1, 1)})
     store = RequestStore(":memory:")
+    store.save_plex_server("machine-1", "Home", "http://plex", "tok")
     show = store.create_show(tmdb_id=95350, title="Lanterns")
     tmdb = FakeTMDBClient(show={**SHOW, "number_of_seasons": 1}, season_episodes={1: _TWO_AIRED_ONE_FUTURE})
     worker = Worker(store, tmdb, FakeQBTClient())
@@ -1230,8 +1233,9 @@ def test_plex_is_the_verifier_for_the_follow_check(monkeypatch):
 def test_plex_is_the_verifier_for_the_season_fallback(monkeypatch):
     from app import plex as plex_module
 
-    monkeypatch.setattr(plex_module, "plex_show_episodes", lambda store, title, year, tmdb_id=None: {(1, 1), (1, 2)})
+    monkeypatch.setattr(plex_module, "plex_show_episodes", lambda store, server, title, year, tmdb_id=None: {(1, 1), (1, 2)})
     store = RequestStore(":memory:")
+    store.save_plex_server("machine-1", "Home", "http://plex", "tok")
     show = store.create_show(tmdb_id=95350, title="Lanterns")
     row = store.create_pack_request(tmdb_id=95350, show_id=show.id, title="Lanterns", season_number=None)
     tmdb = FakeTMDBClient(
@@ -3103,3 +3107,94 @@ def test_a_split_pack_is_not_attempted_again():
     )
 
     assert worker._should_attempt_pack(store.get_show(show.id), None, settings) is False
+
+
+# -- More than one Plex server: the worker asks, and tells, all of them. --
+
+
+def _two_linked_servers(store):
+    return store.save_plex_server("family", "Plex-1", "http://family", "t1"), store.save_plex_server(
+        "friends", "Plex-2", "http://friends", "t2"
+    )
+
+
+def test_a_title_on_any_server_counts_as_on_plex(monkeypatch):
+    from app import plex as plex_module
+
+    store = RequestStore(":memory:")
+    _two_linked_servers(store)
+    monkeypatch.setattr(plex_module, "has_in_library", lambda store, server, *a, **k: server.machine_id == "friends")
+
+    assert plex_module.has_in_any_library(store, "Film", 2024, 1) is True
+
+
+def test_a_server_that_couldnt_be_asked_isnt_taken_as_not_there(monkeypatch):
+    from app import plex as plex_module
+
+    def answer(store, server, *a, **k):
+        if server.machine_id == "family":
+            raise plex_module.PlexError("down")
+        return False
+
+    store = RequestStore(":memory:")
+    _two_linked_servers(store)
+    monkeypatch.setattr(plex_module, "has_in_library", answer)
+
+    with pytest.raises(plex_module.PlexError):
+        plex_module.has_in_any_library(store, "Film", 2024, 1)
+    assert plex_module.has_in_any_library(RequestStore(":memory:"), "Film", 2024, 1) is None
+
+
+def test_episodes_any_server_holds_are_episodes_the_household_has(monkeypatch):
+    from app import plex as plex_module
+
+    store = RequestStore(":memory:")
+    _two_linked_servers(store)
+    held = {"family": {(1, 1)}, "friends": {(1, 2)}}
+    monkeypatch.setattr(plex_module, "plex_show_episodes", lambda store, server, *a, **k: held[server.machine_id])
+
+    assert plex_module.show_episodes_on_any_server(store, "Show", 2024, 1) == {(1, 1), (1, 2)}
+
+
+def test_every_server_is_refreshed_and_put_on_the_right_track_after_an_import(monkeypatch):
+    from app import plex as plex_module
+
+    store = RequestStore(":memory:")
+    _two_linked_servers(store)
+    refreshed, nudged = [], []
+    monkeypatch.setattr(
+        plex_module, "refresh_after_import", lambda store, server, media_type, path: refreshed.append(server.machine_id)
+    )
+    monkeypatch.setattr(
+        plex_module, "select_audio_after_import", lambda store, server, *a, **k: nudged.append(server.machine_id)
+    )
+    worker = Worker(store, FakeTMDBClient(), FakeQBTClient(torrent_states={}))
+
+    async def run():
+        await worker._refresh_plex("movie", Path("/movies/Film (2024)/Film.mkv"), "Film", 2024, 1)
+        await asyncio.gather(*worker._audio_nudges)
+
+    asyncio.run(run())
+
+    assert sorted(refreshed) == ["family", "friends"]
+    assert sorted(nudged) == ["family", "friends"]
+
+
+def test_one_server_failing_to_refresh_doesnt_stop_the_other(monkeypatch):
+    from app import plex as plex_module
+
+    store = RequestStore(":memory:")
+    _two_linked_servers(store)
+    refreshed = []
+
+    def refresh(store, server, media_type, path):
+        if server.machine_id == "family":
+            raise RuntimeError("down")
+        refreshed.append(server.machine_id)
+
+    monkeypatch.setattr(plex_module, "refresh_after_import", refresh)
+    worker = Worker(store, FakeTMDBClient(), FakeQBTClient(torrent_states={}))
+
+    asyncio.run(worker._refresh_plex("movie", Path("/movies/Film (2024)/Film.mkv")))
+
+    assert refreshed == ["friends"]

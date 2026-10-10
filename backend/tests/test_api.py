@@ -289,6 +289,11 @@ class FakePlexLinker:
         self._status = {"linked": False, "username": None, "server_name": None, "pending": False, "error": None}
 
 
+# What a completed sign-in carries about servers, for one that reached
+# only the fixture's own server (the first one linked, so id 1).
+_ON_TEST_SERVER = {"server_id": 1, "server_tokens": {1: None}}
+
+
 class FakeLoginSession:
     """Stands in for app.plex.LoginSession: API tests exercise route
     wiring, not the real PIN polling flow (see test_plex.py for that).
@@ -372,13 +377,13 @@ def client_and_deps(tmp_path):
         # unauthenticated/non-admin/setup-bootstrap behavior use the
         # separate `unauthenticated_client`/`non_admin_client` fixtures
         # below instead of this one.
-        store.update_settings(
-            {
-                "plex_token": "admin-plex-token",
-                "plex_client_id": "test-client-id",
-                "plex_server_machine_id": "test-machine-id",
-            }
-        )
+        store.update_settings({"plex_token": "admin-plex-token", "plex_client_id": "test-client-id"})
+        # A linked server is what completes setup. Its address is
+        # unreachable on purpose and Plex reads are switched off, so no
+        # test reaches for a network it doesn't have; a test that wants
+        # them stubs the PlexClient calls it expects and calls _link_plex.
+        store.save_plex_server("test-machine-id", "Test server", "http://plex.invalid", "test-server-token")
+        api.app.dependency_overrides[deps.get_plex_server] = lambda: None
         admin = store.upsert_user("admin-plex-id", "admin", True)
         session = store.create_session(
             "test-admin-session",
@@ -389,6 +394,14 @@ def client_and_deps(tmp_path):
         )
         client.cookies.set(deps.SESSION_COOKIE_NAME, session.id)
         yield client, store, tmdb, worker, qbt, plex_linker
+    api.app.dependency_overrides.pop(deps.get_plex_server, None)
+
+
+def _link_plex(store, url, token):
+    """Turns Plex reads back on, against a server at `url`."""
+    server = store.save_plex_server("test-machine-id", "Test server", url, token)
+    api.app.dependency_overrides.pop(deps.get_plex_server, None)
+    return server
 
 
 @pytest.fixture
@@ -499,14 +512,15 @@ def test_get_request_404s_when_missing(client_and_deps):
 def test_list_requests_newest_first_and_status_filter(client_and_deps):
     client, store, _, _, _, _ = client_and_deps
     first = client.post("/api/requests", json={"tmdb_id": 693134}).json()
+    # Settled first: asking again while it was still live would join it.
+    store.update_status(first["id"], "failed", error_message="boom")
     second = client.post("/api/requests", json={"tmdb_id": 693134}).json()
-    store.update_status(second["id"], "failed", error_message="boom")
 
     all_rows = client.get("/api/requests").json()
     assert [r["id"] for r in all_rows] == [second["id"], first["id"]]
 
     failed_only = client.get("/api/requests", params={"status": "failed"}).json()
-    assert [r["id"] for r in failed_only] == [second["id"]]
+    assert [r["id"] for r in failed_only] == [first["id"]]
 
 
 def test_cancel_deletes_torrent_and_files_and_marks_cancelled(client_and_deps):
@@ -1386,7 +1400,7 @@ def test_detail_more_like_this_carries_on_plex(client_and_deps, monkeypatch):
     owned = {("Owned Film", 2020), ("Owned Show", 2019)}
     asked = set()
 
-    def lookup(store, media_type):
+    def lookup(store, server, media_type):
         asked.add(media_type)
         return lambda title, year, tmdb_id=None: (title, year) in owned
 
@@ -1740,15 +1754,15 @@ def test_get_tv_detail_plex_complete_when_plex_holds_every_aired_episode(client_
         seasons=[{"season_number": 1, "episode_count": 8}],
         last_episode_to_air={"season_number": 1, "episode_number": 8},
     )
-    monkeypatch.setattr(titles, "_on_plex_for", lambda title, year, media_type, store, tmdb_id=None: True)
+    monkeypatch.setattr(titles, "_on_plex_for", lambda title, year, media_type, store, server, tmdb_id=None: True)
 
-    monkeypatch.setattr(titles, "_plex_episode_count", lambda store, title, year, tmdb_id=None: 8)
+    monkeypatch.setattr(titles, "_plex_episode_count", lambda store, server, title, year, tmdb_id=None: 8)
     assert client.get("/api/tv/95350").json()["plex_complete"] is True
 
-    monkeypatch.setattr(titles, "_plex_episode_count", lambda store, title, year, tmdb_id=None: 6)
+    monkeypatch.setattr(titles, "_plex_episode_count", lambda store, server, title, year, tmdb_id=None: 6)
     assert client.get("/api/tv/95350").json()["plex_complete"] is False
 
-    monkeypatch.setattr(titles, "_plex_episode_count", lambda store, title, year, tmdb_id=None: None)
+    monkeypatch.setattr(titles, "_plex_episode_count", lambda store, server, title, year, tmdb_id=None: None)
     assert client.get("/api/tv/95350").json()["plex_complete"] is False
 
 
@@ -1758,10 +1772,10 @@ def test_plex_episode_count_counts_episodes_not_files(client_and_deps, monkeypat
     # a re-download can't inflate this the way counting filed files does.
     # Specials (season 0) aren't episodes of a season here or anywhere
     # else on the show page.
-    monkeypatch.setattr(titles, "plex_show_episodes", lambda store, title, year, tmdb_id=None: {(0, 1), (1, 1), (1, 2)})
+    monkeypatch.setattr(titles, "plex_show_episodes", lambda store, server, title, year, tmdb_id=None: {(0, 1), (1, 1), (1, 2)})
     assert titles._plex_episode_count(store, "Show", 2026, 95350) == 2
 
-    monkeypatch.setattr(titles, "plex_show_episodes", lambda store, title, year, tmdb_id=None: None)
+    monkeypatch.setattr(titles, "plex_show_episodes", lambda store, server, title, year, tmdb_id=None: None)
     assert titles._plex_episode_count(store, "Show", 2026, 95350) is None
 
 
@@ -1774,8 +1788,8 @@ def test_get_tv_detail_reports_how_many_episodes_plex_holds(client_and_deps, mon
         seasons=[{"season_number": 1, "episode_count": 8}],
         last_episode_to_air={"season_number": 1, "episode_number": 8},
     )
-    monkeypatch.setattr(titles, "_on_plex_for", lambda title, year, media_type, store, tmdb_id=None: True)
-    monkeypatch.setattr(titles, "plex_show_episodes", lambda store, title, year, tmdb_id=None: {(1, 1), (1, 2), (1, 3)})
+    monkeypatch.setattr(titles, "_on_plex_for", lambda title, year, media_type, store, server, tmdb_id=None: True)
+    monkeypatch.setattr(titles, "plex_show_episodes", lambda store, server, title, year, tmdb_id=None: {(1, 1), (1, 2), (1, 3)})
 
     body = client.get("/api/tv/95350").json()
     assert body["plex_episode_count"] == 3
@@ -2197,10 +2211,17 @@ def test_create_show_rejects_a_second_subscription_to_the_same_show(client_and_d
     assert response.status_code == 409
 
 
+def _followed_show(store, tmdb_id, title):
+    """A show the fixture's own server follows."""
+    show = store.create_show(tmdb_id=tmdb_id, title=title)
+    store.follow_show(show.id, store.primary_plex_server().id)
+    return store.get_show(show.id)
+
+
 def test_list_shows_returns_subscriptions(client_and_deps):
     client, store, _, _, _, _ = client_and_deps
-    store.create_show(tmdb_id=1, title="A")
-    store.create_show(tmdb_id=2, title="B")
+    _followed_show(store, 1, "A")
+    _followed_show(store, 2, "B")
 
     response = client.get("/api/shows")
 
@@ -2210,7 +2231,7 @@ def test_list_shows_returns_subscriptions(client_and_deps):
 
 def test_show_out_exposes_latest_request(client_and_deps):
     client, store, _, _, _, _ = client_and_deps
-    show = store.create_show(tmdb_id=1, title="A")
+    show = _followed_show(store, 1, "A")
 
     no_history = client.get(f"/api/shows/{show.id}").json()
     assert no_history["latest_request"] is None
@@ -2225,8 +2246,8 @@ def test_show_out_exposes_latest_request(client_and_deps):
 
 def test_list_shows_filters_by_status(client_and_deps):
     client, store, _, _, _, _ = client_and_deps
-    watching = store.create_show(tmdb_id=1, title="A")
-    paused = store.create_show(tmdb_id=2, title="B")
+    watching = _followed_show(store, 1, "A")
+    paused = _followed_show(store, 2, "B")
     store.update_show_status(paused.id, "paused")
 
     response = client.get("/api/shows", params={"status": "watching"})
@@ -2242,7 +2263,7 @@ def test_get_show_404s_when_missing(client_and_deps):
 
 def test_unsubscribe_show_deletes_it_but_keeps_request_history(client_and_deps):
     client, store, _, _, _, _ = client_and_deps
-    show = store.create_show(tmdb_id=1, title="A")
+    show = _followed_show(store, 1, "A")
     request_row = store.create_episode_request(
         tmdb_id=1, show_id=show.id, title="A", season_number=1, episode_number=1
     )
@@ -2505,7 +2526,7 @@ def test_bulk_download_is_independent_of_watching_status(client_and_deps):
 
 def test_list_requests_exposes_episode_fields(client_and_deps):
     client, store, _, _, _, _ = client_and_deps
-    show = store.create_show(tmdb_id=1, title="A")
+    show = _followed_show(store, 1, "A")
     store.create_episode_request(tmdb_id=1, show_id=show.id, title="A", season_number=1, episode_number=4)
 
     response = client.get("/api/requests")
@@ -2648,7 +2669,7 @@ def test_setup_mutation_refuses_missing_token_before_setup_completes(tmp_path, m
 
 def test_setup_tmdb_refuses_to_override_an_env_configured_key(unauthenticated_client, monkeypatch):
     client, store, _, _, _, _ = unauthenticated_client
-    store.update_settings({"plex_server_machine_id": None})  # reopen the bootstrap window
+    store.remove_plex_servers()  # reopen the bootstrap window
     monkeypatch.setattr(config, "TMDB_API_KEY", "from-env")
     token = store.get_or_create_setup_token()
 
@@ -2659,7 +2680,7 @@ def test_setup_tmdb_refuses_to_override_an_env_configured_key(unauthenticated_cl
 
 def test_plex_link_bootstrap_requires_setup_token(unauthenticated_client):
     client, store, _, _, _, _ = unauthenticated_client
-    store.update_settings({"plex_server_machine_id": None})  # reopen the bootstrap window
+    store.remove_plex_servers()  # reopen the bootstrap window
 
     response = client.post("/api/plex/link")
     assert response.status_code == 401
@@ -2944,7 +2965,7 @@ def test_hero_refreshes_on_plex_without_waiting_for_the_cache(client_and_deps, m
     tmdb.get_movie = counted
     on_plex = {"value": False}
 
-    def fake_lookup(store, media_type):
+    def fake_lookup(store, server, media_type):
         return lambda *a, **k: on_plex["value"]
 
     monkeypatch.setattr(hero, "plex_library_lookup", fake_lookup)
@@ -3021,7 +3042,7 @@ def test_login_status_sets_session_cookie_once_resolved(client_and_deps):
     login_session = api_state_login_session(client)
     login_session._status = {
         "pending": False,
-        "result": {"plex_user_id": "friend-1", "username": "friend", "is_admin": False},
+        "result": {"plex_user_id": "friend-1", "username": "friend", "is_admin": False, **_ON_TEST_SERVER},
         "error": None,
     }
 
@@ -3054,7 +3075,8 @@ def test_login_status_reports_pending_error_without_a_cookie(client_and_deps):
 
 
 def test_get_current_session_reflects_the_signed_in_user(non_admin_client):
-    client, _, _, _, _, _ = non_admin_client
+    client, store, _, _, _, _ = non_admin_client
+    _link_plex(store, "http://plex.local:32400", "admin-token")
 
     response = client.get("/api/auth/session")
 
@@ -3068,6 +3090,9 @@ def test_get_current_session_reflects_the_signed_in_user(non_admin_client):
         "avatar": False,
         "certification_region": deps.DEFAULT_CERTIFICATION_REGION,
         "can_clear_requests": True,
+        # Only an admin is told which other servers there are.
+        "server": {"id": 1, "name": "Test server"},
+        "servers": [],
     }
 
 
@@ -3106,7 +3131,7 @@ def test_list_plex_servers_returns_only_owned_ones(client_and_deps, monkeypatch)
     response = client.get("/api/plex/servers")
 
     assert response.status_code == 200
-    assert response.json() == [{"name": "Mine", "machine_identifier": "mid-a"}]
+    assert response.json() == [{"name": "Mine", "machine_identifier": "mid-a", "linked": False}]
 
 
 def test_select_plex_server_switches_and_signs_out_other_sessions(client_and_deps, monkeypatch):
@@ -3129,7 +3154,7 @@ def test_select_plex_server_switches_and_signs_out_other_sessions(client_and_dep
 
     assert response.status_code == 200
     assert response.json() == {"server_name": "Second NAS"}
-    assert store.get_settings()["plex_server_machine_id"] == "mid-2"
+    assert [s.machine_id for s in store.list_plex_servers()] == ["mid-2"]
     assert store.get_session("other-session") is None
 
 
@@ -3196,6 +3221,8 @@ def test_select_plex_server_during_bootstrap_also_signs_the_admin_in(tmp_path, m
             "avatar": False,
             "certification_region": deps.DEFAULT_CERTIFICATION_REGION,
             "can_clear_requests": True,
+            "server": {"id": 1, "name": "Home NAS"},
+            "servers": [{"id": 1, "name": "Home NAS"}],
         }
 
 
@@ -3254,7 +3281,7 @@ def test_session_cookie_is_not_secure_by_default(client_and_deps):
     login_session = api_state_login_session(client)
     login_session._status = {
         "pending": False,
-        "result": {"plex_user_id": "cookie-user", "username": "cookie-user", "is_admin": False},
+        "result": {"plex_user_id": "cookie-user", "username": "cookie-user", "is_admin": False, **_ON_TEST_SERVER},
         "error": None,
     }
 
@@ -3273,7 +3300,7 @@ def test_session_cookie_is_secure_when_the_request_arrived_over_https(client_and
     login_session = api_state_login_session(client)
     login_session._status = {
         "pending": False,
-        "result": {"plex_user_id": "cookie-user-2", "username": "cookie-user-2", "is_admin": False},
+        "result": {"plex_user_id": "cookie-user-2", "username": "cookie-user-2", "is_admin": False, **_ON_TEST_SERVER},
         "error": None,
     }
 
@@ -3317,7 +3344,7 @@ def test_enabling_remote_access_no_longer_decides_the_cookie_flag(client_and_dep
     login_session = api_state_login_session(client)
     login_session._status = {
         "pending": False,
-        "result": {"plex_user_id": "lan-user", "username": "lan-user", "is_admin": False},
+        "result": {"plex_user_id": "lan-user", "username": "lan-user", "is_admin": False, **_ON_TEST_SERVER},
         "error": None,
     }
 
@@ -3368,7 +3395,7 @@ def test_audit_log_records_login_success_and_failure(client_and_deps):
 
     login_session._status = {
         "pending": False,
-        "result": {"plex_user_id": "audit-user", "username": "audit-user", "is_admin": False},
+        "result": {"plex_user_id": "audit-user", "username": "audit-user", "is_admin": False, **_ON_TEST_SERVER},
         "error": None,
     }
     client.post("/api/auth/login/start")
@@ -3508,7 +3535,7 @@ def _finished_login(client, plex_user_id: str) -> "FakeLoginSession":
     login_session = api_state_login_session(client)
     login_session._status = {
         "pending": False,
-        "result": {"plex_user_id": plex_user_id, "username": plex_user_id, "is_admin": False},
+        "result": {"plex_user_id": plex_user_id, "username": plex_user_id, "is_admin": False, **_ON_TEST_SERVER},
         "error": None,
     }
     return login_session
@@ -3704,7 +3731,7 @@ def test_what_someone_has_watched_is_not_recommended_back(client_and_deps, monke
     monkeypatch.setattr(
         recommendations,
         "user_watch_history",
-        lambda store, who, is_admin: {"movie": [{"tmdb_id": 30, "title": "Watched", "last_viewed_at": None}], "tv": []},
+        lambda store, server, who, is_admin: {"movie": [{"tmdb_id": 30, "title": "Watched", "last_viewed_at": None}], "tv": []},
     )
 
     rows = _titles_by_row(client.get("/api/recommendations", params={"page": "movies"}).json())
@@ -3718,7 +3745,7 @@ def test_their_watch_history_seeds_their_rows(client_and_deps, monkeypatch):
     monkeypatch.setattr(
         recommendations,
         "user_watch_history",
-        lambda store, who, is_admin: {"movie": [{"tmdb_id": 603, "title": "The Matrix", "last_viewed_at": None}], "tv": []},
+        lambda store, server, who, is_admin: {"movie": [{"tmdb_id": 603, "title": "The Matrix", "last_viewed_at": None}], "tv": []},
     )
 
     rows = client.get("/api/recommendations", params={"page": "movies"}).json()["rows"]
@@ -3916,7 +3943,7 @@ def test_recommended_shows_are_looked_up_in_plexs_show_library(client_and_deps, 
     _stub_recommendation_sources(tmdb)
     asked = set()
 
-    def lookup(store, media_type):
+    def lookup(store, server, media_type):
         assert media_type in ("movie", "show"), media_type
         asked.add(media_type)
         return lambda *a, **k: False
@@ -3973,8 +4000,8 @@ def test_continue_watching_asks_plex_as_the_signed_in_user(non_admin_client, mon
     episodes on their own Home page — wrong, and a small privacy leak
     between people who share a server."""
     client, store, _, _, _, _ = non_admin_client
-    store.update_settings({"plex_server_url": "http://plex.local:32400", "plex_server_token": "admin-token"})
-    store.upsert_user("regular-plex-id", "regular-user", False, server_token="their-own-token")
+    server = _link_plex(store, "http://plex.local:32400", "admin-token")
+    store.upsert_user("regular-plex-id", "regular-user", False, server_tokens={server.id: "their-own-token"})
     seen = _capture_on_deck_token(monkeypatch)
 
     client.get("/api/plex/on-deck")
@@ -3988,7 +4015,7 @@ def test_continue_watching_stays_empty_rather_than_showing_someone_elses(non_adm
     people it affected; an empty row until their next sign-in is the honest
     answer."""
     client, store, _, _, _, _ = non_admin_client
-    store.update_settings({"plex_server_url": "http://plex.local:32400", "plex_server_token": "admin-token"})
+    _link_plex(store, "http://plex.local:32400", "admin-token")
     seen = _capture_on_deck_token(monkeypatch)
 
     body = client.get("/api/plex/on-deck").json()
@@ -3997,11 +4024,11 @@ def test_continue_watching_stays_empty_rather_than_showing_someone_elses(non_adm
     assert "token" not in seen
 
 
-def test_continue_watching_falls_back_to_the_settings_token_for_the_admin(client_and_deps, monkeypatch):
+def test_continue_watching_falls_back_to_the_server_token_for_the_admin(client_and_deps, monkeypatch):
     """Same account either way, so the admin's row keeps working through
     the changeover instead of going blank until they sign in again."""
     client, store, _, _, _, _ = client_and_deps
-    store.update_settings({"plex_server_url": "http://plex.local:32400", "plex_server_token": "admin-token"})
+    _link_plex(store, "http://plex.local:32400", "admin-token")
     seen = _capture_on_deck_token(monkeypatch)
 
     client.get("/api/plex/on-deck")
@@ -4013,12 +4040,16 @@ def test_a_users_server_token_never_leaves_the_backend(client_and_deps):
     """It is stored deliberately off UserRow so it cannot be serialised by
     accident; this is the assertion that says so out loud."""
     client, store, _, _, _, _ = client_and_deps
-    store.upsert_user("admin-plex-id", "admin", True, server_token="secret-token")
+    server = store.primary_plex_server()
+    store.upsert_user("admin-plex-id", "admin", True, server_tokens={server.id: "secret-token"})
 
-    body = client.get("/api/admin/users").text
+    users = client.get("/api/admin/users").text
+    session = client.get("/api/auth/session").text
+    servers = client.get("/api/admin/plex-servers").text
 
-    assert "secret-token" not in body
-    assert store.get_user_server_token("admin-plex-id") == "secret-token"
+    assert all("secret-token" not in body for body in (users, session, servers))
+    assert "test-server-token" not in servers
+    assert store.get_user_server_token("admin-plex-id", server.id) == "secret-token"
 
 
 def test_discover_browse_passes_every_filter_through(client_and_deps):
@@ -4244,7 +4275,7 @@ def test_reject_current_copy_for_a_file_this_app_never_added(client_and_deps, mo
     file; it's deleted and its release name blacklisted."""
     filed = tmp_path / "The.End.of.Oak.Street.2025.2160p.WEB-DL.mkv"
     filed.write_bytes(b"broken")
-    monkeypatch.setattr(api_requests, "local_file_for_title", lambda store, media_type, title, year, tmdb_id=None: filed)
+    monkeypatch.setattr(api_requests, "local_file_for_title", lambda store, server, media_type, title, year, tmdb_id=None: filed)
     client, store, _, _, _, _ = client_and_deps
 
     response = client.post("/api/movies/693134/reject-current")
@@ -4254,20 +4285,20 @@ def test_reject_current_copy_for_a_file_this_app_never_added(client_and_deps, mo
     assert not filed.exists()
     assert store.get_rejected_releases(693134) == [{"name": "The.End.of.Oak.Street.2025.2160p.WEB-DL", "size_bytes": 6}]
 
-    monkeypatch.setattr(api_requests, "local_file_for_title", lambda store, media_type, title, year, tmdb_id=None: None)
+    monkeypatch.setattr(api_requests, "local_file_for_title", lambda store, server, media_type, title, year, tmdb_id=None: None)
     assert client.post("/api/movies/693134/reject-current").status_code == 409
 
 
 def test_overwrite_is_allowed_when_plex_can_point_at_the_file(client_and_deps, monkeypatch, tmp_path):
     client, _, _, _, _, _ = client_and_deps
-    monkeypatch.setattr(api_requests, "local_file_for_title", lambda store, media_type, title, year, tmdb_id=None: None)
-    monkeypatch.setattr(titles, "local_file_for_title", lambda store, media_type, title, year, tmdb_id=None: None)
+    monkeypatch.setattr(api_requests, "local_file_for_title", lambda store, server, media_type, title, year, tmdb_id=None: None)
+    monkeypatch.setattr(titles, "local_file_for_title", lambda store, server, media_type, title, year, tmdb_id=None: None)
     assert client.post("/api/requests", json={"tmdb_id": 693134, "redownload_mode": "overwrite"}).status_code == 400
 
     filed = tmp_path / "Dune.mkv"
     filed.write_bytes(b"x")
-    monkeypatch.setattr(api_requests, "local_file_for_title", lambda store, media_type, title, year, tmdb_id=None: filed)
-    monkeypatch.setattr(titles, "local_file_for_title", lambda store, media_type, title, year, tmdb_id=None: filed)
+    monkeypatch.setattr(api_requests, "local_file_for_title", lambda store, server, media_type, title, year, tmdb_id=None: filed)
+    monkeypatch.setattr(titles, "local_file_for_title", lambda store, server, media_type, title, year, tmdb_id=None: filed)
     assert client.post("/api/requests", json={"tmdb_id": 693134, "redownload_mode": "overwrite"}).status_code == 201
     detail = client.get("/api/movies/693134").json()
     assert "plex_file_available" not in detail  # its own call now, off the page's critical path
@@ -4528,3 +4559,327 @@ def test_rejecting_a_season_this_app_never_filed_is_refused(client_and_deps):
     client, _, _, _, _, _ = client_and_deps
 
     assert client.post("/api/tv/95350/seasons/2/reject-current").status_code == 409
+
+
+# ---------------------------------------------------------------------------
+# More than one Plex server: a session is served by the server its sign-in
+# came in through, and an admin can move between them.
+# ---------------------------------------------------------------------------
+
+
+def _two_servers(store):
+    """The fixture's server as Family, plus a Friends server, with Plex
+    reads switched back on."""
+    family = _link_plex(store, "http://family:32400", "family-admin")
+    friends = store.save_plex_server("friends-machine", "Plex-2", "http://friends:32400", "friends-admin")
+    store.set_plex_server_label(family.id, "Immediate family")
+    store.set_plex_server_label(friends.id, "Friends")
+    return store.get_plex_server(family.id), store.get_plex_server(friends.id)
+
+
+def _capture_on_deck_server(monkeypatch):
+    seen = {}
+
+    def fake_on_deck(self, server_url, server_token):
+        seen["url"] = server_url
+        seen["token"] = server_token
+        return []
+
+    monkeypatch.setattr(PlexClient, "on_deck", fake_on_deck)
+    return seen
+
+
+def test_a_sign_in_lands_on_the_server_it_came_in_through(client_and_deps, monkeypatch):
+    client, store, _, _, _, _ = client_and_deps
+    family, friends = _two_servers(store)
+    client.cookies.delete(deps.SESSION_COOKIE_NAME)
+    login_session = api_state_login_session(client)
+    login_session._status = {
+        "pending": False,
+        "result": {
+            "plex_user_id": "friend-1",
+            "username": "friend",
+            "is_admin": False,
+            "server_id": friends.id,
+            "server_tokens": {friends.id: "friend-token"},
+        },
+        "error": None,
+    }
+    client.post("/api/auth/login/start")
+    client.get("/api/auth/login/status")
+    seen = _capture_on_deck_server(monkeypatch)
+
+    session = client.get("/api/auth/session").json()
+    client.get("/api/plex/on-deck")
+
+    assert session["server"] == {"id": friends.id, "name": "Friends"}
+    assert session["servers"] == []
+    assert seen == {"url": "http://friends:32400", "token": "friend-token"}
+    assert store.list_auth_events(limit=1)[0]["detail"] == "user on Friends"
+
+
+def test_an_admin_can_switch_which_server_they_are_viewing(client_and_deps, monkeypatch):
+    client, store, _, _, _, _ = client_and_deps
+    family, friends = _two_servers(store)
+    seen = _capture_on_deck_server(monkeypatch)
+
+    before = client.get("/api/auth/session").json()
+    response = client.put("/api/auth/session/server", json={"server_id": friends.id})
+    after = client.get("/api/auth/session").json()
+    client.get("/api/plex/on-deck")
+
+    assert before["server"] == {"id": family.id, "name": "Immediate family"}
+    assert before["servers"] == [{"id": family.id, "name": "Immediate family"}, {"id": friends.id, "name": "Friends"}]
+    assert response.json() == {"server": {"id": friends.id, "name": "Friends"}}
+    assert after["server"] == {"id": friends.id, "name": "Friends"}
+    # The admin owns both, so their fallback token is that server's own.
+    assert seen == {"url": "http://friends:32400", "token": "friends-admin"}
+
+
+def test_only_an_admin_can_switch_servers(non_admin_client):
+    client, store, _, _, _, _ = non_admin_client
+    _, friends = _two_servers(store)
+
+    response = client.put("/api/auth/session/server", json={"server_id": friends.id})
+
+    assert response.status_code == 403
+
+
+def test_switching_to_a_server_that_isnt_linked_is_refused(client_and_deps):
+    client, _, _, _, _, _ = client_and_deps
+
+    assert client.put("/api/auth/session/server", json={"server_id": 99}).status_code == 404
+
+
+def test_an_admin_can_add_another_owned_server(client_and_deps, monkeypatch):
+    client, store, _, _, _, _ = client_and_deps
+    monkeypatch.setattr(
+        PlexClient,
+        "list_resources",
+        lambda self, token: [
+            {"name": "Plex-2", "url": "http://b", "token": "t2", "owned": True, "machine_identifier": "friends-machine"},
+            {"name": "Not mine", "url": "http://c", "token": "t3", "owned": False, "machine_identifier": "shared"},
+        ],
+    )
+    other = store.upsert_user("other-user", "other", False)
+    store.create_session("other-session", other.plex_user_id, other.username, False, "2999-01-01T00:00:00+00:00")
+
+    added = client.post("/api/admin/plex-servers", json={"machine_identifier": "friends-machine"})
+    refused = client.post("/api/admin/plex-servers", json={"machine_identifier": "shared"})
+
+    assert added.status_code == 201
+    assert [s["machine_identifier"] for s in added.json()] == ["test-machine-id", "friends-machine"]
+    assert all("token" not in s and "url" not in s for s in added.json())
+    assert refused.status_code == 404
+    # Adding a server signs nobody out.
+    assert store.get_session("other-session") is not None
+    assert client.get("/api/plex/servers").json()[0]["linked"] is True
+
+
+def test_an_admin_can_name_and_reorder_servers(client_and_deps):
+    client, store, _, _, _, _ = client_and_deps
+    family, friends = _two_servers(store)
+
+    named = client.patch(f"/api/admin/plex-servers/{friends.id}", json={"label": "  Mates  "})
+    cleared = client.patch(f"/api/admin/plex-servers/{family.id}", json={"label": ""})
+    reordered = client.put("/api/admin/plex-servers/order", json={"server_ids": [friends.id, family.id]})
+    partial = client.put("/api/admin/plex-servers/order", json={"server_ids": [friends.id]})
+
+    assert [s["display_name"] for s in named.json()] == ["Immediate family", "Mates"]
+    assert cleared.json()[0]["display_name"] == "Test server"
+    assert [s["id"] for s in reordered.json()] == [friends.id, family.id]
+    assert store.primary_plex_server().id == friends.id
+    assert partial.status_code == 400
+
+
+def test_removing_a_server_signs_out_whoever_came_in_through_it(client_and_deps):
+    client, store, _, _, _, _ = client_and_deps
+    family, friends = _two_servers(store)
+    friend = store.upsert_user("friend-1", "friend", False, server_tokens={friends.id: "t"})
+    store.create_session("friend-session", friend.plex_user_id, "friend", False, "2999-01-01T00:00:00+00:00", friends.id)
+    relative = store.upsert_user("family-1", "relative", False, server_tokens={family.id: "t"})
+    store.create_session("family-session", relative.plex_user_id, "relative", False, "2999-01-01T00:00:00+00:00", family.id)
+    client.put("/api/auth/session/server", json={"server_id": friends.id})
+
+    response = client.delete(f"/api/admin/plex-servers/{friends.id}")
+
+    assert [s["id"] for s in response.json()] == [family.id]
+    assert store.get_session("friend-session") is None
+    assert store.get_session("family-session") is not None
+    assert store.get_user_server_token("friend-1", friends.id) is None
+    # The admin doing it is moved back to the primary, not signed out.
+    assert client.get("/api/auth/session").json()["server"]["id"] == family.id
+    assert client.delete(f"/api/admin/plex-servers/{family.id}").status_code == 409
+
+
+def test_managing_servers_is_admin_only(non_admin_client):
+    client, _, _, _, _, _ = non_admin_client
+
+    assert client.get("/api/admin/plex-servers").status_code == 403
+    assert client.post("/api/admin/plex-servers", json={"machine_identifier": "x"}).status_code == 403
+
+
+# ---------------------------------------------------------------------------
+# Requests kept apart per server. One download per title — the library is
+# shared — but each server sees only what it asked for, under its own
+# people's names.
+# ---------------------------------------------------------------------------
+
+
+def _friend_session(store, friends):
+    """A non-admin signed in through the Friends server."""
+    friend = store.upsert_user("friend-1", "friend", False, server_tokens={friends.id: "t"})
+    store.create_session("friend-session", friend.plex_user_id, "friend", False, "2999-01-01T00:00:00+00:00", friends.id)
+    return "friend-session"
+
+
+def _as(client, session_id):
+    client.cookies.set(deps.SESSION_COOKIE_NAME, session_id)
+
+
+def test_one_server_never_sees_anothers_requests(client_and_deps):
+    client, store, _, _, _, _ = client_and_deps
+    _, friends = _two_servers(store)
+    family_request = client.post("/api/requests", json={"tmdb_id": 693134}).json()
+
+    _as(client, _friend_session(store, friends))
+
+    assert client.get("/api/requests").json() == []
+    assert client.get(f"/api/requests/{family_request['id']}").status_code == 404
+    assert client.post(f"/api/requests/{family_request['id']}/cancel").status_code == 404
+
+
+def test_asking_for_something_another_server_is_downloading_joins_it(client_and_deps):
+    client, store, _, worker, _, _ = client_and_deps
+    _, friends = _two_servers(store)
+    family_request = client.post("/api/requests", json={"tmdb_id": 693134}).json()
+    _as(client, _friend_session(store, friends))
+
+    joined = client.post("/api/requests", json={"tmdb_id": 693134})
+
+    assert joined.status_code == 201
+    assert joined.json()["id"] == family_request["id"]
+    assert worker.enqueued == [family_request["id"]]  # fetched once
+    # Each server sees it as asked for by its own person.
+    assert joined.json()["requested_by_username"] == "friend"
+    _as(client, "test-admin-session")
+    assert client.get("/api/requests").json()[0]["requested_by_username"] == "admin"
+
+
+def test_cancelling_a_shared_download_only_takes_your_server_off_it(client_and_deps):
+    client, store, _, _, qbt, _ = client_and_deps
+    _, friends = _two_servers(store)
+    request_id = client.post("/api/requests", json={"tmdb_id": 693134}).json()["id"]
+    store.update_status(request_id, "downloading", result={"torrent_hash": "aaaa"})
+    qbt._torrent_states["aaaa"] = {"progress": 0.4}
+    _as(client, _friend_session(store, friends))
+    client.post("/api/requests", json={"tmdb_id": 693134})
+
+    response = client.post(f"/api/requests/{request_id}/cancel")
+
+    assert response.json()["status"] == "cancelled"
+    assert client.get("/api/requests").json() == []
+    # Still downloading for Family, torrent untouched.
+    assert store.get_request(request_id).status == "downloading"
+    assert qbt.deleted == []
+
+
+def test_clearing_finished_requests_leaves_the_other_servers_history(client_and_deps):
+    client, store, _, _, _, _ = client_and_deps
+    _, friends = _two_servers(store)
+    request_id = client.post("/api/requests", json={"tmdb_id": 693134}).json()["id"]
+    _as(client, _friend_session(store, friends))
+    client.post("/api/requests", json={"tmdb_id": 693134})
+    store.update_status(request_id, "complete")
+
+    assert client.post("/api/requests/clear").json() == {"removed": 1}
+    assert client.get("/api/requests").json() == []
+
+    _as(client, "test-admin-session")
+    assert [r["id"] for r in client.get("/api/requests").json()] == [request_id]
+    client.post("/api/requests/clear")
+    # Nobody is asking for it any more, so the row itself goes.
+    assert store.get_request(request_id) is None
+
+
+def test_each_server_follows_shows_for_itself(client_and_deps):
+    client, store, _, _, _, _ = client_and_deps
+    _, friends = _two_servers(store)
+    family_show = client.post("/api/shows", json={"tmdb_id": 95350}).json()
+    _as(client, _friend_session(store, friends))
+
+    assert client.get("/api/shows").json() == []
+
+    client.post("/api/shows", json={"tmdb_id": 95350})
+    episode = store.create_episode_request(
+        tmdb_id=95350, show_id=family_show["id"], title="Lanterns", season_number=1, episode_number=1
+    )
+    # A followed show's episodes are wanted by everyone following it.
+    assert [r["id"] for r in client.get("/api/requests").json()] == [episode.id]
+
+    client.delete(f"/api/shows/{family_show['id']}")
+    assert client.get("/api/shows", params={"status": "watching"}).json() == []
+    # Family still follows it, so it's still being checked.
+    assert store.get_show(family_show["id"]).status == "watching"
+    _as(client, "test-admin-session")
+    assert [s["status"] for s in client.get("/api/shows").json()] == ["watching"]
+
+
+def test_asking_for_an_episode_on_its_way_for_another_server_joins_it(client_and_deps):
+    client, store, tmdb, _, _, _ = client_and_deps
+    _, friends = _two_servers(store)
+    tmdb.get_tv_season = lambda tmdb_id, season_number: [{"episode_number": 1, "air_date": "2020-01-01"}]
+    family_request = client.post("/api/tv/95350/episodes/1/1").json()
+    _as(client, _friend_session(store, friends))
+
+    before = client.get("/api/tv/95350/season/1/episodes").json()["episodes"][0]
+    joined = client.post("/api/tv/95350/episodes/1/1")
+    again = client.post("/api/tv/95350/episodes/1/1")
+    after = client.get("/api/tv/95350/season/1/episodes").json()["episodes"][0]
+
+    # The season shows what the library has either way; only the request
+    # itself is hidden until this server asks for it.
+    assert before["state"] == "requested" and before["request_id"] is None
+    assert joined.status_code == 201 and joined.json()["id"] == family_request["id"]
+    assert again.status_code == 409
+    assert after["request_id"] == family_request["id"]
+
+
+def test_a_bulk_download_on_its_way_for_another_server_is_joined(client_and_deps):
+    client, store, _, worker, _, _ = client_and_deps
+    _, friends = _two_servers(store)
+    pack = client.post("/api/tv/95350/bulk-download", json={"scope": "season", "season_number": 1}).json()
+    _as(client, _friend_session(store, friends))
+
+    joined = client.post("/api/tv/95350/bulk-download", json={"scope": "season", "season_number": 1}).json()
+
+    assert joined["id"] == pack["id"]
+    assert worker.enqueued == [pack["id"]]
+
+
+def test_with_two_servers_only_an_admin_can_replace_a_copy(client_and_deps):
+    client, store, _, _, _, _ = client_and_deps
+    _, friends = _two_servers(store)
+    request_id = client.post("/api/requests", json={"tmdb_id": 693134}).json()["id"]
+    store.update_status(request_id, "complete", result={"torrent_hash": "aaaa"})
+    _as(client, _friend_session(store, friends))
+
+    assert client.post("/api/movies/693134/reject-current").status_code == 403
+    assert client.post("/api/tv/95350/seasons/1/reject-current").status_code == 403
+    assert client.post("/api/requests", json={"tmdb_id": 693134, "redownload_mode": "upgrade"}).status_code == 403
+    assert (
+        client.post("/api/tv/95350/bulk-download", json={"scope": "series", "redownload_mode": "upgrade"}).status_code
+        == 403
+    )
+
+
+def test_the_household_list_says_which_servers_each_person_is_on(client_and_deps):
+    client, store, _, _, _, _ = client_and_deps
+    family, friends = _two_servers(store)
+    store.upsert_user("friend-1", "friend", False, server_tokens={friends.id: "t"})
+    store.upsert_user("cousin-1", "cousin", False, server_tokens={friends.id: "t", family.id: "t"})
+
+    by_name = {u["username"]: u["server_ids"] for u in client.get("/api/admin/users").json()}
+
+    assert by_name["friend"] == [friends.id]
+    assert by_name["cousin"] == [family.id, friends.id]

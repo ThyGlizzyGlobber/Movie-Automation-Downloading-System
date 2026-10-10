@@ -12,7 +12,30 @@ records the minor and major releases, and the patches worth calling out. See
 
 ## [Unreleased]
 
+### Added
+
+- **More than one Plex server.** An admin can link every Plex server their account
+  owns from Settings › Plex, name them ("Immediate family", "Friends") and pick the
+  primary. People sign in to the server they're shared on; someone shared on more
+  than one lands on the primary.
+- **Each server keeps its own requests.** Nobody sees what another server asked for.
+  A title asked for on two servers still downloads once, and each server sees it
+  under its own person's name. Following a show is per server too.
+- **Switching servers.** An admin moves between servers from the account menu or
+  Settings › Plex, and sees that server's requests, shows and library.
+- After each download, every server refreshes and is put on the right audio track.
+
+### Changed
+
+- With more than one server, replacing or deleting a copy (rejecting it, asking for
+  an upgrade, cancelling a finished download) is admin-only, since every server
+  plays from the same files.
+- Settings › Household shows which server each person is on.
+
 ### Fixed
+
+- Browse pages failed with an error whenever the Plex server couldn't be reached;
+  they now load without the "On Plex" badges until it's back.
 
 - The home-screen app on iPhone drifted sideways while scrolling, on every page. A
   long row heading ran 2px past the screen edge in iOS WebKit, which made the page

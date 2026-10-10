@@ -158,7 +158,7 @@ def test_list_resources_prefers_a_local_non_relay_connection():
     assert server["url"] == "http://192.168.0.133:32400"
 
 
-def test_check_server_access_matches_by_machine_identifier():
+def test_access_by_server_is_keyed_by_machine_identifier():
     resources = [
         {
             "provides": "server",
@@ -175,14 +175,14 @@ def test_check_server_access_matches_by_machine_identifier():
     # The access token comes back too: it is this account's own token for
     # that server, and it is what lets a per-user Plex read be made as them
     # rather than as the admin.
-    assert client.check_server_access("account-token", "our-machine-id") == {"owned": False, "token": "tok"}
+    assert client.access_by_server("account-token") == {"our-machine-id": {"owned": False, "token": "tok"}}
 
 
-def test_check_server_access_returns_none_when_server_not_in_list():
+def test_access_by_server_is_empty_when_the_account_reaches_no_server():
     session = FakeSession(get_responses=[FakeResponse(json_data=[])])
     client = PlexClient("client-1", session=session)
 
-    assert client.check_server_access("account-token", "our-machine-id") is None
+    assert client.access_by_server("account-token") == {}
 
 
 def test_get_account_identity_returns_id_and_username():
@@ -241,15 +241,15 @@ def test_has_movie_goes_by_tmdb_id_when_plex_has_one():
 
 def test_has_in_library_with_an_id_reads_the_whole_library(monkeypatch):
     store = RequestStore(":memory:")
-    store.update_settings({"plex_client_id": "client-1", "plex_server_url": "http://server", "plex_server_token": "tok"})
+    server = _link(store, "http://server")
     monkeypatch.setattr(
         PlexClient,
         "library_index",
         lambda self, url, token, media_type: _index({"title": "The Fantastic Four: First Steps", "year": 2025, "tmdb_id": 617126}),
     )
 
-    assert has_in_library(store, "The Fantastic 4: First Steps", 2025, 617126) is True
-    assert has_in_library(store, "The Fantastic 4: First Steps", 2025, 1) is False
+    assert has_in_library(store, server, "The Fantastic 4: First Steps", 2025, 617126) is True
+    assert has_in_library(store, server, "The Fantastic 4: First Steps", 2025, 1) is False
 
 
 def test_has_movie_matches_a_plex_title_carrying_a_franchise_prefix():
@@ -292,6 +292,11 @@ def test_library_index_reads_title_year_tmdb_id_and_rating_key():
     assert session.get_calls[0][1] == {"type": 1, "includeGuids": 1}
 
 
+def _link(store, url, token="tok", machine_id="machine-1"):
+    store.update_settings({"plex_client_id": "client-1"})
+    return store.save_plex_server(machine_id, "Home", url, token)
+
+
 def _index(*items):
     return LibraryIndex([{"tmdb_id": None, "rating_key": None, **i} for i in items])
 
@@ -332,19 +337,17 @@ def test_library_index_raises_on_error_response():
 
 def test_plex_library_lookup_returns_none_when_not_linked():
     store = RequestStore(":memory:")
-    assert plex_library_lookup(store, "movie") is None
+    assert plex_library_lookup(store, None, "movie") is None
 
 
 def test_plex_library_lookup_matches_title_and_year(monkeypatch):
     store = RequestStore(":memory:")
-    store.update_settings(
-        {"plex_client_id": "client-1", "plex_server_url": "http://server-a", "plex_server_token": "tok"}
-    )
+    server = _link(store, "http://server-a")
     monkeypatch.setattr(
         PlexClient, "library_index", lambda self, url, token, media_type: _index({"title": "Dune: Part Two", "year": 2024})
     )
 
-    matcher = plex_library_lookup(store, "movie")
+    matcher = plex_library_lookup(store, server, "movie")
 
     assert matcher("Dune: Part Two", 2024) is True
     assert matcher("Dune: Part Two", 2030) is False  # outside year tolerance
@@ -353,12 +356,10 @@ def test_plex_library_lookup_matches_title_and_year(monkeypatch):
 
 def test_plex_library_lookup_year_tolerance_and_no_year_given(monkeypatch):
     store = RequestStore(":memory:")
-    store.update_settings(
-        {"plex_client_id": "client-1", "plex_server_url": "http://server-b", "plex_server_token": "tok"}
-    )
+    server = _link(store, "http://server-b")
     monkeypatch.setattr(PlexClient, "library_index", lambda self, url, token, media_type: _index({"title": "Lanterns", "year": 2026}))
 
-    matcher = plex_library_lookup(store, "show")
+    matcher = plex_library_lookup(store, server, "show")
 
     assert matcher("Lanterns", 2027) is True  # within YEAR_TOLERANCE
     assert matcher("Lanterns", None) is True  # title matched, no year to check further
@@ -370,16 +371,14 @@ def test_plex_library_lookup_matches_a_franchise_prefixed_title(monkeypatch):
     is keyed by Plex's own (prefixed) normalized title, and a plain TMDB
     title has to still resolve against it via the fuzzy fallback."""
     store = RequestStore(":memory:")
-    store.update_settings(
-        {"plex_client_id": "client-1", "plex_server_url": "http://server-e", "plex_server_token": "tok"}
-    )
+    server = _link(store, "http://server-e")
     monkeypatch.setattr(
         PlexClient,
         "library_index",
         lambda self, url, token, media_type: _index({"title": "Star Wars: The Mandalorian and Grogu", "year": 2026}),
     )
 
-    matcher = plex_library_lookup(store, "movie")
+    matcher = plex_library_lookup(store, server, "movie")
 
     assert matcher("The Mandalorian and Grogu", 2026) is True
     assert matcher("The Mandalorian and Grogu", 2010) is False  # outside year tolerance
@@ -388,32 +387,44 @@ def test_plex_library_lookup_matches_a_franchise_prefixed_title(monkeypatch):
 
 def test_plex_library_lookup_fails_safe_on_plex_error(monkeypatch):
     store = RequestStore(":memory:")
-    store.update_settings(
-        {"plex_client_id": "client-1", "plex_server_url": "http://server-c", "plex_server_token": "tok"}
-    )
+    server = _link(store, "http://server-c")
 
     def raise_error(self, url, token, media_type):
         raise PlexError("boom")
 
     monkeypatch.setattr(PlexClient, "library_index", raise_error)
 
-    matcher = plex_library_lookup(store, "movie")
+    matcher = plex_library_lookup(store, server, "movie")
 
     assert matcher("Anything", 2024) is False
 
 
+def test_plex_library_lookup_fails_safe_when_the_server_cant_be_reached(monkeypatch):
+    """Found live: a server whose address doesn't resolve raised straight
+    through, and every browse page came back 500."""
+    import requests
+
+    store = RequestStore(":memory:")
+    server = _link(store, "http://server-unreachable")
+
+    def unreachable(self, url, token, media_type):
+        raise requests.ConnectionError("Failed to resolve")
+
+    monkeypatch.setattr(PlexClient, "library_index", unreachable)
+
+    assert plex_library_lookup(store, server, "movie")("Anything", 2024) is False
+
+
 def test_plex_library_lookup_caches_within_ttl(monkeypatch):
     store = RequestStore(":memory:")
-    store.update_settings(
-        {"plex_client_id": "client-1", "plex_server_url": "http://server-d", "plex_server_token": "tok"}
-    )
+    server = _link(store, "http://server-d")
     calls = []
     monkeypatch.setattr(
         PlexClient, "library_index", lambda self, url, token, media_type: calls.append(1) or _index()
     )
 
-    plex_library_lookup(store, "movie")
-    plex_library_lookup(store, "movie")
+    plex_library_lookup(store, server, "movie")
+    plex_library_lookup(store, server, "movie")
 
     assert len(calls) == 1  # second call hit the cache, no second Plex fetch
 
@@ -425,20 +436,18 @@ def test_plex_library_lookup_caches_within_ttl(monkeypatch):
 
 def test_has_in_library_returns_none_when_plex_not_linked():
     store = RequestStore(":memory:")
-    assert has_in_library(store, "Some Movie", 2024) is None
+    assert has_in_library(store, None, "Some Movie", 2024) is None
 
 
 def test_has_in_library_delegates_to_plex_client_when_linked(monkeypatch):
     store = RequestStore(":memory:")
-    store.update_settings(
-        {"plex_client_id": "client-1", "plex_server_url": "http://server", "plex_server_token": "tok"}
-    )
+    server = _link(store, "http://server")
     calls = []
     monkeypatch.setattr(
         PlexClient, "has_movie", lambda self, server_url, server_token, title, year, tmdb_id=None: calls.append((title, year)) or True
     )
 
-    assert has_in_library(store, "Some Movie", 2024) is True
+    assert has_in_library(store, server, "Some Movie", 2024) is True
     assert calls == [("Some Movie", 2024)]
 
 
@@ -487,7 +496,7 @@ def test_linker_poll_persists_token_username_and_server_once_signed_in(monkeypat
     async def run():
         await linker.start()
         for _ in range(50):
-            if store.get_settings().get("plex_token"):
+            if store.primary_plex_server():
                 break
             await asyncio.sleep(0.02)
 
@@ -496,14 +505,67 @@ def test_linker_poll_persists_token_username_and_server_once_signed_in(monkeypat
     settings = store.get_settings()
     assert settings["plex_token"] == "the-token"
     assert settings["plex_username"] == "bejay"
-    assert settings["plex_server_url"] == "http://server"
-    assert settings["plex_server_token"] == "server-token"
-    assert settings["plex_server_machine_id"] == "machine-abc"
+    server = store.primary_plex_server()
+    assert server.url == "http://server"
+    assert server.token == "server-token"
+    assert server.machine_id == "machine-abc"
+    # The server lives in its own table now, not in settings.
+    assert "plex_server_url" not in settings
 
     status = linker.status()
     assert status["linked"] is True
     assert status["username"] == "bejay"
     assert status["server_name"] == "Living Room NAS"
+
+
+def _sign_in_owning(monkeypatch, store, resources):
+    monkeypatch.setattr(PlexClient, "create_pin", lambda self: {"id": 1, "code": "ABCD"})
+    monkeypatch.setattr(PlexClient, "check_pin", lambda self, pin_id: "the-token")
+    monkeypatch.setattr(PlexClient, "list_resources", lambda self, token: resources)
+    monkeypatch.setattr(PlexClient, "get_account_username", lambda self, token: "bejay")
+    linker = PlexLinker(store)
+
+    async def run():
+        await linker.start()
+        await linker._task
+
+    asyncio.run(run())
+
+
+def _owned(machine_id, url, token="tok", name=None):
+    return {"name": name or machine_id, "url": url, "token": token, "owned": True, "machine_identifier": machine_id}
+
+
+def test_signing_in_again_keeps_every_server_still_owned(monkeypatch):
+    """A re-link refreshes the servers already here rather than trading
+    them for whichever one plex.tv happens to list first."""
+    store = RequestStore(":memory:")
+    store.save_plex_server("family", "Plex-1", "http://old-a", "old")
+    store.save_plex_server("friends", "Plex-2", "http://old-b", "old")
+
+    _sign_in_owning(monkeypatch, store, [_owned("other", "http://c"), _owned("friends", "http://b"), _owned("family", "http://a")])
+
+    servers = store.list_plex_servers()
+    assert [(s.machine_id, s.url) for s in servers] == [("family", "http://a"), ("friends", "http://b")]
+
+
+def test_signing_in_drops_a_server_the_account_no_longer_owns(monkeypatch):
+    store = RequestStore(":memory:")
+    store.save_plex_server("family", "Plex-1", "http://a", "tok")
+    store.save_plex_server("sold", "Old box", "http://x", "tok")
+
+    _sign_in_owning(monkeypatch, store, [_owned("family", "http://a")])
+
+    assert [s.machine_id for s in store.list_plex_servers()] == ["family"]
+
+
+def test_signing_in_with_none_of_the_old_servers_links_the_first_owned(monkeypatch):
+    store = RequestStore(":memory:")
+    store.save_plex_server("sold", "Old box", "http://x", "tok")
+
+    _sign_in_owning(monkeypatch, store, [_owned("new", "http://n"), _owned("newer", "http://m")])
+
+    assert [s.machine_id for s in store.list_plex_servers()] == ["new"]
 
 
 def test_linker_poll_records_error_when_signed_in_but_no_server_found(monkeypatch):
@@ -528,7 +590,8 @@ def test_linker_poll_records_error_when_signed_in_but_no_server_found(monkeypatc
 
 def test_linker_unlink_clears_settings_and_cancels_pending_poll(monkeypatch):
     store = RequestStore(":memory:")
-    store.update_settings({"plex_token": "tok", "plex_username": "bejay", "plex_server_url": "http://server"})
+    store.update_settings({"plex_token": "tok", "plex_username": "bejay"})
+    store.save_plex_server("machine-abc", "Home", "http://server", "tok")
     linker = PlexLinker(store)
 
     linker.unlink()
@@ -539,18 +602,17 @@ def test_linker_unlink_clears_settings_and_cancels_pending_poll(monkeypatch):
     assert linker.status()["linked"] is False
 
 
-def test_linker_unlink_clears_machine_id_and_revokes_non_admin_sessions(monkeypatch):
+def test_linker_unlink_removes_servers_and_revokes_non_admin_sessions(monkeypatch):
     store = RequestStore(":memory:")
-    store.update_settings(
-        {"plex_token": "tok", "plex_server_url": "http://server", "plex_server_machine_id": "machine-abc"}
-    )
+    store.update_settings({"plex_token": "tok"})
+    store.save_plex_server("machine-abc", "Home", "http://server", "tok")
     user = store.upsert_user("friend-1", "friend", False)
     store.create_session("sess-1", user.plex_user_id, user.username, False, "2999-01-01T00:00:00+00:00")
     linker = PlexLinker(store)
 
     linker.unlink()
 
-    assert store.get_settings()["plex_server_machine_id"] is None
+    assert store.list_plex_servers() == []
     assert store.get_session("sess-1") is None
 
 
@@ -561,11 +623,11 @@ def test_linker_unlink_clears_machine_id_and_revokes_non_admin_sessions(monkeypa
 
 def test_login_session_persists_result_once_signed_in_with_server_access(monkeypatch):
     store = RequestStore(":memory:")
-    store.update_settings({"plex_server_machine_id": "our-machine"})
+    store.save_plex_server("our-machine", "Home", "http://server", "tok")
     monkeypatch.setattr(PlexClient, "create_pin", lambda self: {"id": 1, "code": "ABCD"})
     monkeypatch.setattr(PlexClient, "check_pin", lambda self, pin_id: "user-token")
     monkeypatch.setattr(
-        PlexClient, "check_server_access", lambda self, token, machine_id: {"owned": False, "token": "their-token"}
+        PlexClient, "access_by_server", lambda self, token: {"our-machine": {"owned": False, "token": "their-token"}}
     )
     monkeypatch.setattr(
         PlexClient, "get_account_identity", lambda self, token: {"id": 99, "username": "friend"}
@@ -584,24 +646,86 @@ def test_login_session_persists_result_once_signed_in_with_server_access(monkeyp
     asyncio.run(run())
 
     status = login.status(attempt[0])
+    server = store.primary_plex_server()
     assert status["result"] == {
         "plex_user_id": "99",
         "username": "friend",
         "is_admin": False,
         "thumb": None,
+        "server_id": server.id,
         # Carried through to be stored against the user; never sent onward
         # to the browser.
-        "server_token": "their-token",
+        "server_tokens": {server.id: "their-token"},
     }
     assert status["error"] is None
 
 
-def test_login_session_records_error_when_account_has_no_server_access(monkeypatch):
-    store = RequestStore(":memory:")
-    store.update_settings({"plex_server_machine_id": "our-machine"})
+def _sign_in_reaching(monkeypatch, store, reachable):
+    """A completed sign-in by an account that can reach `reachable`
+    (machine id -> access), and the result it came to."""
     monkeypatch.setattr(PlexClient, "create_pin", lambda self: {"id": 1, "code": "ABCD"})
     monkeypatch.setattr(PlexClient, "check_pin", lambda self, pin_id: "user-token")
-    monkeypatch.setattr(PlexClient, "check_server_access", lambda self, token, machine_id: None)
+    monkeypatch.setattr(PlexClient, "access_by_server", lambda self, token: reachable)
+    monkeypatch.setattr(PlexClient, "get_account_identity", lambda self, token: {"id": 99, "username": "someone"})
+    login = LoginSession(store)
+
+    async def run():
+        attempt_id, _ = await login.start()
+        await login._attempts[attempt_id].task
+        return login.status(attempt_id)
+
+    return asyncio.run(run())
+
+
+def test_a_friend_lands_on_the_only_server_shared_with_them(monkeypatch):
+    store = RequestStore(":memory:")
+    store.save_plex_server("family", "Plex-1", "http://a", "t")
+    friends = store.save_plex_server("friends", "Plex-2", "http://b", "t")
+
+    status = _sign_in_reaching(monkeypatch, store, {"friends": {"owned": False, "token": "theirs"}})
+
+    assert status["result"]["server_id"] == friends.id
+    assert status["result"]["server_tokens"] == {friends.id: "theirs"}
+    assert status["result"]["is_admin"] is False
+
+
+def test_someone_shared_on_both_servers_lands_on_the_higher_priority_one(monkeypatch):
+    store = RequestStore(":memory:")
+    friends = store.save_plex_server("friends", "Plex-2", "http://b", "t")
+    family = store.save_plex_server("family", "Plex-1", "http://a", "t")
+    store.reorder_plex_servers([family.id, friends.id])
+
+    status = _sign_in_reaching(
+        monkeypatch,
+        store,
+        {"friends": {"owned": False, "token": "f"}, "family": {"owned": False, "token": "g"}},
+    )
+
+    assert status["result"]["server_id"] == family.id
+    assert status["result"]["server_tokens"] == {family.id: "g", friends.id: "f"}
+
+
+def test_the_owner_of_the_servers_signs_in_as_admin(monkeypatch):
+    store = RequestStore(":memory:")
+    family = store.save_plex_server("family", "Plex-1", "http://a", "t")
+    store.save_plex_server("friends", "Plex-2", "http://b", "t")
+
+    status = _sign_in_reaching(
+        monkeypatch,
+        store,
+        {"family": {"owned": True, "token": "o1"}, "friends": {"owned": True, "token": "o2"}},
+    )
+
+    assert status["result"]["is_admin"] is True
+    assert status["result"]["server_id"] == family.id
+
+
+def test_login_session_records_error_when_account_has_no_server_access(monkeypatch):
+    store = RequestStore(":memory:")
+    store.save_plex_server("our-machine", "Home", "http://server", "tok")
+    monkeypatch.setattr(PlexClient, "create_pin", lambda self: {"id": 1, "code": "ABCD"})
+    monkeypatch.setattr(PlexClient, "check_pin", lambda self, pin_id: "user-token")
+    monkeypatch.setattr(PlexClient, "access_by_server", lambda self, token: {"someone-elses": {"owned": True, "token": "t"}})
     login = LoginSession(store)
     attempt: list[str] = []
 
@@ -620,7 +744,7 @@ def test_login_session_records_error_when_account_has_no_server_access(monkeypat
 
 
 def test_login_session_records_error_when_no_server_linked_yet(monkeypatch):
-    store = RequestStore(":memory:")  # no plex_server_machine_id at all
+    store = RequestStore(":memory:")  # no server linked at all
     monkeypatch.setattr(PlexClient, "create_pin", lambda self: {"id": 1, "code": "ABCD"})
     monkeypatch.setattr(PlexClient, "check_pin", lambda self, pin_id: "user-token")
     login = LoginSession(store)
@@ -649,7 +773,7 @@ def _resolving_client(monkeypatch, pins, resolves_pin_id=1):
     monkeypatch.setattr(
         PlexClient, "check_pin", lambda self, pin_id: "user-token" if pin_id == resolves_pin_id else None
     )
-    monkeypatch.setattr(PlexClient, "check_server_access", lambda self, token, machine_id: {"owned": False})
+    monkeypatch.setattr(PlexClient, "access_by_server", lambda self, token: {"our-machine": {"owned": False, "token": None}})
     monkeypatch.setattr(
         PlexClient, "get_account_identity", lambda self, token: {"id": 99, "username": "friend"}
     )
@@ -667,7 +791,7 @@ def test_login_session_keeps_concurrent_attempts_apart(monkeypatch):
     The single-`_result` version had no way to tell them apart, so
     whoever polled next collected whichever sign-in had just landed."""
     store = RequestStore(":memory:")
-    store.update_settings({"plex_server_machine_id": "our-machine"})
+    store.save_plex_server("our-machine", "Home", "http://server", "tok")
     _resolving_client(monkeypatch, iter([{"id": 1, "code": "A"}, {"id": 2, "code": "B"}]), resolves_pin_id=1)
     login = LoginSession(store)
     seen = {}
@@ -691,7 +815,7 @@ def test_login_session_keeps_concurrent_attempts_apart(monkeypatch):
 
 def test_login_session_finish_spends_the_attempt(monkeypatch):
     store = RequestStore(":memory:")
-    store.update_settings({"plex_server_machine_id": "our-machine"})
+    store.save_plex_server("our-machine", "Home", "http://server", "tok")
     _resolving_client(monkeypatch, iter([{"id": 1, "code": "A"}]))
     login = LoginSession(store)
     claimed = {}
@@ -810,7 +934,7 @@ def _audio(sid, lang, default=False, selected=False):
 
 def _store(tmp_path):
     store = RequestStore(str(tmp_path / "t.db"))
-    store.update_settings({"plex_server_url": "http://plex:32400", "plex_server_token": "tok"})
+    store.save_plex_server("machine-1", "Home", "http://plex:32400", "tok")
     return store
 
 
@@ -822,7 +946,7 @@ def test_a_part_plex_left_on_the_wrong_track_is_planned(tmp_path):
         "1": _episode("s14e01", [_audio("10", "ita", selected=True), _audio("11", "eng", default=True)]),
     })
 
-    plan = plex.plan_audio_selection(store, fake, "en")
+    plan = plex.plan_audio_selection(store.primary_plex_server(), fake, "en")
 
     assert len(plan) == 1
     assert plan[0].stream_id == "11"
@@ -838,7 +962,7 @@ def test_a_part_already_on_the_right_track_is_left_alone(tmp_path):
         "1": _episode("ok", [_audio("10", "ita"), _audio("11", "eng", default=True, selected=True)]),
     })
 
-    assert plex.plan_audio_selection(store, fake, "en") == []
+    assert plex.plan_audio_selection(store.primary_plex_server(), fake, "en") == []
     store.close()
 
 
@@ -848,7 +972,7 @@ def test_a_single_track_part_is_never_touched(tmp_path):
     store = _store(tmp_path)
     fake = _FakePlex({"1": _episode("solo", [_audio("10", "ita", selected=True)])})
 
-    assert plex.plan_audio_selection(store, fake, "en") == []
+    assert plex.plan_audio_selection(store.primary_plex_server(), fake, "en") == []
     store.close()
 
 
@@ -858,7 +982,7 @@ def test_a_part_with_no_track_in_that_language_is_left_alone(tmp_path):
     store = _store(tmp_path)
     fake = _FakePlex({"1": _episode("foreign", [_audio("10", "jpn", selected=True), _audio("11", "kor")])})
 
-    assert plex.plan_audio_selection(store, fake, "en") == []
+    assert plex.plan_audio_selection(store.primary_plex_server(), fake, "en") == []
     store.close()
 
 
@@ -867,9 +991,9 @@ def test_applying_sends_the_stream_id_for_that_part(tmp_path):
     fake = _FakePlex({
         "1": _episode("s14e01", [_audio("10", "ita", selected=True), _audio("11", "eng", default=True)]),
     })
-    plan = plex.plan_audio_selection(store, fake, "en")
+    plan = plex.plan_audio_selection(store.primary_plex_server(), fake, "en")
 
-    assert plex.apply_audio_selection(store, fake, plan[0]) is None
+    assert plex.apply_audio_selection(store.primary_plex_server(), fake, plan[0]) is None
     assert fake.selected == [("part-s14e01", "11")]
     store.close()
 
@@ -878,7 +1002,7 @@ def test_an_unlinked_server_says_so_rather_than_failing_obscurely(tmp_path):
     store = RequestStore(str(tmp_path / "t.db"))
 
     with pytest.raises(plex.PlexError):
-        plex.plan_audio_selection(store, _FakePlex({}), "en")
+        plex.plan_audio_selection(store.primary_plex_server(), _FakePlex({}), "en")
     store.close()
 
 
@@ -914,7 +1038,7 @@ def test_a_freshly_imported_title_is_put_on_the_right_track(tmp_path):
         ]),
     })
 
-    changed = plex.select_audio_after_import(store, fake, "movie", "The Gorge", 2025, 950396, "en", delay=0)
+    changed = plex.select_audio_after_import(store, store.primary_plex_server(), fake, "movie", "The Gorge", 2025, 950396, "en", delay=0)
 
     assert changed == 1
     assert fake.selected == [("part-The Gorge", "11")]
@@ -930,7 +1054,7 @@ def test_it_waits_for_plex_to_finish_scanning(tmp_path):
         found_on_attempt=3,
     )
 
-    changed = plex.select_audio_after_import(store, fake, "movie", "The Gorge", 2025, 950396, "en", delay=0)
+    changed = plex.select_audio_after_import(store, store.primary_plex_server(), fake, "movie", "The Gorge", 2025, 950396, "en", delay=0)
 
     assert changed == 1
     assert fake.locate_calls == 3
@@ -943,7 +1067,7 @@ def test_a_title_plex_never_indexes_gives_up_quietly(tmp_path):
     store = _store(tmp_path)
     fake = _LocatableePlex({"1": _episode("x", [])}, found_on_attempt=99)
 
-    assert plex.select_audio_after_import(store, fake, "movie", "Nope", 2025, 1, "en", attempts=2, delay=0) == 0
+    assert plex.select_audio_after_import(store, store.primary_plex_server(), fake, "movie", "Nope", 2025, 1, "en", attempts=2, delay=0) == 0
     store.close()
 
 
@@ -953,7 +1077,7 @@ def test_nothing_happens_without_a_plex_server(tmp_path):
     store = RequestStore(str(tmp_path / "t.db"))
     fake = _LocatableePlex({})
 
-    assert plex.select_audio_after_import(store, fake, "movie", "x", 2025, 1, "en") == 0
+    assert plex.select_audio_after_import(store, store.primary_plex_server(), fake, "movie", "x", 2025, 1, "en") == 0
     assert fake.locate_calls == 0
     store.close()
 
@@ -965,6 +1089,6 @@ def test_an_import_already_on_the_right_track_changes_nothing(tmp_path):
         "1": _episode("Fine", [_audio("10", "rus"), _audio("11", "eng", default=True, selected=True)]),
     })
 
-    assert plex.select_audio_after_import(store, fake, "movie", "Fine", 2025, 1, "en", delay=0) == 0
+    assert plex.select_audio_after_import(store, store.primary_plex_server(), fake, "movie", "Fine", 2025, 1, "en", delay=0) == 0
     assert fake.selected == []
     store.close()

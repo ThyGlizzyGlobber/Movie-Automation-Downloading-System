@@ -37,11 +37,10 @@ def setup_status(store: RequestStore = Depends(get_store)) -> dict:
     # docstring: `plex_token` is set as soon as PIN sign-in succeeds (the
     # wizard uses `plex_account_linked` to know it can move on to showing
     # the server picker), but `setup_complete`/every auth gate elsewhere
-    # keys specifically on a server having actually been *selected*
-    # (`plex_server_machine_id`) — the step that comes after, and the one
-    # that genuinely finishes bootstrap.
+    # keys specifically on a server having actually been *linked* — the
+    # step that comes after, and the one that genuinely finishes bootstrap.
     plex_account_linked = bool(settings.get("plex_token"))
-    setup_complete = bool(settings.get("plex_server_machine_id"))
+    setup_complete = store.primary_plex_server() is not None
     return {
         "tmdb_configured": bool(config.resolve_tmdb_api_key(store)),
         "tmdb_source": config.tmdb_api_key_source(store),

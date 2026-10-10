@@ -77,6 +77,8 @@ to install, configure and run it, see the [README](README.md).
 
 ## Non-goals
 
-- No multi-tenancy: one household, one Plex server, one Settings panel.
+- No multi-tenancy beyond Plex servers: one app, one admin, one Settings panel. An admin can
+  link several Plex servers the same account owns (e.g. family and friends on the same library
+  mounts); each keeps its own requests, but downloads, files and settings are shared.
 - No distributed job queue, CI/CD pipeline or Kubernetes.
 - No Docker socket in the backend, ever.

@@ -60,6 +60,18 @@ export interface PlexStatus {
   error: string | null
 }
 
+// GET /api/admin/plex-servers — the servers Obsidian serves, primary
+// first. Never carries a token or address.
+export interface LinkedPlexServer {
+  id: number
+  machine_identifier: string
+  name: string | null
+  label: string | null
+  display_name: string
+  priority: number
+  members: number
+}
+
 // PUT /api/settings/tmdb and /api/settings/qbittorrent (Part I's
 // Connections panel) — same response shape as their one-time /api/setup/*
 // counterparts, just always admin-gated instead of setup-token-gated.

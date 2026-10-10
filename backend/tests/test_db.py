@@ -905,3 +905,236 @@ def test_a_pack_that_handed_off_before_split_existed_is_relabelled(tmp_path):
     assert reopened.get_request(covered.id).status == "split"
     assert reopened.get_request(handed.id).status == "split"
     assert reopened.get_request(empty.id).status == "no qualifying results"
+
+
+# -- Plex servers --
+
+
+def test_the_server_linked_in_settings_becomes_the_first_plex_server(tmp_path):
+    """Before plex_servers, the one linked server was four settings keys.
+    Opening an old database moves them into the table and removes them,
+    so nothing can read a stale copy afterwards."""
+    path = str(tmp_path / "app.db")
+    old = RequestStore(path)
+    old.update_settings(
+        {
+            "plex_token": "account-token",
+            "plex_server_url": "http://plex:32400",
+            "plex_server_token": "server-token",
+            "plex_server_name": "Home NAS",
+            "plex_server_machine_id": "machine-1",
+        }
+    )
+    old.close()
+
+    store = RequestStore(path)
+
+    [server] = store.list_plex_servers()
+    assert (server.machine_id, server.name, server.url, server.token) == (
+        "machine-1", "Home NAS", "http://plex:32400", "server-token",
+    )
+    settings = store.get_settings()
+    assert settings["plex_token"] == "account-token"
+    assert not any(k.startswith("plex_server_") for k in settings)
+
+
+def test_unlinked_server_keys_are_dropped_without_making_a_server(tmp_path):
+    """An unlink used to null the keys rather than remove them."""
+    path = str(tmp_path / "app.db")
+    old = RequestStore(path)
+    old.update_settings({"plex_server_url": None, "plex_server_token": None, "plex_server_machine_id": None})
+    old.close()
+
+    store = RequestStore(path)
+
+    assert store.list_plex_servers() == []
+    assert not any(k.startswith("plex_server_") for k in store.get_settings())
+
+
+def test_saving_a_known_server_refreshes_it_in_place():
+    store = _store()
+    first = store.save_plex_server("family", "Plex-1", "http://a:32400", "t1")
+    second = store.save_plex_server("friends", "Plex-2", "http://b:32400", "t2")
+    store._conn.execute("UPDATE plex_servers SET label = 'Immediate family' WHERE id = ?", (first.id,))
+    store._conn.commit()
+
+    refreshed = store.save_plex_server("family", "Plex-1", "http://a:32401", "t1-new")
+
+    assert refreshed.id == first.id
+    assert (refreshed.url, refreshed.token, refreshed.label, refreshed.priority) == (
+        "http://a:32401", "t1-new", "Immediate family", 0,
+    )
+    assert second.priority == 1
+    assert store.primary_plex_server().machine_id == "family"
+
+
+def test_removing_plex_servers_keeps_the_ones_asked_for():
+    store = _store()
+    store.save_plex_server("family", "Plex-1", "http://a", "t1")
+    store.save_plex_server("friends", "Plex-2", "http://b", "t2")
+
+    assert store.remove_plex_servers(keep=("friends",)) == 1
+    assert [s.machine_id for s in store.list_plex_servers()] == ["friends"]
+    assert store.remove_plex_servers() == 1
+    assert store.primary_plex_server() is None
+
+
+def test_a_plex_servers_token_stays_out_of_its_repr():
+    server = _store().save_plex_server("family", "Plex-1", "http://a", "secret-token")
+
+    assert "secret-token" not in repr(server)
+
+
+def test_a_sign_in_replaces_which_servers_someone_can_reach():
+    store = _store()
+    family = store.save_plex_server("family", "Plex-1", "http://a", "t")
+    friends = store.save_plex_server("friends", "Plex-2", "http://b", "t")
+    store.upsert_user("p1", "someone", False, server_tokens={family.id: "f1", friends.id: "f2"})
+
+    store.upsert_user("p1", "someone", False, server_tokens={friends.id: None})
+
+    assert store.get_user_server_token("p1", family.id) is None
+    # A token Plex didn't hand back this time doesn't blank the one stored.
+    assert store.get_user_server_token("p1", friends.id) == "f2"
+    assert store.count_plex_server_members() == {friends.id: 1}
+
+
+def test_existing_users_become_members_of_the_primary_with_their_token(tmp_path):
+    path = str(tmp_path / "app.db")
+    old = RequestStore(path)
+    server = old.save_plex_server("family", "Plex-1", "http://a", "t")
+    old.upsert_user("p1", "someone", False)
+    old._conn.execute("UPDATE users SET plex_server_token = 'their-token'")
+    old._conn.execute("DROP TABLE user_servers")
+    old._conn.commit()
+    old.close()
+
+    store = RequestStore(path)
+
+    assert store.get_user_server_token("p1", server.id) == "their-token"
+    assert store._conn.execute("SELECT plex_server_token FROM users").fetchone()[0] is None
+
+
+# -- request asks and show followers --
+
+
+def _servers(store):
+    return store.save_plex_server("family", "Plex-1", "http://a", "t"), store.save_plex_server("friends", "Plex-2", "http://b", "t")
+
+
+def test_existing_requests_and_follows_become_the_primarys(tmp_path):
+    path = str(tmp_path / "app.db")
+    old = RequestStore(path)
+    family = old.save_plex_server("family", "Plex-1", "http://a", "t")
+    show = old.create_show(tmdb_id=1, title="A")
+    paused = old.create_show(tmdb_id=2, title="B", status="paused")
+    row = old.create_request(tmdb_id=9, title="Film", release_year=2024, query=None,
+                             requested_by_plex_id="p1", requested_by_username="someone")
+    old._conn.execute("DROP TABLE request_asks")
+    old._conn.execute("DROP TABLE show_followers")
+    old._conn.commit()
+    old.close()
+
+    store = RequestStore(path)
+
+    [seen] = store.list_requests_for_server(family.id)
+    assert (seen.id, seen.requested_by_username) == (row.id, "someone")
+    assert store.is_following(show.id, family.id)
+    assert not store.is_following(paused.id, family.id)
+
+
+def test_a_split_or_replacement_row_is_wanted_by_whoever_wanted_the_original():
+    store = _store()
+    family, friends = _servers(store)
+    show = store.create_show(tmdb_id=1, title="A", status="paused")
+    pack = store.create_pack_request(1, show.id, "A", 1, requested_by_plex_id="f1",
+                                     requested_by_username="friend", server_id=friends.id)
+
+    episode = store.create_episode_request(1, show.id, "A", 1, 1, asks_from=pack.id)
+
+    assert store.request_ask_servers(episode.id) == {friends.id}
+    assert store.get_request_for_server(episode.id, friends.id).requested_by_username == "friend"
+    assert store.get_request_for_server(episode.id, family.id) is None
+
+
+def test_following_a_show_asks_for_what_is_already_on_its_way():
+    store = _store()
+    family, friends = _servers(store)
+    show = store.create_show(tmdb_id=1, title="A")
+    store.follow_show(show.id, family.id)
+    live = store.create_episode_request(1, show.id, "A", 1, 1)
+    done = store.create_episode_request(1, show.id, "A", 1, 2)
+    store.update_status(done.id, "complete")
+
+    store.follow_show(show.id, friends.id)
+
+    assert [r.id for r in store.list_requests_for_server(friends.id)] == [live.id]
+
+
+def test_a_covering_pack_takes_over_the_asks_of_what_it_cancels():
+    store = _store()
+    family, friends = _servers(store)
+    show = store.create_show(tmdb_id=1, title="A", status="paused")
+    episode = store.create_episode_request(1, show.id, "A", 1, 1, server_id=family.id)
+    pack = store.create_pack_request(1, show.id, "A", 1, server_id=friends.id)
+
+    assert store.cancel_queued_requests_for_show(show.id, 1, superseded_by=pack.id) == 1
+
+    assert store.get_request(pack.id).status == "queued"
+    assert store.request_ask_servers(pack.id) == {family.id, friends.id}
+
+
+def test_unlinking_and_relinking_plex_keeps_the_households_history():
+    store = _store()
+    family = store.save_plex_server("family", "Plex-1", "http://a", "t")
+    show = store.create_show(tmdb_id=1, title="A")
+    store.follow_show(show.id, family.id)
+    row = store.create_request(tmdb_id=9, title="Film", release_year=2024, query=None, server_id=family.id)
+
+    store.remove_plex_servers()
+    relinked = store.save_plex_server("new-box", "Plex", "http://n", "t")
+
+    assert [r.id for r in store.list_requests_for_server(relinked.id)] == [row.id]
+    assert store.is_following(show.id, relinked.id)
+    assert store.get_show(show.id).status == "watching"
+
+
+def test_switching_to_another_server_moves_the_history_with_it():
+    store = _store()
+    family, friends = _servers(store)
+    a = store.create_request(tmdb_id=9, title="Film", release_year=2024, query=None, server_id=family.id)
+    b = store.create_request(tmdb_id=8, title="Other", release_year=2024, query=None, server_id=friends.id)
+
+    replacement = store.replace_plex_servers("new-box", "Plex", "http://n", "t")
+
+    assert [s.machine_id for s in store.list_plex_servers()] == ["new-box"]
+    assert {r.id for r in store.list_requests_for_server(replacement.id)} == {a.id, b.id}
+
+
+def test_removing_one_server_stops_the_shows_only_it_followed():
+    store = _store()
+    family, friends = _servers(store)
+    theirs = store.create_show(tmdb_id=1, title="A")
+    shared = store.create_show(tmdb_id=2, title="B")
+    store.follow_show(theirs.id, friends.id)
+    store.follow_show(shared.id, friends.id)
+    store.follow_show(shared.id, family.id)
+    row = store.create_request(tmdb_id=9, title="Film", release_year=2024, query=None, server_id=friends.id)
+
+    store.remove_plex_servers(keep=("family",))
+
+    assert store.get_show(theirs.id).status == "paused"
+    assert store.get_show(shared.id).status == "watching"
+    assert store.request_ask_servers(row.id) == set()
+
+
+def test_a_shows_status_is_per_server():
+    store = _store()
+    family, friends = _servers(store)
+    show = store.create_show(tmdb_id=1, title="A", status="paused")
+    store.follow_show(show.id, family.id)
+    store.create_pack_request(1, show.id, "A", 2, server_id=friends.id)
+
+    assert [s.status for s in store.list_shows_for_server(family.id)] == ["watching"]
+    # Friends asked for a season without following: it's theirs, paused.
+    assert [s.status for s in store.list_shows_for_server(friends.id)] == ["paused"]

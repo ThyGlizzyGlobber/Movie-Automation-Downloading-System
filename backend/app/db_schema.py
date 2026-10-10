@@ -3,6 +3,7 @@ migrations that bring a database file written by an older version up to
 date. Runs once, from RequestStore's constructor."""
 
 import json
+from datetime import datetime, timezone
 
 from app import config
 
@@ -214,13 +215,9 @@ class StoreSchema:
             # Household controls per user.
             self._ensure_column("users", "can_request", "can_request INTEGER NOT NULL DEFAULT 1")
             self._ensure_column("users", "avatar_url", "avatar_url TEXT")
-            # That user's *own* access token for the linked server, kept so
-            # per-user Plex reads (Continue Watching) can be made as them
-            # rather than as the admin. Deliberately not a field on UserRow:
-            # that dataclass is what /api/admin/users serialises, and a token
-            # that never enters the object can't leave in a response. Read it
-            # through get_user_server_token() instead, which exists to be the
-            # one path.
+            # Each person's own token for the one linked server, from before
+            # there could be several. Superseded by user_servers below, and
+            # kept only so an older database's tokens can be moved there.
             self._ensure_column("users", "plex_server_token", "plex_server_token TEXT")
             # The notification system was removed: drop its tables from
             # databases created before that.
@@ -275,7 +272,145 @@ class StoreSchema:
                 )
                 """
             )
+            # The Plex servers this app serves — see PlexServerRow. The
+            # account-level sign-in (plex_token, plex_username,
+            # plex_client_id) stays in settings: one admin account owns
+            # every server here.
+            self._conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS plex_servers (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    machine_id TEXT NOT NULL UNIQUE,
+                    name TEXT,
+                    label TEXT,
+                    url TEXT NOT NULL,
+                    token TEXT NOT NULL,
+                    priority INTEGER NOT NULL DEFAULT 0,
+                    created_at TEXT NOT NULL
+                )
+                """
+            )
+            self._move_linked_server_out_of_settings()
+            # Which server a session is served by — the one its sign-in
+            # came in through, or the one an admin switched it to. NULL
+            # (every session from before this) means the primary.
+            self._ensure_column("sessions", "server_id", "server_id INTEGER")
+            # Which servers each person can reach, as of their last
+            # sign-in, with their own access token for each. Replaces
+            # users.plex_server_token, which assumed there was one server.
+            first_time = not self._conn.execute(
+                "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'user_servers'"
+            ).fetchone()
+            self._conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS user_servers (
+                    plex_user_id TEXT NOT NULL,
+                    server_id INTEGER NOT NULL,
+                    server_token TEXT,
+                    PRIMARY KEY (plex_user_id, server_id)
+                )
+                """
+            )
+            if first_time:
+                self._move_user_tokens_to_user_servers()
+            # Which servers want each request. A request row is one
+            # download — there is one copy of a title on the shared library
+            # mounts however many servers asked — and a server sees only
+            # the rows it has an ask on, under the name of whoever asked
+            # from that server (none, for one a followed show produced).
+            # See RequestStore's "request asks" section.
+            first_time = not self._conn.execute(
+                "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'request_asks'"
+            ).fetchone()
+            self._conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS request_asks (
+                    request_id INTEGER NOT NULL,
+                    server_id INTEGER NOT NULL,
+                    plex_user_id TEXT,
+                    username TEXT,
+                    created_at TEXT NOT NULL,
+                    PRIMARY KEY (request_id, server_id)
+                )
+                """
+            )
+            self._conn.execute("CREATE INDEX IF NOT EXISTS request_asks_by_server ON request_asks (server_id, request_id)")
+            # Which servers follow each show. A show is checked for new
+            # episodes while anyone follows it (`shows.status`), and every
+            # request it produces is asked for by each of its followers.
+            self._conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS show_followers (
+                    show_id INTEGER NOT NULL,
+                    server_id INTEGER NOT NULL,
+                    created_at TEXT NOT NULL,
+                    PRIMARY KEY (show_id, server_id)
+                )
+                """
+            )
+            if first_time:
+                self._give_existing_requests_to_the_primary()
             self._conn.commit()
+
+    def _give_existing_requests_to_the_primary(self) -> None:
+        """Everything from before requests were separated per server was
+        made on the primary: it keeps all of it, under the same names, and
+        follows every show that was being followed."""
+        primary = self._conn.execute("SELECT id FROM plex_servers ORDER BY priority, id LIMIT 1").fetchone()
+        if primary is None:
+            return
+        now = datetime.now(timezone.utc).isoformat()
+        self._conn.execute(
+            "INSERT OR IGNORE INTO request_asks (request_id, server_id, plex_user_id, username, created_at) "
+            "SELECT id, ?, requested_by_plex_id, requested_by_username, created_at FROM requests",
+            (primary["id"],),
+        )
+        self._conn.execute(
+            "INSERT OR IGNORE INTO show_followers (show_id, server_id, created_at) "
+            "SELECT id, ?, ? FROM shows WHERE status = 'watching'",
+            (primary["id"], now),
+        )
+
+    def _move_user_tokens_to_user_servers(self) -> None:
+        """Everyone who signed in before there could be more than one
+        server signed in to the primary: each becomes a member of it,
+        keeping the token they had. The old column is cleared rather
+        than left as a second copy of every token."""
+        primary = self._conn.execute("SELECT id FROM plex_servers ORDER BY priority, id LIMIT 1").fetchone()
+        if primary is None:
+            return
+        self._conn.execute(
+            "INSERT OR IGNORE INTO user_servers (plex_user_id, server_id, server_token) "
+            "SELECT plex_user_id, ?, plex_server_token FROM users",
+            (primary["id"],),
+        )
+        self._conn.execute("UPDATE users SET plex_server_token = NULL")
+
+    def _move_linked_server_out_of_settings(self) -> None:
+        """Before plex_servers existed, the one linked server was four
+        keys in the settings row. Those become the first server, and the
+        keys are removed rather than nulled, so nothing can go on reading
+        a stale copy of a server that has since been changed."""
+        keys = ("plex_server_url", "plex_server_token", "plex_server_name", "plex_server_machine_id")
+        row = self._conn.execute("SELECT data_json FROM settings WHERE id = 1").fetchone()
+        saved = json.loads(row["data_json"]) if row else {}
+        if not any(k in saved for k in keys):
+            return
+        has_servers = self._conn.execute("SELECT 1 FROM plex_servers LIMIT 1").fetchone()
+        if not has_servers and saved.get("plex_server_machine_id") and saved.get("plex_server_url") and saved.get("plex_server_token"):
+            self._conn.execute(
+                "INSERT INTO plex_servers (machine_id, name, url, token, priority, created_at) VALUES (?, ?, ?, ?, 0, ?)",
+                (
+                    saved["plex_server_machine_id"],
+                    saved.get("plex_server_name"),
+                    saved["plex_server_url"],
+                    saved["plex_server_token"],
+                    datetime.now(timezone.utc).isoformat(),
+                ),
+            )
+        for k in keys:
+            saved.pop(k, None)
+        self._conn.execute("UPDATE settings SET data_json = ? WHERE id = 1", (json.dumps(saved),))
 
     def _recheck_enabled_now(self) -> bool:
         """The saved value of `episode_recheck_enabled`, falling back to

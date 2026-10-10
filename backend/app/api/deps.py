@@ -10,7 +10,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 
-from app.db import RequestStore, SessionRow
+from app.db import PlexServerRow, RequestStore, SessionRow
 from app.plex import LoginSession, PlexLinker
 from app.qbt import QBTClient
 from app.tmdb import TMDBClient
@@ -224,6 +224,8 @@ def get_login_session(request: Request) -> LoginSession:
     return request.app.state.login_session
 
 
+
+
 # ---------------------------------------------------------------------------
 # Auth dependencies (frontend migration Part C3)
 # ---------------------------------------------------------------------------
@@ -239,6 +241,40 @@ def require_session(request: Request, store: RequestStore = Depends(get_store)) 
     return session
 
 
+def get_session_server(
+    session: SessionRow = Depends(require_session), store: RequestStore = Depends(get_store)
+) -> PlexServerRow | None:
+    """The server this session is served by, or None when none is linked:
+    the one it names, else the primary. Which requests a person sees, and
+    which server a request they make is asked from, both come from here.
+
+    A session only ever names a server that still exists for an admin —
+    removing a server signs out everyone else who came in through it
+    (RequestStore.remove_plex_servers) — so the primary fallback covers
+    sessions from before there were several, and nothing else."""
+    if session.server_id is not None:
+        server = store.get_plex_server(session.server_id)
+        if server is not None:
+            return server
+    return store.primary_plex_server()
+
+
+def require_session_server(server: PlexServerRow | None = Depends(get_session_server)) -> PlexServerRow:
+    if server is None:
+        raise HTTPException(status_code=409, detail="no Plex server is linked")
+    return server
+
+
+def get_plex_server(server: PlexServerRow | None = Depends(get_session_server)) -> PlexServerRow | None:
+    """The Plex server this request's reads and lookups go to — the
+    session's own. Every route that asks Plex anything takes its server
+    from here rather than finding one itself, so which server a person is
+    served by is decided in exactly one place. Its own dependency, rather
+    than get_session_server under another name, so tests can switch Plex
+    reads off without losing which server a session is on."""
+    return server
+
+
 def require_can_request(
     session: SessionRow = Depends(require_session), store: RequestStore = Depends(get_store)
 ) -> SessionRow:
@@ -247,6 +283,23 @@ def require_can_request(
     user = store.get_user(session.plex_user_id)
     if user is not None and not user.is_admin and not user.can_request:
         raise HTTPException(status_code=403, detail="requests are turned off for this account")
+    return session
+
+
+def ensure_can_replace_copies(store: RequestStore, session: SessionRow) -> None:
+    """Rejecting a copy, deleting one, or asking for one to replace it
+    changes a file every server plays from — the library mounts are
+    shared. With one server that is anyone's call who can request; with
+    more, it's an admin's, so nobody on one server replaces what another
+    is watching."""
+    if not session.is_admin and len(store.list_plex_servers()) > 1:
+        raise HTTPException(status_code=403, detail="only an admin can replace a copy")
+
+
+def require_can_replace_copies(
+    session: SessionRow = Depends(require_can_request), store: RequestStore = Depends(get_store)
+) -> SessionRow:
+    ensure_can_replace_copies(store, session)
     return session
 
 
@@ -272,7 +325,7 @@ def require_admin_or_setup_bootstrap(
     — otherwise admin-only. See require_setup_token's docstring for why
     the token check duplicates a few lines rather than composing with it.
 
-    Keyed on `plex_server_machine_id`, not `plex_token` — `plex_token`
+    Keyed on a server being linked, not on `plex_token` — `plex_token`
     is set as soon as the PIN sign-in itself succeeds, which is *before*
     the account has actually picked which owned server to use (a
     separate step, GET /api/plex/servers + PUT /api/plex/server). Keying
@@ -280,9 +333,10 @@ def require_admin_or_setup_bootstrap(
     sign-in succeeds but before server selection has run — including on
     the GET /api/plex/servers call the wizard needs to show the picker in
     the first place, a genuine deadlock caught while building the setup
-    wizard's frontend. `plex_server_machine_id` is only ever set once
-    PUT /api/plex/server actually finishes, which is what completes setup."""
-    if not store.get_settings().get("plex_server_machine_id"):
+    wizard's frontend. A server is linked by the wizard's own sign-in
+    (PlexLinker._keep_linked_servers takes the account's first owned
+    server), and that is what completes setup."""
+    if store.primary_plex_server() is None:
         expected = store.get_or_create_setup_token()
         if request.headers.get("X-Setup-Token") != expected:
             raise HTTPException(status_code=401, detail="missing or incorrect setup token")
@@ -298,10 +352,10 @@ def require_setup_token(request: Request, store: RequestStore = Depends(get_stor
     sits behind nginx's own LAN-only restriction on the same path
     (Part G1's primary control); this is the defense-in-depth second
     layer that holds even without nginx in front (e.g. this test suite,
-    or `npm run dev` against a bare uvicorn). Keyed on
-    `plex_server_machine_id`, not `plex_token` — see
-    require_admin_or_setup_bootstrap's docstring for why."""
-    if store.get_settings().get("plex_server_machine_id"):
+    or `npm run dev` against a bare uvicorn). Keyed on a server being
+    linked, not on `plex_token` — see require_admin_or_setup_bootstrap's
+    docstring for why."""
+    if store.primary_plex_server() is not None:
         raise HTTPException(status_code=410, detail="setup already completed")
     expected = store.get_or_create_setup_token()
     if request.headers.get("X-Setup-Token") != expected:

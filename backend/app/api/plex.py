@@ -9,13 +9,15 @@ from fastapi import Depends, HTTPException, Request, Response
 from fastapi.responses import Response as RawResponse
 from pydantic import BaseModel, Field
 
-from app.db import RequestStore, SessionRow
+from app.db import PlexServerRow, RequestStore, SessionRow
 from app.plex import PlexClient, PlexError, PlexLinker, client_from_settings, locate_title
 from app.api.deps import (
     _client_ip,
     _new_session_expiry,
     _set_session_cookie,
     get_plex_linker,
+    get_plex_server,
+    admin_router,
     get_store,
     logger,
     require_admin,
@@ -82,8 +84,11 @@ def list_plex_servers(store: RequestStore = Depends(get_store)) -> list[dict]:
     Part C1). Backs both the setup wizard's server picker (an account can
     own more than one server) and Settings' "Switch Server" action."""
     client, token, resources = _linked_account_resources(store)
+    linked = {s.machine_id for s in store.list_plex_servers()}
     return [
-        {"name": r["name"], "machine_identifier": r["machine_identifier"]} for r in resources if r["owned"]
+        {"name": r["name"], "machine_identifier": r["machine_identifier"], "linked": r["machine_identifier"] in linked}
+        for r in resources
+        if r["owned"]
     ]
 
 
@@ -118,14 +123,9 @@ def select_plex_server(
     )
     if match is None:
         raise HTTPException(status_code=404, detail="server not found among this account's owned servers")
-    store.update_settings(
-        {
-            "plex_server_url": match["url"],
-            "plex_server_token": match["token"],
-            "plex_server_name": match["name"],
-            "plex_server_machine_id": match["machine_identifier"],
-        }
-    )
+    # Still a switch, not an add: the chosen server replaces whatever
+    # was linked, as it always has, and takes over its history.
+    store.replace_plex_servers(match["machine_identifier"], match["name"], match["url"], match["token"])
     # Switching servers changes who's authorized — every non-admin
     # session's access grant was checked against the *old* server and
     # must be re-validated via a fresh login against the new one.
@@ -148,6 +148,100 @@ def select_plex_server(
             store.create_session(session_id, user.plex_user_id, user.username, True, _new_session_expiry())
             _set_session_cookie(response, request, session_id)
     return {"server_name": match["name"]}
+
+
+# -- The servers this app serves (see PlexServerRow). PUT /api/plex/server
+#    above still replaces them all with one; these add to the list and
+#    manage it. Admin-only, and never return a server's token. --
+
+
+def _linked_server_out(server: PlexServerRow, members: dict[int, int]) -> dict:
+    return {
+        "id": server.id,
+        "machine_identifier": server.machine_id,
+        "name": server.name,
+        "label": server.label,
+        "display_name": server.display_name,
+        "priority": server.priority,
+        "members": members.get(server.id, 0),
+    }
+
+
+def _linked_servers_out(store: RequestStore) -> list[dict]:
+    members = store.count_plex_server_members()
+    return [_linked_server_out(s, members) for s in store.list_plex_servers()]
+
+
+@admin_router.get("/api/admin/plex-servers")
+def list_linked_plex_servers(store: RequestStore = Depends(get_store)) -> list[dict]:
+    """Every linked server, primary first, with how many people have
+    signed in through each."""
+    return _linked_servers_out(store)
+
+
+@admin_router.post("/api/admin/plex-servers", status_code=201)
+def add_plex_server(
+    request: Request, body: SelectPlexServerRequest, store: RequestStore = Depends(get_store)
+) -> list[dict]:
+    """Links another server the account owns, after the ones already
+    here. Nobody is signed out: people shared on it reach it from their
+    next sign-in."""
+    client, token, resources = _linked_account_resources(store)
+    match = next(
+        (r for r in resources if r["owned"] and r["machine_identifier"] == body.machine_identifier), None
+    )
+    if match is None:
+        raise HTTPException(status_code=404, detail="server not found among this account's owned servers")
+    store.save_plex_server(match["machine_identifier"], match["name"], match["url"], match["token"])
+    store.record_auth_event("plex_server_added", ip_address=_client_ip(request), detail=f"added {match['name']}")
+    return _linked_servers_out(store)
+
+
+class PlexServerUpdate(BaseModel):
+    label: str | None = Field(default=None, max_length=60)
+
+
+@admin_router.patch("/api/admin/plex-servers/{server_id}")
+def update_plex_server(server_id: int, body: PlexServerUpdate, store: RequestStore = Depends(get_store)) -> list[dict]:
+    """Names a server for the household — "Immediate family", "Friends".
+    Blank goes back to Plex's own name for it."""
+    if store.get_plex_server(server_id) is None:
+        raise HTTPException(status_code=404, detail="no such Plex server")
+    store.set_plex_server_label(server_id, (body.label or "").strip() or None)
+    return _linked_servers_out(store)
+
+
+class PlexServerOrder(BaseModel):
+    server_ids: list[int]
+
+
+@admin_router.put("/api/admin/plex-servers/order")
+def reorder_plex_servers(body: PlexServerOrder, store: RequestStore = Depends(get_store)) -> list[dict]:
+    """Sets the order, first being the primary: where someone shared on
+    more than one server lands, and the one the worker asks. Applies from
+    each person's next sign-in."""
+    if sorted(body.server_ids) != sorted(s.id for s in store.list_plex_servers()):
+        raise HTTPException(status_code=400, detail="list every linked server exactly once")
+    store.reorder_plex_servers(body.server_ids)
+    return _linked_servers_out(store)
+
+
+@admin_router.delete("/api/admin/plex-servers/{server_id}")
+def remove_plex_server(server_id: int, request: Request, store: RequestStore = Depends(get_store)) -> list[dict]:
+    """Unlinks one server. Everyone signed in through it is signed out;
+    an admin viewing it moves back to the primary. The last server can't
+    go this way — that is disconnecting Plex, which has its own route."""
+    servers = store.list_plex_servers()
+    server = next((s for s in servers if s.id == server_id), None)
+    if server is None:
+        raise HTTPException(status_code=404, detail="no such Plex server")
+    if len(servers) == 1:
+        raise HTTPException(status_code=409, detail="that's the only server — disconnect Plex instead")
+    store.remove_plex_servers(keep=tuple(s.machine_id for s in servers if s.id != server_id))
+    store.record_auth_event(
+        "plex_server_removed", ip_address=_client_ip(request), detail=f"removed {server.display_name}"
+    )
+    return _linked_servers_out(store)
 
 
 _ON_DECK_MAX = 12
@@ -211,6 +305,7 @@ def _resolve_tmdb_ids(client: PlexClient, url: str, token: str, rating_keys: set
 def get_plex_on_deck(
     store: RequestStore = Depends(get_store),
     session: SessionRow = Depends(require_session),
+    server: PlexServerRow | None = Depends(get_plex_server),
 ) -> dict:
     """Plex's Continue Watching *for whoever is signed in*, shaped for the
     Home row: progress fraction, minutes left, the TMDB id (so a card can
@@ -225,21 +320,22 @@ def get_plex_on_deck(
     episodes, which is both wrong and a small privacy leak between members.
 
     The token is captured during the access check every sign-in already makes
-    (app/plex.py's check_server_access), so it arrives without an extra round
+    (app/plex.py's access_by_server), so it arrives without an extra round
     trip. Someone whose session predates that has none stored yet; rather
     than fall back to the admin's and quietly reintroduce the bug for the
     people it most affects, the row simply stays empty until they next sign
-    in. The admin keeps the settings token as a fallback because for the
+    in. The admin keeps the server's own token as a fallback because for the
     admin it is the same account's token — the same answer either way, so
     nothing regresses while the household cycles through."""
-    settings = store.get_settings()
-    url = settings.get("plex_server_url")
-    token = store.get_user_server_token(session.plex_user_id)
-    if not token and session.is_admin:
-        token = settings.get("plex_server_token")
-    if not url or not token:
+    if server is None:
         return {"available": False, "items": []}
-    client = client_from_settings(settings)
+    url = server.url
+    token = store.get_user_server_token(session.plex_user_id, server.id)
+    if not token and session.is_admin:
+        token = server.token
+    if not token:
+        return {"available": False, "items": []}
+    client = client_from_settings(store.get_settings())
     try:
         raw = client.on_deck(url, token)
     except Exception as exc:  # noqa: BLE001 — any transport failure degrades the row, never the page
@@ -282,44 +378,48 @@ def get_plex_on_deck(
                 "art_url": f"/api/plex/image?path={art}" if art else None,
             }
         )
-    return {"available": True, "machine_id": settings.get("plex_server_machine_id"), "items": items}
+    return {"available": True, "machine_id": server.machine_id, "items": items}
 
 
 @router.get("/api/plex/locate")
 def plex_locate(
-    type: str, title: str, year: int | None = None, tmdb_id: int | None = None, store: RequestStore = Depends(get_store)
+    type: str,
+    title: str,
+    year: int | None = None,
+    tmdb_id: int | None = None,
+    store: RequestStore = Depends(get_store),
+    server: PlexServerRow | None = Depends(get_plex_server),
 ) -> dict:
     """Where a title lives on the linked server, for the detail page's
     Play button: {available, rating_key, machine_id}. Degrades to
     available: false rather than erroring."""
     if type not in ("movie", "show"):
         raise HTTPException(status_code=400, detail="type must be movie or show")
-    settings = store.get_settings()
-    url, token = settings.get("plex_server_url"), settings.get("plex_server_token")
-    if not url or not token:
+    if server is None:
         return {"available": False}
-    client = client_from_settings(settings)
+    client = client_from_settings(store.get_settings())
     try:
-        found = locate_title(store, client, type, title, year, tmdb_id)
+        found = locate_title(store, server, client, type, title, year, tmdb_id)
     except Exception as exc:  # noqa: BLE001
         logger.info("plex locate unavailable: %s", exc)
         return {"available": False}
     if not found:
         return {"available": False}
-    return {"available": True, "machine_id": settings.get("plex_server_machine_id"), **found}
+    return {"available": True, "machine_id": server.machine_id, **found}
 
 
 @router.get("/api/plex/recently-added")
-def get_plex_recently_added(store: RequestStore = Depends(get_store)) -> dict:
+def get_plex_recently_added(
+    store: RequestStore = Depends(get_store), server: PlexServerRow | None = Depends(get_plex_server)
+) -> dict:
     """Plex's Recently Added, shaped for the Home row: one card per movie
     or show (a season or episode collapses onto its show), the TMDB id
     when it can be resolved, and a same-origin poster URL. Degrades to
     `available: false` like the on-deck route."""
-    settings = store.get_settings()
-    url, token = settings.get("plex_server_url"), settings.get("plex_server_token")
-    if not url or not token:
+    if server is None:
         return {"available": False, "items": []}
-    client = client_from_settings(settings)
+    url, token = server.url, server.token
+    client = client_from_settings(store.get_settings())
     try:
         raw = client.recently_added(url, token)
     except Exception as exc:  # noqa: BLE001
@@ -366,17 +466,21 @@ def get_plex_recently_added(store: RequestStore = Depends(get_store)) -> dict:
 
 
 @router.get("/api/plex/image")
-def get_plex_image(path: str, width: int = 640, height: int = 360, store: RequestStore = Depends(get_store)) -> RawResponse:
+def get_plex_image(
+    path: str,
+    width: int = 640,
+    height: int = 360,
+    store: RequestStore = Depends(get_store),
+    server: PlexServerRow | None = Depends(get_plex_server),
+) -> RawResponse:
     """Same-origin proxy for Plex library artwork — see PlexClient.fetch_image."""
     if not path.startswith("/library/") or ".." in path:
         raise HTTPException(status_code=400, detail="not a library image path")
-    settings = store.get_settings()
-    url, token = settings.get("plex_server_url"), settings.get("plex_server_token")
-    if not url or not token:
+    if server is None:
         raise HTTPException(status_code=404, detail="Plex is not linked")
-    client = client_from_settings(settings)
+    client = client_from_settings(store.get_settings())
     try:
-        content, content_type = client.fetch_image(url, token, path, min(width, 1280), min(height, 720))
+        content, content_type = client.fetch_image(server.url, server.token, path, min(width, 1280), min(height, 720))
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=502, detail=f"Plex image unavailable: {exc}") from exc
     return RawResponse(content=content, media_type=content_type, headers={"Cache-Control": "private, max-age=3600"})

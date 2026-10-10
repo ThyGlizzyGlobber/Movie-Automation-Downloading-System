@@ -1,7 +1,7 @@
 """The "On Plex" annotation shared by the browse, detail and
 recommendation routes."""
 
-from app.db import RequestStore
+from app.db import PlexServerRow, RequestStore
 from app.plex import plex_library_lookup
 
 
@@ -14,7 +14,13 @@ from app.plex import plex_library_lookup
 
 
 def _annotate_on_plex(
-    results: list[dict], media_type: str, store: RequestStore, *, title_key: str, date_key: str
+    results: list[dict],
+    media_type: str,
+    store: RequestStore,
+    server: PlexServerRow | None,
+    *,
+    title_key: str,
+    date_key: str,
 ) -> list[dict]:
     """Returns a *new* list of *new* dicts, `on_plex` added to each — never
     mutates the input items in place. Several of tmdb.py's methods
@@ -23,7 +29,7 @@ def _annotate_on_plex(
     in place would bake one request's Plex-link state into the shared
     cache for every later hit until the (independent) TMDB cache itself
     expires."""
-    matcher = plex_library_lookup(store, media_type)
+    matcher = plex_library_lookup(store, server, media_type)
     annotated = []
     for item in results:
         year_str = (item.get(date_key) or "")[:4]
@@ -33,6 +39,13 @@ def _annotate_on_plex(
     return annotated
 
 
-def _on_plex_for(title: str, year: int | None, media_type: str, store: RequestStore, tmdb_id: int | None = None) -> bool:
-    matcher = plex_library_lookup(store, media_type)
+def _on_plex_for(
+    title: str,
+    year: int | None,
+    media_type: str,
+    store: RequestStore,
+    server: PlexServerRow | None,
+    tmdb_id: int | None = None,
+) -> bool:
+    matcher = plex_library_lookup(store, server, media_type)
     return bool(matcher(title, year, tmdb_id)) if matcher else False

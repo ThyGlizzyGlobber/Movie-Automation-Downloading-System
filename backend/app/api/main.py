@@ -64,7 +64,7 @@ async def lifespan(app: FastAPI):
     # this lazily (only whenever the first /api/setup/* request happened
     # to land) would mean there's nowhere the admin could ever actually
     # go read it from before making that first request.
-    if not store.get_settings().get("plex_server_machine_id"):
+    if store.primary_plex_server() is None:
         token = store.get_or_create_setup_token()
         logger.warning("=" * 60)
         logger.warning("First-run setup needed. Setup code: %s", token)

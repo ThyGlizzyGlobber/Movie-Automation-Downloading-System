@@ -1,5 +1,5 @@
-import { putJson, request } from './client'
-import type { PlexStatus } from '../types/settings'
+import { postJson, putJson, request } from './client'
+import type { LinkedPlexServer, PlexStatus } from '../types/settings'
 import type { PlexServerSummary } from '../types/auth'
 import type { OnDeck, RecentlyAdded } from '../types/features'
 
@@ -32,12 +32,30 @@ export function listPlexServers(setupToken?: string) {
   })
 }
 
-export function selectPlexServer(machineIdentifier: string, setupToken?: string) {
-  return putJson<{ server_name: string }>(
-    '/api/plex/server',
-    { machine_identifier: machineIdentifier },
-    setupToken ? { [SETUP_TOKEN_HEADER]: setupToken } : undefined,
-  )
+// The servers Obsidian serves, and managing that list (admins). Each
+// returns the whole list as it now stands.
+export function listLinkedServers() {
+  return request<LinkedPlexServer[]>('/api/admin/plex-servers')
+}
+
+export function addPlexServer(machineIdentifier: string) {
+  return postJson<LinkedPlexServer[]>('/api/admin/plex-servers', { machine_identifier: machineIdentifier })
+}
+
+export function labelPlexServer(id: number, label: string) {
+  return request<LinkedPlexServer[]>(`/api/admin/plex-servers/${id}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ label }),
+  })
+}
+
+export function reorderPlexServers(serverIds: number[]) {
+  return putJson<LinkedPlexServer[]>('/api/admin/plex-servers/order', { server_ids: serverIds })
+}
+
+export function removePlexServer(id: number) {
+  return request<LinkedPlexServer[]>(`/api/admin/plex-servers/${id}`, { method: 'DELETE' })
 }
 
 // Plex's Continue Watching for the linked server (Home row).
