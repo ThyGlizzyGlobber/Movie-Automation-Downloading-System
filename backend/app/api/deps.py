@@ -241,14 +241,12 @@ def require_session(request: Request, store: RequestStore = Depends(get_store)) 
     return session
 
 
-def get_plex_server(
+def get_session_server(
     session: SessionRow = Depends(require_session), store: RequestStore = Depends(get_store)
 ) -> PlexServerRow | None:
-    """The Plex server this request's reads and lookups go to, or None
-    when none is linked: the one the session is served by, else the
-    primary. Every route that asks Plex anything takes its server from
-    here rather than finding one itself, so which server a person is
-    served by is decided in exactly one place.
+    """The server this session is served by, or None when none is linked:
+    the one it names, else the primary. Which requests a person sees, and
+    which server a request they make is asked from, both come from here.
 
     A session only ever names a server that still exists for an admin —
     removing a server signs out everyone else who came in through it
@@ -261,6 +259,22 @@ def get_plex_server(
     return store.primary_plex_server()
 
 
+def require_session_server(server: PlexServerRow | None = Depends(get_session_server)) -> PlexServerRow:
+    if server is None:
+        raise HTTPException(status_code=409, detail="no Plex server is linked")
+    return server
+
+
+def get_plex_server(server: PlexServerRow | None = Depends(get_session_server)) -> PlexServerRow | None:
+    """The Plex server this request's reads and lookups go to — the
+    session's own. Every route that asks Plex anything takes its server
+    from here rather than finding one itself, so which server a person is
+    served by is decided in exactly one place. Its own dependency, rather
+    than get_session_server under another name, so tests can switch Plex
+    reads off without losing which server a session is on."""
+    return server
+
+
 def require_can_request(
     session: SessionRow = Depends(require_session), store: RequestStore = Depends(get_store)
 ) -> SessionRow:
@@ -269,6 +283,23 @@ def require_can_request(
     user = store.get_user(session.plex_user_id)
     if user is not None and not user.is_admin and not user.can_request:
         raise HTTPException(status_code=403, detail="requests are turned off for this account")
+    return session
+
+
+def ensure_can_replace_copies(store: RequestStore, session: SessionRow) -> None:
+    """Rejecting a copy, deleting one, or asking for one to replace it
+    changes a file every server plays from — the library mounts are
+    shared. With one server that is anyone's call who can request; with
+    more, it's an admin's, so nobody on one server replaces what another
+    is watching."""
+    if not session.is_admin and len(store.list_plex_servers()) > 1:
+        raise HTTPException(status_code=403, detail="only an admin can replace a copy")
+
+
+def require_can_replace_copies(
+    session: SessionRow = Depends(require_can_request), store: RequestStore = Depends(get_store)
+) -> SessionRow:
+    ensure_can_replace_copies(store, session)
     return session
 
 

@@ -4,6 +4,7 @@ A single connection with `check_same_thread=False` guarded by a
 `threading.Lock`; callers on the async side wrap calls in
 `asyncio.to_thread` so a query never blocks the event loop."""
 
+import dataclasses
 import json
 import logging
 import os
@@ -134,7 +135,10 @@ class RequestStore(StoreSchema):
         requested_by_username: str | None = None,
         redownload_mode: str | None = None,
         poster_path: str | None = None,
+        server_id: int | None = None,
     ) -> RequestRow:
+        """`server_id` is the server it was asked from (see "request
+        asks" below); None for a row no server asked for."""
         now = _now()
         with self._lock:
             cur = self._conn.execute(
@@ -155,8 +159,10 @@ class RequestStore(StoreSchema):
                     now,
                 ),
             )
-            self._conn.commit()
             row_id = cur.lastrowid
+            if server_id is not None:
+                self._add_ask(row_id, server_id, requested_by_plex_id, requested_by_username)
+            self._conn.commit()
         return self.get_request(row_id)
 
     def _show_poster(self, show_id: int) -> str | None:
@@ -172,23 +178,36 @@ class RequestStore(StoreSchema):
         episode_number: int,
         poster_path: str | None = None,
         min_resolution: str | None = None,
+        requested_by_plex_id: str | None = None,
+        requested_by_username: str | None = None,
+        server_id: int | None = None,
+        asks_from: int | None = None,
     ) -> RequestRow:
         """The Stage 12 equivalent of `create_request` for one episode of a
         subscribed show — same table, same statuses, same watcher, per the
         plan's "reuse, don't duplicate" call. `query` is always None: an
         episode request is never a free-text search, it's already fully
-        identified by `show_id`/`season_number`/`episode_number`."""
+        identified by `show_id`/`season_number`/`episode_number`.
+
+        Asked for by every server following the show, by `server_id` when
+        someone asked for it there, and by every server that asked for
+        request `asks_from` — the row it was split from or replaces."""
         poster_path = poster_path or self._show_poster(show_id)
         now = _now()
         with self._lock:
             cur = self._conn.execute(
                 "INSERT INTO requests (query, tmdb_id, title, release_year, status, media_type, "
-                "show_id, season_number, episode_number, poster_path, min_resolution, created_at, updated_at) "
-                "VALUES (NULL, ?, ?, NULL, 'queued', 'episode', ?, ?, ?, ?, ?, ?, ?)",
-                (tmdb_id, title, show_id, season_number, episode_number, poster_path, min_resolution, now, now),
+                "show_id, season_number, episode_number, poster_path, min_resolution, "
+                "requested_by_plex_id, requested_by_username, created_at, updated_at) "
+                "VALUES (NULL, ?, ?, NULL, 'queued', 'episode', ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    tmdb_id, title, show_id, season_number, episode_number, poster_path, min_resolution,
+                    requested_by_plex_id, requested_by_username, now, now,
+                ),
             )
-            self._conn.commit()
             row_id = cur.lastrowid
+            self._add_tv_asks(row_id, show_id, server_id, requested_by_plex_id, requested_by_username, asks_from)
+            self._conn.commit()
         return self.get_request(row_id)
 
     def create_pack_request(
@@ -203,6 +222,8 @@ class RequestStore(StoreSchema):
         min_resolution: str | None = None,
         redownload_mode: str | None = None,
         poster_path: str | None = None,
+        server_id: int | None = None,
+        asks_from: int | None = None,
     ) -> RequestRow:
         """Stage 13 (+ Stage 14.x's season-range scope): the tracking row
         for one bulk season/season-range/complete-series pack search+add
@@ -216,7 +237,9 @@ class RequestStore(StoreSchema):
         distinguishable this way. `episode_number` is always NULL: a pack
         row is never about one specific episode, only once it's organized
         does each actual episode found inside it get its own normal
-        episode row (see worker.py's `_organize_and_complete_pack`)."""
+        episode row (see worker.py's `_organize_and_complete_pack`).
+
+        Asked for the same way as `create_episode_request`."""
         poster_path = poster_path or self._show_poster(show_id)
         now = _now()
         with self._lock:
@@ -241,8 +264,9 @@ class RequestStore(StoreSchema):
                     now,
                 ),
             )
-            self._conn.commit()
             row_id = cur.lastrowid
+            self._add_tv_asks(row_id, show_id, server_id, requested_by_plex_id, requested_by_username, asks_from)
+            self._conn.commit()
         return self.get_request(row_id)
 
     def update_download_progress(self, request_id: int, progress: float) -> None:
@@ -363,8 +387,9 @@ class RequestStore(StoreSchema):
         by the time it gets weighed. Reading their whole history to compute
         the same answer would just be slower."""
         rows = self._conn.execute(
-            "SELECT * FROM requests WHERE requested_by_plex_id = ? ORDER BY id DESC LIMIT ?",
-            (plex_user_id, limit),
+            "SELECT * FROM requests WHERE requested_by_plex_id = ? "
+            "OR id IN (SELECT request_id FROM request_asks WHERE plex_user_id = ?) ORDER BY id DESC LIMIT ?",
+            (plex_user_id, plex_user_id, limit),
         ).fetchall()
         return [RequestRow._from_row(r) for r in rows]
 
@@ -614,10 +639,11 @@ class RequestStore(StoreSchema):
                 "AND (source_cleanup_status IS NULL OR source_cleanup_status != 'pending')",
                 (cutoff, *NON_TERMINAL_STATUSES),
             )
+            self._conn.execute("DELETE FROM request_asks WHERE request_id NOT IN (SELECT id FROM requests)")
             self._conn.commit()
             return cur.rowcount
 
-    def cancel_queued_requests_for_show(self, show_id: int, season_number: int | None) -> int:
+    def cancel_queued_requests_for_show(self, show_id: int, season_number: int | None, superseded_by: int | None = None) -> int:
         """A new bulk season/series download (Stage 13) makes a show's own
         still-`queued` requests redundant wherever it actually covers them
         — called from `POST /api/shows/{id}/bulk-download` right before the
@@ -632,23 +658,256 @@ class RequestStore(StoreSchema):
         still sitting in the queue. Only `queued` rows are touched:
         anything already `searching`/`downloading`/`complete` represents
         real work already done or in flight, which a bulk action has no
-        business silently cancelling."""
+        business silently cancelling.
+
+        `superseded_by` is the request doing the covering: it is never
+        cancelled itself, and every server that asked for a request it
+        cancels is asking for it instead — so nobody's episode turns into
+        a cancelled row with the download that replaced it out of sight."""
         now = _now()
+        where = "show_id = ? AND status = 'queued' AND id IS NOT ?"
+        params: tuple = (show_id, superseded_by)
+        if season_number is not None:
+            where += " AND season_number = ?"
+            params += (season_number,)
         with self._lock:
-            if season_number is None:
-                cur = self._conn.execute(
-                    "UPDATE requests SET status = 'cancelled', updated_at = ? "
-                    "WHERE show_id = ? AND status = 'queued'",
-                    (now, show_id),
+            if superseded_by is not None:
+                self._conn.execute(
+                    "INSERT OR IGNORE INTO request_asks (request_id, server_id, plex_user_id, username, created_at) "
+                    "SELECT ?, server_id, plex_user_id, username, ? FROM request_asks "
+                    f"WHERE request_id IN (SELECT id FROM requests WHERE {where})",
+                    (superseded_by, now, *params),
                 )
-            else:
-                cur = self._conn.execute(
-                    "UPDATE requests SET status = 'cancelled', updated_at = ? "
-                    "WHERE show_id = ? AND status = 'queued' AND season_number = ?",
-                    (now, show_id, season_number),
-                )
+            cur = self._conn.execute(
+                f"UPDATE requests SET status = 'cancelled', updated_at = ? WHERE {where}", (now, *params)
+            )
             self._conn.commit()
             return cur.rowcount
+
+    # -- request asks: which servers want each request --
+    #
+    # A request row is one download. The library mounts are shared, so a
+    # title asked for from two servers is fetched once and filed once, and
+    # each server that wants it holds an ask on that one row. A server sees
+    # only rows it has an ask on, and sees them under the name of whoever
+    # asked from that server — never someone asking from another one. Rows
+    # a followed show produces are asked for by each follower, with nobody
+    # named. Cancelling or clearing takes away one server's ask; the row
+    # itself goes only once nobody is left asking for it.
+
+    _SCOPED_REQUESTS = (
+        "SELECT r.*, a.plex_user_id AS ask_plex_user_id, a.username AS ask_username "
+        "FROM requests r JOIN request_asks a ON a.request_id = r.id AND a.server_id = ?"
+    )
+
+    @staticmethod
+    def _scoped_row(row: sqlite3.Row) -> RequestRow:
+        """The row as one server sees it: asked for by whoever asked from
+        there."""
+        return dataclasses.replace(
+            RequestRow._from_row(row),
+            requested_by_plex_id=row["ask_plex_user_id"],
+            requested_by_username=row["ask_username"],
+        )
+
+    def _add_ask(self, request_id: int, server_id: int, plex_user_id: str | None = None, username: str | None = None) -> None:
+        """Inside the caller's lock. The first person to ask from a server
+        is the one named there; a follower's unnamed ask takes the name
+        of anyone who then asks for it by hand."""
+        self._conn.execute(
+            "INSERT INTO request_asks (request_id, server_id, plex_user_id, username, created_at) VALUES (?, ?, ?, ?, ?) "
+            "ON CONFLICT(request_id, server_id) DO UPDATE SET plex_user_id = excluded.plex_user_id, "
+            "username = excluded.username WHERE request_asks.plex_user_id IS NULL AND excluded.plex_user_id IS NOT NULL",
+            (request_id, server_id, plex_user_id, username, _now()),
+        )
+
+    def _add_tv_asks(
+        self,
+        request_id: int,
+        show_id: int,
+        server_id: int | None,
+        plex_user_id: str | None,
+        username: str | None,
+        asks_from: int | None,
+    ) -> None:
+        """A new episode or pack row is wanted by whoever wanted the row it
+        came from, by every server following the show, and by the server
+        it was asked from."""
+        now = _now()
+        if asks_from is not None:
+            self._conn.execute(
+                "INSERT OR IGNORE INTO request_asks (request_id, server_id, plex_user_id, username, created_at) "
+                "SELECT ?, server_id, plex_user_id, username, ? FROM request_asks WHERE request_id = ?",
+                (request_id, now, asks_from),
+            )
+        self._conn.execute(
+            "INSERT OR IGNORE INTO request_asks (request_id, server_id, created_at) "
+            "SELECT ?, server_id, ? FROM show_followers WHERE show_id = ?",
+            (request_id, now, show_id),
+        )
+        if server_id is not None:
+            self._add_ask(request_id, server_id, plex_user_id, username)
+
+    def add_request_ask(
+        self, request_id: int, server_id: int, plex_user_id: str | None = None, username: str | None = None
+    ) -> None:
+        """Another server asking for a download already under way — it
+        joins that one rather than starting a second."""
+        with self._lock:
+            self._add_ask(request_id, server_id, plex_user_id, username)
+            self._conn.commit()
+
+    def remove_request_ask(self, request_id: int, server_id: int) -> None:
+        with self._lock:
+            self._conn.execute(
+                "DELETE FROM request_asks WHERE request_id = ? AND server_id = ?", (request_id, server_id)
+            )
+            self._conn.commit()
+
+    def request_ask_servers(self, request_id: int) -> set[int]:
+        rows = self._conn.execute("SELECT server_id FROM request_asks WHERE request_id = ?", (request_id,)).fetchall()
+        return {r["server_id"] for r in rows}
+
+    def list_requests_for_server(self, server_id: int, status: str | None = None) -> list[RequestRow]:
+        if status:
+            rows = self._conn.execute(
+                f"{self._SCOPED_REQUESTS} WHERE r.status = ? ORDER BY r.id DESC", (server_id, status)
+            ).fetchall()
+        else:
+            rows = self._conn.execute(f"{self._SCOPED_REQUESTS} ORDER BY r.id DESC", (server_id,)).fetchall()
+        return [self._scoped_row(r) for r in rows]
+
+    def get_request_for_server(self, request_id: int, server_id: int) -> RequestRow | None:
+        """The row as `server_id` sees it, or None when that server has no
+        ask on it — to that server, it doesn't exist."""
+        row = self._conn.execute(f"{self._SCOPED_REQUESTS} WHERE r.id = ?", (server_id, request_id)).fetchone()
+        return self._scoped_row(row) if row else None
+
+    def visible_request_ids(self, server_id: int, request_ids) -> set[int]:
+        """Which of these requests `server_id` has an ask on."""
+        ids = list(set(request_ids))
+        if not ids:
+            return set()
+        marks = ",".join("?" for _ in ids)
+        rows = self._conn.execute(
+            f"SELECT request_id FROM request_asks WHERE server_id = ? AND request_id IN ({marks})", (server_id, *ids)
+        ).fetchall()
+        return {r["request_id"] for r in rows}
+
+    def get_latest_request_for_show_for_server(self, show_id: int, server_id: int) -> RequestRow | None:
+        """get_latest_request_for_show, among the rows this server sees."""
+        row = self._conn.execute(
+            f"{self._SCOPED_REQUESTS} WHERE r.show_id = ? ORDER BY r.id DESC LIMIT 1", (server_id, show_id)
+        ).fetchone()
+        return self._scoped_row(row) if row else None
+
+    def find_live_request(
+        self,
+        tmdb_id: int,
+        media_type: str,
+        season_number: int | None = None,
+        episode_number: int | None = None,
+        season_range_end: int | None = None,
+    ) -> RequestRow | None:
+        """A download of exactly this already under way, whichever server
+        asked for it — what a new ask joins instead of starting a second
+        copy of the same title on the same disk."""
+        placeholders = ",".join("?" for _ in NON_TERMINAL_STATUSES)
+        row = self._conn.execute(
+            f"SELECT * FROM requests WHERE tmdb_id = ? AND media_type = ? AND season_number IS ? "
+            f"AND episode_number IS ? AND season_range_end IS ? AND status IN ({placeholders}) ORDER BY id DESC LIMIT 1",
+            (tmdb_id, media_type, season_number, episode_number, season_range_end, *NON_TERMINAL_STATUSES),
+        ).fetchone()
+        return RequestRow._from_row(row) if row else None
+
+    def clear_settled_for_server(self, server_id: int) -> int:
+        """"Clear finished" for one server: takes its asks off every settled
+        row, then deletes the rows nobody is asking for any more. Another
+        server's history is left exactly as it was. The same rows are off
+        limits as for purge_requests_older_than — never a live one, never
+        one still owing its source cleanup."""
+        placeholders = ",".join("?" for _ in NON_TERMINAL_STATUSES)
+        settled = (
+            f"status NOT IN ({placeholders}) "
+            "AND (source_cleanup_status IS NULL OR source_cleanup_status != 'pending')"
+        )
+        with self._lock:
+            cur = self._conn.execute(
+                f"DELETE FROM request_asks WHERE server_id = ? AND request_id IN (SELECT id FROM requests WHERE {settled})",
+                (server_id, *NON_TERMINAL_STATUSES),
+            )
+            cleared = cur.rowcount
+            self._conn.execute(
+                f"DELETE FROM requests WHERE {settled} AND id NOT IN (SELECT request_id FROM request_asks)",
+                tuple(NON_TERMINAL_STATUSES),
+            )
+            self._conn.commit()
+            return cleared
+
+    # -- show followers --
+
+    def follow_show(self, show_id: int, server_id: int) -> None:
+        """`server_id` follows the show: the show is checked for new
+        episodes, and the server is asking for what is already on its way
+        for it as well as everything it produces from here on."""
+        now = _now()
+        placeholders = ",".join("?" for _ in NON_TERMINAL_STATUSES)
+        with self._lock:
+            self._conn.execute(
+                "INSERT OR IGNORE INTO show_followers (show_id, server_id, created_at) VALUES (?, ?, ?)",
+                (show_id, server_id, now),
+            )
+            self._conn.execute("UPDATE shows SET status = 'watching' WHERE id = ?", (show_id,))
+            self._conn.execute(
+                "INSERT OR IGNORE INTO request_asks (request_id, server_id, created_at) "
+                f"SELECT id, ?, ? FROM requests WHERE show_id = ? AND status IN ({placeholders})",
+                (server_id, now, show_id, *NON_TERMINAL_STATUSES),
+            )
+            self._conn.commit()
+
+    def unfollow_show(self, show_id: int, server_id: int) -> int:
+        """Stops `server_id` following the show; how many servers still
+        follow it. Its asks on the show's requests stay — history, the same
+        as when the last follower goes and the subscription is deleted."""
+        with self._lock:
+            self._conn.execute(
+                "DELETE FROM show_followers WHERE show_id = ? AND server_id = ?", (show_id, server_id)
+            )
+            self._conn.commit()
+            return self._conn.execute(
+                "SELECT COUNT(*) FROM show_followers WHERE show_id = ?", (show_id,)
+            ).fetchone()[0]
+
+    def is_following(self, show_id: int, server_id: int) -> bool:
+        return (
+            self._conn.execute(
+                "SELECT 1 FROM show_followers WHERE show_id = ? AND server_id = ?", (show_id, server_id)
+            ).fetchone()
+            is not None
+        )
+
+    def list_shows_for_server(self, server_id: int, status: str | None = None) -> list[ShowRow]:
+        """The shows this server has anything to do with — those it
+        follows, and those it has asked for some of — each as it stands
+        for this server: "watching" only while this server follows it
+        and it is still being checked, otherwise "paused"."""
+        rows = self._conn.execute(
+            "SELECT s.*, EXISTS (SELECT 1 FROM show_followers f WHERE f.show_id = s.id AND f.server_id = ?) AS followed "
+            "FROM shows s WHERE EXISTS (SELECT 1 FROM show_followers f WHERE f.show_id = s.id AND f.server_id = ?) "
+            "OR EXISTS (SELECT 1 FROM requests r JOIN request_asks a ON a.request_id = r.id "
+            "WHERE r.show_id = s.id AND a.server_id = ?) ORDER BY s.created_at DESC",
+            (server_id, server_id, server_id),
+        ).fetchall()
+        shows = [
+            dataclasses.replace(
+                ShowRow._from_row(r), status="watching" if r["followed"] and r["status"] == "watching" else "paused"
+            )
+            for r in rows
+        ]
+        return [s for s in shows if status is None or s.status == status]
+
+    def show_for_server(self, show_id: int, server_id: int) -> ShowRow | None:
+        return next((s for s in self.list_shows_for_server(server_id) if s.id == show_id), None)
 
     # -- rejected_torrents (Stage 15) --
 
@@ -928,6 +1187,7 @@ class RequestStore(StoreSchema):
         solved gaps (e.g. season packs, alternate episode-token formats)."""
         with self._lock:
             cur = self._conn.execute("DELETE FROM shows WHERE id = ?", (show_id,))
+            self._conn.execute("DELETE FROM show_followers WHERE show_id = ?", (show_id,))
             self._conn.commit()
             return cur.rowcount > 0
 
@@ -1087,9 +1347,34 @@ class RequestStore(StoreSchema):
                 "ON CONFLICT(machine_id) DO UPDATE SET name = excluded.name, url = excluded.url, token = excluded.token",
                 (machine_id, name, url, token, _now()),
             )
-            self._conn.commit()
             row = self._conn.execute("SELECT * FROM plex_servers WHERE machine_id = ?", (machine_id,)).fetchone()
+            if self._conn.execute("SELECT COUNT(*) FROM plex_servers").fetchone()[0] == 1:
+                self._adopt_unlinked_history(row["id"])
+            self._conn.commit()
         return PlexServerRow._from_row(row)
+
+    def replace_plex_servers(self, machine_id: str, name: str | None, url: str, token: str) -> PlexServerRow:
+        """Makes this the only server, carrying every other server's asks
+        and follows over to it — switching servers moves the household,
+        it doesn't start it again. Everyone else signed in through the
+        servers going is signed out, as remove_plex_servers does."""
+        with self._lock:
+            server = self.save_plex_server(machine_id, name, url, token)
+            for table in ("request_asks", "show_followers"):
+                self._conn.execute(f"UPDATE OR IGNORE {table} SET server_id = ? WHERE server_id != ?", (server.id, server.id))
+                self._conn.execute(f"DELETE FROM {table} WHERE server_id != ?", (server.id,))
+            self.remove_plex_servers(keep=(machine_id,))
+        return self.get_plex_server(server.id)
+
+    def _adopt_unlinked_history(self, server_id: int) -> None:
+        """The only server linked takes over the asks and follows left
+        behind when Plex was unlinked (see remove_plex_servers)."""
+        for table in ("request_asks", "show_followers"):
+            self._conn.execute(
+                f"UPDATE OR IGNORE {table} SET server_id = ? WHERE server_id NOT IN (SELECT id FROM plex_servers)",
+                (server_id,),
+            )
+            self._conn.execute(f"DELETE FROM {table} WHERE server_id NOT IN (SELECT id FROM plex_servers)")
 
     def remove_plex_servers(self, keep: tuple[str, ...] = ()) -> int:
         """Removes every server whose machine id isn't in `keep` — all of
@@ -1106,6 +1391,19 @@ class RequestStore(StoreSchema):
                 self._conn.execute(f"DELETE FROM sessions WHERE is_admin = 0 AND server_id IN ({ids})", gone)
                 self._conn.execute(f"UPDATE sessions SET server_id = NULL WHERE server_id IN ({ids})", gone)
                 self._conn.execute(f"DELETE FROM user_servers WHERE server_id IN ({ids})", gone)
+                if keep:
+                    # One server going while others stay: what it asked
+                    # for and followed goes with it, and a show nobody
+                    # follows any more stops being checked. Unlinking
+                    # everything keeps both instead, for the next server
+                    # linked to take over (save_plex_server) — a re-link
+                    # must not cost the household its history and shows.
+                    self._conn.execute(f"DELETE FROM request_asks WHERE server_id IN ({ids})", gone)
+                    self._conn.execute(f"DELETE FROM show_followers WHERE server_id IN ({ids})", gone)
+                    self._conn.execute(
+                        "UPDATE shows SET status = 'paused' WHERE status = 'watching' "
+                        "AND id NOT IN (SELECT show_id FROM show_followers)"
+                    )
                 self._conn.execute(f"DELETE FROM plex_servers WHERE id IN ({ids})", gone)
             self._conn.commit()
             return len(gone)
@@ -1188,6 +1486,9 @@ class RequestStore(StoreSchema):
                     self._conn.execute(
                         "UPDATE requests SET requested_by_username = ? WHERE requested_by_plex_id = ?",
                         (username, plex_user_id),
+                    )
+                    self._conn.execute(
+                        "UPDATE request_asks SET username = ? WHERE plex_user_id = ?", (username, plex_user_id)
                     )
             else:
                 self._conn.execute(

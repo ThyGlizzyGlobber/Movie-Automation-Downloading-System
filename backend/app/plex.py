@@ -707,7 +707,12 @@ class PlexLinker:
         end-user access checks compare against — see access_by_server."""
         by_machine = {r["machine_identifier"]: r for r in owned}
         keep = [s.machine_id for s in self.store.list_plex_servers() if s.machine_id in by_machine]
-        keep = keep or [owned[0]["machine_identifier"]]
+        if not keep:
+            # None of them left: the first owned server takes their place,
+            # and their history with it.
+            first = owned[0]
+            self.store.replace_plex_servers(first["machine_identifier"], first["name"], first["url"], first["token"])
+            return
         # Saved before the rest are removed, so there is never a moment
         # with no server linked — which would read as setup not done.
         for machine_id in keep:

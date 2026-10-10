@@ -6,14 +6,31 @@ from datetime import datetime, timezone
 from fastapi import Depends, HTTPException
 from pydantic import BaseModel, field_validator, model_validator
 
-from app.db import FAILED_OR_CANCELLED_STATUSES, NON_TERMINAL_STATUSES, RequestRow, RequestStore, SessionRow, ShowRow
+from app.db import (
+    FAILED_OR_CANCELLED_STATUSES,
+    NON_TERMINAL_STATUSES,
+    PlexServerRow,
+    RequestRow,
+    RequestStore,
+    SessionRow,
+    ShowRow,
+)
 from app.media_organizer import find_existing_episode_files
 from app.tmdb import TMDBClient, TMDBError
 from app.tv_resolve import ShowIdentity, episode_is_released, resolve_show
 from app.tv_settings import resolve_tv_settings
 from app.tvmaze import TVMazeClient, season_airstamps
 from app.worker import Worker
-from app.api.deps import get_store, get_tmdb, get_worker, logger, require_can_request, router
+from app.api.deps import (
+    ensure_can_replace_copies,
+    get_store,
+    get_tmdb,
+    get_worker,
+    logger,
+    require_can_request,
+    require_session_server,
+    router,
+)
 from app.api.schemas import RequestOut
 
 
@@ -81,8 +98,10 @@ class ShowOut(BaseModel):
         return cls(**row.__dict__, latest_request=latest_request)
 
 
-def _show_out(store: RequestStore, row: ShowRow) -> ShowOut:
-    latest = store.get_latest_request_for_show(row.id)
+def _show_out(store: RequestStore, server: PlexServerRow, row: ShowRow) -> ShowOut:
+    """`row` as `server` sees it (RequestStore.list_shows_for_server),
+    with the latest of the requests that server has asked for."""
+    latest = store.get_latest_request_for_show_for_server(row.id, server.id)
     return ShowOut.from_row(row, latest_request=RequestOut.from_row(latest) if latest else None)
 
 
@@ -108,7 +127,12 @@ def _season_airstamps_for(identity: ShowIdentity | None, season_number: int) -> 
 #    already aired, not only its newest season. Every subsequent scheduled
 #    recheck (worker.py's `_check_all_watching_shows`) keeps checking only
 #    the latest season, same as always — this full sweep only ever runs
-#    once, right here, at the moment of subscribing. --
+#    once, right here, at the moment of subscribing.
+#
+#    Following is per server (show_followers): the show is checked while
+#    any server follows it, each follower is asking for everything it
+#    produces, and a server unfollowing deletes the subscription only
+#    once nobody else follows it. --
 
 
 @router.post("/api/shows", status_code=201)
@@ -117,45 +141,60 @@ def create_show(
     store: RequestStore = Depends(get_store),
     tmdb: TMDBClient = Depends(get_tmdb),
     worker: Worker = Depends(get_worker),
+    server: PlexServerRow = Depends(require_session_server),
 ) -> ShowOut:
     existing = store.get_show_by_tmdb_id(body.tmdb_id)
-    if existing is not None and existing.status == "watching":
+    if existing is not None and existing.status == "watching" and store.is_following(existing.id, server.id):
         raise HTTPException(status_code=409, detail="already following this show")
     if existing is not None:
-        # A paused row is the anchor a one-off season add left behind;
-        # following the show now is just switching that row on.
-        store.update_show_status(existing.id, "watching")
-        row = store.get_show(existing.id)
+        # A paused row is the anchor a one-off season add left behind, or
+        # a show another server follows; following it from here is just
+        # adding this server to its followers.
+        row = existing
     else:
         try:
             identity = resolve_show(body.tmdb_id, tmdb)
         except TMDBError as exc:
             raise HTTPException(status_code=404, detail=f"tmdb_id {body.tmdb_id} not found") from exc
         row = store.create_show(tmdb_id=body.tmdb_id, title=identity.title, poster_path=identity.poster_path)
-    worker.check_show(row, full_backfill=True)
-    return _show_out(store, store.get_show(row.id))
+    store.follow_show(row.id, server.id)
+    worker.check_show(store.get_show(row.id), full_backfill=True)
+    return _show_out(store, server, store.show_for_server(row.id, server.id))
 
 
 @router.get("/api/shows")
-def list_shows(status: str | None = None, store: RequestStore = Depends(get_store)) -> list[ShowOut]:
-    return [_show_out(store, r) for r in store.list_shows(status=status)]
+def list_shows(
+    status: str | None = None,
+    store: RequestStore = Depends(get_store),
+    server: PlexServerRow = Depends(require_session_server),
+) -> list[ShowOut]:
+    """The shows this session's server follows or has asked for some of."""
+    return [_show_out(store, server, r) for r in store.list_shows_for_server(server.id, status=status)]
 
 
 @router.get("/api/shows/{show_id}")
-def get_show(show_id: int, store: RequestStore = Depends(get_store)) -> ShowOut:
-    row = store.get_show(show_id)
+def get_show(
+    show_id: int, store: RequestStore = Depends(get_store), server: PlexServerRow = Depends(require_session_server)
+) -> ShowOut:
+    row = store.show_for_server(show_id, server.id)
     if row is None:
         raise HTTPException(status_code=404, detail="show not found")
-    return _show_out(store, row)
+    return _show_out(store, server, row)
 
 
 @router.delete("/api/shows/{show_id}")
-def unsubscribe_show(show_id: int, store: RequestStore = Depends(get_store)) -> dict:
-    """Unsubscribes — stops future checks. Every `requests`/`show_episodes`
-    row this show ever produced stays exactly as it was, same "hidden,
-    never unrecoverable" principle as cancelling a movie request."""
-    if not store.delete_show(show_id):
+def unsubscribe_show(
+    show_id: int, store: RequestStore = Depends(get_store), server: PlexServerRow = Depends(require_session_server)
+) -> dict:
+    """Stops this server following the show. Once no server follows it,
+    the subscription goes and its checks stop. Every `requests`/
+    `show_episodes` row this show ever produced stays exactly as it was,
+    same "hidden, never unrecoverable" principle as cancelling a movie
+    request."""
+    if store.show_for_server(show_id, server.id) is None:
         raise HTTPException(status_code=404, detail="show not found")
+    if store.unfollow_show(show_id, server.id) == 0:
+        store.delete_show(show_id)
     return {"deleted": True}
 
 
@@ -186,7 +225,10 @@ def bulk_download_show(
     tmdb: TMDBClient = Depends(get_tmdb),
     worker: Worker = Depends(get_worker),
     session: SessionRow = Depends(require_can_request),
+    server: PlexServerRow = Depends(require_session_server),
 ) -> RequestOut:
+    if body.redownload_mode:
+        ensure_can_replace_copies(store, session)
     try:
         identity = resolve_show(tmdb_id, tmdb)
     except TMDBError as exc:
@@ -199,25 +241,17 @@ def bulk_download_show(
     # "Add all to Plex" on a show that is still going also follows it, so
     # the episodes that haven't aired yet keep arriving; a one-off season
     # add, or a show that has ended, leaves following alone.
-    if body.scope == "series" and not identity.ended and show.status != "watching":
-        store.update_show_status(show.id, "watching")
+    if body.scope == "series" and not identity.ended and not store.is_following(show.id, server.id):
+        store.follow_show(show.id, server.id)
         show = store.get_show(show.id)
         logger.info("show %d (%s): whole-series add on a returning show — now following", show.id, show.title)
 
-    # A bulk download makes this show's own still-queued requests it
-    # covers redundant — series scope covers every season, a season scope
-    # only that same season — see db.py's cancel_queued_requests_for_show
-    # for exactly what's touched (queued only; never a request already
-    # searching/downloading/complete). Without this, subscribing to a show
-    # (which immediately queues catch-up requests for its latest season)
-    # and then asking for a bulk download of the same show left both
-    # running at once, flooding the requests list with soon-redundant rows.
-    cancelled = store.cancel_queued_requests_for_show(show.id, body.season_number)
-    if cancelled:
-        logger.info(
-            "show %d (%s): bulk-download (%s) cancelled %d still-queued request(s) it supersedes",
-            show.id, show.title, body.scope, cancelled,
-        )
+    # The same pack already on its way, asked for from another server,
+    # is joined rather than fetched twice onto the same disk.
+    live = None if body.redownload_mode else store.find_live_request(tmdb_id, "pack", body.season_number)
+    if live is not None:
+        store.add_request_ask(live.id, server.id, session.plex_user_id, session.username)
+        return RequestOut.from_row(store.get_request_for_server(live.id, server.id))
 
     row = store.create_pack_request(
         tmdb_id=show.tmdb_id,
@@ -233,9 +267,25 @@ def bulk_download_show(
         # but behaves like "upgrade" until that's built out.
         redownload_mode=body.redownload_mode,
         poster_path=show.poster_path,
+        server_id=server.id,
     )
+
+    # A bulk download makes this show's own still-queued requests it
+    # covers redundant — series scope covers every season, a season scope
+    # only that same season — see db.py's cancel_queued_requests_for_show
+    # for exactly what's touched (queued only; never a request already
+    # searching/downloading/complete). Without this, subscribing to a show
+    # (which immediately queues catch-up requests for its latest season)
+    # and then asking for a bulk download of the same show left both
+    # running at once, flooding the requests list with soon-redundant rows.
+    cancelled = store.cancel_queued_requests_for_show(show.id, body.season_number, superseded_by=row.id)
+    if cancelled:
+        logger.info(
+            "show %d (%s): bulk-download (%s) cancelled %d still-queued request(s) it supersedes",
+            show.id, show.title, body.scope, cancelled,
+        )
     worker.enqueue(row.id)
-    return RequestOut.from_row(row)
+    return RequestOut.from_row(store.get_request_for_server(row.id, server.id))
 
 
 @router.get("/api/tv/{tmdb_id}/season/{season_number}/episodes")
@@ -244,12 +294,16 @@ def get_season_episodes(
     season_number: int,
     store: RequestStore = Depends(get_store),
     tmdb: TMDBClient = Depends(get_tmdb),
+    server: PlexServerRow = Depends(require_session_server),
 ) -> dict:
     """One season's episodes with what this household has of each —
     `in_plex` (a request this app filed, or a matching file already under
     the TV library), `requested` (a live per-episode or covering pack
     request, with its status/progress), `failed` (the last attempt ended
-    badly), `unaired`, or `missing`. Backs the show page's episode list."""
+    badly), `unaired`, or `missing`. Backs the show page's episode list.
+
+    What a season has is the same from every server — it's one library —
+    but `request_id` is only given for a request this server can open."""
     try:
         episodes = tmdb.get_tv_season(tmdb_id, season_number)
     except TMDBError as exc:
@@ -327,6 +381,10 @@ def get_season_episodes(
                 "request_id": request_id,
             }
         )
+    visible = store.visible_request_ids(server.id, (e["request_id"] for e in out if e["request_id"] is not None))
+    for e in out:
+        if e["request_id"] not in visible:
+            e["request_id"] = None
     in_plex = sum(1 for e in out if e["state"] == "in_plex")
     aired = sum(1 for e in out if e["state"] != "unaired")
     return {"season_number": season_number, "episodes": out, "in_plex": in_plex, "aired": aired}
@@ -341,10 +399,13 @@ def request_episode(
     tmdb: TMDBClient = Depends(get_tmdb),
     worker: Worker = Depends(get_worker),
     session: SessionRow = Depends(require_can_request),
+    server: PlexServerRow = Depends(require_session_server),
 ) -> RequestOut:
     """Ask for one specific episode (the show page's per-row Request
     button). Same ledger the subscription scheduler uses, so the two never
-    double-request the same episode; 409 if it is already tracked."""
+    double-request the same episode; 409 if it is already tracked —
+    unless it is on its way for another server, which this one then
+    joins."""
     show = store.get_show_by_tmdb_id(tmdb_id)
     identity = None
     if show is None:
@@ -354,7 +415,11 @@ def request_episode(
             raise HTTPException(status_code=404, detail=f"tmdb_id {tmdb_id} not found") from exc
         show = store.create_show(tmdb_id=tmdb_id, title=identity.title, status="paused", poster_path=identity.poster_path)
     if store.has_show_episode(show.id, season_number, episode_number):
-        raise HTTPException(status_code=409, detail="this episode is already tracked")
+        live = store.find_live_request(tmdb_id, "episode", season_number, episode_number)
+        if live is None or store.get_request_for_server(live.id, server.id) is not None:
+            raise HTTPException(status_code=409, detail="this episode is already tracked")
+        store.add_request_ask(live.id, server.id, session.plex_user_id, session.username)
+        return RequestOut.from_row(store.get_request_for_server(live.id, server.id))
 
     # The air buffer is a safety setting, not a scheduling preference: it
     # exists because the hours right after an air_date rolls over are when
@@ -392,10 +457,13 @@ def request_episode(
         season_number=season_number,
         episode_number=episode_number,
         poster_path=show.poster_path,
+        requested_by_plex_id=session.plex_user_id,
+        requested_by_username=session.username,
+        server_id=server.id,
     )
     store.add_show_episode(show.id, season_number, episode_number, row.id)
     logger.info(
         "episode request %d: %s S%02dE%02d by %s", row.id, show.title, season_number, episode_number, session.username
     )
     worker.enqueue(row.id)
-    return RequestOut.from_row(row)
+    return RequestOut.from_row(store.get_request_for_server(row.id, server.id))

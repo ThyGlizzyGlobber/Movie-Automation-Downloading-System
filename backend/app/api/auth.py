@@ -20,7 +20,7 @@ from app.api.deps import (
     _set_session_cookie,
     can_clear_requests,
     get_login_session,
-    get_plex_server,
+    get_session_server,
     get_store,
     limiter,
     require_admin,
@@ -162,7 +162,7 @@ def _server_out(server: PlexServerRow) -> dict:
 def get_current_session(
     store: RequestStore = Depends(get_store),
     session: SessionRow = Depends(require_session),
-    server: PlexServerRow | None = Depends(get_plex_server),
+    server: PlexServerRow | None = Depends(get_session_server),
 ) -> dict:
     user = store.get_user(session.plex_user_id)
     return {

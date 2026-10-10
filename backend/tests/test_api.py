@@ -512,14 +512,15 @@ def test_get_request_404s_when_missing(client_and_deps):
 def test_list_requests_newest_first_and_status_filter(client_and_deps):
     client, store, _, _, _, _ = client_and_deps
     first = client.post("/api/requests", json={"tmdb_id": 693134}).json()
+    # Settled first: asking again while it was still live would join it.
+    store.update_status(first["id"], "failed", error_message="boom")
     second = client.post("/api/requests", json={"tmdb_id": 693134}).json()
-    store.update_status(second["id"], "failed", error_message="boom")
 
     all_rows = client.get("/api/requests").json()
     assert [r["id"] for r in all_rows] == [second["id"], first["id"]]
 
     failed_only = client.get("/api/requests", params={"status": "failed"}).json()
-    assert [r["id"] for r in failed_only] == [second["id"]]
+    assert [r["id"] for r in failed_only] == [first["id"]]
 
 
 def test_cancel_deletes_torrent_and_files_and_marks_cancelled(client_and_deps):
@@ -2210,10 +2211,17 @@ def test_create_show_rejects_a_second_subscription_to_the_same_show(client_and_d
     assert response.status_code == 409
 
 
+def _followed_show(store, tmdb_id, title):
+    """A show the fixture's own server follows."""
+    show = store.create_show(tmdb_id=tmdb_id, title=title)
+    store.follow_show(show.id, store.primary_plex_server().id)
+    return store.get_show(show.id)
+
+
 def test_list_shows_returns_subscriptions(client_and_deps):
     client, store, _, _, _, _ = client_and_deps
-    store.create_show(tmdb_id=1, title="A")
-    store.create_show(tmdb_id=2, title="B")
+    _followed_show(store, 1, "A")
+    _followed_show(store, 2, "B")
 
     response = client.get("/api/shows")
 
@@ -2223,7 +2231,7 @@ def test_list_shows_returns_subscriptions(client_and_deps):
 
 def test_show_out_exposes_latest_request(client_and_deps):
     client, store, _, _, _, _ = client_and_deps
-    show = store.create_show(tmdb_id=1, title="A")
+    show = _followed_show(store, 1, "A")
 
     no_history = client.get(f"/api/shows/{show.id}").json()
     assert no_history["latest_request"] is None
@@ -2238,8 +2246,8 @@ def test_show_out_exposes_latest_request(client_and_deps):
 
 def test_list_shows_filters_by_status(client_and_deps):
     client, store, _, _, _, _ = client_and_deps
-    watching = store.create_show(tmdb_id=1, title="A")
-    paused = store.create_show(tmdb_id=2, title="B")
+    watching = _followed_show(store, 1, "A")
+    paused = _followed_show(store, 2, "B")
     store.update_show_status(paused.id, "paused")
 
     response = client.get("/api/shows", params={"status": "watching"})
@@ -2255,7 +2263,7 @@ def test_get_show_404s_when_missing(client_and_deps):
 
 def test_unsubscribe_show_deletes_it_but_keeps_request_history(client_and_deps):
     client, store, _, _, _, _ = client_and_deps
-    show = store.create_show(tmdb_id=1, title="A")
+    show = _followed_show(store, 1, "A")
     request_row = store.create_episode_request(
         tmdb_id=1, show_id=show.id, title="A", season_number=1, episode_number=1
     )
@@ -2518,7 +2526,7 @@ def test_bulk_download_is_independent_of_watching_status(client_and_deps):
 
 def test_list_requests_exposes_episode_fields(client_and_deps):
     client, store, _, _, _, _ = client_and_deps
-    show = store.create_show(tmdb_id=1, title="A")
+    show = _followed_show(store, 1, "A")
     store.create_episode_request(tmdb_id=1, show_id=show.id, title="A", season_number=1, episode_number=4)
 
     response = client.get("/api/requests")
@@ -4709,3 +4717,157 @@ def test_managing_servers_is_admin_only(non_admin_client):
 
     assert client.get("/api/admin/plex-servers").status_code == 403
     assert client.post("/api/admin/plex-servers", json={"machine_identifier": "x"}).status_code == 403
+
+
+# ---------------------------------------------------------------------------
+# Requests kept apart per server. One download per title — the library is
+# shared — but each server sees only what it asked for, under its own
+# people's names.
+# ---------------------------------------------------------------------------
+
+
+def _friend_session(store, friends):
+    """A non-admin signed in through the Friends server."""
+    friend = store.upsert_user("friend-1", "friend", False, server_tokens={friends.id: "t"})
+    store.create_session("friend-session", friend.plex_user_id, "friend", False, "2999-01-01T00:00:00+00:00", friends.id)
+    return "friend-session"
+
+
+def _as(client, session_id):
+    client.cookies.set(deps.SESSION_COOKIE_NAME, session_id)
+
+
+def test_one_server_never_sees_anothers_requests(client_and_deps):
+    client, store, _, _, _, _ = client_and_deps
+    _, friends = _two_servers(store)
+    family_request = client.post("/api/requests", json={"tmdb_id": 693134}).json()
+
+    _as(client, _friend_session(store, friends))
+
+    assert client.get("/api/requests").json() == []
+    assert client.get(f"/api/requests/{family_request['id']}").status_code == 404
+    assert client.post(f"/api/requests/{family_request['id']}/cancel").status_code == 404
+
+
+def test_asking_for_something_another_server_is_downloading_joins_it(client_and_deps):
+    client, store, _, worker, _, _ = client_and_deps
+    _, friends = _two_servers(store)
+    family_request = client.post("/api/requests", json={"tmdb_id": 693134}).json()
+    _as(client, _friend_session(store, friends))
+
+    joined = client.post("/api/requests", json={"tmdb_id": 693134})
+
+    assert joined.status_code == 201
+    assert joined.json()["id"] == family_request["id"]
+    assert worker.enqueued == [family_request["id"]]  # fetched once
+    # Each server sees it as asked for by its own person.
+    assert joined.json()["requested_by_username"] == "friend"
+    _as(client, "test-admin-session")
+    assert client.get("/api/requests").json()[0]["requested_by_username"] == "admin"
+
+
+def test_cancelling_a_shared_download_only_takes_your_server_off_it(client_and_deps):
+    client, store, _, _, qbt, _ = client_and_deps
+    _, friends = _two_servers(store)
+    request_id = client.post("/api/requests", json={"tmdb_id": 693134}).json()["id"]
+    store.update_status(request_id, "downloading", result={"torrent_hash": "aaaa"})
+    qbt._torrent_states["aaaa"] = {"progress": 0.4}
+    _as(client, _friend_session(store, friends))
+    client.post("/api/requests", json={"tmdb_id": 693134})
+
+    response = client.post(f"/api/requests/{request_id}/cancel")
+
+    assert response.json()["status"] == "cancelled"
+    assert client.get("/api/requests").json() == []
+    # Still downloading for Family, torrent untouched.
+    assert store.get_request(request_id).status == "downloading"
+    assert qbt.deleted == []
+
+
+def test_clearing_finished_requests_leaves_the_other_servers_history(client_and_deps):
+    client, store, _, _, _, _ = client_and_deps
+    _, friends = _two_servers(store)
+    request_id = client.post("/api/requests", json={"tmdb_id": 693134}).json()["id"]
+    _as(client, _friend_session(store, friends))
+    client.post("/api/requests", json={"tmdb_id": 693134})
+    store.update_status(request_id, "complete")
+
+    assert client.post("/api/requests/clear").json() == {"removed": 1}
+    assert client.get("/api/requests").json() == []
+
+    _as(client, "test-admin-session")
+    assert [r["id"] for r in client.get("/api/requests").json()] == [request_id]
+    client.post("/api/requests/clear")
+    # Nobody is asking for it any more, so the row itself goes.
+    assert store.get_request(request_id) is None
+
+
+def test_each_server_follows_shows_for_itself(client_and_deps):
+    client, store, _, _, _, _ = client_and_deps
+    _, friends = _two_servers(store)
+    family_show = client.post("/api/shows", json={"tmdb_id": 95350}).json()
+    _as(client, _friend_session(store, friends))
+
+    assert client.get("/api/shows").json() == []
+
+    client.post("/api/shows", json={"tmdb_id": 95350})
+    episode = store.create_episode_request(
+        tmdb_id=95350, show_id=family_show["id"], title="Lanterns", season_number=1, episode_number=1
+    )
+    # A followed show's episodes are wanted by everyone following it.
+    assert [r["id"] for r in client.get("/api/requests").json()] == [episode.id]
+
+    client.delete(f"/api/shows/{family_show['id']}")
+    assert client.get("/api/shows", params={"status": "watching"}).json() == []
+    # Family still follows it, so it's still being checked.
+    assert store.get_show(family_show["id"]).status == "watching"
+    _as(client, "test-admin-session")
+    assert [s["status"] for s in client.get("/api/shows").json()] == ["watching"]
+
+
+def test_asking_for_an_episode_on_its_way_for_another_server_joins_it(client_and_deps):
+    client, store, tmdb, _, _, _ = client_and_deps
+    _, friends = _two_servers(store)
+    tmdb.get_tv_season = lambda tmdb_id, season_number: [{"episode_number": 1, "air_date": "2020-01-01"}]
+    family_request = client.post("/api/tv/95350/episodes/1/1").json()
+    _as(client, _friend_session(store, friends))
+
+    before = client.get("/api/tv/95350/season/1/episodes").json()["episodes"][0]
+    joined = client.post("/api/tv/95350/episodes/1/1")
+    again = client.post("/api/tv/95350/episodes/1/1")
+    after = client.get("/api/tv/95350/season/1/episodes").json()["episodes"][0]
+
+    # The season shows what the library has either way; only the request
+    # itself is hidden until this server asks for it.
+    assert before["state"] == "requested" and before["request_id"] is None
+    assert joined.status_code == 201 and joined.json()["id"] == family_request["id"]
+    assert again.status_code == 409
+    assert after["request_id"] == family_request["id"]
+
+
+def test_a_bulk_download_on_its_way_for_another_server_is_joined(client_and_deps):
+    client, store, _, worker, _, _ = client_and_deps
+    _, friends = _two_servers(store)
+    pack = client.post("/api/tv/95350/bulk-download", json={"scope": "season", "season_number": 1}).json()
+    _as(client, _friend_session(store, friends))
+
+    joined = client.post("/api/tv/95350/bulk-download", json={"scope": "season", "season_number": 1}).json()
+
+    assert joined["id"] == pack["id"]
+    assert worker.enqueued == [pack["id"]]
+
+
+def test_with_two_servers_only_an_admin_can_replace_a_copy(client_and_deps):
+    client, store, _, _, _, _ = client_and_deps
+    _, friends = _two_servers(store)
+    request_id = client.post("/api/requests", json={"tmdb_id": 693134}).json()["id"]
+    store.update_status(request_id, "complete", result={"torrent_hash": "aaaa"})
+    _as(client, _friend_session(store, friends))
+
+    assert client.post("/api/movies/693134/reject-current").status_code == 403
+    assert client.post("/api/tv/95350/seasons/1/reject-current").status_code == 403
+    assert client.post("/api/requests", json={"tmdb_id": 693134, "redownload_mode": "upgrade"}).status_code == 403
+    assert (
+        client.post("/api/tv/95350/bulk-download", json={"scope": "series", "redownload_mode": "upgrade"}).status_code
+        == 403
+    )

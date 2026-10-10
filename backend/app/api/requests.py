@@ -1,12 +1,13 @@
 """Movie requests: creating, listing, cancelling and rejecting them, and
 "This copy is broken" for a movie already on Plex."""
 
+import dataclasses
 from pathlib import Path
 
 from fastapi import Depends, HTTPException
 from pydantic import BaseModel, field_validator
 
-from app.db import PlexServerRow, RequestRow, RequestStore, SessionRow
+from app.db import NON_TERMINAL_STATUSES, PlexServerRow, RequestRow, RequestStore, SessionRow
 from app.plex import local_file_for_title
 from app.qbt import QBTClient
 from app.resolve import resolve
@@ -15,14 +16,17 @@ from app.tmdb import TMDBClient, TMDBError
 from app.worker import Worker
 from app.api.deps import (
     can_clear_requests,
+    ensure_can_replace_copies,
     get_plex_server,
     get_qbt,
     get_store,
     get_tmdb,
     get_worker,
     logger,
+    require_can_replace_copies,
     require_can_request,
     require_session,
+    require_session_server,
     router,
 )
 from app.api.schemas import RequestOut
@@ -54,7 +58,10 @@ def create_request(
     tmdb: TMDBClient = Depends(get_tmdb),
     worker: Worker = Depends(get_worker),
     session: SessionRow = Depends(require_can_request),
+    asked_from: PlexServerRow = Depends(require_session_server),
 ) -> RequestOut:
+    if body.redownload_mode:
+        ensure_can_replace_copies(store, session)
     try:
         identity = resolve(body.tmdb_id, tmdb)
     except TMDBError as exc:
@@ -74,6 +81,14 @@ def create_request(
             status_code=400, detail="no file on record for this title, and Plex can't point at one from here"
         )
 
+    # Already on its way — asked for from another server, which this one
+    # can't see — joins that download rather than starting a second copy
+    # of the same title on the same disk.
+    live = None if body.redownload_mode else store.find_live_request(body.tmdb_id, "movie")
+    if live is not None:
+        store.add_request_ask(live.id, asked_from.id, session.plex_user_id, session.username)
+        return RequestOut.from_row(store.get_request_for_server(live.id, asked_from.id))
+
     row = store.create_request(
         tmdb_id=body.tmdb_id,
         title=identity.title,
@@ -83,33 +98,46 @@ def create_request(
         requested_by_username=session.username,
         redownload_mode=body.redownload_mode,
         poster_path=identity.poster_path,
+        server_id=asked_from.id,
     )
     worker.enqueue(row.id)
-    return RequestOut.from_row(row)
+    return RequestOut.from_row(store.get_request_for_server(row.id, asked_from.id))
 
 
 @router.get("/api/requests")
-def list_requests(status: str | None = None, store: RequestStore = Depends(get_store)) -> list[RequestOut]:
-    return [RequestOut.from_row(r) for r in store.list_requests(status=status)]
+def list_requests(
+    status: str | None = None,
+    store: RequestStore = Depends(get_store),
+    server: PlexServerRow = Depends(require_session_server),
+) -> list[RequestOut]:
+    """The requests this session's server has asked for — never another
+    server's."""
+    return [RequestOut.from_row(r) for r in store.list_requests_for_server(server.id, status=status)]
 
 
 @router.get("/api/requests/{request_id}")
-def get_request(request_id: int, store: RequestStore = Depends(get_store)) -> RequestOut:
-    row = store.get_request(request_id)
+def get_request(
+    request_id: int, store: RequestStore = Depends(get_store), server: PlexServerRow = Depends(require_session_server)
+) -> RequestOut:
+    row = store.get_request_for_server(request_id, server.id)
     if row is None:
         raise HTTPException(status_code=404, detail="request not found")
     return RequestOut.from_row(row)
 
 
 @router.post("/api/requests/clear")
-def clear_requests(store: RequestStore = Depends(get_store), session: SessionRow = Depends(require_session)) -> dict:
-    """"Clear My Requests": wipes settled history (reuses the same
-    active-job-safe query the automatic retention cleanup runs, with
-    days=0 so age never excludes anything terminal). Admins only, when
-    Settings › History says so."""
+def clear_requests(
+    store: RequestStore = Depends(get_store),
+    session: SessionRow = Depends(require_session),
+    server: PlexServerRow = Depends(require_session_server),
+) -> dict:
+    """"Clear My Requests": wipes this server's settled history, with the
+    same active-job safety the automatic retention cleanup has — another
+    server's history is untouched (RequestStore.clear_settled_for_server).
+    Admins only, when Settings › History says so."""
     if not can_clear_requests(store, session):
         raise HTTPException(status_code=403, detail="only an admin can clear requests")
-    return {"removed": store.purge_requests_older_than(days=0)}
+    return {"removed": store.clear_settled_for_server(server.id)}
 
 
 # A "queued" request hasn't touched qBittorrent (or even started
@@ -159,7 +187,11 @@ def _cancel_active_torrent(row: RequestRow, store: RequestStore, qbt: QBTClient)
 
 @router.post("/api/requests/{request_id}/cancel")
 def cancel_request(
-    request_id: int, store: RequestStore = Depends(get_store), qbt: QBTClient = Depends(get_qbt)
+    request_id: int,
+    store: RequestStore = Depends(get_store),
+    qbt: QBTClient = Depends(get_qbt),
+    session: SessionRow = Depends(require_session),
+    server: PlexServerRow = Depends(require_session_server),
 ) -> RequestOut:
     """Cancel from the app's own UI. A "queued" request is just marked
     "cancelled" directly (see the comment above `_TORRENT_CANCELLABLE_STATUSES`).
@@ -176,19 +208,32 @@ def cancel_request(
     file (it never mounts the download folder or the Docker socket, per
     the confirmed architecture). Rather than mark the request "cancelled"
     and imply files were removed when nothing was touched, this fails
-    loudly and leaves the request exactly as it was."""
-    row = store.get_request(request_id)
+    loudly and leaves the request exactly as it was.
+
+    A download another server is also waiting for isn't stopped: this
+    server's ask is taken off it, it leaves this server's list, and it
+    carries on for the others. Deleting a finished copy is replacing what
+    every server plays, so with more than one server that is an admin's
+    call (ensure_can_replace_copies)."""
+    row = store.get_request_for_server(request_id, server.id)
     if row is None:
         raise HTTPException(status_code=404, detail="request not found")
+
+    if row.status in NON_TERMINAL_STATUSES and store.request_ask_servers(request_id) - {server.id}:
+        store.remove_request_ask(request_id, server.id)
+        logger.info("request %d (%s): server %d stopped asking for it (via API)", request_id, row.title, server.id)
+        return RequestOut.from_row(dataclasses.replace(row, status="cancelled"))
+    if row.status == "complete":
+        ensure_can_replace_copies(store, session)
 
     if row.status == "queued":
         store.update_status(request_id, "cancelled")
         logger.info("request %d (%s) queued -> cancelled (via API)", request_id, row.title)
-        return RequestOut.from_row(store.get_request(request_id))
+        return RequestOut.from_row(store.get_request_for_server(request_id, server.id))
 
     _cancel_active_torrent(row, store, qbt)
     logger.info("request %d (%s) downloading/complete -> cancelled (via API)", request_id, row.title)
-    return RequestOut.from_row(store.get_request(request_id))
+    return RequestOut.from_row(store.get_request_for_server(request_id, server.id))
 
 
 @router.post("/api/movies/{tmdb_id}/reject-current")
@@ -197,7 +242,7 @@ def reject_current_movie_copy(
     store: RequestStore = Depends(get_store),
     server: PlexServerRow | None = Depends(get_plex_server),
     tmdb: TMDBClient = Depends(get_tmdb),
-    session: SessionRow = Depends(require_can_request),
+    session: SessionRow = Depends(require_can_replace_copies),
 ) -> dict:
     """"This copy is broken" for the copy of a movie on Plex. A copy this
     app filed is in the library ledger with its torrent hash and release
@@ -252,7 +297,7 @@ def reject_current_season_copy(
     season_number: int,
     store: RequestStore = Depends(get_store),
     tmdb: TMDBClient = Depends(get_tmdb),
-    session: SessionRow = Depends(require_can_request),
+    session: SessionRow = Depends(require_can_replace_copies),
 ) -> dict:
     """"This copy is broken" for a season already filed.
 
@@ -318,7 +363,11 @@ def reject_current_season_copy(
 
 @router.post("/api/requests/{request_id}/reject")
 def reject_request(
-    request_id: int, store: RequestStore = Depends(get_store), qbt: QBTClient = Depends(get_qbt)
+    request_id: int,
+    store: RequestStore = Depends(get_store),
+    qbt: QBTClient = Depends(get_qbt),
+    session: SessionRow = Depends(require_can_replace_copies),
+    server: PlexServerRow = Depends(require_session_server),
 ) -> RequestOut:
     """Stage 15: like `cancel`, but for a torrent that turned out to be
     genuinely defective despite looking like the best candidate on paper —
@@ -338,7 +387,7 @@ def reject_request(
     is still rejected: the hash on record is blacklisted and the files
     this app filed for it are deleted, so the next search really does
     fetch a different copy."""
-    row = store.get_request(request_id)
+    row = store.get_request_for_server(request_id, server.id)
     if row is None:
         raise HTTPException(status_code=404, detail="request not found")
     if row.status == "queued":
@@ -372,4 +421,4 @@ def reject_request(
         request_id,
         row.title,
     )
-    return RequestOut.from_row(store.get_request(request_id))
+    return RequestOut.from_row(store.get_request_for_server(request_id, server.id))

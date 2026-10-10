@@ -498,6 +498,7 @@ class Worker:
                 row.min_resolution,
                 None,
                 show.poster_path or identity.poster_path,
+                asks_from=row.id,
             )
             created.append(season_row.id)
 
@@ -570,6 +571,7 @@ class Worker:
                     episode_number,
                     show.poster_path or identity.poster_path,
                     row.min_resolution,
+                    asks_from=row.id,
                 )
                 await asyncio.to_thread(self.store.add_show_episode, show.id, season_number, episode_number, episode_row.id)
                 created.append(episode_row.id)
@@ -1005,7 +1007,8 @@ class Worker:
                 # same file.
                 continue
             ep_row = await asyncio.to_thread(
-                self.store.create_episode_request, row.tmdb_id, row.show_id, identity.title, season, episode
+                self.store.create_episode_request, row.tmdb_id, row.show_id, identity.title, season, episode,
+                asks_from=row.id,
             )
             await asyncio.to_thread(
                 self.store.update_status,
@@ -1875,6 +1878,7 @@ class Worker:
             episode_row.season_number,
             episode_row.episode_number,
             show.poster_path or identity.poster_path,
+            asks_from=episode_row.request_id,
         )
         await asyncio.to_thread(self.store.update_status, new_row.id, "downloading", None, _result_summary(result))
         await asyncio.to_thread(self.store.record_episode_recheck, episode_row.id, new_row.id)
@@ -1926,6 +1930,7 @@ class Worker:
             episode_row.season_number,
             episode_row.episode_number,
             show.poster_path or identity.poster_path,
+            asks_from=episode_row.request_id,
         )
         await asyncio.to_thread(self.store.update_status, new_row.id, "downloading", None, summary)
         await asyncio.to_thread(self.store.record_episode_recheck, episode_row.id, new_row.id)

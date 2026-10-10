@@ -313,7 +313,63 @@ class StoreSchema:
             )
             if first_time:
                 self._move_user_tokens_to_user_servers()
+            # Which servers want each request. A request row is one
+            # download — there is one copy of a title on the shared library
+            # mounts however many servers asked — and a server sees only
+            # the rows it has an ask on, under the name of whoever asked
+            # from that server (none, for one a followed show produced).
+            # See RequestStore's "request asks" section.
+            first_time = not self._conn.execute(
+                "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'request_asks'"
+            ).fetchone()
+            self._conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS request_asks (
+                    request_id INTEGER NOT NULL,
+                    server_id INTEGER NOT NULL,
+                    plex_user_id TEXT,
+                    username TEXT,
+                    created_at TEXT NOT NULL,
+                    PRIMARY KEY (request_id, server_id)
+                )
+                """
+            )
+            self._conn.execute("CREATE INDEX IF NOT EXISTS request_asks_by_server ON request_asks (server_id, request_id)")
+            # Which servers follow each show. A show is checked for new
+            # episodes while anyone follows it (`shows.status`), and every
+            # request it produces is asked for by each of its followers.
+            self._conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS show_followers (
+                    show_id INTEGER NOT NULL,
+                    server_id INTEGER NOT NULL,
+                    created_at TEXT NOT NULL,
+                    PRIMARY KEY (show_id, server_id)
+                )
+                """
+            )
+            if first_time:
+                self._give_existing_requests_to_the_primary()
             self._conn.commit()
+
+    def _give_existing_requests_to_the_primary(self) -> None:
+        """Everything from before requests were separated per server was
+        made on the primary: it keeps all of it, under the same names, and
+        follows every show that was being followed."""
+        primary = self._conn.execute("SELECT id FROM plex_servers ORDER BY priority, id LIMIT 1").fetchone()
+        if primary is None:
+            return
+        now = datetime.now(timezone.utc).isoformat()
+        self._conn.execute(
+            "INSERT OR IGNORE INTO request_asks (request_id, server_id, plex_user_id, username, created_at) "
+            "SELECT id, ?, requested_by_plex_id, requested_by_username, created_at FROM requests",
+            (primary["id"],),
+        )
+        self._conn.execute(
+            "INSERT OR IGNORE INTO show_followers (show_id, server_id, created_at) "
+            "SELECT id, ?, ? FROM shows WHERE status = 'watching'",
+            (primary["id"], now),
+        )
 
     def _move_user_tokens_to_user_servers(self) -> None:
         """Everyone who signed in before there could be more than one

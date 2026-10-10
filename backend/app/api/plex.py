@@ -124,9 +124,8 @@ def select_plex_server(
     if match is None:
         raise HTTPException(status_code=404, detail="server not found among this account's owned servers")
     # Still a switch, not an add: the chosen server replaces whatever
-    # was linked, as it always has.
-    store.save_plex_server(match["machine_identifier"], match["name"], match["url"], match["token"])
-    store.remove_plex_servers(keep=(match["machine_identifier"],))
+    # was linked, as it always has, and takes over its history.
+    store.replace_plex_servers(match["machine_identifier"], match["name"], match["url"], match["token"])
     # Switching servers changes who's authorized — every non-admin
     # session's access grant was checked against the *old* server and
     # must be re-validated via a fresh login against the new one.
