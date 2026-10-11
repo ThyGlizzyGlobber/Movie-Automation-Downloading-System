@@ -3,7 +3,7 @@
 # one of these.
 #
 #   push to main   -> beta    ghcr.io/<owner>/obsidian-{backend,frontend}:beta
-#                             plus :<version> (e.g. 1.0.37) and :sha-<commit>
+#                             plus :sha-<commit> and :<version> (e.g. 1.0.37)
 #   push vX.Y.Z    -> stable  :stable, :<X.Y.Z> and :<X.Y>
 #   pull request   -> tests only, nothing published
 #
@@ -35,12 +35,17 @@ jobs:
       run:
         working-directory: backend
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.11"
           cache: pip
           cache-dependency-path: backend/requirements*.txt
+      # deploy.py's tests run a real `npm ci` / `npm run build`; pinned here
+      # rather than trusting whatever the runner image happens to carry.
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "20"
       # The same binaries the image installs: the organiser and logo tests
       # drive the real ffmpeg / mkvpropedit.
       - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg mkvtoolnix
@@ -53,8 +58,8 @@ jobs:
       run:
         working-directory: frontend
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
           node-version: "20"
           cache: npm
@@ -71,7 +76,7 @@ jobs:
       contents: read
       packages: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           # Full history and tags: the version is counted from the last
           # release tag, and a tag build checks it sits on main.
@@ -87,8 +92,8 @@ jobs:
             echo "::error::'$described' isn't cut from a vX.Y.Z tag"
             exit 1
           fi
-          major="${BASH_REMATCH[1]}" minor="${BASH_REMATCH[2]}"
-          version="$major.$minor.$((BASH_REMATCH[3] + BASH_REMATCH[4]))"
+          major="${BASH_REMATCH[1]}" minor="${BASH_REMATCH[2]}" since="${BASH_REMATCH[4]}"
+          version="$major.$minor.$((BASH_REMATCH[3] + since))"
           commit="$(git rev-parse --short=7 HEAD)"
 
           if [[ "$GITHUB_REF" == refs/tags/* ]]; then
@@ -108,7 +113,14 @@ jobs:
             tags=(stable "$version" "$major.$minor")
           else
             channel=beta
-            tags=(beta "$version" "sha-$commit")
+            tags=(beta "sha-$commit")
+            # A commit pushed together with its release tag describes as
+            # that release (1.1.0) here too, and the tag's own build
+            # publishes :1.1.0 as stable. Leave that version tag to it, so
+            # one version never names two different images.
+            if [[ "$since" != 0 ]]; then
+              tags+=("$version")
+            fi
           fi
 
           {

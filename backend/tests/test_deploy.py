@@ -64,10 +64,13 @@ def repo_pair(tmp_path, monkeypatch):
     every other test in this file's "real git, no mocks" style."""
     origin = tmp_path / "origin.git"
     clone = tmp_path / "clone"
-    _run("git", "init", "--bare", str(origin), cwd=tmp_path)
+    # Branch named explicitly: git's default is whatever this machine's
+    # init.defaultBranch says (master on a CI runner), and a bare origin
+    # whose HEAD names a branch nobody pushed leaves the clone tracking it.
+    _run("git", "init", "--bare", "--initial-branch=main", str(origin), cwd=tmp_path)
 
     seed = tmp_path / "seed"
-    _run("git", "init", str(seed), cwd=tmp_path)
+    _run("git", "init", "--initial-branch=main", str(seed), cwd=tmp_path)
     _run("git", "config", "user.email", "test@example.com", cwd=seed)
     _run("git", "config", "user.name", "Test", cwd=seed)
     (seed / "file.txt").write_text("v1\n")
