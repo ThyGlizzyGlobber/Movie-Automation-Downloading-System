@@ -102,7 +102,7 @@ import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from app import config, plex, reconcile
+from app import config, drives, plex, reconcile
 from app.db import FAILURE_STATUSES, NON_TERMINAL_STATUSES, RequestStore, ShowEpisodeRow, ShowRow
 from app.media_organizer import (
     MediaOrganizerError,
@@ -137,6 +137,9 @@ logger = logging.getLogger("app.worker")
 
 # Pipeline statuses that map directly onto a terminal request status of the
 # same name; anything else falls through to "failed" (see _run_one).
+# How often a box with no drive yet looks again before taking a request.
+NO_DRIVE_RECHECK_SECONDS = 30
+
 _DIRECT_TERMINAL_STATUSES = {"no qualifying results", "insufficient free space"}
 
 # How long a "downloading" row with no torrent on record gets to turn up
@@ -320,9 +323,15 @@ class Worker:
         """One consumer. `start()` runs SEARCH_CONCURRENCY of these, so
         several requests are searched at once; the semaphore is what
         actually bounds it, since the recheck loop draws on the same
-        slots."""
+        slots.
+
+        On a box with no drive yet there's nowhere to download to, so a
+        request waits, still queued, and goes ahead once a drive is added
+        (app/drives.py)."""
         while True:
             request_id = await self.queue.get()
+            while not await asyncio.to_thread(drives.ready):
+                await asyncio.sleep(NO_DRIVE_RECHECK_SECONDS)
             self._pending.discard(request_id)
             async with self._search_slots:
                 await self._run_one(request_id)
@@ -1104,7 +1113,7 @@ class Worker:
                 logger.exception("orphan sweep cycle failed")
 
     async def _sweep_orphaned_downloads(self) -> list[dict]:
-        roots = [str(config.MOVIE_LIBRARY_ROOT), str(config.TV_LIBRARY_ROOT)]
+        roots = [str(root) for root in drives.download_roots()]
         swept = await asyncio.to_thread(reconcile.remove_orphaned_download_dirs, self.store, roots, True)
         # Then the folders whose files were rewritten rather than linked
         # on the way in, which share no inode to match on. Separately
