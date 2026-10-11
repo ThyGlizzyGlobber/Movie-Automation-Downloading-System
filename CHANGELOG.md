@@ -56,6 +56,11 @@ records the minor and major releases, and the patches worth calling out. See
   movies one by one, a season that came as a pack as a pack, and other episodes singly,
   so nothing that survived on another drive is fetched twice. Plex stops listing the
   dead drive's folders, so it doesn't answer "already on Plex" for them.
+- **Finding the box on the home network.** A box keeps taking its address from the router,
+  so a new router never strands it, and obsidian.local finds it wherever it is. For phones
+  that can't open .local names, the setup wizard and Settings › About also show the
+  address the router gave it, and the card says what to do. The factory script stops if a
+  box was set up with a fixed address, gateway or DNS server.
 
 ### Changed
 

@@ -85,6 +85,8 @@ class FakeTrueNAS:
         self.compose = None
         self.calls: list[tuple] = []
         self.mnt = None
+        self.interfaces = [{"name": "enp1s0", "ipv4_dhcp": True, "aliases": []}]
+        self.network = {"ipv4gateway": "", "nameserver1": ""}
 
     def call(self, method, *params, job=False):
         self.calls.append((method, params))
@@ -127,7 +129,10 @@ class FakeTrueNAS:
             self.compose = params[1]["custom_compose_config"]
             return {}
         if method == "network.configuration.config":
-            return {"hostname": "truenas", "service_announcement": {"netbios": False, "mdns": False, "wsd": True}}
+            return {"hostname": "truenas", "service_announcement": {"netbios": False, "mdns": False, "wsd": True},
+                    **self.network}
+        if method == "interface.query":
+            return self.interfaces
         if method == "pool.dataset.query":
             return [{"id": params[0][0][2]}] if params[0][0][2] in self.datasets else []
         if method == "pool.dataset.create":
@@ -283,6 +288,11 @@ def test_the_apps_ssd_can_be_named_when_there_are_two(factory):
 @pytest.mark.parametrize("change, says", [
     ({"version": "TrueNAS-25.04.2"}, "TrueNAS 25.10"),
     ({"apps": ["obsidian"]}, "already installed"),
+    # Set up by hand on the bench with a fixed address: on the buyer's
+    # network that address would leave the box unreachable.
+    ({"interfaces": [{"name": "enp1s0", "ipv4_dhcp": False, "aliases": [{"address": "192.168.0.60", "netmask": 24}]}]},
+     "enp1s0 has a fixed address"),
+    ({"network": {"ipv4gateway": "192.168.0.1", "nameserver1": "1.1.1.1"}}, "ipv4gateway, nameserver1 set by hand"),
 ])
 def test_a_box_that_isn_t_ready_is_refused_before_anything_changes(factory, change, says):
     nas, make, _, _ = factory
@@ -311,3 +321,12 @@ def test_the_memory_cap_is_half_the_ram_but_at_least_2_gib():
     assert provision.arc_cap_bytes(16 * GiB) == 8 * GiB
     assert provision.arc_cap_bytes(32 * GiB) == 16 * GiB
     assert provision.arc_cap_bytes(2 * GiB) == 2 * GiB
+
+
+def test_an_interface_left_to_the_router_is_fine_however_truenas_lists_it(factory):
+    # A fresh install that was never configured lists its interface with
+    # DHCP off and no addresses, and still asks the router for one.
+    nas, make, _, _ = factory
+    nas.interfaces = [{"name": "enp1s0", "ipv4_dhcp": False, "aliases": []}, {"name": "enp2s0", "ipv4_dhcp": True, "aliases": []}]
+    make().run()
+    assert nas.called("app.create")

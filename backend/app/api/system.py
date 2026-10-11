@@ -11,7 +11,7 @@ from datetime import datetime, timedelta, timezone
 from fastapi import Depends, HTTPException, Request
 from pydantic import BaseModel
 
-from app import config, drives, version
+from app import box_address, config, drives, version
 from app.db import FAILURE_STATUSES, RequestStore
 from app.deploy import DeployError, run_git_pull
 from app.api.deps import _client_ip, admin_router, get_qbt, get_store, router
@@ -180,6 +180,8 @@ def about(request: Request, store: RequestStore = Depends(get_store)) -> dict:
         "db_bytes": db_bytes,
         "movie_library_root": str(config.MOVIE_LIBRARY_ROOT),
         "tv_library_root": str(config.TV_LIBRARY_ROOT),
+        # On a box: obsidian.local and the address the router gave it.
+        "addresses": box_address.addresses(),
     }
 
 

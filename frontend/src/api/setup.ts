@@ -35,3 +35,9 @@ export function testQbtConnection(body: QbtConnectionInput, setupToken: string) 
 export function setupQbt(body: QbtConnectionInput, setupToken: string) {
   return putJson<SetupMutationResult>('/api/setup/qbittorrent', body, { [SETUP_TOKEN_HEADER]: setupToken })
 }
+
+// Where a box is on the home network, to bookmark (backend/app/box_address.py).
+// Empty off a box.
+export function getSetupAddress(setupToken: string) {
+  return request<{ addresses: string[] }>('/api/setup/address', { headers: { [SETUP_TOKEN_HEADER]: setupToken } })
+}
