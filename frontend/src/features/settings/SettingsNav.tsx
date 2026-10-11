@@ -13,6 +13,7 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
   { key: 'dashboard', label: 'Dashboard', icon: 'home', group: 'Overview' },
   { key: 'plex', label: 'Plex', icon: 'plex', group: 'Server' },
   { key: 'connections', label: 'Services', icon: 'plug', group: 'Server' },
+  { key: 'vpn', label: 'VPN', icon: 'shield', group: 'Server' },
   { key: 'pipeline', label: 'Downloads', icon: 'sliders', group: 'Server' },
   { key: 'tv', label: 'TV shows', icon: 'clock', group: 'Server' },
   { key: 'storage', label: 'Storage', icon: 'drive', group: 'Server' },
@@ -27,13 +28,22 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
 
 const GROUPS: SettingsSection['group'][] = ['Overview', 'Server', 'Access', 'System']
 
-export default function SettingsNav({ active, onSelect }: { active: string | null; onSelect: (key: string) => void }) {
+export default function SettingsNav({
+  active,
+  onSelect,
+  hidden = [],
+}: {
+  active: string | null
+  onSelect: (key: string) => void
+  // Sections this install doesn't have (VPN, off a box).
+  hidden?: string[]
+}) {
   return (
     <nav className="settings-nav-list">
       {GROUPS.map((group) => (
         <div className="settings-nav-group" key={group}>
           <div className="settings-nav-group-label">{group}</div>
-          {SETTINGS_SECTIONS.filter((s) => s.group === group).map((s) => (
+          {SETTINGS_SECTIONS.filter((s) => s.group === group && !hidden.includes(s.key)).map((s) => (
             <button
               key={s.key}
               className={`settings-nav-item${active === s.key ? ' active' : ''}`}

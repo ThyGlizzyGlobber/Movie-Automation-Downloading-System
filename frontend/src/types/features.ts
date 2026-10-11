@@ -94,6 +94,40 @@ export interface LibrarySettings {
   plex_refresh_after_import: boolean
   free_space_floor_gb: number
 }
+// The box's VPN (backend/app/vpn.py). Never carries a secret.
+export type VpnField = 'private_key' | 'public_key' | 'preshared_key' | 'addresses' | 'endpoint_ip' | 'endpoint_port' | 'user' | 'password'
+export interface VpnProvider {
+  id: string
+  label: string
+  types: { wireguard?: VpnField[]; openvpn?: VpnField[] }
+}
+export interface VpnStatus {
+  reachable: boolean
+  connected: boolean
+  public_ip: string | null
+  country: string | null
+}
+export interface VpnApplied {
+  // A change saved and waiting for the box's updater (at most a minute).
+  pending: boolean
+  state: 'applying' | 'applied' | 'failed' | null
+  provider: string | null
+  type: 'wireguard' | 'openvpn' | null
+  server_countries: string | null
+  message: string | null
+  at: string | null
+}
+export type VpnOverview =
+  | { managed: false }
+  | { managed: true; providers: VpnProvider[]; applied: VpnApplied; status: VpnStatus; updater_running: boolean }
+export interface VpnInput {
+  provider: string
+  type?: 'wireguard' | 'openvpn'
+  server_countries?: string
+  wireguard_file?: string
+  [field: string]: string | undefined
+}
+
 // The updater's state (truenas/obsidian-updater.py, on the NAS), as
 // GET/POST /api/admin/updates report it.
 export interface UpdaterStatus {

@@ -35,6 +35,12 @@ records the minor and major releases, and the patches worth calling out. See
   again. The installing is done by `truenas/obsidian-updater.py`, run every minute on the
   NAS by a TrueNAS cron job, so the app itself holds no TrueNAS credential.
 
+- **The box's VPN, from the app.** On a box, qBittorrent can only reach the internet
+  through the buyer's own VPN. The setup wizard asks for it (provider, then their WireGuard
+  key or OpenVPN login, or any provider's WireGuard file), and Settings › VPN shows whether
+  it's connected, through which country, and lets it be changed. The box's updater applies
+  the details, so they end up only in TrueNAS's root-only app config.
+
 ### Changed
 
 - With more than one server, replacing or deleting a copy (rejecting it, asking for

@@ -4,11 +4,12 @@ import SetupTokenStep from './SetupTokenStep'
 import TmdbStep from './TmdbStep'
 import QbittorrentStep from './QbittorrentStep'
 import PlexLinkStep from './PlexLinkStep'
+import VpnStep from './VpnStep'
 import ErrorState from '../../components/ui/ErrorState'
 import './SetupWizard.css'
 import AmbientGlow from '../../components/ui/AmbientGlow'
 
-type WizardStep = 'token' | 'tmdb' | 'qbittorrent' | 'plex'
+type WizardStep = 'token' | 'tmdb' | 'qbittorrent' | 'vpn' | 'plex'
 
 export default function SetupWizard() {
   const setupStatus = useSetupStatus()
@@ -23,6 +24,8 @@ export default function SetupWizard() {
     const list: WizardStep[] = ['token']
     if (setupStatus.data?.tmdb_source !== 'env') list.push('tmdb')
     if (setupStatus.data?.qbt_source !== 'env') list.push('qbittorrent')
+    // A box's own VPN, which qBittorrent can't reach the internet without.
+    if (setupStatus.data?.vpn_managed && !setupStatus.data.vpn_configured) list.push('vpn')
     list.push('plex')
     return list
   }, [setupStatus.data])
@@ -84,6 +87,8 @@ export default function SetupWizard() {
             }}
           />
         )}
+
+        {step === 'vpn' && setupToken && <VpnStep setupToken={setupToken} onDone={advance} />}
 
         {step === 'plex' && setupToken && <PlexLinkStep setupToken={setupToken} />}
 

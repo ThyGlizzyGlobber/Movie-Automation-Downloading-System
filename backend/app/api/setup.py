@@ -4,7 +4,7 @@ and the TMDB/qBittorrent helpers Settings' Connections panel reuses."""
 from fastapi import Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 
-from app import config
+from app import config, vpn
 from app.db import RequestStore
 from app.qbt import QBTClient
 from app.api.deps import get_store, limiter, require_setup_token
@@ -42,6 +42,10 @@ def setup_status(store: RequestStore = Depends(get_store)) -> dict:
     plex_account_linked = bool(settings.get("plex_token"))
     setup_complete = store.primary_plex_server() is not None
     return {
+        # A box has its own VPN, set up in the wizard (app/vpn.py). Whether
+        # it's been applied, never what with.
+        "vpn_managed": vpn.managed(),
+        "vpn_configured": bool(vpn.applied().get("state") == "applied"),
         "tmdb_configured": bool(config.resolve_tmdb_api_key(store)),
         "tmdb_source": config.tmdb_api_key_source(store),
         "qbt_configured": qbt_configured,

@@ -50,6 +50,10 @@ services:
       QBIT_PORT: "8080"
       QBIT_USERNAME: "admin"
       QBIT_PASSWORD: "<QBIT_PASSWORD>"
+      # Where the VPN reports whether its tunnel is up (app/vpn.py). Set,
+      # this is also what gives the app its VPN settings and setup step.
+      GLUETUN_URL: "http://gluetun:8000"
+      GLUETUN_API_KEY: "<GLUETUN_API_KEY>"
       TZ: "<TZ>"
     volumes:
       - "<DATA_PATH>:/app/data"
@@ -67,21 +71,23 @@ services:
     devices:
       - "/dev/net/tun:/dev/net/tun"
     environment:
-      # Set from the app (Settings › VPN), applied by the NAS updater.
-      # Until then gluetun can't connect, and qBittorrent has no way out.
-      VPN_SERVICE_PROVIDER: "<VPN_PROVIDER>"
-      VPN_TYPE: "wireguard"
-      WIREGUARD_PRIVATE_KEY: ""
-      WIREGUARD_ADDRESSES: ""
-      SERVER_COUNTRIES: ""
-      # Lets the backend reach qBittorrent's WebUI from this app's network.
-      # Inbound only: it opens nothing outbound past the tunnel.
-      FIREWALL_INPUT_PORTS: "8080"
+      # The VPN itself (VPN_SERVICE_PROVIDER, VPN_TYPE and the provider's
+      # details) is entered in the app and written in here by the NAS
+      # updater. Until then gluetun can't connect, and qBittorrent, with no
+      # network but this one, has no way out.
+      #
+      # Lets the backend reach qBittorrent's WebUI and gluetun's own status
+      # from this app's network. Inbound only: nothing goes out past the
+      # tunnel.
+      FIREWALL_INPUT_PORTS: "8080,8000"
+      # gluetun's status needs this key (made per box); only the backend has it.
+      HTTP_CONTROL_SERVER_AUTH_DEFAULT_ROLE: '{"auth":"apikey","apikey":"<GLUETUN_API_KEY>"}'
       TZ: "<TZ>"
     volumes:
       - "<GLUETUN_PATH>:/gluetun"
     expose:
       - "8080"
+      - "8000"
     mem_limit: 256m
     restart: unless-stopped
 
