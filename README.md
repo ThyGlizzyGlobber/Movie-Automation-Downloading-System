@@ -212,6 +212,24 @@ key, nothing built on the box. Targets TrueNAS 25.10 (Goldeye).
 It follows the `stable` channel. Change both image lines to `:beta` to follow every push
 to `main` instead, or to a version (`:1.1.0`) to pin one.
 
+#### Moving a git-pull install onto release images
+
+[`truenas/switch-to-release.py`](truenas/switch-to-release.py) moves an Option B install onto
+the published images in place, keeping its data folder, keys, library paths, ports and any
+other services (a Cloudflare tunnel, say). It only swaps `build:` for the channel's image and
+drops what a release install does without: the clone's source and built-site mounts, the
+clone, the deploy key and the deploy settings. It shows what will change, setting names but
+never their values, and asks first. It saves the current config to a root-only file beside
+itself, and puts it back by itself if the switched app doesn't come up. In the TrueNAS
+shell, from the updater's folder (see [Setting up updates](#setting-up-updates-on-a-box)):
+
+```bash
+python3 switch-to-release.py --app movie-downloader --channel beta
+```
+
+`--revert <saved file>` puts a saved config back by hand. The clone and deploy key are left
+on disk; delete them once you're happy.
+
 ### Path mapping
 
 qBittorrent and Obsidian are separate containers, so the path qBittorrent reports for a
