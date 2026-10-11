@@ -218,14 +218,17 @@ What a box ships with: [`truenas/obsidian-box.yaml`](truenas/obsidian-box.yaml),
 holding Obsidian, qBittorrent, Plex and Gluetun. qBittorrent has no network of its own:
 it reaches the internet only through the buyer's VPN, and with no VPN, nothing.
 [`truenas/provision.py`](truenas/provision.py) builds a box from a fresh TrueNAS 25.10
-install with a pool:
+install with three or four hard drives of one size in its bays. TrueNAS itself lives on a
+separate small SSD or NVMe drive, not in a bay.
 
 ```bash
-python3 provision.py --pool tank --serial OBS-0001
+python3 provision.py --serial OBS-0001
 ```
 
 Run it as root in the TrueNAS shell, with `obsidian-box.yaml` and `obsidian-updater.py`
 beside it. It:
+- builds the hard drives into one pool (RAIDZ1). The pool survives any one drive failing and
+  grows a drive at a time; a new drive must be the same size as the others or larger;
 - names the box so it answers at http://obsidian.local, and moves TrueNAS's own page to
   port 8080;
 - caps ZFS's memory cache;

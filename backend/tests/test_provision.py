@@ -67,9 +67,17 @@ def test_a_setup_code_is_easy_to_read_off_a_card():
 GiB = 1024**3
 
 
+TB = 1000**4
+
+
+def hdd(name, size=8 * TB):
+    return {"name": name, "size": size, "type": "HDD", "serial": f"SN-{name}"}
+
+
 class FakeTrueNAS:
-    def __init__(self, version="TrueNAS-25.10.7", ram=16 * GiB, pools=("tank",), apps=()):
+    def __init__(self, version="TrueNAS-25.10.7", ram=16 * GiB, pools=("tank",), apps=(), unused=()):
         self.version, self.ram, self.pools, self.apps = version, ram, set(pools), list(apps)
+        self.unused = list(unused)
         self.datasets: set[str] = set()
         self.scripts: list[dict] = []
         self.calls: list[tuple] = []
@@ -83,7 +91,13 @@ class FakeTrueNAS:
         if method == "system.general.config":
             return {"timezone": "Australia/Sydney"}
         if method == "pool.query":
-            return [{"name": p} for p in self.pools if p == params[0][0][2]]
+            topology = {"data": [{"type": "RAIDZ1", "children": [{}, {}, {}]}]}
+            return [{"name": p, "topology": topology} for p in self.pools if p == params[0][0][2]]
+        if method == "disk.get_unused":
+            return self.unused
+        if method == "pool.create":
+            self.pools.add(params[0]["name"])
+            return {}
         if method == "app.query":
             return [{"name": a} for a in self.apps if a == params[0][0][2]]
         if method == "network.configuration.config":
@@ -198,7 +212,7 @@ def test_a_run_that_stopped_partway_can_run_again(factory):
 
 @pytest.mark.parametrize("change, says", [
     ({"version": "TrueNAS-25.04.2"}, "TrueNAS 25.10"),
-    ({"pools": ()}, "no pool"),
+    ({"pools": ()}, "Found 0 unused hard drives"),
     ({"apps": ("obsidian",)}, "already installed"),
 ])
 def test_a_box_that_isn_t_ready_is_refused_before_anything_changes(factory, change, says):
@@ -215,6 +229,50 @@ def test_it_needs_root(factory, monkeypatch):
     monkeypatch.setattr(provision.os, "geteuid", lambda: 501)
     with pytest.raises(SystemExit, match="root"):
         make().run()
+
+
+def test_a_box_s_pool_is_built_from_its_unused_hard_drives(factory):
+    nas, make, _, _ = factory
+    nas.pools = set()
+    nas.unused = [hdd("sdc"), hdd("sda"), hdd("sdb", 8 * TB - 3_000_000), {"name": "nvme0n1", "size": 256 * 10**9, "type": "SSD"}]
+    card = make().run()
+    (create,) = nas.called("pool.create")
+    assert create[0]["name"] == "tank"
+    assert create[0]["topology"] == {"data": [{"type": "RAIDZ1", "disks": ["sda", "sdb", "sdc"]}]}  # the SSD left out
+    assert card["storage"] == "3 × 8.0 TB, RAIDZ1"
+    # Built before anything goes on it.
+    names = [name for name, _ in nas.calls]
+    assert names.index("pool.create") < names.index("pool.dataset.create") < names.index("app.create")
+
+
+def test_four_drives_make_one_four_drive_pool(factory):
+    nas, make, _, _ = factory
+    nas.pools = set()
+    nas.unused = [hdd(n) for n in ("sda", "sdb", "sdc", "sdd")]
+    card = make().run()
+    assert len(nas.called("pool.create")[0][0]["topology"]["data"][0]["disks"]) == 4
+    assert card["storage"] == "4 × 8.0 TB, RAIDZ1"
+
+
+@pytest.mark.parametrize("unused, says", [
+    ([hdd("sda"), hdd("sdb")], "Found 2 unused hard drives; a box needs at least 3"),
+    ([hdd("sda"), hdd("sdb"), hdd("sdc", 4 * TB)], "have to be the same size; these aren't: sda 8.0 TB, sdb 8.0 TB, sdc 4.0 TB"),
+    ([{"name": n, "size": 8 * TB, "type": "SSD"} for n in ("a", "b", "c")], "Found 0 unused hard drives"),
+])
+def test_drives_that_won_t_make_a_box_stop_it_before_anything_changes(factory, unused, says):
+    nas, make, _, _ = factory
+    nas.pools = set()
+    nas.unused = unused
+    with pytest.raises(SystemExit, match=re.escape(says)):
+        make().run()
+    assert not nas.called("pool.create") and not nas.called("network.configuration.update")
+
+
+def test_an_existing_pool_is_used_as_it_is(factory):
+    nas, make, _, _ = factory
+    card = make().run()
+    assert nas.called("pool.create") == [] and nas.called("disk.get_unused") == []
+    assert card["storage"] == "3 drives, RAIDZ1"
 
 
 def test_the_memory_cap_is_half_the_ram_but_at_least_2_gib():
