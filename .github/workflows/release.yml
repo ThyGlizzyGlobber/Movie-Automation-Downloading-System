@@ -1,0 +1,171 @@
+# Tests every change, and turns every push to main and every release tag into
+# the images a box actually runs. Nothing on a box builds anything: it pulls
+# one of these.
+#
+#   push to main   -> beta    ghcr.io/<owner>/obsidian-{backend,frontend}:beta
+#                             plus :<version> (e.g. 1.0.37) and :sha-<commit>
+#   push vX.Y.Z    -> stable  :stable, :<X.Y.Z> and :<X.Y>
+#   pull request   -> tests only, nothing published
+#
+# Your own box follows beta, a customer's follows stable, and the only way
+# anything reaches stable is a tag you push by hand (README › Releases).
+# Versions are worked out exactly as backend/app/version.py does from the
+# deployed clone, then baked into the image, which has no .git of its own.
+name: Release
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+
+concurrency:
+  group: release-${{ github.ref }}
+  # Never cancel a publish halfway, which could leave the backend and the
+  # frontend tags pointing at different commits.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  backend-tests:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: backend/requirements*.txt
+      # The same binaries the image installs: the organiser and logo tests
+      # drive the real ffmpeg / mkvpropedit.
+      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg mkvtoolnix
+      - run: pip install -r requirements-dev.txt
+      - run: python -m pytest -q
+
+  frontend-checks:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run build
+
+  images:
+    if: github.event_name == 'push'
+    needs: [backend-tests, frontend-checks]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Full history and tags: the version is counted from the last
+          # release tag, and a tag build checks it sits on main.
+          fetch-depth: 0
+
+      - name: Work out version, channel and tags
+        id: meta
+        run: |
+          set -euo pipefail
+          owner="${GITHUB_REPOSITORY_OWNER,,}"  # GHCR names must be lowercase
+          described="$(git describe --tags --long --match 'v[0-9]*' --abbrev=7)"
+          if [[ ! "$described" =~ ^v([0-9]+)\.([0-9]+)\.([0-9]+)-([0-9]+)-g[0-9a-f]+$ ]]; then
+            echo "::error::'$described' isn't cut from a vX.Y.Z tag"
+            exit 1
+          fi
+          major="${BASH_REMATCH[1]}" minor="${BASH_REMATCH[2]}"
+          version="$major.$minor.$((BASH_REMATCH[3] + BASH_REMATCH[4]))"
+          commit="$(git rev-parse --short=7 HEAD)"
+
+          if [[ "$GITHUB_REF" == refs/tags/* ]]; then
+            if [[ ! "$GITHUB_REF_NAME" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+              echo "::error::release tags look like v1.2.0, not '$GITHUB_REF_NAME'"
+              exit 1
+            fi
+            if [[ "v$version" != "$GITHUB_REF_NAME" ]]; then
+              echo "::error::tag $GITHUB_REF_NAME describes as $version; tag the commit itself"
+              exit 1
+            fi
+            if ! git merge-base --is-ancestor HEAD origin/main; then
+              echo "::error::$GITHUB_REF_NAME isn't on main; only main is released"
+              exit 1
+            fi
+            channel=stable
+            tags=(stable "$version" "$major.$minor")
+          else
+            channel=beta
+            tags=(beta "$version" "sha-$commit")
+          fi
+
+          {
+            echo "version=$version"
+            echo "commit=$commit"
+            echo "date=$(git log -1 --format=%cs)"
+            echo "channel=$channel"
+            for image in backend frontend; do
+              list=""
+              for tag in "${tags[@]}"; do list+="ghcr.io/$owner/obsidian-$image:$tag,"; done
+              echo "${image}_tags=${list%,}"
+            done
+          } >> "$GITHUB_OUTPUT"
+          echo "Publishing $version to $channel as: ${tags[*]}"
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # TrueNAS SCALE runs on x86-64 only, so that is the one platform built.
+      - name: Backend image
+        uses: docker/build-push-action@v6
+        with:
+          context: backend
+          target: release
+          platforms: linux/amd64
+          push: true
+          tags: ${{ steps.meta.outputs.backend_tags }}
+          build-args: |
+            APP_VERSION=${{ steps.meta.outputs.version }}
+            APP_COMMIT=${{ steps.meta.outputs.commit }}
+            APP_BUILD_DATE=${{ steps.meta.outputs.date }}
+            APP_CHANNEL=${{ steps.meta.outputs.channel }}
+          # The source label links the package to this repository on GHCR.
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.title=Obsidian backend
+            org.opencontainers.image.version=${{ steps.meta.outputs.version }}
+            org.opencontainers.image.revision=${{ github.sha }}
+          cache-from: type=gha,scope=backend
+          cache-to: type=gha,mode=max,scope=backend
+
+      - name: Frontend image
+        uses: docker/build-push-action@v6
+        with:
+          context: frontend
+          platforms: linux/amd64
+          push: true
+          tags: ${{ steps.meta.outputs.frontend_tags }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.title=Obsidian frontend
+            org.opencontainers.image.version=${{ steps.meta.outputs.version }}
+            org.opencontainers.image.revision=${{ github.sha }}
+          cache-from: type=gha,scope=frontend
+          cache-to: type=gha,mode=max,scope=frontend

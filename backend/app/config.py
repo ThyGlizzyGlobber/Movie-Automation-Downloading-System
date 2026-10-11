@@ -14,15 +14,20 @@ TMDB_API_KEY = os.environ.get("TMDB_API_KEY")
 
 # Tracked separately from the defaulted QBIT_* constants below so the
 # frontend migration's setup wizard/Connections panel (Part E) can tell
-# "genuinely set via env" apart from "just using the hardcoded fallback" —
-# QBIT_HOST is never actually None/empty the way TMDB_API_KEY can be, so
-# truthiness alone can't answer that question the way it can for TMDB.
+# "genuinely set via env" apart from "just using the fallback" — the
+# port's fallback is a real value, so truthiness alone can't answer that
+# question the way it can for TMDB.
 _QBIT_HOST_ENV = os.environ.get("QBIT_HOST")
 _QBIT_PORT_ENV = os.environ.get("QBIT_PORT")
 _QBIT_USERNAME_ENV = os.environ.get("QBIT_USERNAME")
 _QBIT_PASSWORD_ENV = os.environ.get("QBIT_PASSWORD")
 
-QBIT_HOST = _QBIT_HOST_ENV or "192.168.0.133"
+# No fallback host. This used to be the development NAS's own address,
+# which made every fresh install go looking for that one machine's
+# qBittorrent — and find it, on that LAN. Unset, qBittorrent simply isn't
+# set up until the setup wizard says where it is. 30024 is the TrueNAS
+# qBittorrent app's default WebUI port.
+QBIT_HOST = _QBIT_HOST_ENV or ""
 QBIT_PORT = int(_QBIT_PORT_ENV or "30024")
 QBIT_USERNAME = _QBIT_USERNAME_ENV or ""
 QBIT_PASSWORD = _QBIT_PASSWORD_ENV or ""

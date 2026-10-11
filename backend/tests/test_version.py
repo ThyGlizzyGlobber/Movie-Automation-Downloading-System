@@ -29,3 +29,23 @@ def test_app_version_in_the_env_wins(monkeypatch):
 
     assert version.current().version == "1.2.3"
     monkeypatch.setattr(version, "_cached", None)
+
+
+def test_a_release_image_reports_what_ci_baked_in(monkeypatch):
+    monkeypatch.setenv("APP_VERSION", "1.1.4")
+    monkeypatch.setenv("APP_COMMIT", "1a2b3c4")
+    monkeypatch.setenv("APP_BUILD_DATE", "2026-10-11")
+    monkeypatch.setenv("APP_CHANNEL", "beta")
+    monkeypatch.setattr(version, "_cached", None)
+
+    assert version.current() == version.Version("1.1.4", "1a2b3c4", "2026-10-11", "beta")
+    monkeypatch.setattr(version, "_cached", None)
+
+
+def test_a_git_clone_has_no_channel(monkeypatch):
+    monkeypatch.delenv("APP_VERSION", raising=False)
+    monkeypatch.delenv("APP_CHANNEL", raising=False)
+    monkeypatch.setattr(version, "_cached", None)
+
+    assert version.current().channel is None
+    monkeypatch.setattr(version, "_cached", None)

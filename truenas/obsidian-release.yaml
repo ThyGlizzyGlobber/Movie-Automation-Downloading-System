@@ -1,0 +1,82 @@
+# TrueNAS SCALE Custom App config for a release install of Obsidian: the
+# images .github/workflows/release.yml publishes to GHCR, with no git clone,
+# no deploy key and nothing built on the box. Target: TrueNAS 25.10
+# (Goldeye). Paste it into Apps › Discover Apps › Custom App › Install via
+# YAML, after filling in the <PLACEHOLDERS> below.
+#
+# This is the install a box ships with. truenas/custom-app-compose.yaml is
+# the older git-pull install, kept for the development box until it moves
+# over too.
+#
+# Channel: `:stable` only ever moves when a vX.Y.Z tag is pushed (README ›
+# Releases). The development box follows `:beta` instead, which moves on
+# every push to main — change the two image lines to `:beta` there. A
+# specific version (`:1.1.0`) pins an install and is how a bad release gets
+# rolled back by hand.
+#
+# No secrets in here: the TMDB key and the qBittorrent connection are
+# entered in the first-run setup wizard and kept in the app's own database
+# under <APP_DATA_PATH>, not in this file. (Setting TMDB_API_KEY or QBIT_*
+# below still works, and still wins over the wizard, for an install that
+# wants them here.)
+#
+# Fill in:
+#   <APP_DATA_PATH>          persistent SQLite + trailer/logo caches; keep it
+#                            on a dataset that's snapshotted
+#   <MOVIE_LIBRARY_PATH>     the dataset qBittorrent's "movies" category saves to
+#   <TV_LIBRARY_PATH>        the same for "tv"
+#   <QBIT_MOVIE_SAVE_PATH>   that "movies" save path as qBittorrent's own
+#                            container sees it (Settings › Downloads in its WebUI)
+#   <QBIT_TV_SAVE_PATH>      the same for "tv"
+#
+# The library datasets must be the very same filesystem qBittorrent writes
+# to, not a copy that looks the same: filing hardlinks, and a hardlink
+# can't cross filesystems (it falls back to a full copy at double the disk).
+
+services:
+  frontend:
+    image: ghcr.io/thyglizzyglobber/obsidian-frontend:stable
+    ports:
+      - "8095:80"
+    volumes:
+      # nginx.conf's TMDB image cache, capped at 5g by nginx itself. A named
+      # volume so a warm cache survives the container being replaced by an
+      # update.
+      - "tmdb-cache:/var/cache/nginx/tmdb"
+      # Read-only: nginx sends the trailer files the backend downloaded, via
+      # the internal location in nginx.conf. The backend still authorises
+      # every request for one.
+      - "<APP_DATA_PATH>:/srv/backend-data:ro"
+    depends_on:
+      - backend
+    mem_limit: 256m
+    restart: unless-stopped
+
+  backend:
+    image: ghcr.io/thyglizzyglobber/obsidian-backend:stable
+    environment:
+      # Hand trailer files to nginx instead of streaming them out of
+      # uvicorn. Needs the frontend's read-only mount of the same data path.
+      TRAILER_X_ACCEL_PREFIX: "/internal-trailers/"
+      TV_LIBRARY_ROOT: "/tv-library"
+      MOVIE_LIBRARY_ROOT: "/movie-library"
+      # qBittorrent reports where it saved a download in its own container's
+      # paths; these translate them into this container's mounts below.
+      QBIT_TV_SAVE_PATH: "<QBIT_TV_SAVE_PATH>"
+      QBIT_MOVIE_SAVE_PATH: "<QBIT_MOVIE_SAVE_PATH>"
+    volumes:
+      - "<APP_DATA_PATH>:/app/data"
+      - "<TV_LIBRARY_PATH>:/tv-library"
+      - "<MOVIE_LIBRARY_PATH>:/movie-library"
+    # No `ports:`, ever. nginx in the frontend is the only way in: the LAN
+    # gate on setup, the security headers and the rate limits all live there.
+    expose:
+      - "8000"
+    # Room for ffmpeg re-muxing a large file alongside the app. A release
+    # image never builds the frontend, so it needs far less than the
+    # git-pull install's backend did.
+    mem_limit: 2g
+    restart: unless-stopped
+
+volumes:
+  tmdb-cache:

@@ -25,6 +25,11 @@ def _client_with_fake_underlying(add_torrent_return):
     return client
 
 
+def test_no_host_means_not_set_up_rather_than_some_default_machine():
+    with pytest.raises(ValueError):
+        QBTClient("", 30024)
+
+
 # -- ping() — /api/health's reachability check --
 
 

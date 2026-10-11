@@ -100,6 +100,9 @@ export interface AboutInfo {
   version: string | null
   commit: string | null
   date: string | null
+  // "stable" | "beta" on a release image, which updates by image rather than
+  // git pull; null on a git-pull install.
+  channel: string | null
   python: string
   started_at: string | null
   uptime_seconds: number | null

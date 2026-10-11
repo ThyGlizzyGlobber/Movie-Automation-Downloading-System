@@ -20,6 +20,11 @@ class QBTClient:
         # migration Part E) so api/deps.py's get_qbt dependency can tell
         # whether the resolved config actually changed since this
         # instance was built, without needing its own separate tracking.
+        if not host:
+            # Not set up yet (no QBIT_HOST, nothing saved by the wizard).
+            # Refused here rather than handed to qbittorrentapi, which would
+            # quietly try localhost instead.
+            raise ValueError("qBittorrent isn't set up yet")
         self.host = host
         self.port = port
         self.username = username

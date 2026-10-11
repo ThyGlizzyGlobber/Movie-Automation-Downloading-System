@@ -9,8 +9,13 @@ That is the one to ask: the backend's own source is mounted separately at
 /app/app, which is not a git checkout. A workstation has no /repo, so the
 source tree's own repository answers there instead.
 
-APP_VERSION in the environment overrides all of this, for an image built
-without its .git."""
+A release image (backend/Dockerfile's `release` stage, built by
+.github/workflows/release.yml) has no .git at all, so CI bakes the answer
+in instead: APP_VERSION, APP_COMMIT and APP_BUILD_DATE, worked out the same
+way, plus APP_CHANNEL — "stable" or "beta", the image tag the install
+follows. APP_VERSION in the environment overrides git whenever it's set.
+APP_CHANNEL is only ever set on a release image, so it doubles as "this
+install updates by image, not by `git pull`"."""
 
 import os
 import re
@@ -30,6 +35,7 @@ class Version:
     version: str | None  # "1.0.3"; None when git can't say
     commit: str | None  # short hash of the running commit
     date: str | None  # that commit's date, YYYY-MM-DD
+    channel: str | None = None  # "stable" | "beta" on a release image; None on a git clone
 
 
 def parse_describe(described: str) -> str | None:
@@ -60,7 +66,12 @@ def _git(*args: str) -> str | None:
 def _read() -> Version:
     override = os.environ.get("APP_VERSION")
     if override:
-        return Version(override.lstrip("v"), None, None)
+        return Version(
+            override.lstrip("v"),
+            os.environ.get("APP_COMMIT") or None,
+            os.environ.get("APP_BUILD_DATE") or None,
+            os.environ.get("APP_CHANNEL") or None,
+        )
     described = _git("describe", "--tags", "--long", "--match", "v[0-9]*", "--abbrev=7")
     return Version(
         parse_describe(described) if described else None,

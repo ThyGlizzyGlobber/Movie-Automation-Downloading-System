@@ -24,6 +24,10 @@ records the minor and major releases, and the patches worth calling out. See
 - **Switching servers.** An admin moves between servers from the account menu or
   Settings › Plex, and sees that server's requests, shows and library.
 - After each download, every server refreshes and is put on the right audio track.
+- **Release images.** Every push to `main` that passes the tests publishes backend and
+  frontend images to GitHub Container Registry on the `beta` channel; a `vX.Y.Z` tag
+  publishes `stable`. `truenas/obsidian-release.yaml` installs from them on TrueNAS 25.10,
+  with no clone, deploy key or on-box build, and the version, commit and channel baked in.
 
 ### Changed
 
@@ -31,6 +35,8 @@ records the minor and major releases, and the patches worth calling out. See
   an upgrade, cancelling a finished download) is admin-only, since every server
   plays from the same files.
 - Settings › Household shows which server each person is on.
+- On a release install, Settings › Updates shows the channel and version instead of the
+  git-pull button, and `POST /api/admin/deploy` answers 409 there.
 
 ### Fixed
 
