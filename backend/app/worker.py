@@ -1134,11 +1134,12 @@ class Worker:
         if server is None:
             return []
         folders = await asyncio.to_thread(box_plex.wanted_folders)
-        signature = json.dumps(folders, sort_keys=True)
         settings = await asyncio.to_thread(self.store.get_settings)
+        drop = box_plex.dropped_folders(settings)
+        signature = json.dumps({**folders, "drop": drop}, sort_keys=True)
         if settings.get("box_plex_folders") == signature:
             return []
-        changes = await asyncio.to_thread(box_plex.sync_libraries, server.url, server.token, folders)
+        changes = await asyncio.to_thread(box_plex.sync_libraries, server.url, server.token, folders, None, drop)
         await asyncio.to_thread(self.store.update_settings, {"box_plex_folders": signature})
         if changes:
             logger.info("Plex libraries on the box: %s", "; ".join(changes))

@@ -1107,6 +1107,15 @@ class RequestStore(StoreSchema):
             self._conn.execute("DELETE FROM library_items WHERE path = ?", (path,))
             self._conn.commit()
 
+    def library_items_under(self, folder: str) -> list[dict]:
+        """Every file this app filed somewhere under `folder` — on a box,
+        everything that was on one drive (app/drive_recovery.py)."""
+        prefix = folder.rstrip("/") + "/"
+        rows = self._conn.execute(
+            "SELECT * FROM library_items WHERE substr(path, 1, ?) = ? ORDER BY id", (len(prefix), prefix)
+        ).fetchall()
+        return [dict(r) for r in rows]
+
     def add_rejected_release(self, tmdb_id: int, name: str, size_bytes: int | None = None) -> None:
         """Blacklists a copy this app didn't add itself (so there's no
         torrent hash on record): the file's name as Plex held it and its
@@ -1267,6 +1276,17 @@ class RequestStore(StoreSchema):
             cursor = self._conn.execute(
                 "DELETE FROM show_episodes WHERE show_id = ? AND season_number = ?",
                 (show_id, season_number),
+            )
+            self._conn.commit()
+            return cursor.rowcount
+
+    def forget_show_episode(self, show_id: int, season_number: int, episode_number: int) -> int:
+        """`forget_show_episodes` for one episode: its file is gone (a
+        drive that failed), and the episodes beside it may not be."""
+        with self._lock:
+            cursor = self._conn.execute(
+                "DELETE FROM show_episodes WHERE show_id = ? AND season_number = ? AND episode_number = ?",
+                (show_id, season_number, episode_number),
             )
             self._conn.commit()
             return cursor.rowcount

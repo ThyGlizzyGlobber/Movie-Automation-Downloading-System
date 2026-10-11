@@ -203,17 +203,55 @@ def test_plex_hears_about_drives_only_when_they_change(box, tmp_path, monkeypatc
     folders = {"movie": ["/media/drive1/Movies"], "tv": ["/media/drive1/TV Shows"]}
     monkeypatch.setattr(box_plex, "wanted_folders", lambda: folders)
     told = []
-    monkeypatch.setattr(box_plex, "sync_libraries", lambda url, token, f: told.append((url, token, dict(f))) or [])
+    monkeypatch.setattr(box_plex, "sync_libraries",
+                        lambda url, token, f, session=None, drop=(): told.append((url, token, dict(f), list(drop))) or [])
     w = worker_module.Worker.__new__(worker_module.Worker)
     w.store = store
 
     asyncio.run(w._sync_box_libraries())
     asyncio.run(w._sync_box_libraries())
-    assert told == [(BOX_URL, "server-token", folders)]  # once, then nothing new to say
+    assert told == [(BOX_URL, "server-token", folders, [])]  # once, then nothing new to say
 
     folders = {"movie": ["/media/drive1/Movies", "/media/drive2/Movies"], "tv": ["/media/drive1/TV Shows", "/media/drive2/TV Shows"]}
     asyncio.run(w._sync_box_libraries())
     assert len(told) == 2 and told[1][2] == folders
+
+    # A failed drive's folders to stop listing are news too.
+    store.update_settings({"box_plex_drop": ["/media/drive3/Movies"]})
+    asyncio.run(w._sync_box_libraries())
+    assert len(told) == 3 and told[2][3] == ["/media/drive3/Movies"]
+
+
+def test_a_failed_drive_s_folders_are_taken_off_plex():
+    http = FakePlexHTTP([
+        {"key": "1", "type": "movie", "title": "Movies", "agent": "tv.plex.agents.movie",
+         "Location": [{"path": "/media/drive1/Movies"}, {"path": "/media/drive3/Movies"}]},
+        {"key": "2", "type": "show", "title": "TV Shows", "agent": "tv.plex.agents.series",
+         "Location": [{"path": "/media/drive1/TV Shows"}, {"path": "/media/drive3/TV Shows"}]},
+    ])
+    folders = {"movie": ["/media/drive1/Movies"], "tv": ["/media/drive1/TV Shows"]}
+    changes = box_plex.sync_libraries(BOX_URL, "tok", folders, session=http,
+                                      drop=["/media/drive3/Movies", "/media/drive3/TV Shows"])
+    assert changes == ["Movies: removed /media/drive3/Movies", "TV Shows: removed /media/drive3/TV Shows"]
+    assert [locations(params) for _, params in http.edited] == [["/media/drive1/Movies"], ["/media/drive1/TV Shows"]]
+
+
+def test_a_library_is_never_left_without_a_folder_and_a_drive_put_back_stays():
+    http = FakePlexHTTP([
+        {"key": "1", "type": "movie", "title": "Movies", "Location": [{"path": "/media/drive1/Movies"}]},
+    ])
+    # The only drive failed, and there's no other yet: Plex won't take an
+    # empty library, so it waits for one, and swaps them over then.
+    assert box_plex.sync_libraries(BOX_URL, "tok", {"movie": [], "tv": []}, session=http,
+                                   drop=["/media/drive1/Movies"]) == []
+    assert box_plex.sync_libraries(BOX_URL, "tok", {"movie": ["/media/drive2/Movies"], "tv": []}, session=http,
+                                   drop=["/media/drive1/Movies"]) == ["Movies: added /media/drive2/Movies; removed /media/drive1/Movies"]
+    http = FakePlexHTTP([
+        {"key": "1", "type": "movie", "title": "Movies", "Location": [{"path": "/media/drive1/Movies"}]},
+    ])
+    # It was only unplugged, and it's back: Plex keeps it.
+    assert box_plex.sync_libraries(BOX_URL, "tok", {"movie": ["/media/drive1/Movies"], "tv": []}, session=http,
+                                   drop=["/media/drive1/Movies"]) == []
 
 
 def test_the_box_s_plex_is_found_at_the_container_s_gateway(monkeypatch):

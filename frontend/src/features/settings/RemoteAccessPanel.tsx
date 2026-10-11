@@ -147,6 +147,8 @@ function eventLabel(eventType: string): string {
       return 'Update started'
     case 'drive_added':
       return 'Drive added'
+    case 'drive_redownloaded':
+      return 'Lost drive downloaded again'
     case 'vpn_changed':
       return 'VPN changed'
     default:

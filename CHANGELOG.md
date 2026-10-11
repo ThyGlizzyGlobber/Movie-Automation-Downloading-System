@@ -51,6 +51,11 @@ records the minor and major releases, and the patches worth calling out. See
   each drive with its space and health, and adds a new one, with any size in any free bay
   and a typed confirmation, since adding erases it. A drive that's missing is shown as
   such. A box with no drive yet keeps requests waiting until one is added.
+- **Downloading a failed drive's titles again.** A drive the box can't find lists what
+  Obsidian had filed on it, and one button asks for it all again onto the other drives:
+  movies one by one, a season that came as a pack as a pack, and other episodes singly,
+  so nothing that survived on another drive is fetched twice. Plex stops listing the
+  dead drive's folders, so it doesn't answer "already on Plex" for them.
 
 ### Changed
 
