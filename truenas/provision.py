@@ -355,6 +355,8 @@ class Provisioner:
             "setup_code": made["setup_code"],
             "setup_link": f"http://{HOSTNAME}.local/#/?code={made['setup_code']}",
             "truenas_admin": f"http://{HOSTNAME}.local:{TRUENAS_UI_PORT}",
+            # Opens truenas/card.html with this box's serial and code filled in.
+            "card": f"card.html#{self.serial}/{made['setup_code']}",
             "storage": storage,
             "version": version,
             "channel": self.channel,
@@ -377,7 +379,8 @@ class Provisioner:
         self.updater(paths)
         card = self.record(paths, made, version, storage)
         self.say("")
-        self.say(f"Box {card['serial']} is ready. For its card:")
+        self.say(f"Box {card['serial']} is ready. Its card: open {card['card']} (truenas/card.html) and print it.")
+        self.say("On the card:")
         self.say(f"  Address:     {card['address']}")
         self.say(f"  Setup code:  {card['setup_code']}")
         self.say(f"  QR code to:  {card['setup_link']}")
