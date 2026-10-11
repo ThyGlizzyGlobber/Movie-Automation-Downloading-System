@@ -256,7 +256,13 @@ def deploy(request: Request, store: RequestStore = Depends(get_store)) -> dict:
     by the Settings panel's hidden long-press control with no real auth
     (an accepted Stage 6 risk, since it only ever ran this one fixed
     command) — now admin-only (frontend migration Part C3), on top of
-    that same fixed-command bound."""
+    that same fixed-command bound.
+
+    A release image has no clone to pull — it updates by pulling a newer
+    image instead — so there this answers 409 rather than letting git
+    fail with "not a git clone"."""
+    if version.current().channel:
+        raise HTTPException(status_code=409, detail="This install updates by release image, not git pull")
     try:
         result = run_git_pull()
     except DeployError as exc:

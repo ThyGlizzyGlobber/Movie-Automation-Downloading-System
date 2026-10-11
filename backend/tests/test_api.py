@@ -1893,6 +1893,18 @@ def test_deploy_maps_deploy_error_to_502(client_and_deps, monkeypatch):
     assert response.json()["detail"] == "not a git clone"
 
 
+def test_deploy_refuses_on_a_release_image(client_and_deps, monkeypatch):
+    client, _, _, _, _, _ = client_and_deps
+    pulled = []
+    monkeypatch.setattr(system, "run_git_pull", lambda: pulled.append(True))
+    monkeypatch.setattr(system.version, "current", lambda: system.version.Version("1.1.0", "1a2b3c4", None, "stable"))
+
+    response = client.post("/api/admin/deploy")
+
+    assert response.status_code == 409
+    assert pulled == []
+
+
 # ---------------------------------------------------------------------------
 # Stage 8: health + admin/jobs
 # ---------------------------------------------------------------------------

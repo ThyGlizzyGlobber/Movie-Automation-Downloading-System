@@ -52,10 +52,13 @@ to install, configure and run it, see the [README](README.md).
   `frontend/nginx.conf`, in front of the backend.
 - **State in SQLite** on a volume. Requests are serialised by a single `asyncio.Lock`; no job
   queue.
-- **Deploy is `git pull`, hardcoded.** "Check for updates" pulls the deployed clone and runs
-  `npm ci && npm run build` in it. `backend/app` and `frontend/dist` are bind-mounted, so that is
-  a deploy. Changes to a Dockerfile, `nginx.conf` or `requirements.txt` need an image rebuild on
-  the NAS; the in-app update does not rebuild images. The Docker socket is never mounted.
+- **Two installs.** A *release install* (`truenas/obsidian-release.yaml`, what a box ships
+  with) runs images CI publishes to GHCR — `beta` on every push to `main`, `stable` on a
+  `vX.Y.Z` tag — and updates by pulling a newer image; nothing is built on the box. The
+  *git-pull install* (`truenas/custom-app-compose.yaml`, the development NAS until it moves
+  over) pulls the deployed clone and runs `npm ci && npm run build` in it, with `backend/app`
+  and `frontend/dist` bind-mounted; changes to a Dockerfile, `nginx.conf` or
+  `requirements.txt` need an image rebuild there. The Docker socket is never mounted.
 
 ## Design principles
 
@@ -80,5 +83,6 @@ to install, configure and run it, see the [README](README.md).
 - No multi-tenancy beyond Plex servers: one app, one admin, one Settings panel. An admin can
   link several Plex servers the same account owns (e.g. family and friends on the same library
   mounts); each keeps its own requests, but downloads, files and settings are shared.
-- No distributed job queue, CI/CD pipeline or Kubernetes.
+- No distributed job queue or Kubernetes. CI builds and publishes images; it never deploys
+  to a box — a box pulls.
 - No Docker socket in the backend, ever.

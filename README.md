@@ -48,11 +48,13 @@ design goal: **the household gets a streaming app; the admin gets an automation 
 - [Installation](#installation)
   - [Docker Compose](#option-a--docker-compose)
   - [TrueNAS SCALE](#option-b--truenas-scale-custom-app)
+  - [TrueNAS SCALE, from release images](#option-c--truenas-scale-from-release-images)
 - [First-run setup](#first-run-setup)
 - [Configuration](#configuration)
 - [Remote access](#remote-access)
 - [Updating](#updating)
 - [Versioning](#versioning)
+- [Releases](#releases)
 - [Development](#development)
 - [Project structure](#project-structure)
 - [Status and scope](#status-and-scope)
@@ -196,6 +198,20 @@ Before applying it:
 
 <!-- SCREENSHOT: the TrueNAS Custom App form with the compose config pasted in. Suggested path: docs/screenshots/install-truenas.png -->
 
+### Option C — TrueNAS SCALE, from release images
+
+The install a box ships with. `truenas/obsidian-release.yaml` runs the images CI publishes
+to GitHub Container Registry (see [Releases](#releases)): no clone on the NAS, no deploy
+key, nothing built on the box. Targets TrueNAS 25.10 (Goldeye).
+
+1. Fill in the paths at the top of the file.
+2. Paste it into **Apps → Discover Apps → Custom App → Install via YAML**.
+3. Open port 8095 and go through [First-run setup](#first-run-setup). The TMDB key and
+   qBittorrent connection are entered there, so the YAML holds no secrets.
+
+It follows the `stable` channel. Change both image lines to `:beta` to follow every push
+to `main` instead, or to a version (`:1.1.0`) to pin one.
+
 ### Path mapping
 
 qBittorrent and Obsidian are separate containers, so the path qBittorrent reports for a
@@ -322,8 +338,13 @@ untouched, so no CORS configuration is ever needed.
 
 ## Updating
 
-From the app: **Settings → Updates → Check for updates.** That runs a `git pull` against the
-deployed clone (tags included) and rebuilds the frontend in place.
+**A release install** (Option C) updates by pulling a newer image for its channel. Until
+the in-app updater lands, that means having TrueNAS pull the app's images again and
+redeploy it. Rolling back is pointing the image lines at the previous version.
+
+**A git-pull install** (Options A and B): **Settings → Updates → Check for updates.** That
+runs a `git pull` against the deployed clone (tags included) and rebuilds the frontend in
+place.
 
 The endpoint runs exactly `git pull --ff-only --tags` — hardcoded. No path, branch or command is ever
 accepted as input, and the Docker socket is never mounted. "Self-update" here means
@@ -348,8 +369,32 @@ from git rather than kept in a file:
 from the deployed clone on each check (`backend/app/version.py`). Setting `APP_VERSION` in
 the backend's environment overrides it, for a build made without its `.git`.
 
-Cutting a release: move the `[Unreleased]` notes in [`CHANGELOG.md`](CHANGELOG.md) under the
-new version and commit that, then tag the commit and push the tag with it.
+A release install has no `.git`, so CI works the version out the same way at build time and
+bakes it into the image, along with its commit, date and channel (`APP_VERSION`,
+`APP_COMMIT`, `APP_BUILD_DATE`, `APP_CHANNEL`).
+
+---
+
+## Releases
+
+[`.github/workflows/release.yml`](.github/workflows/release.yml) runs the backend tests and
+the frontend lint and build on every pull request and push. When a push passes, it
+publishes two images, `ghcr.io/thyglizzyglobber/obsidian-backend` and `obsidian-frontend`:
+
+| You push | Channel | Image tags |
+|---|---|---|
+| a commit to `main` | **beta** | `beta`, the version (`1.0.37`), `sha-<commit>` |
+| a `vX.Y.Z` tag on `main` | **stable** | `stable`, the version (`1.1.0`), `1.1` |
+
+Your own box follows `beta`; a customer's follows `stable`. Nothing reaches `stable` except
+a tag you push by hand, so a bad commit on `main` only ever reaches beta. A failing test
+publishes nothing at all.
+
+Cutting a release, once beta has run well:
+
+1. Move the `[Unreleased]` notes in [`CHANGELOG.md`](CHANGELOG.md) under the new version
+   and commit that.
+2. Tag that commit and push the tag:
 
 ```bash
 git tag -a v1.1.0 -m "Obsidian 1.1.0"
@@ -358,6 +403,12 @@ git tag -a v1.1.0 -m "Obsidian 1.1.0"
 ```bash
 git push --follow-tags
 ```
+
+The tag build refuses a tag that isn't on `main` or isn't shaped `vX.Y.Z`.
+
+The images are public, like the repo. After the very first publish, check each package's
+visibility under **GitHub → your profile → Packages**; a box pulls them without logging in
+only if they are public.
 
 ---
 
