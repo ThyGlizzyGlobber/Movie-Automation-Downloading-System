@@ -17,6 +17,9 @@ On a box (truenas/obsidian-box.yaml) it also applies the buyer's VPN
 details, entered in the app and left as `updater/vpn-request.json`: checked
 again here, written into the gluetun service's settings, and the request
 deleted, so the secrets end up only in TrueNAS's root-only app config.
+Likewise a Plex claim token (`updater/plex-claim-request.json`), left when
+the buyer first signs in to Plex: written into the plex service as
+PLEX_CLAIM, so the box's new Plex server claims itself for their account.
 
 It talks to TrueNAS through its local socket, as `midclt` does, so it needs
 no user and no API key, and the app never holds one. Each step is written to
@@ -55,7 +58,7 @@ import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
 
-SCRIPT_VERSION = 3
+SCRIPT_VERSION = 4
 IMAGE_NAMES = ("obsidian-backend", "obsidian-frontend")
 IMAGE_PREFIX = "ghcr.io/thyglizzyglobber/"
 CRON_DESCRIPTION = "Obsidian updater (installs updates requested in the app)"
@@ -97,6 +100,8 @@ VPN_ENV = {
 # Every gluetun setting this manages; the rest of gluetun's are left alone.
 VPN_MANAGED = set(VPN_ENV.values()) | {"VPN_SERVICE_PROVIDER", "VPN_TYPE"}
 GLUETUN_IMAGE = "qmcgaw/gluetun:"
+PLEX_IMAGE = "plexinc/pms-docker:"
+_CLAIM_TOKEN = re.compile(r"^claim-[A-Za-z0-9_-]{8,100}$")
 _BACKUP = re.compile(r"^obsidian-[A-Za-z0-9.-]+\.db$")
 
 
@@ -272,19 +277,28 @@ def vpn_env(request: dict) -> dict[str, str]:
     return env
 
 
-def with_vpn(compose: dict, env: dict[str, str]) -> dict:
-    """The app's config with gluetun's VPN settings replaced by `env`; every
-    other gluetun setting kept."""
+def with_service_env(compose: dict, image_prefix: str, env: dict[str, str], replacing: set[str]) -> dict:
+    """The app's config with one service's settings in `replacing` swapped
+    for `env`; every other setting of it, and every other service, kept."""
     moved = json.loads(json.dumps(compose))
     for service in (moved.get("services") or {}).values():
-        if isinstance(service, dict) and str(service.get("image", "")).startswith(GLUETUN_IMAGE):
+        if isinstance(service, dict) and str(service.get("image", "")).startswith(image_prefix):
             current = service.get("environment") or {}
             if isinstance(current, list):
                 current = dict(str(item).split("=", 1) if "=" in str(item) else (str(item), "") for item in current)
-            kept = {k: v for k, v in current.items() if k not in VPN_MANAGED}
+            kept = {k: v for k, v in current.items() if k not in replacing}
             service["environment"] = {**kept, **env}
             return moved
-    raise RuntimeError("this app has no VPN (gluetun) service")
+    raise RuntimeError(f"this app has no {image_prefix.rstrip(':')} service")
+
+
+def with_vpn(compose: dict, env: dict[str, str]) -> dict:
+    """The app's config with gluetun's VPN settings replaced by `env`; every
+    other gluetun setting kept."""
+    try:
+        return with_service_env(compose, GLUETUN_IMAGE, env, VPN_MANAGED)
+    except RuntimeError:
+        raise RuntimeError("this app has no VPN (gluetun) service") from None
 
 
 def bind_sources(compose: dict) -> list[str]:
@@ -438,6 +452,10 @@ class Updater:
             if vpn_request is not None:
                 self.folder.remove("vpn-request.json")  # claimed; it holds secrets, so gone either way
                 self.apply_vpn(vpn_request)
+            claim_request = self.folder.read("plex-claim-request.json")
+            if claim_request is not None:
+                self.folder.remove("plex-claim-request.json")
+                self.apply_plex_claim(claim_request)
         finally:
             self.folder.close()
 
@@ -530,6 +548,23 @@ class Updater:
             vpn_state("failed", f"TrueNAS couldn't apply the VPN details: {_reason(exc)}")
             return
         vpn_state("applied", "Applied. The VPN connects within a minute.")
+
+    def apply_plex_claim(self, request: dict) -> None:
+        def claim_state(state: str, message: str) -> None:
+            self.log(f"plex claim {state}: {message}")
+            self.folder.write("plex-claim-state.json", {"state": state, "message": message, "at": now_iso()})
+
+        token = request.get("claim_token")
+        if not isinstance(token, str) or not _CLAIM_TOKEN.match(token):
+            claim_state("failed", "That wasn't a Plex claim token.")
+            return
+        try:
+            moved = with_service_env(self.mw.app_config(self.app), PLEX_IMAGE, {"PLEX_CLAIM": token}, {"PLEX_CLAIM"})
+            self.mw.app_update(self.app, moved)
+        except Exception as exc:  # noqa: BLE001
+            claim_state("failed", f"TrueNAS couldn't restart Plex to claim it: {_reason(exc)}")
+            return
+        claim_state("applied", "Plex restarted to claim itself.")
 
     def recover(self, state: dict) -> None:
         """A run that ended mid-update — the NAS restarted, say."""

@@ -77,7 +77,9 @@ export default function SetupWizard() {
 
         {step === 'vpn' && setupToken && <VpnStep setupToken={setupToken} onDone={advance} />}
 
-        {step === 'plex' && setupToken && <PlexLinkStep setupToken={setupToken} />}
+        {step === 'plex' && setupToken && (
+          <PlexLinkStep setupToken={setupToken} onBox={Boolean(setupStatus.data?.plex_on_box)} />
+        )}
       </div>
     </div>
   )

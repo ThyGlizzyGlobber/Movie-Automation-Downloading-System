@@ -3,6 +3,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import { getPlexStatus, startPlexLink } from '../../api/plex'
 import { ApiError } from '../../api/client'
 import type { PlexStatus } from '../../types/settings'
+import '../vpn/VpnForm.css'
 
 const POLL_INTERVAL_MS = 2500
 // Same reasoning as useEndUserLogin's own loop, and the same bug it was
@@ -22,8 +23,10 @@ const MAX_BACKOFF_MULTIPLIER = 4
 
 type Phase = 'idle' | 'signing-in' | 'linking'
 
-export default function PlexLinkStep({ setupToken }: { setupToken: string }) {
+export default function PlexLinkStep({ setupToken, onBox = false }: { setupToken: string; onBox?: boolean }) {
   const [phase, setPhase] = useState<Phase>('idle')
+  // On a box, what happens after the sign-in: claiming its Plex, then its libraries.
+  const [stage, setStage] = useState<PlexStatus['stage']>(null)
   const [error, setError] = useState<string | null>(null)
   // Kept so a blocked popup isn't a dead end — see the link below.
   const [authUrl, setAuthUrl] = useState<string | null>(null)
@@ -74,6 +77,7 @@ export default function PlexLinkStep({ setupToken }: { setupToken: string }) {
   // has an answer either way and there is nothing left to poll for.
   const settle = useCallback(
     (status: PlexStatus): boolean => {
+      setStage(status.stage ?? null)
       if (status.error) {
         stopPolling()
         setError(status.error)
@@ -206,7 +210,14 @@ export default function PlexLinkStep({ setupToken }: { setupToken: string }) {
   return (
     <>
       <h1 className="setup-step-title">Connect Plex</h1>
-      <p className="setup-step-copy">Sign in with the Plex account that owns your server. That account becomes the admin.</p>
+      {onBox ? (
+        <p className="setup-step-copy">
+          Sign in with your Plex account. This box's Plex server is set up on it, with Movies and TV Shows libraries,
+          and that account becomes the admin. No account yet? Making one is free, in the sign-in tab.
+        </p>
+      ) : (
+        <p className="setup-step-copy">Sign in with the Plex account that owns your server. That account becomes the admin.</p>
+      )}
 
       {phase === 'idle' && (
         <div className="setup-actions">
@@ -216,7 +227,18 @@ export default function PlexLinkStep({ setupToken }: { setupToken: string }) {
         </div>
       )}
 
-      {phase === 'signing-in' && (
+      {phase === 'signing-in' && stage && (
+        <div className="vpn-status wait" role="status">
+          <span className="vpn-status-dot" aria-hidden="true" />
+          <span>
+            {stage === 'claiming'
+              ? 'Signed in. Setting up your Plex server on this box. This takes a minute or two…'
+              : 'Creating your Movies and TV Shows libraries…'}
+          </span>
+        </div>
+      )}
+
+      {phase === 'signing-in' && !stage && (
         <>
           <p className="setup-step-copy">
             Finish signing in in the tab that opened. This page updates by itself.

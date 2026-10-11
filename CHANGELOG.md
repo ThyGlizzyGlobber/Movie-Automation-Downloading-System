@@ -41,6 +41,11 @@ records the minor and major releases, and the patches worth calling out. See
   it's connected, through which country, and lets it be changed. The box's updater applies
   the details, so they end up only in TrueNAS's root-only app config.
 
+- **Plex set up by signing in, on a box.** The box's own Plex server ships unclaimed. When
+  the buyer signs in with Plex in the setup wizard, it's claimed for their account, linked,
+  and given Movies and TV Shows libraries on the box's folders, with no Plex settings to
+  visit.
+
 ### Changed
 
 - With more than one server, replacing or deleting a copy (rejecting it, asking for

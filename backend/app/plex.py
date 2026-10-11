@@ -23,6 +23,7 @@ import logging
 from pathlib import Path
 import requests
 
+from app import box_plex, updates
 from app.cache import TTLCache
 from app.db_rows import PlexServerRow
 from app.language import audio_quality_key, is_audio_language
@@ -203,6 +204,16 @@ class PlexClient:
                 }
             )
         return resources
+
+    def claim_token(self, token: str) -> str:
+        """A one-time token that lets a new Plex server claim itself for
+        this account (box_plex.py). Good for a few minutes."""
+        response = self.session.get(
+            f"{PLEX_TV_BASE}/api/claim/token.json", headers=self._headers(token), timeout=10
+        )
+        if not response.ok:
+            raise PlexError(f"couldn't get a Plex claim token: {response.status_code}")
+        return response.json()["token"]
 
     def get_account_identity(self, token: str) -> dict | None:
         """The signed-in account's own stable plex.tv id and username —
@@ -711,10 +722,19 @@ class PlexLinker:
     persists everything to settings. The frontend only ever polls this
     app's own `/api/plex/status` — see api/plex.py."""
 
+    # How long a box's own Plex gets to claim itself and show up on the
+    # account: the updater's next run (a minute at most), then Plex's
+    # restart and its first check-in with plex.tv.
+    BOX_CLAIM_SECONDS = 300
+    BOX_CLAIM_POLL_SECONDS = 5
+
     def __init__(self, store):
         self.store = store
         self._task: asyncio.Task | None = None
         self._error: str | None = None
+        # What a box's sign-in is doing after the PIN: "claiming" its Plex,
+        # then "libraries". None otherwise.
+        self._stage: str | None = None
 
     def _client(self) -> PlexClient:
         return _persisted_client(self.store)
@@ -722,6 +742,7 @@ class PlexLinker:
     async def start(self) -> str:
         client = self._client()
         self._error = None
+        self._stage = None
         pin = await asyncio.to_thread(client.create_pin)
         if self._task and not self._task.done():
             self._task.cancel()
@@ -734,8 +755,13 @@ class PlexLinker:
             while time.monotonic() < deadline:
                 token = await asyncio.to_thread(client.check_pin, pin_id)
                 if token:
-                    resources = await asyncio.to_thread(client.list_resources, token)
-                    owned = [r for r in resources if r["owned"]]
+                    if box_plex.managed():
+                        owned = await self._box_server(client, token)
+                        if owned is None:
+                            return
+                    else:
+                        resources = await asyncio.to_thread(client.list_resources, token)
+                        owned = [r for r in resources if r["owned"]]
                     if not owned:
                         self._error = "Signed in, but no Plex server was found on this account."
                         return
@@ -744,11 +770,67 @@ class PlexLinker:
                         self.store.update_settings, {"plex_token": token, "plex_username": username}
                     )
                     await asyncio.to_thread(self._keep_linked_servers, owned)
+                    if box_plex.managed():
+                        await self._box_libraries(owned[0])
                     return
                 await asyncio.sleep(PIN_POLL_INTERVAL_SECONDS)
             self._error = "Plex sign-in timed out — try again."
         except Exception as exc:  # fail safe — never leave the frontend polling forever
             self._error = str(exc)
+
+    async def _box_server(self, client: PlexClient, token: str) -> list[dict] | None:
+        """On a box: its own Plex, claimed for this account if it isn't
+        yet, as the one server to link. None (with the reason in _error)
+        when that can't be done."""
+        url = box_plex.local_url()
+        found = await asyncio.to_thread(box_plex.identity, url) if url else None
+        if not found:
+            self._error = "Couldn't reach this box's Plex server. Give it a minute and try again."
+            return None
+        if not found["claimed"]:
+            if not updates.updater_running():
+                self._error = "This box isn't ready to set up Plex yet. Give it a minute and try again."
+                return None
+            self._stage = "claiming"
+            claim = await asyncio.to_thread(client.claim_token, token)
+            await asyncio.to_thread(box_plex.request_claim, claim)
+        deadline = time.monotonic() + self.BOX_CLAIM_SECONDS
+        while True:
+            resources = await asyncio.to_thread(client.list_resources, token)
+            mine = next(
+                (r for r in resources if r["owned"] and r["machine_identifier"] == found["machine_identifier"]), None
+            )
+            if mine:
+                # Reached directly on the box, rather than by whatever
+                # address plex.tv lists, which may need DNS the home
+                # router won't give.
+                return [{**mine, "url": url}]
+            if found["claimed"]:
+                self._error = (
+                    "This box's Plex server belongs to a different Plex account. "
+                    "Sign in with that account, or contact support to reset it."
+                )
+                return None
+            if time.monotonic() > deadline:
+                state = box_plex.claim_state()
+                detail = f" ({state['message']})" if state.get("state") == "failed" and state.get("message") else ""
+                self._error = f"This box's Plex server didn't finish setting up{detail}. Try signing in again."
+                return None
+            await asyncio.sleep(self.BOX_CLAIM_POLL_SECONDS)
+
+    async def _box_libraries(self, server: dict) -> None:
+        """The box's Movies and TV Shows libraries. Missing ones only, so
+        signing in again never makes doubles; a failure is logged rather
+        than undoing a sign-in that worked."""
+        self._stage = "libraries"
+        try:
+            made = await asyncio.to_thread(box_plex.ensure_libraries, server["url"], server["token"])
+            if made:
+                logger.info("created Plex libraries on the box: %s", ", ".join(made))
+        except Exception:  # noqa: BLE001
+            logger.exception("couldn't create the box's Plex libraries")
+        finally:
+            self._stage = None
 
     def _keep_linked_servers(self, owned: list[dict]) -> None:
         """After a sign-in: every server already linked that this account
@@ -783,6 +865,7 @@ class PlexLinker:
             "server_name": primary.name if primary else None,
             "pending": bool(self._task and not self._task.done()),
             "error": self._error,
+            "stage": self._stage,
         }
 
     def unlink(self) -> None:
