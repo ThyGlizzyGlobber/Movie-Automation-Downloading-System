@@ -57,6 +57,9 @@ services:
       # The setup code printed on this box's card (provision.py makes it).
       # Only good for first-run setup, and only from the home network.
       SETUP_CODE: "<SETUP_CODE>"
+      # The box's own Plex, on the host's network: this container's gateway.
+      # Set, the wizard claims it for the buyer and makes its libraries.
+      PLEX_LOCAL_URL: "gateway"
       TZ: "<TZ>"
     volumes:
       - "<DATA_PATH>:/app/data"

@@ -39,6 +39,8 @@ export interface SetupStatus {
   // A box has its own VPN, set up in the wizard (backend/app/vpn.py).
   vpn_managed: boolean
   vpn_configured: boolean
+  // A box has its own Plex, claimed for the buyer as they sign in.
+  plex_on_box: boolean
   tmdb_configured: boolean
   tmdb_source: 'env' | 'db' | null
   qbt_configured: boolean

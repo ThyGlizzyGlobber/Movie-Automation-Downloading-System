@@ -58,6 +58,9 @@ export interface PlexStatus {
   server_name: string | null
   pending: boolean
   error: string | null
+  // On a box, after the sign-in: its own Plex being claimed, then given
+  // its libraries.
+  stage: 'claiming' | 'libraries' | null
 }
 
 // GET /api/admin/plex-servers — the servers Obsidian serves, primary
