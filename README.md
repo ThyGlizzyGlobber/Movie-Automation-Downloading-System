@@ -236,8 +236,12 @@ beside it. It:
 - makes the box's setup code and other secrets;
 - installs the app and the updater.
 
-At the end it prints what goes on the box's card: the address, the setup code, and the link
-for its QR code. It keeps the same in a root-only `provisioned.json`. A run that stopped
+At the end it prints what goes on the box's card, and keeps the same in a root-only
+`provisioned.json`. The card itself is [`truenas/card.html`](truenas/card.html). Open it in
+a browser with the link the script prints (`card.html#OBS-0001/7KQ4-M2XP-9WTD`), choose what
+the box ships with, and print. It prints as two A6 pages, front and back: how to start the
+box, a QR code that opens setup with the code filled in, the code itself, what to have ready,
+and how to add drives. A run that stopped
 partway can simply be run again.
 
 The buyer then opens http://obsidian.local, or scans the QR code, and the setup wizard

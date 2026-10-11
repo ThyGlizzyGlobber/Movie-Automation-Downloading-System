@@ -1,0 +1,275 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Obsidian box card</title>
+<!--
+  The card that goes in each Obsidian box: how to start it, the box's setup
+  code, and a QR code that opens the setup wizard with the code filled in.
+
+  Open this file in any browser. truenas/provision.py prints a link for each
+  box (card.html#OBS-0001/7KQ4-M2XP-9WTD) that fills in its serial and code;
+  or type them below. Then print (Cmd+P / Ctrl+P): two A6 pages, the front
+  and the back, for double-sided card stock (flip on the long edge).
+-->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500&family=Manrope:wght@500;700;800&family=IBM+Plex+Mono:wght@500&display=swap">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js"></script>
+<style>
+/* Layout: an editor beside a true-size preview of the card's two sides; in
+   print, only the two sides, one A6 page each. The card itself is light
+   (cheap to print, easy to scan) with the shard's blues as accents. */
+:root {
+  /* The editor: Obsidian's own night palette. */
+  --ed-bg: #050508;
+  --ed-panel: #101018;
+  --ed-line: rgba(245, 247, 250, 0.12);
+  --ed-text: #f5f7fa;
+  --ed-dim: rgba(245, 247, 250, 0.6);
+  --ed-focus: #9cc0ff;
+  /* The card: paper, ink, and the shard's ice and body blues. */
+  --paper: #ffffff;
+  --ink: #0b0c16;
+  --ink-soft: #4c5068;
+  --rule: #dfe3ee;
+  --ice: #9cc0ff;
+  --body-blue: #3644d6;
+  --deep: #1c2270;
+  --font-display: "Outfit", "Avenir Next", "Helvetica Neue", sans-serif;
+  --font-body: "Manrope", "Segoe UI", "Helvetica Neue", sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  background: var(--ed-bg);
+  color: var(--ed-text);
+  font: 500 15px/1.55 var(--font-body);
+  padding-inline: 16px;
+  padding-block: 32px 48px;
+}
+.editor { max-width: 1120px; margin: 0 auto; display: grid; gap: 28px; }
+.editor-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 8px 24px; }
+.editor-head h1 { margin: 0; font: 300 30px/1.1 var(--font-display); letter-spacing: -0.03em; }
+.editor-head p { margin: 0; color: var(--ed-dim); max-width: 60ch; }
+.workspace { display: grid; grid-template-columns: minmax(260px, 320px) 1fr; gap: 28px; align-items: start; }
+@media (max-width: 860px) { .workspace { grid-template-columns: 1fr; } }
+
+form { display: grid; gap: 16px; padding: 20px; background: var(--ed-panel); border: 1px solid var(--ed-line); border-radius: 16px; }
+label { display: grid; gap: 6px; font: 700 12px/1.3 var(--font-body); letter-spacing: 0.06em; text-transform: uppercase; color: var(--ed-dim); }
+input, select {
+  font: 500 15px/1.3 var(--font-body); color: var(--ed-text); background: rgba(245, 247, 250, 0.06);
+  border: 1px solid var(--ed-line); border-radius: 10px; padding: 10px 12px; width: 100%;
+  text-transform: none; letter-spacing: 0;
+}
+input:focus-visible, select:focus-visible { outline: 2px solid var(--ed-focus); outline-offset: 1px; }
+#code { font-family: var(--font-mono); letter-spacing: 0.08em; text-transform: uppercase; }
+.field-note { font: 500 12.5px/1.45 var(--font-body); letter-spacing: 0; text-transform: none; color: var(--ed-dim); }
+.field-note.bad { color: #ff8a80; }
+.print-note { margin: 0; color: var(--ed-dim); font-size: 13px; line-height: 1.5; }
+kbd { font: 500 12px var(--font-mono); border: 1px solid var(--ed-line); border-radius: 5px; padding: 1px 5px; }
+
+.sides { display: flex; flex-wrap: wrap; gap: 24px; min-width: 0; }
+.side-wrap { display: grid; gap: 8px; }
+.side-label { font: 700 11px/1 var(--font-body); letter-spacing: 0.1em; text-transform: uppercase; color: var(--ed-dim); }
+
+/* -- The card: A6, 105 × 148 mm. -- */
+.card {
+  width: 105mm; height: 148mm; max-width: 100%;
+  background: var(--paper); color: var(--ink);
+  border-radius: 3mm; box-shadow: 0 18px 50px rgba(0, 0, 0, 0.5);
+  padding: 9mm 9mm 8mm; display: flex; flex-direction: column; gap: 4.5mm;
+  font: 500 9.5pt/1.45 var(--font-body); overflow: hidden; position: relative;
+}
+.brand { display: flex; align-items: center; gap: 2.4mm; }
+.shard { width: 6.2mm; height: auto; flex: none; }
+.wordmark { font: 500 15pt/1 var(--font-display); letter-spacing: -0.02em; }
+.serial { margin-left: auto; font: 500 7.5pt/1 var(--font-mono); color: var(--ink-soft); letter-spacing: 0.04em; }
+
+.front h2 { margin: 1.5mm 0 0; font: 300 19pt/1.08 var(--font-display); letter-spacing: -0.035em; text-wrap: balance; }
+.qr-block { display: grid; grid-template-columns: 46mm 1fr; gap: 4mm; align-items: center; }
+.qr { width: 46mm; height: 46mm; padding: 2mm; border: 0.3mm solid var(--rule); border-radius: 2mm; background: var(--paper); }
+.qr svg { width: 100%; height: 100%; display: block; }
+.qr-text { display: grid; gap: 1.5mm; font-size: 9pt; }
+.qr-text strong { font: 700 9.5pt/1.3 var(--font-body); }
+.address { font: 500 10pt/1.2 var(--font-mono); color: var(--body-blue); word-break: break-all; }
+.code-block { border-radius: 2.4mm; padding: 3.2mm 4mm; background: linear-gradient(135deg, var(--deep), var(--body-blue)); color: #fff; display: grid; gap: 1mm; }
+.code-label { font: 800 6.5pt/1 var(--font-body); letter-spacing: 0.14em; text-transform: uppercase; color: var(--ice); }
+.code { font: 500 17pt/1.1 var(--font-mono); letter-spacing: 0.1em; white-space: nowrap; }
+.front .small { margin-top: auto; font-size: 7.5pt; color: var(--ink-soft); line-height: 1.45; }
+
+.back h3 { margin: 0; font: 400 12pt/1.2 var(--font-display); letter-spacing: -0.02em; }
+.back section { display: grid; gap: 1.8mm; }
+.steps { margin: 0; padding: 0; list-style: none; display: grid; gap: 2mm; counter-reset: step; }
+.steps li { display: grid; grid-template-columns: 5mm 1fr; gap: 2mm; counter-increment: step; }
+.steps li::before {
+  content: counter(step); width: 5mm; height: 5mm; border-radius: 50%; background: var(--body-blue); color: #fff;
+  font: 700 7pt/5mm var(--font-body); text-align: center;
+}
+.needs { margin: 0; padding: 0; list-style: none; display: grid; gap: 1.2mm; }
+.needs li { padding-left: 3.5mm; position: relative; }
+.needs li::before { content: ""; position: absolute; left: 0; top: 0.55em; width: 1.6mm; height: 1.6mm; border-radius: 50%; background: var(--ice); }
+.needs b, .storage b { font-weight: 700; }
+.storage { border-top: 0.3mm solid var(--rule); padding-top: 3mm; }
+.back .small { margin-top: auto; font-size: 7pt; color: var(--ink-soft); display: grid; gap: 1mm; }
+.help:empty { display: none; }
+
+@media (prefers-reduced-motion: no-preference) { .card { transition: box-shadow 0.2s ease; } }
+
+/* -- Print: just the two sides, one A6 page each, at true size. -- */
+@page { size: 105mm 148mm; margin: 0; }
+@media print {
+  body { background: var(--paper); padding: 0; }
+  .editor-head, form, .side-label { display: none; }
+  .editor, .workspace, .sides { display: block; max-width: none; }
+  .side-wrap { display: block; break-after: page; }
+  .side-wrap:last-child { break-after: auto; }
+  .card { box-shadow: none; border-radius: 0; max-width: none; }
+  * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+}
+</style>
+</head>
+<body>
+<main class="editor">
+  <header class="editor-head">
+    <h1>Box card</h1>
+    <p>The card that goes in each box. Fill in its serial and setup code from the factory script's printout, then print both sides.</p>
+  </header>
+
+  <div class="workspace">
+    <form id="card-form" autocomplete="off">
+      <label for="serial">Serial
+        <input id="serial" name="serial" value="OBS-0001" spellcheck="false">
+      </label>
+      <label for="code">Setup code
+        <input id="code" name="code" value="7KQ4-M2XP-9WTD" spellcheck="false" maxlength="14">
+        <span class="field-note" id="code-note">From the factory script, like 7KQ4-M2XP-9WTD.</span>
+      </label>
+      <label for="storage">Ships with
+        <select id="storage" name="storage">
+          <option value="none">No hard drives</option>
+          <option value="1x4">One 4 TB drive</option>
+        </select>
+      </label>
+      <label for="help">Help contact (optional)
+        <input id="help" name="help" placeholder="like help@yourstore.com" spellcheck="false">
+      </label>
+      <p class="print-note">Print with <kbd>⌘P</kbd> or <kbd>Ctrl P</kbd>: two A6 pages, front then back. On card stock, print double-sided and flip on the long edge, at 100% scale.</p>
+    </form>
+
+    <div class="sides">
+      <div class="side-wrap">
+        <span class="side-label">Front</span>
+        <article class="card front" aria-label="Card front">
+          <div class="brand">
+            <svg class="shard" aria-hidden="true" viewBox="0 0 1150 1550" version="1.1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" xml:space="preserve" xmlns:serif="http://www.serif.com/" style="fill-rule:evenodd;clip-rule:evenodd;stroke-linejoin:round;stroke-miterlimit:2;"><g transform="matrix(1,0,0,1,-425,-225)"><g transform="matrix(1.006124,0,0,0.860155,-43.853893,151.026637)"><g><path d="M553,1239L680,1259L899,1775L860,1798L553,1239Z" style="fill:rgb(28,34,112);"/><path d="M1245,1756L1263,1771L1438,1482L1385,1450L1245,1756Z" style="fill:rgb(28,34,112);"/><path d="M1555,1098L1584,1055L1609,1115L1558,1281L1517,1346L1457,1301L1555,1098Z" style="fill:rgb(28,34,112);"/><path d="M483,1067L742,1276L1109,1375L1517,1346L1457,1301L667,1075L519,1048L483,1067Z" style="fill:rgb(28,34,112);"/><path d="M528,706L615,772L764,724L819,728L1488,934L1433,728L897,562L528,706Z" style="fill:rgb(28,34,112);"/></g><g><path d="M1065,324L1125,324L1433,728L1188,251L1074,86L1026,86L1065,324Z" style="fill:rgb(45,57,178);"/><path d="M1534,949L1488,934L1555,1098L1584,1055L1534,949Z" style="fill:rgb(45,57,178);"/><path d="M819,728L764,724L519,1048L667,1075L819,728Z" style="fill:rgb(45,57,178);"/><path d="M969,1888L1023,1888L1263,1771L1245,1756L899,1775L860,1798L969,1888Z" style="fill:rgb(45,57,178);"/></g><g><path d="M519,1048L483,1067L466,1003L466,986L497,810L764,724L519,1048Z" style="fill:rgb(156,192,255);"/><path d="M897,562L528,706L799,288L1026,86L1065,324L897,562Z" style="fill:rgb(156,192,255);"/></g><g><path d="M897,562L1065,324L1125,324L1433,728L897,562Z" style="fill:rgb(54,68,214);"/><path d="M667,1075L819,728L1488,934L1555,1098L1457,1301L667,1075Z" style="fill:rgb(54,68,214);"/><path d="M680,1259L899,1775L1245,1756L1385,1450L680,1259Z" style="fill:rgb(54,68,214);"/></g></g></g></svg>
+            <span class="wordmark">Obsidian</span>
+            <span class="serial" id="front-serial">OBS-0001</span>
+          </div>
+          <h2>Let's set up your box</h2>
+          <div class="qr-block">
+            <div class="qr" id="qr" role="img" aria-label="QR code that opens setup"></div>
+            <div class="qr-text">
+              <strong>Scan with your phone's camera</strong>
+              <span>or open this in a browser:</span>
+              <span class="address">obsidian.local</span>
+            </div>
+          </div>
+          <div class="code-block">
+            <span class="code-label">Your setup code</span>
+            <span class="code" id="front-code">7KQ4-M2XP-9WTD</span>
+          </div>
+          <p class="small">Use a phone or computer on the same home network as the box. Keep this card: the code is only needed once, at setup.</p>
+        </article>
+      </div>
+
+      <div class="side-wrap">
+        <span class="side-label">Back</span>
+        <article class="card back" aria-label="Card back">
+          <section>
+            <h3>Getting started</h3>
+            <ol class="steps">
+              <li>Connect the box to your router with the network cable, then plug in the power.</li>
+              <li>Give it about three minutes to start.</li>
+              <li>Scan the front of this card, or open obsidian.local, and follow the steps on screen.</li>
+            </ol>
+          </section>
+          <section>
+            <h3>Have these ready</h3>
+            <ul class="needs">
+              <li><b>A Plex account.</b> Free at plex.tv.</li>
+              <li><b>Your VPN account.</b> Mullvad, Proton VPN, NordVPN and others. Downloads only ever run through it.</li>
+              <li><b>A TMDB key.</b> Free at themoviedb.org, for titles and posters.</li>
+            </ul>
+          </section>
+          <section class="storage" id="storage-text"></section>
+          <div class="small">
+            <span class="help" id="help-text"></span>
+            <span>Obsidian manages the media you own.</span>
+          </div>
+        </article>
+      </div>
+    </div>
+  </div>
+</main>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const CODE = /^[A-HJKMNP-TV-Z2-9]{4}-[A-HJKMNP-TV-Z2-9]{4}-[A-HJKMNP-TV-Z2-9]{4}$/;
+const STORAGE = {
+  none: '<h3>Storage</h3><span>This box has no hard drives yet. <b>Slide a 3.5" hard drive into a bay before your first download</b>, then open Settings › Storage in Obsidian. Add more drives the same way as you need them: any size works.</span>',
+  '1x4': '<h3>Storage</h3><span>This box has one 4 TB drive. <b>To add space, slide another 3.5" hard drive into a free bay</b> and open Settings › Storage in Obsidian. Any size works.</span>',
+};
+
+// card.html#OBS-0001/7KQ4-M2XP-9WTD, as provision.py prints it.
+function fromLink() {
+  const [serial, code] = decodeURIComponent(location.hash.slice(1)).split('/');
+  if (serial) $('serial').value = serial;
+  if (code) $('code').value = code;
+}
+
+function tidyCode(raw) {
+  const plain = raw.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 12);
+  return plain.match(/.{1,4}/g)?.join('-') ?? '';
+}
+
+function drawQR(text) {
+  const box = $('qr');
+  if (typeof qrcode !== 'function') {
+    box.textContent = 'QR code needs an internet connection to draw.';
+    return;
+  }
+  const qr = qrcode(0, 'M');
+  qr.addData(text);
+  qr.make();
+  box.innerHTML = qr.createSvgTag({ cellSize: 4, margin: 0, scalable: true });
+}
+
+function render() {
+  const code = tidyCode($('code').value);
+  const valid = CODE.test(code);
+  $('code-note').textContent = valid ? 'From the factory script.' : 'Twelve letters and numbers, like 7KQ4-M2XP-9WTD.';
+  $('code-note').classList.toggle('bad', !valid);
+  $('front-serial').textContent = $('serial').value.trim();
+  $('front-code').textContent = code || 'XXXX-XXXX-XXXX';
+  drawQR(`http://obsidian.local/#/?code=${code}`);
+  $('storage-text').innerHTML = STORAGE[$('storage').value];
+  const help = $('help').value.trim();
+  $('help-text').textContent = help ? `Help: ${help}` : '';
+  try { localStorage.setItem('obsidian-card-help', help); } catch {}
+}
+
+fromLink();
+try { $('help').value = localStorage.getItem('obsidian-card-help') ?? ''; } catch {}
+$('code').addEventListener('blur', () => { $('code').value = tidyCode($('code').value); render(); });
+$('card-form').addEventListener('input', render);
+$('card-form').addEventListener('submit', (e) => e.preventDefault());
+window.addEventListener('hashchange', () => { fromLink(); render(); });
+render();
+</script>
+</body>
+</html>

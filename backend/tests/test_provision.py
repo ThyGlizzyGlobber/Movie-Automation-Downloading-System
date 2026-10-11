@@ -188,6 +188,7 @@ def test_a_fresh_box_is_provisioned_end_to_end(factory):
     assert json.loads(record.read_text()) == card
     assert (record.stat().st_mode & 0o777) == 0o600
     assert card["setup_link"] == f"http://obsidian.local/#/?code={card['setup_code']}"
+    assert card["card"] == f"card.html#OBS-0001/{card['setup_code']}"
 
 
 def test_plex_gets_the_gpu_when_the_box_has_one(factory):
