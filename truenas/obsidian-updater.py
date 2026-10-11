@@ -13,6 +13,11 @@ next run this picks the request up and, in one go:
   3. if it doesn't, puts the previous images back and leaves a note asking
      the old version to restore the database copy as it starts
 
+On a box (truenas/obsidian-box.yaml) it also applies the buyer's VPN
+details, entered in the app and left as `updater/vpn-request.json`: checked
+again here, written into the gluetun service's settings, and the request
+deleted, so the secrets end up only in TrueNAS's root-only app config.
+
 It talks to TrueNAS through its local socket, as `midclt` does, so it needs
 no user and no API key, and the app never holds one. Each step is written to
 `updater/state.json` before it's taken, for the Updates page and for a run
@@ -34,7 +39,10 @@ Standard library only, so it runs on TrueNAS's own Python with nothing added.
 """
 
 import argparse
+import base64
+import binascii
 import fcntl
+import ipaddress
 import json
 import os
 import re
@@ -47,7 +55,7 @@ import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
 
-SCRIPT_VERSION = 2
+SCRIPT_VERSION = 3
 IMAGE_NAMES = ("obsidian-backend", "obsidian-frontend")
 IMAGE_PREFIX = "ghcr.io/thyglizzyglobber/"
 CRON_DESCRIPTION = "Obsidian updater (installs updates requested in the app)"
@@ -58,6 +66,37 @@ MAX_FILE_BYTES = 64 * 1024
 LOG_BYTES = 1024 * 1024
 
 _VERSION = re.compile(r"^\d+\.\d+\.\d+$")
+
+# The VPN providers a box can use and what each connection needs: the same
+# table as the app's (backend/app/vpn.py), checked against again here, since
+# this runs as root and the request comes from a folder the app can write.
+VPN_PROVIDERS = {
+    "mullvad": {"wireguard": ["private_key", "addresses"]},
+    "protonvpn": {"wireguard": ["private_key"], "openvpn": ["user", "password"]},
+    "nordvpn": {"openvpn": ["user", "password"], "wireguard": ["private_key"]},
+    "surfshark": {"wireguard": ["private_key", "addresses"], "openvpn": ["user", "password"]},
+    "private internet access": {"openvpn": ["user", "password"]},
+    "ivpn": {"wireguard": ["private_key", "addresses"]},
+    "windscribe": {"wireguard": ["private_key", "addresses", "preshared_key"]},
+    "airvpn": {"wireguard": ["private_key", "addresses", "preshared_key"]},
+    "expressvpn": {"openvpn": ["user", "password"]},
+    "custom": {"wireguard": ["private_key", "addresses", "public_key", "endpoint_ip", "endpoint_port"]},
+}
+VPN_OPTIONAL = {"preshared_key", "server_countries"}
+VPN_ENV = {
+    "private_key": "WIREGUARD_PRIVATE_KEY",
+    "public_key": "WIREGUARD_PUBLIC_KEY",
+    "preshared_key": "WIREGUARD_PRESHARED_KEY",
+    "addresses": "WIREGUARD_ADDRESSES",
+    "endpoint_ip": "WIREGUARD_ENDPOINT_IP",
+    "endpoint_port": "WIREGUARD_ENDPOINT_PORT",
+    "user": "OPENVPN_USER",
+    "password": "OPENVPN_PASSWORD",
+    "server_countries": "SERVER_COUNTRIES",
+}
+# Every gluetun setting this manages; the rest of gluetun's are left alone.
+VPN_MANAGED = set(VPN_ENV.values()) | {"VPN_SERVICE_PROVIDER", "VPN_TYPE"}
+GLUETUN_IMAGE = "qmcgaw/gluetun:"
 _BACKUP = re.compile(r"^obsidian-[A-Za-z0-9.-]+\.db$")
 
 
@@ -193,6 +232,59 @@ def site_url(compose: dict, prefix: str) -> str:
             if len(parts) >= 2 and parts[-1] == "80":
                 return f"http://127.0.0.1:{parts[-2]}"
     raise RuntimeError("couldn't find the frontend's published port in the app")
+
+
+def vpn_env(request: dict) -> dict[str, str]:
+    """gluetun's settings for a VPN request, or ValueError. Every value is
+    checked for its shape: keys are 32 bytes of base64, addresses parse,
+    names and passwords have no control characters."""
+    provider, kind = request.get("provider"), request.get("type")
+    fields = (VPN_PROVIDERS.get(provider) or {}).get(kind)
+    if fields is None:
+        raise ValueError(f"not a provider and connection this box can use: {provider!r} {kind!r}")
+    env = {"VPN_SERVICE_PROVIDER": provider, "VPN_TYPE": kind}
+    for field in fields + ["server_countries"]:
+        value = request.get(field)
+        if value in (None, ""):
+            if field in VPN_OPTIONAL:
+                continue
+            raise ValueError(f"missing {field}")
+        if not isinstance(value, str) or len(value) > 256 or any(ord(c) < 32 for c in value):
+            raise ValueError(f"{field} isn't text this can use")
+        if field in ("private_key", "public_key", "preshared_key"):
+            try:
+                if len(base64.b64decode(value, validate=True)) != 32:
+                    raise ValueError
+            except (binascii.Error, ValueError):
+                raise ValueError(f"{field} isn't a WireGuard key") from None
+        elif field == "addresses":
+            for part in value.split(","):
+                ipaddress.ip_interface(part)
+        elif field == "endpoint_ip":
+            ipaddress.ip_address(value)
+        elif field == "endpoint_port":
+            if not value.isdigit() or not 0 < int(value) < 65536:
+                raise ValueError("endpoint_port isn't a port")
+        elif field == "server_countries":
+            if not re.fullmatch(r"[A-Za-z][A-Za-z ,.'-]{0,199}", value):
+                raise ValueError("server_countries isn't a list of countries")
+        env[VPN_ENV[field]] = value
+    return env
+
+
+def with_vpn(compose: dict, env: dict[str, str]) -> dict:
+    """The app's config with gluetun's VPN settings replaced by `env`; every
+    other gluetun setting kept."""
+    moved = json.loads(json.dumps(compose))
+    for service in (moved.get("services") or {}).values():
+        if isinstance(service, dict) and str(service.get("image", "")).startswith(GLUETUN_IMAGE):
+            current = service.get("environment") or {}
+            if isinstance(current, list):
+                current = dict(str(item).split("=", 1) if "=" in str(item) else (str(item), "") for item in current)
+            kept = {k: v for k, v in current.items() if k not in VPN_MANAGED}
+            service["environment"] = {**kept, **env}
+            return moved
+    raise RuntimeError("this app has no VPN (gluetun) service")
 
 
 def bind_sources(compose: dict) -> list[str]:
@@ -342,6 +434,10 @@ class Updater:
                 self.recover(state)
             elif state.get("state") == "queued":
                 self.finish("failed", "The update request went missing before it started. Try again.")
+            vpn_request = self.folder.read("vpn-request.json")
+            if vpn_request is not None:
+                self.folder.remove("vpn-request.json")  # claimed; it holds secrets, so gone either way
+                self.apply_vpn(vpn_request)
         finally:
             self.folder.close()
 
@@ -410,6 +506,30 @@ class Updater:
             self.finish("rolled_back", f"{reason}, so Obsidian went back to {previous}.")
         else:
             self.finish("failed", f"{reason}. Going back to {previous} didn't come up either.")
+
+    def apply_vpn(self, request: dict) -> None:
+        about = {
+            "provider": request.get("provider") if request.get("provider") in VPN_PROVIDERS else None,
+            "type": request.get("type") if request.get("type") in ("wireguard", "openvpn") else None,
+            "server_countries": request.get("server_countries") if isinstance(request.get("server_countries"), str) else None,
+        }
+
+        def vpn_state(state: str, message: str) -> None:
+            self.log(f"vpn {state}: {message}")
+            self.folder.write("vpn-state.json", {"state": state, **about, "message": message, "at": now_iso()})
+
+        try:
+            env = vpn_env(request)
+        except ValueError as exc:
+            vpn_state("failed", f"Those VPN details couldn't be used ({exc}).")
+            return
+        vpn_state("applying", "Applying the VPN details.")
+        try:
+            self.mw.app_update(self.app, with_vpn(self.mw.app_config(self.app), env))
+        except Exception as exc:  # noqa: BLE001
+            vpn_state("failed", f"TrueNAS couldn't apply the VPN details: {_reason(exc)}")
+            return
+        vpn_state("applied", "Applied. The VPN connects within a minute.")
 
     def recover(self, state: dict) -> None:
         """A run that ended mid-update — the NAS restarted, say."""

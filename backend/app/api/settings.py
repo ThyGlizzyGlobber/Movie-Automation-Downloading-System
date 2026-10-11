@@ -181,7 +181,7 @@ def set_tv_settings(body: TVScheduleSettingsIn, store: RequestStore = Depends(ge
 
 @admin_router.put("/api/settings/tmdb")
 def update_tmdb_settings(request: Request, body: SetupTmdbRequest, store: RequestStore = Depends(get_store)) -> dict:
-    result = _update_tmdb_key(body, store)
+    result = _update_tmdb_key(body, store, request.app.state)
     store.record_auth_event("tmdb_key_changed", ip_address=_client_ip(request))
     return result
 
@@ -193,7 +193,7 @@ def test_qbt_settings(body: SetupQbtRequest) -> dict:
 
 @admin_router.put("/api/settings/qbittorrent")
 def update_qbt_settings(request: Request, body: SetupQbtRequest, store: RequestStore = Depends(get_store)) -> dict:
-    result = _update_qbt_connection(body, store)
+    result = _update_qbt_connection(body, store, request.app.state)
     store.record_auth_event("qbt_connection_changed", ip_address=_client_ip(request))
     return result
 

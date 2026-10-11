@@ -1681,11 +1681,15 @@ class RequestStore(StoreSchema):
         admin slot before the real admin does. Persisted in the settings
         table rather than regenerated per-process, so it survives a
         `--reload` restart during development and stays valid for as long
-        as setup remains incomplete, however long that takes."""
+        as setup remains incomplete, however long that takes.
+
+        A box ships with its own code, printed on the card in its box
+        (truenas/provision.py makes it and passes it as SETUP_CODE); that's
+        the code from the first boot on. Anywhere else it's made here."""
         settings = self.get_settings()
         token = settings.get("setup_token")
         if not token:
-            token = secrets.token_urlsafe(32)
+            token = os.environ.get("SETUP_CODE") or secrets.token_urlsafe(32)
             self.update_settings({"setup_token": token})
         return token
 

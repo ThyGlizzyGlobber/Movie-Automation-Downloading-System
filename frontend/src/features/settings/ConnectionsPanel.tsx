@@ -18,7 +18,7 @@ function TmdbSection({ envConfigured }: { envConfigured: boolean }) {
     setResult(null)
     try {
       await updateTmdbSettings(apiKey.trim())
-      setResult({ ok: true, message: 'Saved. Restart Obsidian to start using it.' })
+      setResult({ ok: true, message: 'Saved. Obsidian is using it now.' })
       setApiKey('')
     } catch (err) {
       setResult({ ok: false, message: err instanceof ApiError ? err.message : 'Something went wrong.' })
@@ -90,8 +90,13 @@ function QbittorrentSection({ envConfigured }: { envConfigured: boolean }) {
     setSaving(true)
     setSaveResult(null)
     try {
-      await updateQbtSettings(body)
-      setSaveResult({ ok: true, message: 'Saved. Restart Obsidian to start using it.' })
+      const result = await updateQbtSettings(body)
+      setSaveResult({
+        ok: true,
+        message: result.restart_required
+          ? 'Saved. Restart Obsidian to start using it.'
+          : 'Saved. Obsidian connects to it within a few seconds.',
+      })
     } catch (err) {
       setSaveResult({ ok: false, message: err instanceof ApiError ? err.message : 'Something went wrong.' })
     } finally {

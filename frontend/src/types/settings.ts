@@ -78,13 +78,15 @@ export interface LinkedPlexServer {
 export interface TmdbSettingsResult {
   tmdb_configured: boolean
   tmdb_source: 'db'
-  restart_required: true
+  // Never, now: a saved key is put straight into the running client.
+  restart_required: boolean
 }
 
 export interface QbtSettingsResult {
   qbt_configured: boolean
   qbt_source: 'db'
-  restart_required: true
+  // Only when changing a connection that's already in use.
+  restart_required: boolean
 }
 
 // GET /api/admin/activity (Part D) — mirrors api.py's RequesterStat/

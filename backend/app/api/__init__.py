@@ -37,6 +37,7 @@ from app.api import (  # noqa: F401
     recommendations,
     system,
     updates,
+    vpn,
 )
 
 # Wires the default-deny routers onto the app — see this package's

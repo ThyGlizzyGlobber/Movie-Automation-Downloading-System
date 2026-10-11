@@ -212,6 +212,34 @@ key, nothing built on the box. Targets TrueNAS 25.10 (Goldeye).
 It follows the `stable` channel. Change both image lines to `:beta` to follow every push
 to `main` instead, or to a version (`:1.1.0`) to pin one.
 
+### Option D — An Obsidian box
+
+What a box ships with: [`truenas/obsidian-box.yaml`](truenas/obsidian-box.yaml), one app
+holding Obsidian, qBittorrent, Plex and Gluetun. qBittorrent has no network of its own:
+it reaches the internet only through the buyer's VPN, and with no VPN, nothing.
+[`truenas/provision.py`](truenas/provision.py) builds a box from a fresh TrueNAS 25.10
+install with a pool:
+
+```bash
+python3 provision.py --pool tank --serial OBS-0001
+```
+
+Run it as root in the TrueNAS shell, with `obsidian-box.yaml` and `obsidian-updater.py`
+beside it. It:
+- names the box so it answers at http://obsidian.local, and moves TrueNAS's own page to
+  port 8080;
+- caps ZFS's memory cache;
+- creates the datasets and permissions;
+- makes the box's setup code and other secrets;
+- installs the app and the updater.
+
+At the end it prints what goes on the box's card: the address, the setup code, and the link
+for its QR code. It keeps the same in a root-only `provisioned.json`. A run that stopped
+partway can simply be run again.
+
+The buyer then opens http://obsidian.local, or scans the QR code, and the setup wizard
+takes them through their setup code, a TMDB key, their VPN, and Plex.
+
 #### Moving a git-pull install onto release images
 
 [`truenas/switch-to-release.py`](truenas/switch-to-release.py) moves an Option B install onto

@@ -36,6 +36,9 @@ export interface LoginStatusResponse {
 }
 
 export interface SetupStatus {
+  // A box has its own VPN, set up in the wizard (backend/app/vpn.py).
+  vpn_managed: boolean
+  vpn_configured: boolean
   tmdb_configured: boolean
   tmdb_source: 'env' | 'db' | null
   qbt_configured: boolean
@@ -50,7 +53,7 @@ export interface SetupStatus {
 }
 
 export interface SetupMutationResult {
-  restart_required: true
+  restart_required: boolean
 }
 
 export interface PlexServerSummary {

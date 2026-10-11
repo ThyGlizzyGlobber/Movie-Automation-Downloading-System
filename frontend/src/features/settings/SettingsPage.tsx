@@ -1,4 +1,6 @@
 import { useEffect, useState } from 'react'
+import { useQuery } from '@tanstack/react-query'
+import { getVpn } from '../../api/vpn'
 import { useMediaQuery } from '../../lib/hooks'
 import { usePageTitle } from '../../lib/chrome'
 import SettingsNav, { SETTINGS_SECTIONS } from './SettingsNav'
@@ -15,6 +17,7 @@ import UpdatesPanel from './UpdatesPanel'
 import StoragePanel from './StoragePanel'
 import HouseholdPanel from './HouseholdPanel'
 import AboutPanel from './AboutPanel'
+import VpnPanel from './VpnPanel'
 import './SettingsPage.css'
 import Icon from '../../components/ui/Icon'
 
@@ -34,6 +37,8 @@ function renderPanel(key: string, jump: (key: string) => void) {
       return <StoragePanel />
     case 'connections':
       return <ConnectionsPanel />
+    case 'vpn':
+      return <VpnPanel />
     case 'plex':
       return <PlexServerPanel />
     case 'remote-access':
@@ -63,6 +68,9 @@ export default function SettingsPage() {
   usePageTitle('Settings')
   const isDesktop = useMediaQuery('(min-width: 860px)')
   const [section, setSection] = useState<string | null>(() => sectionFromHash())
+  // VPN is a box's: listed only where there is one.
+  const vpn = useQuery({ queryKey: ['vpn'], queryFn: getVpn })
+  const hidden = vpn.data?.managed ? [] : ['vpn']
 
   useEffect(() => {
     function onHash() {
@@ -85,7 +93,7 @@ export default function SettingsPage() {
       <div className="settings-page">
         <div className="settings-shell">
           <div className="settings-nav-col">
-            <SettingsNav active={current} onSelect={jump} />
+            <SettingsNav active={current} onSelect={jump} hidden={hidden} />
           </div>
           <div className="settings-panel-col">
             <section className="settings-section" key={current}>
@@ -100,7 +108,7 @@ export default function SettingsPage() {
   return (
     <div className="settings-shell">
       <div className={`settings-nav-col${section ? ' settings-hide-mobile' : ''}`}>
-        <SettingsNav active={section} onSelect={jump} />
+        <SettingsNav active={section} onSelect={jump} hidden={hidden} />
       </div>
       <div className={`settings-panel-col${!section ? ' settings-hide-mobile' : ''}`}>
         {section && (

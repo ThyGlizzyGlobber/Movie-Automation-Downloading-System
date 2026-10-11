@@ -1,0 +1,61 @@
+/* The VPN form, in the setup wizard and in Settings. The inputs there are
+   styled per page; selects and the WireGuard file's textarea are only used
+   here, so they're matched to those inputs here. */
+.setup-field select,
+.setup-field textarea {
+  padding: 12px 14px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--glass-border);
+  background: var(--glass);
+  color: var(--text);
+  font-size: 15px;
+  font-family: inherit;
+}
+.settings-field textarea {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 10px 14px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: var(--text);
+  font-size: 13px;
+}
+.vpn-form textarea {
+  font-family: var(--font-mono);
+  resize: vertical;
+}
+.vpn-hint {
+  margin-bottom: 14px;
+}
+
+.vpn-status {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 12px 14px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: var(--bg-elevated);
+  color: var(--text);
+  font-size: 14px;
+  line-height: 1.45;
+  margin-bottom: 16px;
+}
+.vpn-status-dot {
+  flex: none;
+  width: 9px;
+  height: 9px;
+  margin-top: 6px;
+  border-radius: 50%;
+}
+.vpn-status.ok .vpn-status-dot {
+  background: var(--status-complete);
+}
+.vpn-status.wait .vpn-status-dot {
+  background: var(--accent);
+  animation: pulse 1.4s ease-in-out infinite;
+}
+.vpn-status.bad .vpn-status-dot {
+  background: var(--status-failed);
+}

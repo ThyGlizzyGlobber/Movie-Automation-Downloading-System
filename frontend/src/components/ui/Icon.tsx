@@ -47,6 +47,7 @@ const GLYPHS = {
   plug: <path d="M9 2.5v5M15 2.5v5M6 7.5h12v3a6 6 0 0 1-12 0zM12 16.5v5" />,
   server: <><rect x="3" y="3.5" width="18" height="7" rx="2" /><rect x="3" y="13.5" width="18" height="7" rx="2" /><path d="M7 7h.3M7 17h.3" /></>,
   lock: <><rect x="4" y="10.5" width="16" height="10.5" rx="2.5" /><path d="M8 10.5V7a4 4 0 0 1 8 0v3.5" /></>,
+  shield: <path d="M12 3 4.5 6v5.5c0 4.6 3.2 8.4 7.5 9.5 4.3-1.1 7.5-4.9 7.5-9.5V6z" />,
   chart: <path d="M4 20h16M6 16l4-5 4 3 5-7" />,
   refresh: <path d="M20 12a8 8 0 1 1-2.4-5.7M20 4v5h-5" />,
   plex: <path d="M6 3h6l6 9-6 9H6l6-9z" />,

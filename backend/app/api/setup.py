@@ -4,9 +4,10 @@ and the TMDB/qBittorrent helpers Settings' Connections panel reuses."""
 from fastapi import Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 
-from app import config
+from app import config, vpn
 from app.db import RequestStore
 from app.qbt import QBTClient
+from app.tmdb import TMDBClient
 from app.api.deps import get_store, limiter, require_setup_token
 from app.api.main import app
 
@@ -42,6 +43,10 @@ def setup_status(store: RequestStore = Depends(get_store)) -> dict:
     plex_account_linked = bool(settings.get("plex_token"))
     setup_complete = store.primary_plex_server() is not None
     return {
+        # A box has its own VPN, set up in the wizard (app/vpn.py). Whether
+        # it's been applied, never what with.
+        "vpn_managed": vpn.managed(),
+        "vpn_configured": bool(vpn.applied().get("state") == "applied"),
         "tmdb_configured": bool(config.resolve_tmdb_api_key(store)),
         "tmdb_source": config.tmdb_api_key_source(store),
         "qbt_configured": qbt_configured,
@@ -56,11 +61,13 @@ class SetupTmdbRequest(BaseModel):
     api_key: str = Field(min_length=1)
 
 
-def _update_tmdb_key(body: SetupTmdbRequest, store: RequestStore) -> dict:
-    """Saves, but doesn't immediately apply — get_tmdb's own docstring in
-    app/api/deps.py explains why: it's resolved once at startup, not
-    per-request. `restart_required: true` is what the caller's UI uses to
-    tell the admin so, rather than implying this is live right away.
+def _update_tmdb_key(body: SetupTmdbRequest, store: RequestStore, app_state=None) -> dict:
+    """Saves the key and puts it straight into the TMDB client the app is
+    already running with. That one client is shared — the routes and the
+    background worker hold the same object — so changing its key is the
+    whole of applying it, with no restart (a buyer can't do one). Replacing
+    the client instead would leave the worker holding the old one.
+
     Shared by the one-time setup route and Settings' ongoing Connections
     panel (settings.py) — identical business rule, only the auth gate differs
     (setup token pre-bootstrap, admin session after), so each stays its
@@ -68,13 +75,16 @@ def _update_tmdb_key(body: SetupTmdbRequest, store: RequestStore) -> dict:
     if config.tmdb_api_key_source(store) == "env":
         raise HTTPException(status_code=409, detail="TMDB API key is already configured via environment variable")
     store.update_settings({"tmdb_api_key": body.api_key})
-    return {"tmdb_configured": True, "tmdb_source": "db", "restart_required": True}
+    client = getattr(app_state, "tmdb", None)
+    if isinstance(client, TMDBClient):
+        client.api_key = body.api_key
+    return {"tmdb_configured": True, "tmdb_source": "db", "restart_required": False}
 
 
 @app.put("/api/setup/tmdb", dependencies=[Depends(require_setup_token)])
 @limiter.limit("20/minute")
 def setup_tmdb(request: Request, body: SetupTmdbRequest, store: RequestStore = Depends(get_store)) -> dict:
-    return _update_tmdb_key(body, store)
+    return _update_tmdb_key(body, store, request.app.state)
 
 
 class SetupQbtRequest(BaseModel):
@@ -98,9 +108,12 @@ def setup_qbt_test(request: Request, body: SetupQbtRequest) -> dict:
     return _test_qbt_connection(body)
 
 
-def _update_qbt_connection(body: SetupQbtRequest, store: RequestStore) -> dict:
-    """Same "saved, not immediately applied" note as _update_tmdb_key
-    above, and the same shared-helper reasoning."""
+def _update_qbt_connection(body: SetupQbtRequest, store: RequestStore, app_state=None) -> dict:
+    """Saves the connection. Before qBittorrent was ever reached, that's
+    applied within ten seconds by itself: main.py keeps retrying with
+    whatever settings are saved. Changing one that's already connected
+    still takes a restart to apply. Same shared-helper reasoning as
+    _update_tmdb_key above."""
     if config.qbt_config_source(store) == "env":
         raise HTTPException(
             status_code=409, detail="qBittorrent connection is already configured via environment variables"
@@ -108,10 +121,11 @@ def _update_qbt_connection(body: SetupQbtRequest, store: RequestStore) -> dict:
     store.update_settings(
         {"qbt_host": body.host, "qbt_port": body.port, "qbt_username": body.username, "qbt_password": body.password}
     )
-    return {"qbt_configured": True, "qbt_source": "db", "restart_required": True}
+    connected = getattr(app_state, "qbt", None) is not None
+    return {"qbt_configured": True, "qbt_source": "db", "restart_required": connected}
 
 
 @app.put("/api/setup/qbittorrent", dependencies=[Depends(require_setup_token)])
 @limiter.limit("20/minute")
 def setup_qbt(request: Request, body: SetupQbtRequest, store: RequestStore = Depends(get_store)) -> dict:
-    return _update_qbt_connection(body, store)
+    return _update_qbt_connection(body, store, request.app.state)

@@ -1,0 +1,134 @@
+# The Obsidian box: everything a box ships with, as one TrueNAS Custom App.
+# truenas/provision.py fills in the placeholders and installs it; it isn't
+# meant to be pasted by hand. (truenas/obsidian-release.yaml is Obsidian on
+# its own, for a NAS that already has qBittorrent and Plex.)
+#
+#   frontend     the site, on the box's standard web port: http://obsidian.local
+#   backend      Obsidian itself
+#   gluetun      the VPN. qBittorrent has no network of its own: it shares
+#                this container's, whose firewall lets nothing out except
+#                through the VPN tunnel (DNS included). No tunnel, no
+#                internet for qBittorrent — never a fallback to the plain
+#                connection. The buyer's own VPN provider and details are
+#                set from the app; until then qBittorrent simply can't
+#                reach anything.
+#   qbittorrent  downloads, reached by the backend at gluetun:8080
+#   plex         Plex Media Server, on the host's network so it's found and
+#                claimed like any Plex server on the LAN
+#
+# Everything shares one media dataset, mounted at /media everywhere:
+# downloads land in /media/downloads and are hardlinked into /media/Movies
+# and /media/TV Shows, which needs them on one filesystem — so they're one
+# dataset, with no path translation between containers.
+#
+# Image versions are pinned. Obsidian's own two move with updates (the
+# updater rewrites those lines); the others change only with a release that
+# ships a new copy of this file.
+
+services:
+  frontend:
+    image: ghcr.io/thyglizzyglobber/obsidian-frontend:<CHANNEL>
+    ports:
+      - "80:80"
+    volumes:
+      - "tmdb-cache:/var/cache/nginx/tmdb"
+      - "<DATA_PATH>:/srv/backend-data:ro"
+    depends_on:
+      - backend
+    mem_limit: 256m
+    restart: unless-stopped
+
+  backend:
+    image: ghcr.io/thyglizzyglobber/obsidian-backend:<CHANNEL>
+    environment:
+      TRAILER_X_ACCEL_PREFIX: "/internal-trailers/"
+      MOVIE_LIBRARY_ROOT: "/media/Movies"
+      TV_LIBRARY_ROOT: "/media/TV Shows"
+      # qBittorrent listens inside gluetun's network, so it's reached by
+      # gluetun's name. The password is made per box by provision.py.
+      QBIT_HOST: "gluetun"
+      QBIT_PORT: "8080"
+      QBIT_USERNAME: "admin"
+      QBIT_PASSWORD: "<QBIT_PASSWORD>"
+      # Where the VPN reports whether its tunnel is up (app/vpn.py). Set,
+      # this is also what gives the app its VPN settings and setup step.
+      GLUETUN_URL: "http://gluetun:8000"
+      GLUETUN_API_KEY: "<GLUETUN_API_KEY>"
+      # The setup code printed on this box's card (provision.py makes it).
+      # Only good for first-run setup, and only from the home network.
+      SETUP_CODE: "<SETUP_CODE>"
+      TZ: "<TZ>"
+    volumes:
+      - "<DATA_PATH>:/app/data"
+      - "<MEDIA_PATH>:/media"
+    # No `ports:`, ever: nginx in the frontend is the only way in.
+    expose:
+      - "8000"
+    mem_limit: 2g
+    restart: unless-stopped
+
+  gluetun:
+    image: qmcgaw/gluetun:v3.41.3
+    cap_add:
+      - NET_ADMIN
+    devices:
+      - "/dev/net/tun:/dev/net/tun"
+    environment:
+      # The VPN itself (VPN_SERVICE_PROVIDER, VPN_TYPE and the provider's
+      # details) is entered in the app and written in here by the NAS
+      # updater. Until then gluetun can't connect, and qBittorrent, with no
+      # network but this one, has no way out.
+      #
+      # Lets the backend reach qBittorrent's WebUI and gluetun's own status
+      # from this app's network. Inbound only: nothing goes out past the
+      # tunnel.
+      FIREWALL_INPUT_PORTS: "8080,8000"
+      # gluetun's status needs this key (made per box); only the backend has it.
+      HTTP_CONTROL_SERVER_AUTH_DEFAULT_ROLE: '{"auth":"apikey","apikey":"<GLUETUN_API_KEY>"}'
+      TZ: "<TZ>"
+    volumes:
+      - "<GLUETUN_PATH>:/gluetun"
+    expose:
+      - "8080"
+      - "8000"
+    mem_limit: 256m
+    restart: unless-stopped
+
+  qbittorrent:
+    image: lscr.io/linuxserver/qbittorrent:5.2.4_v2.0.15-ls479
+    # The whole point: no network of its own. Everything it sends goes
+    # through gluetun, and stops when the tunnel does.
+    network_mode: "service:gluetun"
+    depends_on:
+      - gluetun
+    environment:
+      PUID: "568"
+      PGID: "568"
+      UMASK: "002"
+      WEBUI_PORT: "8080"
+      TZ: "<TZ>"
+    volumes:
+      # Seeded by provision.py: the WebUI password, downloads into
+      # /media/downloads, and bound to the tunnel's interface (tun0) as a
+      # second lock behind gluetun's firewall.
+      - "<QBIT_CONFIG_PATH>:/config"
+      - "<MEDIA_PATH>:/media"
+    mem_limit: 2g
+    restart: unless-stopped
+
+  plex:
+    image: plexinc/pms-docker:1.43.4.10903-e5521bd8c
+    network_mode: host
+    environment:
+      PLEX_UID: "568"
+      PLEX_GID: "568"
+      TZ: "<TZ>"
+    volumes:
+      - "<PLEX_CONFIG_PATH>:/config"
+      - "<MEDIA_PATH>:/media:ro"
+    # provision.py adds /dev/dri here when the box has an Intel or AMD GPU,
+    # for hardware transcoding (a Plex Pass feature).
+    restart: unless-stopped
+
+volumes:
+  tmdb-cache:
