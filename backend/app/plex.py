@@ -23,7 +23,7 @@ import logging
 from pathlib import Path
 import requests
 
-from app import box_plex, updates
+from app import box_plex, drives, updates
 from app.cache import TTLCache
 from app.db_rows import PlexServerRow
 from app.language import audio_quality_key, is_audio_language
@@ -824,9 +824,9 @@ class PlexLinker:
         than undoing a sign-in that worked."""
         self._stage = "libraries"
         try:
-            made = await asyncio.to_thread(box_plex.ensure_libraries, server["url"], server["token"])
-            if made:
-                logger.info("created Plex libraries on the box: %s", ", ".join(made))
+            changes = await asyncio.to_thread(box_plex.sync_libraries, server["url"], server["token"])
+            if changes:
+                logger.info("Plex libraries on the box: %s", "; ".join(changes))
         except Exception:  # noqa: BLE001
             logger.exception("couldn't create the box's Plex libraries")
         finally:
@@ -1290,18 +1290,17 @@ def local_file_for_title(
     may mount the same library at different paths. None when Plex has
     no file, or it can't be found from here — nothing is ever deleted
     on a guess."""
-    from app import config  # late: config reads library roots at call time
-
     paths = plex_title_files(store, server, media_type, title, year, tmdb_id)
     if not paths:
         return None
-    root = config.MOVIE_LIBRARY_ROOT if media_type == "movie" else config.TV_LIBRARY_ROOT
+    roots = drives.library_roots("movie" if media_type == "movie" else "tv")
     for raw in paths:
         candidate = Path(raw)
         if candidate.is_file():
             return candidate
-        if root.is_dir():
-            for found in root.rglob(candidate.name):
-                if found.is_file():
-                    return found
+        for root in roots:
+            if root.is_dir():
+                for found in root.rglob(candidate.name):
+                    if found.is_file():
+                        return found
     return None

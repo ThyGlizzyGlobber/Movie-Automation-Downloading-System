@@ -97,12 +97,13 @@ had no automatic organize step at all — `organize_movie()` was Stage
 import asyncio
 
 import dataclasses
+import json
 import logging
 import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from app import config, plex, reconcile
+from app import box_plex, config, drives, plex, reconcile
 from app.db import FAILURE_STATUSES, NON_TERMINAL_STATUSES, RequestStore, ShowEpisodeRow, ShowRow
 from app.media_organizer import (
     MediaOrganizerError,
@@ -137,6 +138,11 @@ logger = logging.getLogger("app.worker")
 
 # Pipeline statuses that map directly onto a terminal request status of the
 # same name; anything else falls through to "failed" (see _run_one).
+# How often a box with no drive yet looks again before taking a request.
+NO_DRIVE_RECHECK_SECONDS = 30
+# How often a box checks Plex's libraries still list every drive.
+BOX_LIBRARIES_INTERVAL_SECONDS = 60
+
 _DIRECT_TERMINAL_STATUSES = {"no qualifying results", "insufficient free space"}
 
 # How long a "downloading" row with no torrent on record gets to turn up
@@ -305,6 +311,8 @@ class Worker:
             asyncio.create_task(self._watch_source_cleanup(), name="worker-source-cleanup"),
             asyncio.create_task(self._watch_orphaned_downloads(), name="worker-orphan-sweep"),
         ]
+        if box_plex.managed():
+            self._tasks.append(asyncio.create_task(self._watch_box_libraries(), name="worker-box-libraries"))
 
     async def stop(self) -> None:
         for task in self._tasks:
@@ -320,9 +328,15 @@ class Worker:
         """One consumer. `start()` runs SEARCH_CONCURRENCY of these, so
         several requests are searched at once; the semaphore is what
         actually bounds it, since the recheck loop draws on the same
-        slots."""
+        slots.
+
+        On a box with no drive yet there's nowhere to download to, so a
+        request waits, still queued, and goes ahead once a drive is added
+        (app/drives.py)."""
         while True:
             request_id = await self.queue.get()
+            while not await asyncio.to_thread(drives.ready):
+                await asyncio.sleep(NO_DRIVE_RECHECK_SECONDS)
             self._pending.discard(request_id)
             async with self._search_slots:
                 await self._run_one(request_id)
@@ -1103,8 +1117,35 @@ class Worker:
             except Exception:
                 logger.exception("orphan sweep cycle failed")
 
+    async def _watch_box_libraries(self) -> None:
+        """On a box: keeps Plex's Movies and TV Shows listing every drive,
+        so a drive added from Settings › Storage shows up in Plex by itself
+        (app/box_plex.py). Only does anything when the drives have changed
+        since the last time Plex was told."""
+        while True:
+            await asyncio.sleep(BOX_LIBRARIES_INTERVAL_SECONDS)
+            try:
+                await self._sync_box_libraries()
+            except Exception:
+                logger.exception("couldn't bring Plex's libraries up to date with the drives")
+
+    async def _sync_box_libraries(self) -> list[str]:
+        server = await asyncio.to_thread(self.store.primary_plex_server)
+        if server is None:
+            return []
+        folders = await asyncio.to_thread(box_plex.wanted_folders)
+        signature = json.dumps(folders, sort_keys=True)
+        settings = await asyncio.to_thread(self.store.get_settings)
+        if settings.get("box_plex_folders") == signature:
+            return []
+        changes = await asyncio.to_thread(box_plex.sync_libraries, server.url, server.token, folders)
+        await asyncio.to_thread(self.store.update_settings, {"box_plex_folders": signature})
+        if changes:
+            logger.info("Plex libraries on the box: %s", "; ".join(changes))
+        return changes
+
     async def _sweep_orphaned_downloads(self) -> list[dict]:
-        roots = [str(config.MOVIE_LIBRARY_ROOT), str(config.TV_LIBRARY_ROOT)]
+        roots = [str(root) for root in drives.download_roots()]
         swept = await asyncio.to_thread(reconcile.remove_orphaned_download_dirs, self.store, roots, True)
         # Then the folders whose files were rewritten rather than linked
         # on the way in, which share no inode to match on. Separately

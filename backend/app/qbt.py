@@ -75,7 +75,7 @@ class QBTClient:
         if category not in self._client.torrents_categories():
             self._client.torrents_create_category(name=category)
 
-    def add_torrent(self, file_url: str, category: str) -> None:
+    def add_torrent(self, file_url: str, category: str, save_path: str | None = None) -> None:
         """`torrents_add` reports its outcome two different ways depending
         on server version: a plain "Ok."/"Fails." string (older), or
         richer per-torrent metadata for WebAPI 2.14+ — {added_torrent_ids,
@@ -93,7 +93,11 @@ class QBTClient:
         real successes — whether a pending add actually lands is verified
         for real by pipeline.py's `_capture_new_hashes` retry loop, not
         synchronously here."""
-        result = self._client.torrents_add(urls=file_url, category=category)
+        # A box names the drive to save on (app/drives.py). Automatic
+        # torrent management would move it to the category's own folder,
+        # so it's off for a torrent given a path.
+        placement = {"save_path": save_path, "use_auto_torrent_management": False} if save_path else {}
+        result = self._client.torrents_add(urls=file_url, category=category, **placement)
         if isinstance(result, str):
             if result.strip() != "Ok.":
                 raise QBTError(f"qBittorrent rejected the add ({result!r}): {file_url}")

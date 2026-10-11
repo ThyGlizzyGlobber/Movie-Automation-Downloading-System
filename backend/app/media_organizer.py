@@ -28,7 +28,7 @@ from collections.abc import Callable
 from threading import Lock
 from pathlib import Path, PurePosixPath
 
-from app import config
+from app import config, drives
 from app.cache import TTLCache
 from app.language import audio_quality_key, is_audio_language
 from app.normalize import extract_episode_identity, has_token, normalize_text, tokenize
@@ -152,16 +152,18 @@ def find_existing_episode_file(show_identity: ShowIdentity, season: int, episode
     won't be found — a named, not-solved gap, same style as this project's
     others. Returns `None` (rather than raising) when the root doesn't
     exist at all — nothing local exercises the real mount, same as every
-    other `TV_LIBRARY_ROOT` caller."""
-    root = config.TV_LIBRARY_ROOT
-    if not root.is_dir():
-        return None
-    for path in root.rglob("*"):
-        if not path.is_file() or path.suffix.lower() not in config.VIDEO_EXTENSIONS:
+    other `TV_LIBRARY_ROOT` caller.
+
+    On a box, every drive's TV Shows folder is looked through (app/drives.py)."""
+    for root in drives.library_roots("tv"):
+        if not root.is_dir():
             continue
-        tokens = tokenize(path.stem)
-        if matches_any_variant(tokens, show_identity.variants) and has_episode_token(tokens, season, episode):
-            return path
+        for path in root.rglob("*"):
+            if not path.is_file() or path.suffix.lower() not in config.VIDEO_EXTENSIONS:
+                continue
+            tokens = tokenize(path.stem)
+            if matches_any_variant(tokens, show_identity.variants) and has_episode_token(tokens, season, episode):
+                return path
     return None
 
 
@@ -204,11 +206,11 @@ def find_existing_episode_files(show_identity: ShowIdentity, season: int, episod
     named gap (only `TV_LIBRARY_ROOT` is looked at). The walk itself is
     shared and briefly kept — see _tv_library_videos."""
     found: dict[int, Path] = {}
-    root = config.TV_LIBRARY_ROOT
-    if not root.is_dir() or not episodes:
+    if not episodes:
         return found
     wanted = set(episodes)
-    for path, tokens in _tv_library_videos(root):
+    listing = [entry for root in drives.library_roots("tv") if root.is_dir() for entry in _tv_library_videos(root)]
+    for path, tokens in listing:
         if not matches_any_variant(tokens, show_identity.variants):
             continue
         for episode in wanted - found.keys():
@@ -272,7 +274,7 @@ def probe_duration_minutes(path: Path) -> float | None:
 
 
 def build_episode_path(
-    show_identity: ShowIdentity, season: int, episode: int, ext: str, title: str | None = None
+    show_identity: ShowIdentity, season: int, episode: int, ext: str, title: str | None = None, root: Path | None = None
 ) -> Path:
     """`<TV_LIBRARY_ROOT>/<Show Title> ({year}) {tmdb-<id>}/Season <NN>/
     <Show Title> - sNNeNN[ - <Episode Title>].ext` — Plex's own
@@ -290,10 +292,10 @@ def build_episode_path(
     show_folder += f" {{tmdb-{show_identity.tmdb_id}}}"
     season_folder = f"Season {season:02d}"
     filename = f"{show_title} - s{season:02d}e{episode:02d}{episode_title_suffix(title)}{ext}"
-    return config.TV_LIBRARY_ROOT / show_folder / season_folder / filename
+    return (root or config.TV_LIBRARY_ROOT) / show_folder / season_folder / filename
 
 
-def build_movie_path(identity: MediaIdentity, filename: str) -> Path:
+def build_movie_path(identity: MediaIdentity, filename: str, root: Path | None = None) -> Path:
     """`<MOVIE_LIBRARY_ROOT>/<Title> ({year}) {tmdb-<id>}/<filename>` —
     same `{tmdb-<id>}` folder hint as TV, but `filename` is passed through
     verbatim (the original release's own name), not rebuilt: only the
@@ -302,7 +304,7 @@ def build_movie_path(identity: MediaIdentity, filename: str) -> Path:
     title = _sanitize(identity.title)
     folder = f"{title} ({identity.release_year})" if identity.release_year else title
     folder += f" {{tmdb-{identity.tmdb_id}}}"
-    return config.MOVIE_LIBRARY_ROOT / folder / filename
+    return (root or config.MOVIE_LIBRARY_ROOT) / folder / filename
 
 
 def _embedded_artwork_stream_indices(source: Path) -> list[int]:
@@ -606,7 +608,9 @@ def organize_episode(
     `title` goes into the filename when given; the caller looks it up,
     keeping this module's only inputs the filesystem and qBittorrent."""
     source_path = Path(source_path)
-    target = build_episode_path(show_identity, season, episode, source_path.suffix, title)
+    # Filed on the drive it was downloaded to, so it's a hardlink.
+    root = drives.library_root("tv", near=source_path)
+    target = build_episode_path(show_identity, season, episode, source_path.suffix, title, root)
     target.parent.mkdir(parents=True, exist_ok=True)
     return _link_or_copy(source_path, target, preferred_audio_language)
 
@@ -672,11 +676,16 @@ def _pack_entries(
         raise MediaOrganizerError(
             f"torrent {torrent_hash!r} not found in qBittorrent, and no release name to find it on disk with"
         )
-    release_dir = find_release_dir(config.TV_LIBRARY_ROOT, release_name)
+    # Where qBittorrent saved TV: its own setting's folder, or on a box each
+    # drive's TV downloads.
+    searched = (
+        [d.downloads / config.TV_CATEGORY for d in drives.all_drives()] if drives.managed() else [config.TV_LIBRARY_ROOT]
+    )
+    release_dir = next((found for root in searched if (found := find_release_dir(root, release_name))), None)
     if release_dir is None:
         raise MediaOrganizerError(
             f"torrent {torrent_hash!r} not found in qBittorrent, and no folder matching "
-            f"{release_name!r} under {config.TV_LIBRARY_ROOT}"
+            f"{release_name!r} under {', '.join(str(r) for r in searched) or 'any drive'}"
         )
     logger.info(
         "organize_pack: torrent %r is gone from qBittorrent — reading %s off disk instead",
@@ -907,7 +916,10 @@ def organize_pack(
                 )
             else:
                 placed_season = season
-            target = build_episode_path(show_identity, placed_season, episode, source_path.suffix, title)
+            target = build_episode_path(
+                show_identity, placed_season, episode, source_path.suffix, title,
+                drives.library_root("tv", near=source_path),
+            )
             target.parent.mkdir(parents=True, exist_ok=True)
             if len(members) > 1 and concat_parts([m[2] for m in members], target):
                 placed.append((placed_season, episode, target))
@@ -941,7 +953,7 @@ def organize_movie(
     placement as `organize_episode`, and the same "only after the torrent
     is fully complete" rule."""
     source_path = Path(source_path)
-    target = build_movie_path(identity, source_path.name)
+    target = build_movie_path(identity, source_path.name, drives.library_root("movie", near=source_path))
     target.parent.mkdir(parents=True, exist_ok=True)
     return _link_or_copy(source_path, target, preferred_audio_language)
 

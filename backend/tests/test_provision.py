@@ -30,10 +30,10 @@ def test_every_box_gets_its_own_salt():
     assert provision.qbittorrent_password_hash("same") != provision.qbittorrent_password_hash("same")
 
 
-def test_qbittorrent_is_bound_to_the_tunnel_and_saves_into_the_shared_media():
+def test_qbittorrent_is_bound_to_the_tunnel():
     conf = provision.qbittorrent_conf("pw")
     assert "Session\\Interface=tun0" in conf and "Session\\InterfaceName=tun0" in conf
-    assert "Session\\DefaultSavePath=/media/downloads" in conf
+    assert "Session\\DefaultSavePath=/media" in conf  # each download names its drive under it
     assert "WebUI\\Username=admin" in conf
     assert '"pw"' not in conf and "=pw\n" not in conf  # only the hash is stored
 
@@ -65,22 +65,26 @@ def test_a_setup_code_is_easy_to_read_off_a_card():
 # -- the whole run, against a fake TrueNAS --
 
 GiB = 1024**3
-
-
 TB = 1000**4
 
 
-def hdd(name, size=8 * TB):
-    return {"name": name, "size": size, "type": "HDD", "serial": f"SN-{name}"}
+def disk(name, size=4 * TB, kind="HDD"):
+    return {"name": name, "size": size, "type": kind, "serial": f"SN-{name}"}
+
+
+APPS_SSD = disk("nvme1n1", 500 * 10**9, "SSD")
 
 
 class FakeTrueNAS:
-    def __init__(self, version="TrueNAS-25.10.7", ram=16 * GiB, pools=("tank",), apps=(), unused=()):
-        self.version, self.ram, self.pools, self.apps = version, ram, set(pools), list(apps)
-        self.unused = list(unused)
+    def __init__(self, unused=(APPS_SSD,)):
+        self.version, self.ram = "TrueNAS-25.10.7", 16 * GiB
+        self.pools, self.apps, self.unused = {"boot-pool"}, [], list(unused)
+        self.docker_pool = None
         self.datasets: set[str] = set()
         self.scripts: list[dict] = []
+        self.compose = None
         self.calls: list[tuple] = []
+        self.mnt = None
 
     def call(self, method, *params, job=False):
         self.calls.append((method, params))
@@ -90,30 +94,50 @@ class FakeTrueNAS:
             return {"physmem": self.ram}
         if method == "system.general.config":
             return {"timezone": "Australia/Sydney"}
-        if method == "pool.query":
-            topology = {"data": [{"type": "RAIDZ1", "children": [{}, {}, {}]}]}
-            return [{"name": p, "topology": topology} for p in self.pools if p == params[0][0][2]]
         if method == "disk.get_unused":
             return self.unused
+        if method == "pool.query":
+            pools = [{"name": p} for p in sorted(self.pools)]
+            return [p for p in pools if p["name"] == params[0][0][2]] if params else pools
         if method == "pool.create":
-            self.pools.add(params[0]["name"])
+            name = params[0]["name"]
+            self.pools.add(name)
+            (self.mnt / name).mkdir(parents=True, exist_ok=True)  # TrueNAS mounts a new pool at /mnt/<name>
+            used = set(params[0]["topology"]["data"][0]["disks"])
+            self.unused = [d for d in self.unused if d["name"] not in used]
+            return {}
+        if method == "docker.config":
+            return {"pool": self.docker_pool}
+        if method == "docker.update":
+            self.docker_pool = params[0]["pool"]
             return {}
         if method == "app.query":
             return [{"name": a} for a in self.apps if a == params[0][0][2]]
+        if method == "app.create":
+            self.apps.append(params[0]["app_name"])
+            self.compose = {"services": {
+                "backend": {"image": "ghcr.io/thyglizzyglobber/obsidian-backend:stable", "volumes": ["/mnt/apps/obsidian/data:/app/data"]},
+                "qbittorrent": {"image": "lscr.io/linuxserver/qbittorrent:5.2.4_v2.0.15-ls479", "volumes": []},
+                "plex": {"image": "plexinc/pms-docker:1.43.4.10903-e5521bd8c", "volumes": []},
+            }}
+            return {}
+        if method == "app.config":
+            return json.loads(json.dumps(self.compose))
+        if method == "app.update":
+            self.compose = params[1]["custom_compose_config"]
+            return {}
         if method == "network.configuration.config":
             return {"hostname": "truenas", "service_announcement": {"netbios": False, "mdns": False, "wsd": True}}
         if method == "pool.dataset.query":
             return [{"id": params[0][0][2]}] if params[0][0][2] in self.datasets else []
         if method == "pool.dataset.create":
             self.datasets.add(params[0]["name"])
+            (self.mnt / params[0]["name"]).mkdir(parents=True, exist_ok=True)
             return {}
         if method == "initshutdownscript.query":
             return [s for s in self.scripts if s["comment"] == params[0][0][2]]
         if method == "initshutdownscript.create":
             self.scripts.append({"id": len(self.scripts) + 1, **params[0]})
-            return {}
-        if method == "app.create":
-            self.apps.append(params[0]["app_name"])
             return {}
         return {}
 
@@ -128,9 +152,7 @@ def factory(tmp_path, monkeypatch):
     for name in ("obsidian-box.yaml", "obsidian-updater.py"):
         (here / name).write_bytes((TRUENAS / name).read_bytes())
     mnt, sysfs, dev = tmp_path / "mnt", tmp_path / "sys", tmp_path / "dev"
-    for dataset in ("tank/obsidian/data", "tank/obsidian/qbittorrent", "tank/obsidian/plex",
-                    "tank/obsidian/gluetun", "tank/media", "tank/obsidian-system"):
-        (mnt / dataset).mkdir(parents=True)  # TrueNAS mounts a dataset when it's made
+    mnt.mkdir()
     (sysfs / "module/zfs/parameters").mkdir(parents=True)
     dev.mkdir()
     monkeypatch.setattr(provision.os, "geteuid", lambda: 0)
@@ -140,17 +162,24 @@ def factory(tmp_path, monkeypatch):
                         lambda cmd, **kw: installs.append(cmd) or type("R", (), {"returncode": 0, "stdout": "", "stderr": ""})())
     monkeypatch.setattr(provision.Provisioner, "wait_for_site", lambda self, seconds=600: "1.1.0")
     nas = FakeTrueNAS()
+    nas.mnt = mnt
 
     def make(**kwargs):
-        return provision.Provisioner(nas, "tank", serial="OBS-0001", here=here, mnt=mnt, sysfs=sysfs, dev=dev,
+        return provision.Provisioner(nas, serial="OBS-0001", here=here, mnt=mnt, sysfs=sysfs, dev=dev,
                                      say=lambda _m: None, **kwargs)
 
     return nas, make, tmp_path, installs
 
 
-def test_a_fresh_box_is_provisioned_end_to_end(factory):
+def test_a_box_with_no_hard_drives_is_provisioned_end_to_end(factory):
     nas, make, tmp, installs = factory
     card = make().run()
+
+    (apps,) = nas.called("pool.create")
+    assert apps[0]["name"] == "apps" and apps[0]["topology"]["data"][0]["disks"] == ["nvme1n1"]
+    assert nas.docker_pool == "apps"  # TrueNAS keeps its apps there
+    names = [name for name, _ in nas.calls]
+    assert names.index("docker.update") < names.index("app.create")
 
     (network,) = nas.called("network.configuration.update")
     assert network[0]["hostname"] == "obsidian"
@@ -162,33 +191,52 @@ def test_a_fresh_box_is_provisioned_end_to_end(factory):
     assert script["when"] == "POSTINIT" and script["command"].startswith(f"echo {8 * GiB} > ")
     assert (tmp / "sys/module/zfs/parameters/zfs_arc_max").read_text() == str(8 * GiB)
 
-    assert {"tank/obsidian", "tank/media", "tank/obsidian-system", "tank/obsidian/data"} <= nas.datasets
-    for folder in ("downloads", "Movies", "TV Shows"):
-        assert (tmp / "mnt/tank/media" / folder).is_dir()
+    assert {"apps/obsidian", "apps/obsidian/data", "apps/obsidian-system"} <= nas.datasets
     perms = {p[0]["path"]: p[0] for p in nas.called("filesystem.setperm")}
-    assert perms[str(tmp / "mnt/tank/media")]["uid"] == 568
-    assert perms[str(tmp / "mnt/tank/obsidian-system")]["mode"] == "700"
-
-    conf = (tmp / "mnt/tank/obsidian/qbittorrent/qBittorrent/qBittorrent.conf").read_text()
+    assert perms[str(tmp / "mnt/apps/obsidian/qbittorrent")]["uid"] == 568
+    assert perms[str(tmp / "mnt/apps/obsidian-system")]["mode"] == "700"
+    conf = (tmp / "mnt/apps/obsidian/qbittorrent/qBittorrent/qBittorrent.conf").read_text()
     assert "Session\\Interface=tun0" in conf
 
     (create,) = nas.called("app.create")
     compose = create[0]["custom_compose_config_string"]
-    assert create[0]["app_name"] == "obsidian" and create[0]["custom_app"] is True
     assert "<" not in re.sub(r"#.*", "", compose)
     assert f'SETUP_CODE: "{card["setup_code"]}"' in compose
-    assert "obsidian-backend:stable" in compose
+    assert 'MEDIA_DRIVES_ROOT: "/media"' in compose
+    assert ":/media" not in re.sub(r"#.*", "", compose)  # no drive mounted until there's a drive
     assert 'TZ: "Australia/Sydney"' in compose
-    assert "/dev/dri" not in re.sub(r"#.*", "", compose)  # no GPU on this one
 
-    assert (tmp / "mnt/tank/obsidian-system/obsidian-updater.py").is_file()
+    assert nas.called("app.update") == []  # no drives to mount
+    assert (tmp / "mnt/apps/obsidian-system/obsidian-updater.py").is_file()
     assert installs and installs[0][-3:] == ["install", "--app", "obsidian"]
 
-    record = tmp / "mnt/tank/obsidian-system/provisioned.json"
+    record = tmp / "mnt/apps/obsidian-system/provisioned.json"
     assert json.loads(record.read_text()) == card
     assert (record.stat().st_mode & 0o777) == 0o600
-    assert card["setup_link"] == f"http://obsidian.local/#/?code={card['setup_code']}"
+    assert card["storage"] == "No hard drives"
     assert card["card"] == f"card.html#OBS-0001/{card['setup_code']}"
+
+
+def test_hard_drives_a_box_ships_with_are_added_as_drives_of_their_own(factory):
+    nas, make, tmp, _ = factory
+    nas.unused = [APPS_SSD, disk("sdb", 4 * TB)]
+    card = make().run()
+
+    created = [p[0] for p in nas.called("pool.create")]
+    assert [(c["name"], c["topology"]["data"][0]) for c in created] == [
+        ("apps", {"type": "STRIPE", "disks": ["nvme1n1"]}),
+        ("drive1", {"type": "STRIPE", "disks": ["sdb"]}),
+    ]
+    top = tmp / "mnt/drive1"
+    for folder in ("downloads/movies", "downloads/tv", "Movies", "TV Shows"):
+        assert (top / folder).is_dir()
+    marker = json.loads((top / ".obsidian-drive.json").read_text())
+    assert (marker["id"], marker["label"], marker["size_bytes"]) == ("drive1", "Drive 1", 4 * TB)
+    services = nas.compose["services"]
+    assert f"{top}:/media/drive1" in services["backend"]["volumes"]
+    assert f"{top}:/media/drive1" in services["qbittorrent"]["volumes"]
+    assert f"{top}:/media/drive1:ro" in services["plex"]["volumes"]
+    assert card["storage"] == "1 × 4.0 TB"
 
 
 def test_plex_gets_the_gpu_when_the_box_has_one(factory):
@@ -202,24 +250,44 @@ def test_plex_gets_the_gpu_when_the_box_has_one(factory):
 
 def test_a_run_that_stopped_partway_can_run_again(factory):
     nas, make, _, _ = factory
-    nas.datasets |= {"tank/obsidian", "tank/media"}
+    nas.pools.add("apps")
+    nas.unused = []  # the SSD is the apps pool now
+    nas.docker_pool = "apps"
+    nas.datasets |= {"apps/obsidian"}
     nas.scripts.append({"id": 1, "comment": provision.ARC_COMMENT})
     make().run()
-    created = {p[0]["name"] for p in nas.called("pool.dataset.create")}
-    assert "tank/media" not in created and "tank/obsidian/data" in created
+    assert nas.called("pool.create") == [] and nas.called("docker.update") == []
+    assert "apps/obsidian" not in {p[0]["name"] for p in nas.called("pool.dataset.create")}
     assert nas.called("initshutdownscript.create") == []
-    assert len(nas.called("initshutdownscript.update")) == 1
+
+
+@pytest.mark.parametrize("unused, says", [
+    ([disk("sdb")], "no unused SSD for the apps"),
+    ([APPS_SSD, disk("nvme2n1", 2 * TB, "SSD")], "more than one unused SSD"),
+])
+def test_without_one_ssd_for_the_apps_nothing_changes(factory, unused, says):
+    nas, make, _, _ = factory
+    nas.unused = unused
+    with pytest.raises(SystemExit, match=says):
+        make().run()
+    assert not nas.called("pool.create") and not nas.called("network.configuration.update")
+
+
+def test_the_apps_ssd_can_be_named_when_there_are_two(factory):
+    nas, make, _, _ = factory
+    nas.unused = [APPS_SSD, disk("nvme2n1", 2 * TB, "SSD")]
+    make(apps_disk="nvme1n1").run()
+    assert nas.called("pool.create")[0][0]["topology"]["data"][0]["disks"] == ["nvme1n1"]
 
 
 @pytest.mark.parametrize("change, says", [
     ({"version": "TrueNAS-25.04.2"}, "TrueNAS 25.10"),
-    ({"pools": ()}, "Found 0 unused hard drives"),
-    ({"apps": ("obsidian",)}, "already installed"),
+    ({"apps": ["obsidian"]}, "already installed"),
 ])
 def test_a_box_that_isn_t_ready_is_refused_before_anything_changes(factory, change, says):
     nas, make, _, _ = factory
     for key, value in change.items():
-        setattr(nas, key, value if key != "pools" else set(value))
+        setattr(nas, key, value)
     with pytest.raises(SystemExit, match=says):
         make().run()
     assert not nas.called("network.configuration.update") and not nas.called("app.create")
@@ -232,48 +300,11 @@ def test_it_needs_root(factory, monkeypatch):
         make().run()
 
 
-def test_a_box_s_pool_is_built_from_its_unused_hard_drives(factory):
-    nas, make, _, _ = factory
-    nas.pools = set()
-    nas.unused = [hdd("sdc"), hdd("sda"), hdd("sdb", 8 * TB - 3_000_000), {"name": "nvme0n1", "size": 256 * 10**9, "type": "SSD"}]
-    card = make().run()
-    (create,) = nas.called("pool.create")
-    assert create[0]["name"] == "tank"
-    assert create[0]["topology"] == {"data": [{"type": "RAIDZ1", "disks": ["sda", "sdb", "sdc"]}]}  # the SSD left out
-    assert card["storage"] == "3 × 8.0 TB, RAIDZ1"
-    # Built before anything goes on it.
-    names = [name for name, _ in nas.calls]
-    assert names.index("pool.create") < names.index("pool.dataset.create") < names.index("app.create")
-
-
-def test_four_drives_make_one_four_drive_pool(factory):
-    nas, make, _, _ = factory
-    nas.pools = set()
-    nas.unused = [hdd(n) for n in ("sda", "sdb", "sdc", "sdd")]
-    card = make().run()
-    assert len(nas.called("pool.create")[0][0]["topology"]["data"][0]["disks"]) == 4
-    assert card["storage"] == "4 × 8.0 TB, RAIDZ1"
-
-
-@pytest.mark.parametrize("unused, says", [
-    ([hdd("sda"), hdd("sdb")], "Found 2 unused hard drives; a box needs at least 3"),
-    ([hdd("sda"), hdd("sdb"), hdd("sdc", 4 * TB)], "have to be the same size; these aren't: sda 8.0 TB, sdb 8.0 TB, sdc 4.0 TB"),
-    ([{"name": n, "size": 8 * TB, "type": "SSD"} for n in ("a", "b", "c")], "Found 0 unused hard drives"),
-])
-def test_drives_that_won_t_make_a_box_stop_it_before_anything_changes(factory, unused, says):
-    nas, make, _, _ = factory
-    nas.pools = set()
-    nas.unused = unused
-    with pytest.raises(SystemExit, match=re.escape(says)):
-        make().run()
-    assert not nas.called("pool.create") and not nas.called("network.configuration.update")
-
-
-def test_an_existing_pool_is_used_as_it_is(factory):
-    nas, make, _, _ = factory
-    card = make().run()
-    assert nas.called("pool.create") == [] and nas.called("disk.get_unused") == []
-    assert card["storage"] == "3 drives, RAIDZ1"
+def test_what_the_card_says_a_box_ships_with():
+    assert provision.storage_summary([]) == "No hard drives"
+    assert provision.storage_summary([4 * TB]) == "1 × 4.0 TB"
+    assert provision.storage_summary([8 * TB, 8 * TB]) == "2 × 8.0 TB"
+    assert provision.storage_summary([4 * TB, 8 * TB]) == "2 drives: 4.0 TB, 8.0 TB"
 
 
 def test_the_memory_cap_is_half_the_ram_but_at_least_2_gib():

@@ -7,7 +7,7 @@ import time
 from collections.abc import Callable
 from dataclasses import dataclass
 
-from app import config
+from app import config, drives
 from app.normalize import tokenize
 from app.pipeline_settings import PipelineSettings
 from app.qbt import QBTClient, QBTError
@@ -185,6 +185,22 @@ def usable_free_space(qbt: QBTClient, settings: "PipelineSettings | None") -> in
     return max(1, free - floor)
 
 
+def download_target(qbt: QBTClient, settings: "PipelineSettings | None", category: str) -> tuple[int, str | None]:
+    """The free space a download must fit in, and where qBittorrent should
+    save it (None: its own setting). On a box, the drive with the most
+    free space (app/drives.py), the same floor applied to it; anywhere
+    else, qBittorrent's own free space and save path, as always."""
+    if not drives.managed():
+        return usable_free_space(qbt, settings), None
+    drive = drives.download_drive()
+    if drive is None:
+        raise drives.NoDriveError("There's no drive to download to. Add one in Settings › Storage.")
+    free = drives.free_bytes(drive)
+    floor = int((settings.free_space_floor_gb if settings else 0) * 1024**3)
+    usable = free if free <= 0 or floor <= 0 else max(1, free - floor)
+    return usable, drives.save_path(drive, category)
+
+
 def _candidates_that_fit(ranked: list[tuple[dict, Score]], free_space_bytes: int) -> list[tuple[dict, Score]]:
     """Every candidate (best-ranked first) whose size is known to fit in
     the space qBittorrent reports free — not just the top one, so a failed
@@ -305,7 +321,12 @@ class _AddAttempt:
 
 
 def _rank_and_add(
-    qbt: QBTClient, candidates: list[dict], free_space_bytes: int, category: str, existing_hashes: set[str]
+    qbt: QBTClient,
+    candidates: list[dict],
+    free_space_bytes: int,
+    category: str,
+    existing_hashes: set[str],
+    save_path: str | None = None,
 ) -> tuple[list[tuple[dict, Score]], _AddAttempt | None]:
     """Shared by `download()` (movies) and `download_episode()` (Stage 10,
     TV) — ranking, the free-space fit filter, and the add-with-hash-capture
@@ -340,7 +361,10 @@ def _rank_and_add(
             # their torrents look like this one's.
             baseline = qbt.existing_torrent_hashes() | existing_hashes
             try:
-                qbt.add_torrent(winner["fileUrl"], category=category)
+                # Only named when there's a drive to name (a box), so
+                # anything else adds exactly as it always has.
+                placement = {"save_path": save_path} if save_path else {}
+                qbt.add_torrent(winner["fileUrl"], category=category, **placement)
                 new_hashes = _capture_new_hashes(qbt, baseline)
             except QBTError as exc:
                 last_attempt = _AddAttempt(winner=winner, score=winner_score, error=str(exc))
@@ -371,7 +395,7 @@ def download(
     settings = settings or PipelineSettings.from_config()
     identity = resolve(tmdb_id, tmdb_client)
     existing_hashes = qbt.existing_torrent_hashes() | (excluded_hashes or set())
-    free_space_bytes = usable_free_space(qbt, settings)
+    free_space_bytes, save_path = download_target(qbt, settings, settings.category)
 
     candidates = _merge_variant_candidates(
         identity.variants,
@@ -380,7 +404,7 @@ def download(
     if not candidates:
         return DownloadResult(status="no qualifying results", identity=identity)
 
-    fitting, attempt = _rank_and_add(qbt, candidates, free_space_bytes, settings.category, existing_hashes)
+    fitting, attempt = _rank_and_add(qbt, candidates, free_space_bytes, settings.category, existing_hashes, save_path)
     if not fitting or attempt is None:
         return DownloadResult(status="insufficient free space", identity=identity)
 
@@ -453,7 +477,7 @@ def find_best_episode_candidate(
     exclusion as `download()` — see its own docstring."""
     settings = settings or PipelineSettings.from_config()
     existing_hashes = qbt.existing_torrent_hashes() | (excluded_hashes or set())
-    free_space_bytes = usable_free_space(qbt, settings)
+    free_space_bytes, _ = download_target(qbt, settings, config.TV_CATEGORY)
 
     candidates = _merge_variant_candidates(
         identity.variants,
@@ -490,7 +514,7 @@ def download_episode(
     exclusion as `download()` — see its own docstring."""
     settings = settings or PipelineSettings.from_config()
     existing_hashes = qbt.existing_torrent_hashes() | (excluded_hashes or set())
-    free_space_bytes = usable_free_space(qbt, settings)
+    free_space_bytes, save_path = download_target(qbt, settings, config.TV_CATEGORY)
 
     candidates = _merge_variant_candidates(
         identity.variants,
@@ -501,7 +525,7 @@ def download_episode(
     if not candidates:
         return EpisodeDownloadResult(status="no qualifying results", identity=identity, season=season, episode=episode)
 
-    fitting, attempt = _rank_and_add(qbt, candidates, free_space_bytes, config.TV_CATEGORY, existing_hashes)
+    fitting, attempt = _rank_and_add(qbt, candidates, free_space_bytes, config.TV_CATEGORY, existing_hashes, save_path)
     if not fitting or attempt is None:
         return EpisodeDownloadResult(
             status="insufficient free space", identity=identity, season=season, episode=episode
@@ -633,7 +657,7 @@ def download_pack(
 
     settings = settings or PipelineSettings.from_config()
     existing_hashes = qbt.existing_torrent_hashes() | (excluded_hashes or set())
-    free_space_bytes = usable_free_space(qbt, settings)
+    free_space_bytes, save_path = download_target(qbt, settings, config.TV_CATEGORY)
 
     combined: list[dict] = []
     for variant in identity.variants:
@@ -692,7 +716,7 @@ def download_pack(
                 note=f"The only whole-series pack is {_tier_label(best_series)}; the seasons come in {_tier_label(best_season)}",
             )
 
-    fitting, attempt = _rank_and_add(qbt, candidates, free_space_bytes, config.TV_CATEGORY, existing_hashes)
+    fitting, attempt = _rank_and_add(qbt, candidates, free_space_bytes, config.TV_CATEGORY, existing_hashes, save_path)
     if not fitting or attempt is None:
         return PackDownloadResult(
             status="insufficient free space", identity=identity, scope=scope, season=season,

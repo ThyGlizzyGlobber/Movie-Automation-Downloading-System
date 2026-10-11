@@ -145,6 +145,10 @@ function eventLabel(eventType: string): string {
       return 'Update failed'
     case 'update_started':
       return 'Update started'
+    case 'drive_added':
+      return 'Drive added'
+    case 'vpn_changed':
+      return 'VPN changed'
     default:
       return eventType
   }

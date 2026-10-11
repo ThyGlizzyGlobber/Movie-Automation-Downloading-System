@@ -46,6 +46,12 @@ records the minor and major releases, and the patches worth calling out. See
   and given Movies and TV Shows libraries on the box's folders, with no Plex settings to
   visit.
 
+- **A box's drives, each its own storage.** Downloads go to the drive with the most room and
+  are filed on that same drive. Plex lists every drive's folders. Settings › Storage shows
+  each drive with its space and health, and adds a new one, with any size in any free bay
+  and a typed confirmation, since adding erases it. A drive that's missing is shown as
+  such. A box with no drive yet keeps requests waiting until one is added.
+
 ### Changed
 
 - With more than one server, replacing or deleting a copy (rejecting it, asking for

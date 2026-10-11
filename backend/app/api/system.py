@@ -11,7 +11,7 @@ from datetime import datetime, timedelta, timezone
 from fastapi import Depends, HTTPException, Request
 from pydantic import BaseModel
 
-from app import config, version
+from app import config, drives, version
 from app.db import FAILURE_STATUSES, RequestStore
 from app.deploy import DeployError, run_git_pull
 from app.api.deps import _client_ip, admin_router, get_qbt, get_store, router
@@ -58,16 +58,24 @@ def get_storage() -> dict:
     `available: false` rather than an error toast on every single page
     load, since this backs a persistent global UI element, not a page a
     user navigated to on purpose."""
-    try:
-        usage = shutil.disk_usage(config.TV_LIBRARY_ROOT)
-    except OSError:
-        return {"available": False}
-    used_percent = round((usage.used / usage.total) * 100, 1) if usage.total else 0.0
+    if drives.managed():
+        # A box's drives are separate filesystems: the box's storage is
+        # all of them together. None yet reads as nothing to show.
+        readable = [u for u in (drives.usage(d) for d in drives.all_drives()) if u["readable"]]
+        if not readable:
+            return {"available": False}
+        total, used, free = (sum(u[k] for u in readable) for k in ("total", "used", "free"))
+    else:
+        try:
+            total, used, free = shutil.disk_usage(config.TV_LIBRARY_ROOT)
+        except OSError:
+            return {"available": False}
+    used_percent = round((used / total) * 100, 1) if total else 0.0
     return {
         "available": True,
-        "total_bytes": usage.total,
-        "used_bytes": usage.used,
-        "free_bytes": usage.free,
+        "total_bytes": total,
+        "used_bytes": used,
+        "free_bytes": free,
         "used_percent": used_percent,
     }
 
@@ -109,6 +117,13 @@ def _directory_bytes(root) -> int | None:
     return total
 
 
+def _library_bytes(kind: str) -> int | None:
+    """One library's size across every drive (one root off a box); None
+    when none of them is there to measure."""
+    sizes = [size for root in drives.library_roots(kind) if (size := _directory_bytes(root)) is not None]
+    return sum(sizes) if sizes else None
+
+
 @router.get("/api/storage/details")
 async def get_storage_details(store: RequestStore = Depends(get_store)) -> dict:
     """The Settings storage panel: the disk from /api/storage plus how much
@@ -117,8 +132,8 @@ async def get_storage_details(store: RequestStore = Depends(get_store)) -> dict:
     blocks (disk stat, SQLite counts) goes to a thread with them."""
     disk, movie_bytes, tv_bytes, counters = await asyncio.gather(
         asyncio.to_thread(get_storage),
-        asyncio.to_thread(_directory_bytes, config.MOVIE_LIBRARY_ROOT),
-        asyncio.to_thread(_directory_bytes, config.TV_LIBRARY_ROOT),
+        asyncio.to_thread(_library_bytes, "movie"),
+        asyncio.to_thread(_library_bytes, "tv"),
         asyncio.to_thread(_request_counters, store),
     )
     return {

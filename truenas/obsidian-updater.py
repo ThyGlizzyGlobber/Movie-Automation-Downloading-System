@@ -21,6 +21,14 @@ Likewise a Plex claim token (`updater/plex-claim-request.json`), left when
 the buyer first signs in to Plex: written into the plex service as
 PLEX_CLAIM, so the box's new Plex server claims itself for their account.
 
+And a box's drives. Every run it reports, in `updater/storage.json`, the
+unused disks it can see and how each of the box's drives is doing; a
+request to add one (`updater/drive-request.json`, from Settings › Storage)
+names a disk by name and serial, which must still be unused. The disk gets
+a pool of its own (drive1, drive2, …), laid out alike, marked, and mounted
+into Obsidian, qBittorrent and Plex at /media/<drive>. Its data is erased:
+the app has the person confirm that first.
+
 It talks to TrueNAS through its local socket, as `midclt` does, so it needs
 no user and no API key, and the app never holds one. Each step is written to
 `updater/state.json` before it's taken, for the Updates page and for a run
@@ -58,7 +66,7 @@ import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
 
-SCRIPT_VERSION = 4
+SCRIPT_VERSION = 5
 IMAGE_NAMES = ("obsidian-backend", "obsidian-frontend")
 IMAGE_PREFIX = "ghcr.io/thyglizzyglobber/"
 CRON_DESCRIPTION = "Obsidian updater (installs updates requested in the app)"
@@ -100,6 +108,13 @@ VPN_ENV = {
 # Every gluetun setting this manages; the rest of gluetun's are left alone.
 VPN_MANAGED = set(VPN_ENV.values()) | {"VPN_SERVICE_PROVIDER", "VPN_TYPE"}
 GLUETUN_IMAGE = "qmcgaw/gluetun:"
+# A box's drives: pools named drive1, drive2, … each mounted at /media/<name>
+# in these services, laid out alike, and marked once ready (app/drives.py).
+DRIVE_POOL = re.compile(r"^drive(\d+)$")
+DRIVE_LAYOUT = ("downloads/movies", "downloads/tv", "Movies", "TV Shows")
+DRIVE_MARKER = ".obsidian-drive.json"
+QBITTORRENT_IMAGE = "lscr.io/linuxserver/qbittorrent:"
+APPS_UID = 568
 PLEX_IMAGE = "plexinc/pms-docker:"
 _CLAIM_TOKEN = re.compile(r"^claim-[A-Za-z0-9_-]{8,100}$")
 _BACKUP = re.compile(r"^obsidian-[A-Za-z0-9.-]+\.db$")
@@ -151,6 +166,29 @@ class Middleware:
         """Waits for TrueNAS to finish; raises if the job fails."""
         with self._client() as c:
             c.call("app.update", app, {"custom_compose_config": compose}, job=True)
+
+    def unused_disks(self) -> list[dict]:
+        with self._client() as c:
+            return c.call("disk.get_unused")
+
+    def pools(self) -> list[dict]:
+        with self._client() as c:
+            return c.call("pool.query")
+
+    def create_drive_pool(self, name: str, disk: str) -> None:
+        """One disk, one pool: a box's drives are separate by design."""
+        with self._client() as c:
+            c.call("pool.create", {
+                "name": name, "encryption": False, "topology": {"data": [{"type": "STRIPE", "disks": [disk]}]},
+            }, job=True)
+
+    def give_to_apps(self, path: str) -> None:
+        """qBittorrent and Plex run as TrueNAS's apps user (568)."""
+        with self._client() as c:
+            c.call("filesystem.setperm", {
+                "path": path, "uid": APPS_UID, "gid": APPS_UID, "mode": "775",
+                "options": {"recursive": True, "stripacl": True},
+            }, job=True)
 
     def cron_jobs(self, description: str) -> list[dict]:
         with self._client() as c:
@@ -301,6 +339,37 @@ def with_vpn(compose: dict, env: dict[str, str]) -> dict:
         raise RuntimeError("this app has no VPN (gluetun) service") from None
 
 
+def next_drive_name(pool_names, mnt: Path) -> str:
+    """The lowest drive number free both as a pool and as a folder."""
+    taken = {int(m.group(1)) for name in pool_names if (m := DRIVE_POOL.match(str(name)))}
+    number = 1
+    while number in taken or (mnt / f"drive{number}").exists():
+        number += 1
+    return f"drive{number}"
+
+
+def with_drive(compose: dict, name: str, mnt: Path, prefix: str) -> dict:
+    """The app's config with drive `name` mounted at /media/<name> in the
+    backend, qBittorrent (both read-write) and Plex (read-only)."""
+    moved = json.loads(json.dumps(compose))
+    mount = f"{mnt / name}:/media/{name}"
+    for service in (moved.get("services") or {}).values():
+        if not isinstance(service, dict):
+            continue
+        image = str(service.get("image", ""))
+        if our_image(image, prefix) == "obsidian-backend" or image.startswith(QBITTORRENT_IMAGE):
+            wanted = mount
+        elif image.startswith(PLEX_IMAGE):
+            wanted = f"{mount}:ro"
+        else:
+            continue
+        volumes = list(service.get("volumes") or [])
+        if not any(str(v).startswith(f"{mnt / name}:") for v in volumes):
+            volumes.append(wanted)
+        service["volumes"] = volumes
+    return moved
+
+
 def bind_sources(compose: dict) -> list[str]:
     sources = []
     for service in (compose.get("services") or {}).values():
@@ -380,8 +449,9 @@ def _get(url: str, timeout: float = 5) -> tuple[int, bytes]:
 
 class Updater:
     def __init__(self, middleware, app: str, *, prefix: str = IMAGE_PREFIX, url: str | None = None,
-                 verify_seconds: int = VERIFY_SECONDS, sleep=time.sleep, log=None):
+                 verify_seconds: int = VERIFY_SECONDS, sleep=time.sleep, log=None, mnt: Path = Path("/mnt")):
         self.mw = middleware
+        self.mnt = mnt
         self.app = app
         self.prefix = prefix
         self.url = url
@@ -456,6 +526,11 @@ class Updater:
             if claim_request is not None:
                 self.folder.remove("plex-claim-request.json")
                 self.apply_plex_claim(claim_request)
+            drive_request = self.folder.read("drive-request.json")
+            if drive_request is not None:
+                self.folder.remove("drive-request.json")
+                self.add_drive(drive_request)
+            self.report_storage()
         finally:
             self.folder.close()
 
@@ -548,6 +623,72 @@ class Updater:
             vpn_state("failed", f"TrueNAS couldn't apply the VPN details: {_reason(exc)}")
             return
         vpn_state("applied", "Applied. The VPN connects within a minute.")
+
+    # -- a box's drives --
+
+    def report_storage(self) -> None:
+        """What the app's Settings › Storage shows: the disks it could add,
+        and how each of the box's drives is doing. Written every run."""
+        try:
+            unused = self.mw.unused_disks()
+            pools = self.mw.pools()
+        except Exception as exc:  # noqa: BLE001 — a report that can't be made says so
+            self.folder.write("storage.json", {"at": now_iso(), "error": _reason(exc)})
+            return
+        report = {
+            "at": now_iso(),
+            "unused": [
+                {
+                    "name": d.get("name"), "serial": d.get("serial"), "model": d.get("model"),
+                    "size": d.get("size"), "type": d.get("type"),
+                    # Holds a pool from another system: adding it erases that.
+                    "has_other_data": bool(d.get("exported_zpool")),
+                }
+                for d in unused
+            ],
+            "drives": [
+                {
+                    "id": p["name"], "status": p.get("status"), "healthy": bool(p.get("healthy")),
+                    "size": p.get("size"), "allocated": p.get("allocated"), "free": p.get("free"),
+                }
+                for p in pools if DRIVE_POOL.match(str(p.get("name")))
+            ],
+        }
+        self.folder.write("storage.json", report)
+
+    def add_drive(self, request: dict) -> None:
+        def drive_state(state: str, message: str, drive: str | None = None) -> None:
+            self.log(f"drive {state}: {message}")
+            self.folder.write("drive-state.json", {"state": state, "drive": drive, "message": message, "at": now_iso()})
+
+        disk, serial = request.get("disk"), request.get("serial")
+        unused = {d.get("name"): d for d in self.mw.unused_disks()}
+        found = unused.get(disk) if isinstance(disk, str) else None
+        # Named and serial both, so a disk renamed by a restart (sdb is now
+        # sdc) can't be erased in place of the one the person chose.
+        if found is None or not serial or found.get("serial") != serial:
+            drive_state("failed", "That drive isn't free to add any more. Check Settings › Storage and try again.")
+            return
+        if found.get("exported_zpool") and request.get("erase_other_data") is not True:
+            drive_state("failed", "That drive holds data from another system, and erasing it wasn't confirmed.")
+            return
+        name = next_drive_name([p.get("name") for p in self.mw.pools()], self.mnt)
+        label = f"Drive {name.removeprefix('drive')}"
+        drive_state("adding", f"Setting up {label}.", name)
+        try:
+            self.mw.create_drive_pool(name, disk)
+            top = self.mnt / name
+            for folder in DRIVE_LAYOUT:
+                (top / folder).mkdir(parents=True, exist_ok=True)
+            self.mw.give_to_apps(str(top))
+            # Last on the drive itself: the marker is what makes it count.
+            marker = {"id": name, "label": label, "size_bytes": found.get("size"), "serial": serial, "added_at": now_iso()}
+            (top / DRIVE_MARKER).write_text(json.dumps(marker, indent=2))
+            self.mw.app_update(self.app, with_drive(self.mw.app_config(self.app), name, self.mnt, self.prefix))
+        except Exception as exc:  # noqa: BLE001
+            drive_state("failed", f"Setting up {label} didn't finish: {_reason(exc)}", name)
+            return
+        drive_state("added", f"{label} is ready.", name)
 
     def apply_plex_claim(self, request: dict) -> None:
         def claim_state(state: str, message: str) -> None:

@@ -7,7 +7,8 @@ token on their account (good for a few minutes) and leaves it for the NAS
 updater, which restarts Plex with it as PLEX_CLAIM: Plex's own image claims
 itself for that account as it starts. Obsidian then finds the server among
 the account's own, links it, and creates the Movies and TV Shows libraries
-on the box's media folders.
+on every drive's folders (app/drives.py), adding each new drive's as it
+comes.
 
 Plex runs on the host's network; from the backend's container that's the
 default gateway. PLEX_LOCAL_URL set (it is on a box, to "gateway") is what
@@ -19,14 +20,14 @@ from pathlib import Path
 
 import requests
 
-from app import updates
+from app import drives, updates
 
 PLEX_LOCAL_URL = os.environ.get("PLEX_LOCAL_URL") or None
 PLEX_PORT = 32400
 LIBRARIES = (
-    # name, Plex type, agent, scanner, the folder on the box's media dataset
-    ("Movies", "movie", "tv.plex.agents.movie", "Plex Movie", "/media/Movies"),
-    ("TV Shows", "show", "tv.plex.agents.series", "Plex TV Series", "/media/TV Shows"),
+    # name, Plex type, agent, scanner, and the kind of drive folder it lists
+    ("Movies", "movie", "tv.plex.agents.movie", "Plex Movie", "movie"),
+    ("TV Shows", "show", "tv.plex.agents.series", "Plex TV Series", "tv"),
 )
 
 
@@ -85,28 +86,51 @@ def claim_state() -> dict:
     return updates.read_json(claim_state_path()) or {}
 
 
-def ensure_libraries(url: str, token: str, session: requests.Session | None = None) -> list[str]:
-    """Creates whichever of the box's two libraries the server doesn't
-    already have a library on that folder for. Returns the names made."""
+def wanted_folders() -> dict[str, list[str]]:
+    """Every drive's Movies and TV Shows folder, as Plex sees them: Plex
+    mounts each drive at the same /media/<drive> as the backend."""
+    return {kind: [str(root) for root in drives.library_roots(kind)] for kind in ("movie", "tv")}
+
+
+def sync_libraries(url: str, token: str, folders: dict[str, list[str]] | None = None,
+                   session: requests.Session | None = None) -> list[str]:
+    """The box's Movies and TV Shows libraries, listing every drive's
+    folder: made when missing, and given any drive's folder they don't
+    have yet. Folders already there stay, a drive's that has gone
+    missing included (it may come back) and any a person added. A kind
+    with no drive yet is left until there is one: Plex won't make a
+    library with no folder. Returns what changed, for the log."""
+    folders = folders if folders is not None else wanted_folders()
     http = session or requests.Session()
-    headers = {"Accept": "application/json", "X-Plex-Token": token}
+    headers = {"Accept": "application/json", **({"X-Plex-Token": token} if token else {})}
     response = http.get(f"{url}/library/sections", headers=headers, timeout=10)
     response.raise_for_status()
-    taken = {
-        location.get("path")
-        for section in response.json().get("MediaContainer", {}).get("Directory", []) or []
-        for location in section.get("Location", []) or []
-    }
-    made = []
-    for name, kind, agent, scanner, folder in LIBRARIES:
-        if folder in taken:
+    sections = response.json().get("MediaContainer", {}).get("Directory", []) or []
+    changes = []
+    for name, kind, agent, scanner, folder_kind in LIBRARIES:
+        want = folders.get(folder_kind) or []
+        if not want:
             continue
-        created = http.post(
-            f"{url}/library/sections",
-            headers=headers,
-            params={"name": name, "type": kind, "agent": agent, "scanner": scanner, "language": "en-US", "location": folder},
-            timeout=15,
-        )
-        created.raise_for_status()
-        made.append(name)
-    return made
+        ours = next((x for x in sections if x.get("type") == kind and x.get("title") == name), None) or next(
+            (x for x in sections if x.get("type") == kind
+             and any(loc.get("path") in want for loc in x.get("Location") or [])), None)
+        if ours is None:
+            params = [("name", name), ("type", kind), ("agent", agent), ("scanner", scanner), ("language", "en-US")]
+            created = http.post(f"{url}/library/sections", headers=headers,
+                                params=params + [("location", f) for f in want], timeout=15)
+            created.raise_for_status()
+            changes.append(f"made {name}")
+            continue
+        have = [loc.get("path") for loc in ours.get("Location") or [] if loc.get("path")]
+        missing = [f for f in want if f not in have]
+        if not missing:
+            continue
+        # Plex replaces a library's folders with the list it's sent, so it
+        # gets them all; the agent keeps its scanner and settings.
+        params = [("agent", ours.get("agent") or agent), ("name", ours.get("title") or name),
+                  ("language", ours.get("language") or "en-US")]
+        edited = http.put(f"{url}/library/sections/{ours['key']}", headers=headers,
+                          params=params + [("location", f) for f in have + missing], timeout=15)
+        edited.raise_for_status()
+        changes.append(f"{name}: added {', '.join(missing)}")
+    return changes

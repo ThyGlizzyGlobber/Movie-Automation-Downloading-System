@@ -37,7 +37,7 @@ def box(tmp_path, monkeypatch):
     updates.write_json(updates.heartbeat_path(), {"at": updates.now_iso(), "script": 4})
     state = {"claimed": False, "resources": [], "libraries": []}
     monkeypatch.setattr(box_plex, "identity", lambda url: {"machine_identifier": MACHINE, "claimed": state["claimed"]})
-    monkeypatch.setattr(box_plex, "ensure_libraries", lambda url, token: state["libraries"].append((url, token)) or ["Movies"])
+    monkeypatch.setattr(box_plex, "sync_libraries", lambda url, token: state["libraries"].append((url, token)) or ["made Movies"])
     monkeypatch.setattr(PlexClient, "create_pin", lambda self: {"id": 1, "code": "ABCD"})
     monkeypatch.setattr(PlexClient, "check_pin", lambda self, pin_id: "account-token")
     monkeypatch.setattr(PlexClient, "get_account_username", lambda self, token: "buyer")
@@ -143,7 +143,7 @@ class FakeResponse:
 
 class FakePlexHTTP:
     def __init__(self, sections):
-        self.sections, self.created = sections, []
+        self.sections, self.created, self.edited = sections, [], []
 
     def get(self, url, headers, timeout):
         return FakeResponse(body={"MediaContainer": {"Directory": self.sections}})
@@ -152,14 +152,68 @@ class FakePlexHTTP:
         self.created.append(params)
         return FakeResponse()
 
+    def put(self, url, headers, params, timeout):
+        self.edited.append((url.rsplit("/", 1)[1], params))
+        return FakeResponse()
 
-def test_only_missing_libraries_are_made():
-    http = FakePlexHTTP([{"title": "Films", "Location": [{"path": "/media/Movies"}]}])
-    made = box_plex.ensure_libraries(BOX_URL, "tok", session=http)
-    assert made == ["TV Shows"]
-    (created,) = http.created
-    assert created == {"name": "TV Shows", "type": "show", "agent": "tv.plex.agents.series",
-                       "scanner": "Plex TV Series", "language": "en-US", "location": "/media/TV Shows"}
+
+FOLDERS = {"movie": ["/media/drive1/Movies", "/media/drive2/Movies"], "tv": ["/media/drive1/TV Shows", "/media/drive2/TV Shows"]}
+
+
+def locations(params):
+    return [value for key, value in params if key == "location"]
+
+
+def test_libraries_are_made_listing_every_drive():
+    http = FakePlexHTTP([])
+    changes = box_plex.sync_libraries(BOX_URL, "tok", FOLDERS, session=http)
+    assert changes == ["made Movies", "made TV Shows"]
+    movies, tv = http.created
+    assert dict(movies)["agent"] == "tv.plex.agents.movie" and dict(movies)["scanner"] == "Plex Movie"
+    assert locations(movies) == ["/media/drive1/Movies", "/media/drive2/Movies"]
+    assert dict(tv)["type"] == "show" and locations(tv) == ["/media/drive1/TV Shows", "/media/drive2/TV Shows"]
+
+
+def test_a_new_drive_s_folder_is_added_and_nothing_is_taken_away():
+    http = FakePlexHTTP([
+        {"key": "1", "type": "movie", "title": "Movies", "agent": "tv.plex.agents.movie", "language": "en-US",
+         "Location": [{"path": "/media/drive1/Movies"}, {"path": "/mnt/old-nas/films"}]},
+        {"key": "2", "type": "show", "title": "TV Shows", "agent": "tv.plex.agents.series",
+         "Location": [{"path": "/media/drive1/TV Shows"}, {"path": "/media/drive2/TV Shows"}]},
+    ])
+    changes = box_plex.sync_libraries(BOX_URL, "tok", FOLDERS, session=http)
+    assert http.created == []
+    ((key, params),) = http.edited  # TV Shows already has both
+    assert key == "1" and dict(params)["agent"] == "tv.plex.agents.movie"
+    assert locations(params) == ["/media/drive1/Movies", "/mnt/old-nas/films", "/media/drive2/Movies"]
+    assert changes == ["Movies: added /media/drive2/Movies"]
+
+
+def test_without_a_drive_there_is_no_library_to_make_yet():
+    http = FakePlexHTTP([])
+    assert box_plex.sync_libraries(BOX_URL, "tok", {"movie": [], "tv": []}, session=http) == []
+    assert http.created == []
+
+
+def test_plex_hears_about_drives_only_when_they_change(box, tmp_path, monkeypatch):
+    from app import worker as worker_module
+
+    store, _ = box
+    store.save_plex_server(MACHINE, "obsidian", BOX_URL, "server-token")
+    folders = {"movie": ["/media/drive1/Movies"], "tv": ["/media/drive1/TV Shows"]}
+    monkeypatch.setattr(box_plex, "wanted_folders", lambda: folders)
+    told = []
+    monkeypatch.setattr(box_plex, "sync_libraries", lambda url, token, f: told.append((url, token, dict(f))) or [])
+    w = worker_module.Worker.__new__(worker_module.Worker)
+    w.store = store
+
+    asyncio.run(w._sync_box_libraries())
+    asyncio.run(w._sync_box_libraries())
+    assert told == [(BOX_URL, "server-token", folders)]  # once, then nothing new to say
+
+    folders = {"movie": ["/media/drive1/Movies", "/media/drive2/Movies"], "tv": ["/media/drive1/TV Shows", "/media/drive2/TV Shows"]}
+    asyncio.run(w._sync_box_libraries())
+    assert len(told) == 2 and told[1][2] == folders
 
 
 def test_the_box_s_plex_is_found_at_the_container_s_gateway(monkeypatch):

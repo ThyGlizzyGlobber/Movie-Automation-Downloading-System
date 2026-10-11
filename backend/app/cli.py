@@ -4,7 +4,7 @@ import sys
 import time
 from pathlib import Path
 
-from app import config
+from app import config, drives
 from app.db import RequestStore
 from app.media_organizer import (
     MediaOrganizerError,
@@ -46,7 +46,7 @@ def _roots(args: argparse.Namespace) -> list[Path]:
     if args.root:
         return [Path(r) for r in args.root]
     _store().close()
-    return [config.MOVIE_LIBRARY_ROOT, config.TV_LIBRARY_ROOT]
+    return drives.library_roots("movie") + drives.library_roots("tv")
 
 
 def cmd_organize_pack(args: argparse.Namespace) -> int:
@@ -153,7 +153,7 @@ def cmd_cleanup_orphans(args: argparse.Namespace) -> int:
 
     # Folders left on disk after qBittorrent forgot the torrent — no
     # entry left to match on, so these are found by hardlink identity.
-    roots = args.root or [str(config.MOVIE_LIBRARY_ROOT), str(config.TV_LIBRARY_ROOT)]
+    roots = args.root or [str(root) for root in drives.download_roots()]
     folders = remove_orphaned_download_dirs(store, roots, apply=args.apply)
     for item in folders:
         total += item["size_bytes"] or 0
