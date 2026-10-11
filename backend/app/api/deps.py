@@ -181,8 +181,8 @@ def get_tmdb(request: Request) -> TMDBClient:
 
 
 def get_qbt(request: Request) -> QBTClient:
-    """See get_tmdb's docstring immediately above — same reasoning,
-    same accepted restart-needed gap."""
+    """None until qBittorrent first answers: main.py keeps retrying in the
+    background and fills this in (with the worker) once it does."""
     return request.app.state.qbt
 
 
@@ -211,7 +211,7 @@ def get_worker(request: Request) -> Worker:
     worker = request.app.state.worker
     if worker is None:
         raise HTTPException(
-            status_code=503, detail="background worker isn't running — qBittorrent wasn't reachable at startup"
+            status_code=503, detail="Downloads aren't running yet: qBittorrent isn't reachable"
         )
     return worker
 

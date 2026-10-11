@@ -46,6 +46,9 @@ records the minor and major releases, and the patches worth calling out. See
 
 ### Fixed
 
+- Downloads didn't start if qBittorrent came up after Obsidian, as it does on a cold start
+  with qBittorrent waiting on its VPN, until Obsidian was restarted. Obsidian now keeps
+  trying and starts them as soon as qBittorrent answers.
 - Browse pages failed with an error whenever the Plex server couldn't be reached;
   they now load without the "On Plex" badges until it's back.
 

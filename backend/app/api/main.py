@@ -3,6 +3,7 @@ builds the store, clients and background worker, and the rate limiter's
 wiring. Routes are registered by the area modules and the default-deny
 routers included by this package's __init__."""
 
+import asyncio
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 
@@ -54,7 +55,7 @@ async def lifespan(app: FastAPI):
     try:
         app.state.qbt = QBTClient(qbt_config.host, qbt_config.port, qbt_config.username, qbt_config.password)
     except Exception as exc:  # pragma: no cover — exact exception type is qbittorrentapi's, not ours to depend on
-        logger.warning("qBittorrent unreachable at startup (%s) — background worker not started this boot", exc)
+        logger.warning("qBittorrent unreachable at startup (%s)", exc)
         app.state.qbt = None
 
     app.state.worker = Worker(store, app.state.tmdb, app.state.qbt) if app.state.qbt else None
@@ -76,23 +77,43 @@ async def lifespan(app: FastAPI):
         logger.warning("Enter this in the setup wizard to continue.")
         logger.warning("=" * 60)
 
+    connecting = None
     if app.state.worker:
         await app.state.worker.start()
     else:
-        # Named, accepted gap (frontend migration Part E): on a fresh
-        # install, qBittorrent isn't reachable yet at this first boot (the
-        # setup wizard is what configures it) — the worker, and any route
-        # depending on get_worker/get_qbt, stay unavailable until the next
-        # restart after that's fixed. Only reachable at all before
-        # qBittorrent's ever been configured; nothing could have been
-        # queued yet for the worker to act on regardless.
-        logger.warning("worker not started: qBittorrent was not reachable at boot")
+        # qBittorrent isn't there yet: not set up (the wizard does that), or
+        # simply still starting — on a box everything powers up at once, and
+        # qBittorrent waits on the VPN. Keep trying in the background rather
+        # than waiting for a restart, and start the worker the moment it
+        # answers, with whatever settings are saved by then.
+        logger.warning("qBittorrent not reachable yet; retrying every %ss", QBT_RETRY_SECONDS)
+        connecting = asyncio.create_task(_connect_qbt_when_ready(app, store), name="qbt-connect")
     try:
         yield
     finally:
+        if connecting:
+            connecting.cancel()
         if app.state.worker:
             await app.state.worker.stop()
         store.close()
+
+
+QBT_RETRY_SECONDS = 10
+
+
+async def _connect_qbt_when_ready(app: FastAPI, store: RequestStore) -> None:
+    while True:
+        await asyncio.sleep(QBT_RETRY_SECONDS)
+        settings = config.resolve_qbt_config(store)
+        try:
+            qbt = await asyncio.to_thread(QBTClient, settings.host, settings.port, settings.username, settings.password)
+        except Exception:  # noqa: BLE001 — not there yet; the next try will say if it still isn't
+            continue
+        app.state.qbt = qbt
+        app.state.worker = Worker(store, app.state.tmdb, qbt)
+        await app.state.worker.start()
+        logger.info("qBittorrent reachable at %s:%s; background worker started", settings.host, settings.port)
+        return
 
 
 app = FastAPI(title="Obsidian", version=version.current().version or "unknown", lifespan=lifespan)
