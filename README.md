@@ -218,8 +218,11 @@ What a box ships with: [`truenas/obsidian-box.yaml`](truenas/obsidian-box.yaml),
 holding Obsidian, qBittorrent, Plex and Gluetun. qBittorrent has no network of its own:
 it reaches the internet only through the buyer's VPN, and with no VPN, nothing.
 [`truenas/provision.py`](truenas/provision.py) builds a box from a fresh TrueNAS 25.10
-install with three or four hard drives of one size in its bays. TrueNAS itself lives on a
-separate small SSD or NVMe drive, not in a bay.
+install. A box has two internal SSDs, outside the four 3.5" bays: one TrueNAS boots from,
+and one for the apps, since TrueNAS can't run apps from its boot drive. It ships with no
+hard drives or with some, and each hard drive is its own storage. A download goes to the
+drive with the most room and is filed on that same drive. Plex's libraries list every
+drive. A drive that fails loses only its own titles.
 
 ```bash
 python3 provision.py --serial OBS-0001
@@ -227,14 +230,15 @@ python3 provision.py --serial OBS-0001
 
 Run it as root in the TrueNAS shell, with `obsidian-box.yaml` and `obsidian-updater.py`
 beside it. It:
-- builds the hard drives into one pool (RAIDZ1). The pool survives any one drive failing and
-  grows a drive at a time; a new drive must be the same size as the others or larger;
+- builds the apps SSD into the `apps` pool and has TrueNAS keep its apps there;
 - names the box so it answers at http://obsidian.local, and moves TrueNAS's own page to
   port 8080;
 - caps ZFS's memory cache;
 - creates the datasets and permissions;
 - makes the box's setup code and other secrets;
-- installs the app and the updater.
+- installs the app and the updater;
+- adds any hard drives in the bays, each as a drive of its own (`/media/drive1`, …), the
+  same way Settings → Storage adds them later.
 
 At the end it prints what goes on the box's card, and keeps the same in a root-only
 `provisioned.json`. The card itself is [`truenas/card.html`](truenas/card.html). Open it in

@@ -2,29 +2,34 @@
 """Turns a fresh TrueNAS 25.10 install into an Obsidian box. Run once per box
 at the factory, as root in the TrueNAS shell, before it ships:
 
-    python3 provision.py --pool tank --serial OBS-0001
+    python3 provision.py --serial OBS-0001
 
 with obsidian-box.yaml and obsidian-updater.py beside it (fetch all three
-from the repo's truenas/ folder). In order, it:
+from the repo's truenas/ folder).
+
+A box boots TrueNAS from one small SSD, keeps its apps on a second internal
+SSD, and has four 3.5" bays for hard drives. A box may ship with no hard
+drives, or with some; each is its own storage (see backend/app/drives.py),
+and the buyer adds more from Settings › Storage. In order, it:
 
   1. checks it's on TrueNAS 25.10, as root, with no Obsidian app yet, and
-     — unless the pool is already there — with at least three unused hard
-     drives of one size to build it from
-  2. builds those drives into the pool: one RAIDZ1 vdev, which survives
-     any one drive failing and grows a drive at a time (a new drive the
-     same size or larger) — Settings › Storage in the app adds them later
+     an SSD for the apps (unused, or already the "apps" pool)
+  2. builds that SSD into the "apps" pool and has TrueNAS keep its apps
+     there — TrueNAS can't run apps from its own boot drive
   3. names the box `obsidian` and announces it on the network, so
      http://obsidian.local reaches it, and moves TrueNAS's own web page to
      port 8080 so Obsidian can have the standard one
   4. caps ZFS's memory cache at half the RAM, now and after every reboot —
      left alone it takes nearly all of it and the box falls over
-  5. creates the datasets, and the media folders qBittorrent and Plex share
+  5. creates the app's datasets on the apps pool
   6. makes the box's secrets — its setup code, qBittorrent's password,
      the VPN status key — and seeds qBittorrent's settings
   7. installs the app (truenas/obsidian-box.yaml), with the GPU passed to
      Plex when there is one, and waits for the site to answer
-  8. installs the updater, in a root-only dataset the app never mounts
-  9. prints what goes on the box's card, and keeps a root-only record
+  8. adds each hard drive the box ships with as a drive of its own, exactly
+     as the updater adds one later
+  9. installs the updater, in a root-only dataset the app never mounts
+ 10. prints what goes on the box's card, and keeps a root-only record
 
 Each step checks what's already done, so a run that stopped partway can be
 run again. Standard library only, so it runs on TrueNAS's own Python.
@@ -33,6 +38,7 @@ run again. Standard library only, so it runs on TrueNAS's own Python.
 import argparse
 import base64
 import hashlib
+import importlib.util
 import json
 import os
 import secrets
@@ -45,43 +51,40 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 APP_NAME = "obsidian"
+APPS_POOL = "apps"
 HOSTNAME = "obsidian"
 TRUENAS_UI_PORT = 8080
 TRUENAS_UI_HTTPS_PORT = 8443
 APPS_UID = 568  # TrueNAS's own "apps" user, which qBittorrent and Plex run as
 ARC_COMMENT = "Obsidian: cap the ZFS memory cache"
 TRUENAS_SERIES = "25.10"
-# A box's media pool: at least three hard drives, one RAIDZ1 vdev. Drives
-# sold as the same size differ by a few megabytes between makers, so
-# "the same" allows 1%.
-MIN_DRIVES = 3
-SIZE_TOLERANCE = 0.01
+
+# The setup code on a box's card: typed by a person, so no letters that
+# pass for others (no I, L, O, U; no 0 or 1). Twelve of these is about 60
+# bits, and setup only answers on the home network, rate limited.
+_CODE_ALPHABET = "ABCDEFGHJKMNPQRSTVWXYZ23456789"
 
 
 def tb(size: int) -> str:
     return f"{size / 1000**4:.1f} TB"
 
 
-def pick_drives(unused: list[dict]) -> list[dict]:
-    """The unused hard drives to build the pool from, or SystemExit saying
-    why there aren't the right ones. SSDs are left out: TrueNAS's own
-    system drive, or anything else that isn't for media."""
-    drives = sorted((d for d in unused if d.get("type") == "HDD"), key=lambda d: d["name"])
-    if len(drives) < MIN_DRIVES:
-        raise SystemExit(
-            f"Found {len(drives)} unused hard drive{'s' if len(drives) != 1 else ''}; a box needs at least "
-            f"{MIN_DRIVES} of the same size to build its storage."
-        )
-    smallest, largest = min(d["size"] for d in drives), max(d["size"] for d in drives)
-    if largest > smallest * (1 + SIZE_TOLERANCE):
-        sizes = ", ".join(f"{d['name']} {tb(d['size'])}" for d in drives)
-        raise SystemExit(f"The drives have to be the same size; these aren't: {sizes}.")
-    return drives
+def storage_summary(sizes: list[int]) -> str:
+    """What the card says the box ships with."""
+    if not sizes:
+        return "No hard drives"
+    if len(set(sizes)) == 1:
+        return f"{len(sizes)} × {tb(sizes[0])}"
+    return f"{len(sizes)} drives: {', '.join(tb(s) for s in sizes)}"
 
-# The setup code on a box's card: typed by a person, so no letters that
-# pass for others (no I, L, O, U; no 0 or 1). Twelve of these is about 60
-# bits, and setup only answers on the home network, rate limited.
-_CODE_ALPHABET = "ABCDEFGHJKMNPQRSTVWXYZ23456789"
+
+def load_updater(here: Path):
+    """obsidian-updater.py, beside this script: the one place drives are
+    set up, so a drive added at the factory is the same as one added later."""
+    spec = importlib.util.spec_from_file_location("obsidian_updater", here / "obsidian-updater.py")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
 
 def setup_code() -> str:
@@ -102,14 +105,14 @@ def qbittorrent_password_hash(password: str, salt: bytes | None = None) -> str:
 
 def qbittorrent_conf(password: str) -> str:
     """The qBittorrent.conf a box starts with: its WebUI password (made per
-    box), downloads into /media/downloads, and bound to the VPN tunnel's
+    box), saving under /media (each download names its drive), and bound to the VPN tunnel's
     interface — a second lock behind gluetun's firewall, so qBittorrent
     won't use any other interface even if one appeared."""
     return f"""[LegalNotice]
 Accepted=true
 
 [BitTorrent]
-Session\\DefaultSavePath=/media/downloads
+Session\\DefaultSavePath=/media
 Session\\TempPathEnabled=false
 Session\\Interface=tun0
 Session\\InterfaceName=tun0
@@ -167,14 +170,15 @@ class Middleware:
 
 
 class Provisioner:
-    def __init__(self, mw, pool: str, *, serial: str, channel: str = "stable", tz: str | None = None,
-                 here: Path | None = None, mnt: Path = Path("/mnt"), sysfs: Path = Path("/sys"),
-                 dev: Path = Path("/dev"), site: str = "http://127.0.0.1", say=print, sleep=time.sleep):
+    def __init__(self, mw, *, serial: str, channel: str = "stable", tz: str | None = None,
+                 apps_disk: str | None = None, here: Path | None = None, mnt: Path = Path("/mnt"),
+                 sysfs: Path = Path("/sys"), dev: Path = Path("/dev"), site: str = "http://127.0.0.1",
+                 say=print, sleep=time.sleep):
         self.mw = mw
-        self.pool = pool
         self.serial = serial
         self.channel = channel
         self.tz = tz
+        self.apps_disk = apps_disk
         self.here = here or Path(__file__).resolve().parent
         self.mnt = mnt
         self.sysfs = sysfs
@@ -194,40 +198,37 @@ class Provisioner:
         version = str(self.mw.call("system.version"))
         if f"-{TRUENAS_SERIES}" not in version:
             raise SystemExit(f"This is {version}; a box is built on TrueNAS {TRUENAS_SERIES}.")
-        self.drives = None
-        if not self.mw.call("pool.query", [["name", "=", self.pool]]):
-            # Checked now, so drives that won't do stop the run before
-            # anything on the box has changed.
-            self.drives = pick_drives(self.mw.call("disk.get_unused"))
         if self.mw.call("app.query", [["name", "=", APP_NAME]]):
             raise SystemExit(f"An app called {APP_NAME!r} is already installed; this box looks provisioned.")
         for needed in ("obsidian-box.yaml", "obsidian-updater.py"):
             if not (self.here / needed).is_file():
                 raise SystemExit(f"{needed} has to be beside this script.")
-        self.say(f"TrueNAS {version}, pool {self.pool}: ready.")
+        unused = self.mw.call("disk.get_unused")
+        self.ssd = None
+        if not self.mw.call("pool.query", [["name", "=", APPS_POOL]]):
+            ssds = [d for d in unused if d.get("type") == "SSD" and (self.apps_disk in (None, d.get("name")))]
+            if not ssds:
+                raise SystemExit("There's no unused SSD for the apps. A box needs a second internal SSD beside the boot drive.")
+            if len(ssds) > 1:
+                names = ", ".join(f"{d['name']} ({tb(d['size'])})" for d in ssds)
+                raise SystemExit(f"There's more than one unused SSD ({names}). Name the one for the apps with --apps-disk.")
+            self.ssd = ssds[0]
+        # Every unused hard drive is one the box ships with.
+        self.hard_drives = sorted((d for d in unused if d.get("type") == "HDD"), key=lambda d: d["name"])
+        self.say(f"TrueNAS {version}: ready. Ships with: {storage_summary([d['size'] for d in self.hard_drives])}.")
 
     # -- 2 --
 
-    def storage(self) -> str:
-        """Builds the pool when it isn't there. What it's made of either way,
-        for the box's record."""
-        if self.drives is None:
-            pool = self.mw.call("pool.query", [["name", "=", self.pool]])[0]
-            data = (pool.get("topology") or {}).get("data") or []
-            disks = sum(len(vdev.get("children") or []) or 1 for vdev in data)
-            kinds = {vdev.get("type") for vdev in data}
-            return f"{disks} drives, {', '.join(sorted(k for k in kinds if k)) or 'existing pool'}"
-        names = [d["name"] for d in self.drives]
-        size = min(d["size"] for d in self.drives)
-        self.say(f"Building pool {self.pool} from {len(names)} × {tb(size)} drives ({', '.join(names)})...")
-        self.mw.call("pool.create", {
-            "name": self.pool,
-            "encryption": False,
-            "topology": {"data": [{"type": "RAIDZ1", "disks": names}]},
-        }, job=True)
-        summary = f"{len(names)} × {tb(size)}, RAIDZ1"
-        self.say(f"Pool {self.pool} built: {summary}. It survives any one drive failing.")
-        return summary
+    def apps_pool(self) -> None:
+        if self.ssd is not None:
+            self.say(f"Building the apps pool on {self.ssd['name']} ({tb(self.ssd['size'])})...")
+            self.mw.call("pool.create", {
+                "name": APPS_POOL, "encryption": False,
+                "topology": {"data": [{"type": "STRIPE", "disks": [self.ssd["name"]]}]},
+            }, job=True)
+        if (self.mw.call("docker.config") or {}).get("pool") != APPS_POOL:
+            self.mw.call("docker.update", {"pool": APPS_POOL}, job=True)
+        self.say("Apps live on the apps pool.")
 
     # -- 3 --
 
@@ -259,23 +260,20 @@ class Provisioner:
 
     def datasets(self) -> dict[str, Path]:
         names = {
-            "data": f"{self.pool}/obsidian/data",
-            "qbittorrent": f"{self.pool}/obsidian/qbittorrent",
-            "plex": f"{self.pool}/obsidian/plex",
-            "gluetun": f"{self.pool}/obsidian/gluetun",
-            "media": f"{self.pool}/media",
+            "data": f"{APPS_POOL}/obsidian/data",
+            "qbittorrent": f"{APPS_POOL}/obsidian/qbittorrent",
+            "plex": f"{APPS_POOL}/obsidian/plex",
+            "gluetun": f"{APPS_POOL}/obsidian/gluetun",
             # The updater lives here: root only, and never mounted by the app.
-            "system": f"{self.pool}/obsidian-system",
+            "system": f"{APPS_POOL}/obsidian-system",
         }
-        for dataset in [f"{self.pool}/obsidian", *names.values()]:
+        for dataset in [f"{APPS_POOL}/obsidian", *names.values()]:
             if not self.mw.call("pool.dataset.query", [["id", "=", dataset]]):
                 self.mw.call("pool.dataset.create", {"name": dataset, "type": "FILESYSTEM"})
         paths = {key: self.path(name) for key, name in names.items()}
-        for folder in ("downloads", "Movies", "TV Shows"):
-            (paths["media"] / folder).mkdir(parents=True, exist_ok=True)
         # qBittorrent and Plex run as TrueNAS's apps user; the backend and
         # gluetun as root. The updater's home is root's alone.
-        for key in ("qbittorrent", "plex", "media"):
+        for key in ("qbittorrent", "plex"):
             self.mw.call("filesystem.setperm", {
                 "path": str(paths[key]), "uid": APPS_UID, "gid": APPS_UID, "mode": "775",
                 "options": {"recursive": True, "stripacl": True},
@@ -283,7 +281,7 @@ class Provisioner:
         self.mw.call("filesystem.setperm", {
             "path": str(paths["system"]), "uid": 0, "gid": 0, "mode": "700", "options": {"stripacl": True},
         }, job=True)
-        self.say(f"Datasets ready; media in {paths['media']}.")
+        self.say("The app's datasets are ready on the apps pool.")
         return paths
 
     # -- 6 --
@@ -308,7 +306,6 @@ class Provisioner:
         compose = fill((self.here / "obsidian-box.yaml").read_text(), {
             "CHANNEL": self.channel,
             "DATA_PATH": str(paths["data"]),
-            "MEDIA_PATH": str(paths["media"]),
             "QBIT_CONFIG_PATH": str(paths["qbittorrent"]),
             "PLEX_CONFIG_PATH": str(paths["plex"]),
             "GLUETUN_PATH": str(paths["gluetun"]),
@@ -338,15 +335,50 @@ class Provisioner:
 
     # -- 8 --
 
+    def drives(self) -> list[int]:
+        """Each hard drive the box ships with, as a drive of its own: the
+        updater's own steps (pool, layout, owner, marker), then one app
+        update mounting them all. Sizes, for the card."""
+        if not self.hard_drives:
+            self.say("No hard drives to add; the buyer adds them from Settings › Storage.")
+            return []
+        host = load_updater(self.here)
+        compose = self.mw.call("app.config", APP_NAME)
+        pools = [p.get("name") for p in self.mw.call("pool.query")]
+        for disk in self.hard_drives:
+            name = host.next_drive_name(pools, self.mnt)
+            pools.append(name)
+            label = f"Drive {name.removeprefix('drive')}"
+            self.mw.call("pool.create", {
+                "name": name, "encryption": False, "topology": {"data": [{"type": "STRIPE", "disks": [disk["name"]]}]},
+            }, job=True)
+            top = self.mnt / name
+            for folder in host.DRIVE_LAYOUT:
+                (top / folder).mkdir(parents=True, exist_ok=True)
+            self.mw.call("filesystem.setperm", {
+                "path": str(top), "uid": APPS_UID, "gid": APPS_UID, "mode": "775",
+                "options": {"recursive": True, "stripacl": True},
+            }, job=True)
+            (top / host.DRIVE_MARKER).write_text(json.dumps({
+                "id": name, "label": label, "size_bytes": disk["size"], "serial": disk.get("serial"),
+                "added_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+            }, indent=2))
+            compose = host.with_drive(compose, name, self.mnt, host.IMAGE_PREFIX)
+            self.say(f"{label}: {disk['name']}, {tb(disk['size'])}.")
+        self.mw.call("app.update", APP_NAME, {"custom_compose_config": compose}, job=True)
+        return [d["size"] for d in self.hard_drives]
+
+    # -- 9 --
+
     def updater(self, paths: dict[str, Path]) -> None:
         script = paths["system"] / "obsidian-updater.py"
         script.write_bytes((self.here / "obsidian-updater.py").read_bytes())
         result = subprocess.run([sys.executable, str(script), "install", "--app", APP_NAME], capture_output=True, text=True)
         if result.returncode != 0:
             raise SystemExit(f"The updater wouldn't install:\n{result.stdout}{result.stderr}")
-        self.say("Updater installed: updates and VPN changes from the app are applied every minute.")
+        self.say("Updater installed: updates, VPN changes and new drives from the app are applied every minute.")
 
-    # -- 9 --
+    # -- 10 --
 
     def record(self, paths: dict[str, Path], made: dict[str, str], version: str, storage: str) -> dict:
         card = {
@@ -370,12 +402,13 @@ class Provisioner:
 
     def run(self) -> dict:
         self.preflight()
-        storage = self.storage()
+        self.apps_pool()
         self.network()
         self.memory()
         paths = self.datasets()
         made = self.secrets(paths)
         version = self.app(paths, made)
+        storage = storage_summary(self.drives())
         self.updater(paths)
         card = self.record(paths, made, version, storage)
         self.say("")
@@ -384,7 +417,7 @@ class Provisioner:
         self.say(f"  Address:     {card['address']}")
         self.say(f"  Setup code:  {card['setup_code']}")
         self.say(f"  QR code to:  {card['setup_link']}")
-        self.say(f"  Storage:     {card['storage']} (add a drive the same size or larger)")
+        self.say(f"  Ships with:  {card['storage']}")
         self.say(f"  (TrueNAS's own page, for support: {card['truenas_admin']})")
         self.say(f"Kept in {paths['system'] / 'provisioned.json'} (root only).")
         return card
@@ -392,15 +425,12 @@ class Provisioner:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Turns a fresh TrueNAS 25.10 install into an Obsidian box.")
-    parser.add_argument(
-        "--pool", default="tank",
-        help="the pool for Obsidian and the media; built from the unused hard drives if it isn't there yet",
-    )
     parser.add_argument("--serial", required=True, help="this box's serial, for its card and your records")
     parser.add_argument("--channel", choices=("stable", "beta"), default="stable")
     parser.add_argument("--tz", help="time zone, like Australia/Sydney (default: TrueNAS's own)")
+    parser.add_argument("--apps-disk", help="the SSD for the apps, when there's more than one unused (like nvme1n1)")
     args = parser.parse_args(argv)
-    Provisioner(Middleware(), args.pool, serial=args.serial, channel=args.channel, tz=args.tz).run()
+    Provisioner(Middleware(), serial=args.serial, channel=args.channel, tz=args.tz, apps_disk=args.apps_disk).run()
     return 0
 
 

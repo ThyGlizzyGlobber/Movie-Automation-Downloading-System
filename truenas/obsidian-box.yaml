@@ -16,10 +16,13 @@
 #   plex         Plex Media Server, on the host's network so it's found and
 #                claimed like any Plex server on the LAN
 #
-# Everything shares one media dataset, mounted at /media everywhere:
-# downloads land in /media/downloads and are hardlinked into /media/Movies
-# and /media/TV Shows, which needs them on one filesystem — so they're one
-# dataset, with no path translation between containers.
+# Every hard drive is its own storage (backend/app/drives.py), mounted at
+# /media/<drive> in the backend, qBittorrent and Plex alike, and laid out
+# the same way: downloads/<category>, Movies, TV Shows. A download goes to
+# the drive with the most space and is filed on that same drive, so it's a
+# hardlink. There are no drive mounts below: the NAS updater adds each one
+# as it's added (provision.py, for the drives a box ships with; Settings ›
+# Storage for the rest). The app's own data lives on the apps SSD.
 #
 # Image versions are pinned. Obsidian's own two move with updates (the
 # updater rewrites those lines); the others change only with a release that
@@ -42,8 +45,8 @@ services:
     image: ghcr.io/thyglizzyglobber/obsidian-backend:<CHANNEL>
     environment:
       TRAILER_X_ACCEL_PREFIX: "/internal-trailers/"
-      MOVIE_LIBRARY_ROOT: "/media/Movies"
-      TV_LIBRARY_ROOT: "/media/TV Shows"
+      # Where the drives appear, each once the updater has marked it ready.
+      MEDIA_DRIVES_ROOT: "/media"
       # qBittorrent listens inside gluetun's network, so it's reached by
       # gluetun's name. The password is made per box by provision.py.
       QBIT_HOST: "gluetun"
@@ -63,7 +66,6 @@ services:
       TZ: "<TZ>"
     volumes:
       - "<DATA_PATH>:/app/data"
-      - "<MEDIA_PATH>:/media"
     # No `ports:`, ever: nginx in the frontend is the only way in.
     expose:
       - "8000"
@@ -111,11 +113,10 @@ services:
       WEBUI_PORT: "8080"
       TZ: "<TZ>"
     volumes:
-      # Seeded by provision.py: the WebUI password, downloads into
-      # /media/downloads, and bound to the tunnel's interface (tun0) as a
-      # second lock behind gluetun's firewall.
+      # Seeded by provision.py: the WebUI password, and bound to the
+      # tunnel's interface (tun0) as a second lock behind gluetun's
+      # firewall. Each download is told which drive to save on.
       - "<QBIT_CONFIG_PATH>:/config"
-      - "<MEDIA_PATH>:/media"
     mem_limit: 2g
     restart: unless-stopped
 
@@ -128,7 +129,6 @@ services:
       TZ: "<TZ>"
     volumes:
       - "<PLEX_CONFIG_PATH>:/config"
-      - "<MEDIA_PATH>:/media:ro"
     # provision.py adds /dev/dri here when the box has an Intel or AMD GPU,
     # for hardware transcoding (a Plex Pass feature).
     restart: unless-stopped
