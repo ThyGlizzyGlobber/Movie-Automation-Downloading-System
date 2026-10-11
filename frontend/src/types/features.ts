@@ -94,12 +94,14 @@ export interface LibrarySettings {
   plex_refresh_after_import: boolean
   free_space_floor_gb: number
 }
-// backend/app/updater.py's state, as GET/POST /api/admin/updates report it.
+// The updater's state (truenas/obsidian-updater.py, on the NAS), as
+// GET/POST /api/admin/updates report it.
 export interface UpdaterStatus {
+  // Both say whether the updater has run on this box in the last few minutes.
   reachable: boolean
-  // null when the updater couldn't be asked and its state file stood in.
-  configured: boolean | null
-  state: 'idle' | 'updating' | 'verifying' | 'rolling_back' | 'done' | 'rolled_back' | 'failed'
+  configured: boolean
+  // queued: asked for, waiting for the updater's next run (at most a minute).
+  state: 'idle' | 'queued' | 'updating' | 'verifying' | 'rolling_back' | 'done' | 'rolled_back' | 'failed'
   from_version: string | null
   to_version: string | null
   message: string | null

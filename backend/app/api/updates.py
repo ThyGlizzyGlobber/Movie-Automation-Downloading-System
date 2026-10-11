@@ -1,16 +1,16 @@
 """Settings › Updates on a release install: what's running, what's newer on
 this box's channel and what changed in it, and the button that installs it.
-The installing itself is the updater sidecar's (app/updater.py); this side
-copies the database first and hands over. On a git-pull install there's no
-channel, and `POST /api/admin/deploy` (system.py) is the update instead."""
+Installing is truenas/obsidian-updater.py's job, on the NAS itself; this side
+copies the database and leaves the request (app/updates.py). On a git-pull
+install there's no channel, and `POST /api/admin/deploy` (system.py) is the
+update instead."""
 
 import time
 
-import requests
 from fastapi import Depends, HTTPException, Request
 from pydantic import BaseModel
 
-from app import config, updates, version
+from app import updates, version
 from app.db import RequestStore
 from app.api.deps import _client_ip, admin_router, get_store
 
@@ -36,24 +36,13 @@ def _latest(channel: str, refresh: bool) -> tuple[str | None, str | None, list[d
 
 
 def _updater_status() -> dict:
-    """The updater's own view when it answers. While it's being replaced
-    mid-update it can't, so the state file it keeps on the shared volume
-    stands in."""
-    token = updates.shared_token()
-    if token:
-        try:
-            response = requests.get(f"{config.UPDATER_URL}/status", headers={"X-Updater-Token": token}, timeout=5)
-            if response.ok:
-                return {"reachable": True, **response.json()}
-        except (requests.RequestException, ValueError):
-            pass
-    state = updates.read_json(updates.state_path()) or {"state": "idle"}
-    return {"reachable": False, "configured": None, **state}
-
-
-def _public(status: dict) -> dict:
-    keys = ("reachable", "configured", "state", "from_version", "to_version", "message", "started_at", "finished_at")
-    return {key: status.get(key) for key in keys}
+    """The updater's state, and whether it's running on this box at all —
+    it leaves a heartbeat every minute. `reachable` and `configured` say the
+    same thing; both are kept for the page."""
+    running = updates.updater_running()
+    state = updates.updater_state()
+    keys = ("state", "from_version", "to_version", "message", "started_at", "finished_at")
+    return {"reachable": running, "configured": running, **{key: state.get(key) for key in keys}}
 
 
 @admin_router.get("/api/admin/updates")
@@ -77,7 +66,7 @@ def get_updates(refresh: bool = False) -> dict:
         "skipped": skipped if latest == skipped else None,
         "notes": notes if available else [],
         "error": error,
-        "updater": _public(status),
+        "updater": status,
     }
 
 
@@ -92,28 +81,21 @@ def install_update(request: Request, body: InstallRequest, store: RequestStore =
         raise HTTPException(status_code=409, detail="This install updates with git pull")
     if not updates.is_newer(body.version, current):
         raise HTTPException(status_code=422, detail=f"{body.version} isn't newer than {current}")
-    token = updates.shared_token()
-    if not token:
-        raise HTTPException(status_code=409, detail="The updater isn't running on this box")
+    if not updates.updater_running():
+        raise HTTPException(status_code=409, detail="Updates aren't set up on this box yet")
+    if updates.updater_state().get("state") in updates.BUSY:
+        raise HTTPException(status_code=409, detail="An update is already under way")
+    try:
+        published = updates.release_exists(body.version)
+    except updates.RegistryError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    if not published:
+        raise HTTPException(status_code=404, detail=f"Version {body.version} isn't published")
 
     backup = updates.backup_database(store, current, body.version)
-    try:
-        response = requests.post(
-            f"{config.UPDATER_URL}/update",
-            json={"version": body.version, "from_version": current, "backup": backup.name},
-            headers={"X-Updater-Token": token},
-            timeout=60,
-        )
-    except requests.RequestException as exc:
-        raise HTTPException(status_code=502, detail=f"Couldn't reach the updater: {exc}") from exc
-    if not response.ok:
-        try:
-            detail = response.json().get("detail")
-        except ValueError:
-            detail = None
-        store.record_auth_event("deploy_failed", ip_address=_client_ip(request), detail=str(detail))
-        raise HTTPException(status_code=response.status_code, detail=detail or "The updater refused")
+    state = updates.request_update(body.version, current, backup.name)
     store.record_auth_event(
         "update_started", ip_address=_client_ip(request), detail=f"{current} to {body.version}"
     )
-    return _public({"reachable": True, **response.json()})
+    keys = ("state", "from_version", "to_version", "message", "started_at", "finished_at")
+    return {"reachable": True, "configured": True, **{key: state.get(key) for key in keys}}

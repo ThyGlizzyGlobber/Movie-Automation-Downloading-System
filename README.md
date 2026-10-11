@@ -343,12 +343,13 @@ channel, checks the registry for anything newer on that channel, shows a stable 
 notes from this changelog, and installs it with one button. Nothing needs a terminal:
 
 1. The backend copies the database to `backups/` in the app's data folder (the newest five
-   are kept).
-2. The **updater** service, the only part of the app holding a TrueNAS API key, rewrites
-   the app's image lines in TrueNAS to that exact version and asks TrueNAS to apply it.
-   TrueNAS pulls the images and restarts the app, the updater included.
-3. The new updater waits up to five minutes for the new version to answer as itself, with
-   the frontend serving. Then the page reloads onto the new version by itself.
+   are kept), then leaves a request: the version, and the name of that copy.
+2. On its next run, within a minute, the **updater** on the NAS
+   ([`truenas/obsidian-updater.py`](truenas/obsidian-updater.py)) picks it up. It rewrites
+   the app's image lines in TrueNAS to that exact version and has TrueNAS apply it, which
+   pulls the images and restarts the app.
+3. It waits up to five minutes for the new version to answer as itself, with the site
+   serving. The page reloads onto the new version by itself.
 4. If it doesn't come up, the updater puts the previous version back, and that version
    restores the database copy as it starts. Settings → Updates says what happened, and
    doesn't offer the failed release again; the next one published is offered as usual.
@@ -356,10 +357,10 @@ notes from this changelog, and installs it with one button. Nothing needs a term
 Rolling back by hand is pointing the image lines at the previous version in TrueNAS. The
 copy from before each update is in `backups/`.
 
-The Docker socket is never mounted, and the backend, the part the internet reaches, never
-holds the TrueNAS key. It asks the updater over the app's private network, with a token
-only the two of them can read. The updater only ever moves this app between published
-versions of its own images.
+The app holds no TrueNAS credential and can't change which version it runs: all it can do
+is leave a request naming a version, which the updater checks for itself. The updater is
+the one part with that power, and it runs on the NAS, outside the app, where the app can't
+reach it. The Docker socket is never mounted anywhere.
 
 **A git-pull install** (Options A and B): **Settings → Updates → Check for updates.** That
 runs a `git pull` against the deployed clone (tags included) and rebuilds the frontend in
@@ -431,20 +432,36 @@ only if they are public.
 
 ### Setting up updates on a box
 
-The updater signs in to TrueNAS with an API key, over TLS (TrueNAS revokes a key that is
-ever sent over plain HTTP, so there is no option to). Give it a key that can manage apps and
-nothing else:
+The updater is one Python script with nothing to install alongside it. It runs as root on
+the NAS every minute from a TrueNAS cron job, and talks to TrueNAS the way `midclt` does,
+through its local socket, so it needs no user and no API key. In the TrueNAS shell
+(System → Shell):
 
-1. In TrueNAS, create a local user `obsidian-updater` with no password login and no shell.
-2. Put it in a group whose privilege grants the **APPS_WRITE** role (Credentials → Groups →
-   Privileges).
-3. Create an API key for that user and put it in the updater's `TRUENAS_API_KEY` in
-   `truenas/obsidian-release.yaml`.
+1. Give it a folder of its own, somewhere the app doesn't mount, and fetch it there:
 
-The updater reaches TrueNAS at its own container's gateway, the NAS itself, so it keeps
-working if the box's LAN address changes. If the web interface only listens on one address
-(System → General → GUI), set `TRUENAS_HOST` to it. Without a key, Settings → Updates still
-shows what's available but says updates aren't set up.
+   ```bash
+   install -d -m 700 /mnt/<pool>/obsidian-updater
+   ```
+
+   ```bash
+   curl -fsSL -o /mnt/<pool>/obsidian-updater/obsidian-updater.py https://raw.githubusercontent.com/ThyGlizzyGlobber/Movie-Automation-Downloading-System/main/truenas/obsidian-updater.py
+   ```
+
+2. Install it for the app, by the name the app has in Apps → Installed:
+
+   ```bash
+   python3 /mnt/<pool>/obsidian-updater/obsidian-updater.py install --app obsidian
+   ```
+
+`install` refuses a folder the app can write to, or one holding the app's own folders: the
+script runs as root, so where it lives must be out of the app's reach. It then creates the
+cron job (System → Advanced → Cron Jobs, "Obsidian updater"), runs once, and prints the
+updater's state. `status` prints it again later; the updater's own log is `updater.log`
+beside the script.
+
+Without it, Settings → Updates still shows what's available but says updates aren't set up
+on this box. The script itself changes rarely, and doesn't update itself: fetch it again
+and rerun `install` if a release ever says to.
 
 ---
 

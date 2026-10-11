@@ -40,15 +40,6 @@ def test_the_channel_is_the_one_the_running_image_was_published_on(monkeypatch):
     assert updates.channel() == "stable"
 
 
-def test_only_our_images_are_ours():
-    assert updates.is_our_image("ghcr.io/thyglizzyglobber/obsidian-backend:stable") == "obsidian-backend"
-    assert updates.is_our_image("ghcr.io/thyglizzyglobber/obsidian-frontend:1.0.46") == "obsidian-frontend"
-    assert updates.is_our_image("cloudflare/cloudflared:latest") is None
-    assert updates.is_our_image("ghcr.io/someone-else/obsidian-backend:stable") is None
-    assert updates.is_our_image("ghcr.io/thyglizzyglobber/obsidian-other:1.0.0") is None
-    assert updates.image_ref("obsidian-backend", "1.1.0") == "ghcr.io/thyglizzyglobber/obsidian-backend:1.1.0"
-
-
 # -- the registry --
 
 
@@ -172,12 +163,23 @@ def test_a_version_without_a_section_has_no_notes():
 # -- shared files --
 
 
-def test_the_token_is_made_once_and_then_only_read(data):
-    assert updates.shared_token() is None
-    made = updates.shared_token(create=True)
-    assert made and updates.shared_token() == made
-    assert updates.shared_token(create=True) == made
-    assert (updates.token_path().stat().st_mode & 0o777) == 0o600
+def test_a_request_is_left_for_the_updater_and_the_update_shows_queued(data):
+    state = updates.request_update("1.0.47", "1.0.46", "obsidian-x.db")
+    assert updates.read_json(updates.request_path()) == {
+        "version": "1.0.47", "backup": "obsidian-x.db", "requested_at": state["started_at"],
+    }
+    assert updates.updater_state()["state"] == "queued"
+    assert "queued" in updates.BUSY
+
+
+def test_the_updater_counts_as_running_only_with_a_recent_heartbeat(data):
+    assert not updates.updater_running()
+    updates.write_json(updates.heartbeat_path(), {"at": updates.now_iso(), "script": 1})
+    assert updates.updater_running()
+    updates.write_json(updates.heartbeat_path(), {"at": "2026-01-01T00:00:00+00:00"})
+    assert not updates.updater_running()
+    updates.write_json(updates.heartbeat_path(), {"at": "not a time"})
+    assert not updates.updater_running()
 
 
 def test_json_files_are_written_whole(data):

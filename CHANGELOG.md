@@ -32,7 +32,8 @@ records the minor and major releases, and the patches worth calling out. See
   the box's channel, with the release notes, and installs it with one button. The database
   is copied first. If the new version doesn't start within five minutes, the box goes back
   to the previous one by itself, restores that copy, and doesn't offer the failed release
-  again. The TrueNAS API key it needs lives only in a separate updater service.
+  again. The installing is done by `truenas/obsidian-updater.py`, run every minute on the
+  NAS by a TrueNAS cron job, so the app itself holds no TrueNAS credential.
 
 ### Changed
 

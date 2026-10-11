@@ -8,7 +8,7 @@ import { SettingsCardSkeleton } from './SettingsSkeleton'
 import SettingRow from './SettingRow'
 
 const SUB = 'Install the latest version of Obsidian.'
-const BUSY: UpdaterStatus['state'][] = ['updating', 'verifying', 'rolling_back']
+const BUSY: UpdaterStatus['state'][] = ['queued', 'updating', 'verifying', 'rolling_back']
 
 function isBusy(data: UpdatesInfo | undefined): boolean {
   return data?.method === 'image' && BUSY.includes(data.updater.state)
@@ -129,11 +129,8 @@ function InstallControl({ updater, version, starting, onInstall }: {
   starting: boolean
   onInstall: (version: string) => void
 }) {
-  if (!updater.reachable) {
-    return <p className="plex-hint">The updater isn't running on this box, so the update can't be installed from here right now.</p>
-  }
-  if (updater.configured === false) {
-    return <p className="plex-hint">Automatic updates aren't set up on this box yet.</p>
+  if (!updater.configured) {
+    return <p className="plex-hint">Updates aren't set up on this box yet, so this one can't be installed from here.</p>
   }
   return (
     <div className="settings-btn-row">
@@ -150,7 +147,9 @@ function Progress({ updater }: { updater: UpdaterStatus }) {
       ? `${updater.message ?? "The update didn't start properly"}. Going back to v${updater.from_version}…`
       : updater.state === 'verifying'
         ? `Checking that v${updater.to_version} started properly…`
-        : `Installing v${updater.to_version}…`
+        : updater.state === 'queued'
+          ? `Getting ready to install v${updater.to_version}. This starts within a minute…`
+          : `Installing v${updater.to_version}…`
   return (
     <div className="update-progress" role="status">
       <span className="update-spinner" aria-hidden="true" />

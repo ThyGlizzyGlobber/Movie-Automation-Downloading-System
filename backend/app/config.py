@@ -403,10 +403,10 @@ DEPLOY_TIMEOUT_SECONDS = int(os.environ.get("DEPLOY_TIMEOUT_SECONDS", "60"))
 # ceiling rather than sharing DEPLOY_TIMEOUT_SECONDS's 60s default.
 DEPLOY_BUILD_TIMEOUT_SECONDS = int(os.environ.get("DEPLOY_BUILD_TIMEOUT_SECONDS", "180"))
 
-# -- In-app updates for a release install (app/updates.py, app/updater.py). --
+# -- In-app updates for a release install (app/updates.py). The installing
+#    is done by truenas/obsidian-updater.py, on the NAS itself. --
 
 # Where the release images live: <registry>/<owner>/obsidian-{backend,frontend}.
-# The updater only ever moves an install between tags of these images.
 # IMAGE_REGISTRY is the name image references use; IMAGE_REGISTRY_URL is
 # where its API answers (they differ only for a local test registry).
 IMAGE_REGISTRY = os.environ.get("IMAGE_REGISTRY", "ghcr.io")
@@ -421,28 +421,6 @@ SOURCE_REPO = os.environ.get("SOURCE_REPO", "ThyGlizzyGlobber/Movie-Automation-D
 # right as long as updates stay within one channel — and they do.
 UPDATE_CHANNEL = os.environ.get("UPDATE_CHANNEL") or None
 
-# The updater sidecar, as the backend reaches it on the app's own network,
-# and the two services the updater checks after an update, the same way.
-UPDATER_URL = os.environ.get("UPDATER_URL", "http://updater:8001")
-BACKEND_URL = os.environ.get("BACKEND_URL", "http://backend:8000")
-FRONTEND_URL = os.environ.get("FRONTEND_URL", "http://frontend")
-
-# How the updater reaches TrueNAS's own API. TRUENAS_HOST unset means the
-# container's default gateway, which is the NAS itself on the app's bridge
-# network, so a box whose LAN address changes keeps working.
-TRUENAS_HOST = os.environ.get("TRUENAS_HOST")
-TRUENAS_API_USER = os.environ.get("TRUENAS_API_USER")
-TRUENAS_API_KEY = os.environ.get("TRUENAS_API_KEY")
-# The Custom App's name in TrueNAS (Apps › Installed).
-TRUENAS_APP_NAME = os.environ.get("TRUENAS_APP_NAME", "obsidian")
-# TrueNAS serves its own self-signed certificate unless someone installs
-# another, so it isn't verified by default. TLS itself is still required:
-# TrueNAS revokes an API key the moment it is sent over plain HTTP.
-TRUENAS_VERIFY_TLS = os.environ.get("TRUENAS_VERIFY_TLS", "").lower() in ("1", "true", "yes")
-
-# How long a new release gets to come up healthy, on the version asked for,
-# before the updater puts the previous one back.
-UPDATE_VERIFY_SECONDS = int(os.environ.get("UPDATE_VERIFY_SECONDS", "300"))
 # Database copies kept from before each update, newest first.
 UPDATE_BACKUPS_KEPT = int(os.environ.get("UPDATE_BACKUPS_KEPT", "5"))
 

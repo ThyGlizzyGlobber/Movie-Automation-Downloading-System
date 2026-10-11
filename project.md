@@ -54,10 +54,11 @@ to install, configure and run it, see the [README](README.md).
   queue.
 - **Two installs.** A *release install* (`truenas/obsidian-release.yaml`, what a box ships
   with) runs images CI publishes to GHCR — `beta` on every push to `main`, `stable` on a
-  `vX.Y.Z` tag — and updates from Settings › Updates: the backend copies the database, then
-  an `updater` sidecar (the backend's image, the only holder of a TrueNAS API key) retags
-  the app to that exact version through TrueNAS's own API, verifies it came up, and rolls
-  back (database included) if it didn't; nothing is built on the box. The
+  `vX.Y.Z` tag — and updates from Settings › Updates: the backend copies the database and
+  leaves a request; `truenas/obsidian-updater.py`, run as root every minute by a TrueNAS
+  cron job, retags the app to that exact version through TrueNAS's local API, verifies it
+  came up, and rolls back (database included) if it didn't. The app holds no TrueNAS
+  credential; nothing is built on the box. The
   *git-pull install* (`truenas/custom-app-compose.yaml`, the development NAS until it moves
   over) pulls the deployed clone and runs `npm ci && npm run build` in it, with `backend/app`
   and `frontend/dist` bind-mounted; changes to a Dockerfile, `nginx.conf` or
