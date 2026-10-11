@@ -203,6 +203,7 @@ class Provisioner:
         for needed in ("obsidian-box.yaml", "obsidian-updater.py"):
             if not (self.here / needed).is_file():
                 raise SystemExit(f"{needed} has to be beside this script.")
+        self.automatic_addressing()
         unused = self.mw.call("disk.get_unused")
         self.ssd = None
         if not self.mw.call("pool.query", [["name", "=", APPS_POOL]]):
@@ -216,6 +217,27 @@ class Provisioner:
         # Every unused hard drive is one the box ships with.
         self.hard_drives = sorted((d for d in unused if d.get("type") == "HDD"), key=lambda d: d["name"])
         self.say(f"TrueNAS {version}: ready. Ships with: {storage_summary([d['size'] for d in self.hard_drives])}.")
+
+    def automatic_addressing(self) -> None:
+        """A box gets its address from the buyer's router, never one fixed
+        here: a fixed address is one on this network, and on the buyer's
+        (often another range, or a new router a year later) the box would
+        be unreachable with no screen to fix it from. The router hands the
+        same box the same address back anyway, and obsidian.local finds it
+        whatever it is. So a box set up by hand with a fixed address, or a
+        fixed gateway or DNS server, is stopped here to be put back."""
+        fixed = [i.get("name") for i in self.mw.call("interface.query")
+                 if not i.get("ipv4_dhcp") and i.get("aliases")]
+        if fixed:
+            raise SystemExit(
+                f"{', '.join(map(str, fixed))} has a fixed address. A box ships getting its address from the "
+                "router: set it back to DHCP under Network › Interfaces, then run this again.")
+        config = self.mw.call("network.configuration.config")
+        set_by_hand = [key for key in ("ipv4gateway", "nameserver1", "nameserver2", "nameserver3") if config.get(key)]
+        if set_by_hand:
+            raise SystemExit(
+                f"The network has {', '.join(set_by_hand)} set by hand. A box takes them from the router: clear them "
+                "under Network › Global configuration, then run this again.")
 
     # -- 2 --
 

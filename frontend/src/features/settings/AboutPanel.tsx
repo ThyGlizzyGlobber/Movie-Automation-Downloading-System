@@ -37,6 +37,20 @@ export default function AboutPanel() {
       <SettingRow label="Running for" hint={a.started_at ? `Since ${new Date(a.started_at).toLocaleString()}` : undefined}>
         <span className="about-value">{uptime(a.uptime_seconds)}</span>
       </SettingRow>
+      {a.addresses && a.addresses.length > 0 && (
+        <SettingRow
+          label="On your network"
+          hint="Bookmark it. The number is for phones that can't open .local addresses, and can change if the router is replaced."
+        >
+          <span className="about-value about-addresses">
+            {a.addresses.map((address) => (
+              <a key={address} href={address}>
+                {address.replace('http://', '')}
+              </a>
+            ))}
+          </span>
+        </SettingRow>
+      )}
       <SettingRow label="Plex server">
         <span className="about-value">{a.plex_server_name ?? 'Not connected'}</span>
       </SettingRow>

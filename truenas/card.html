@@ -110,6 +110,7 @@ kbd { font: 500 12px var(--font-mono); border: 1px solid var(--ed-line); border-
   content: counter(step); width: 5mm; height: 5mm; border-radius: 50%; background: var(--body-blue); color: #fff;
   font: 700 7pt/5mm var(--font-body); text-align: center;
 }
+.fallback { display: block; margin-top: 1mm; font-size: 7pt; line-height: 1.4; color: var(--ink-soft); }
 .needs { margin: 0; padding: 0; list-style: none; display: grid; gap: 1.2mm; }
 .needs li { padding-left: 3.5mm; position: relative; }
 .needs li::before { content: ""; position: absolute; left: 0; top: 0.55em; width: 1.6mm; height: 1.6mm; border-radius: 50%; background: var(--ice); }
@@ -195,7 +196,7 @@ kbd { font: 500 12px var(--font-mono); border: 1px solid var(--ed-line); border-
             <ol class="steps">
               <li>Connect the box to your router with the network cable, then plug in the power.</li>
               <li>Give it about three minutes to start.</li>
-              <li>Scan the front of this card, or open obsidian.local, and follow the steps on screen.</li>
+              <li><span>Scan the front of this card, or open obsidian.local, and follow the steps on screen. <span class="fallback">Won't open? Some Android phones can't. Use a computer or iPhone, or find &ldquo;obsidian&rdquo; in your router's app and open the address it lists.</span></span></li>
             </ol>
           </section>
           <section>

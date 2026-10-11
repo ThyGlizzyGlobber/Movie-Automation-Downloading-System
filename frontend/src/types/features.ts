@@ -221,4 +221,6 @@ export interface AboutInfo {
   db_bytes: number | null
   movie_library_root: string
   tv_library_root: string
+  // On a box: "http://obsidian.local", then the address the router gave it.
+  addresses?: string[]
 }

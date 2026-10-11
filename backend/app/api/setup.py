@@ -4,7 +4,7 @@ and the TMDB/qBittorrent helpers Settings' Connections panel reuses."""
 from fastapi import Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 
-from app import box_plex, config, vpn
+from app import box_address, box_plex, config, vpn
 from app.db import RequestStore
 from app.qbt import QBTClient
 from app.tmdb import TMDBClient
@@ -57,6 +57,14 @@ def setup_status(store: RequestStore = Depends(get_store)) -> dict:
         "plex_linked": setup_complete,
         "setup_complete": setup_complete,
     }
+
+
+@app.get("/api/setup/address", dependencies=[Depends(require_setup_token)])
+def setup_address() -> dict:
+    """Where the box is on the home network, for the wizard to suggest
+    bookmarking (app/box_address.py). Behind the setup code rather than in
+    the open status above: it's only for whoever is setting the box up."""
+    return {"addresses": box_address.addresses()}
 
 
 class SetupTmdbRequest(BaseModel):

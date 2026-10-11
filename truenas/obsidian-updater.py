@@ -66,7 +66,7 @@ import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
 
-SCRIPT_VERSION = 5
+SCRIPT_VERSION = 6
 IMAGE_NAMES = ("obsidian-backend", "obsidian-frontend")
 IMAGE_PREFIX = "ghcr.io/thyglizzyglobber/"
 CRON_DESCRIPTION = "Obsidian updater (installs updates requested in the app)"
@@ -118,6 +118,9 @@ APPS_UID = 568
 PLEX_IMAGE = "plexinc/pms-docker:"
 _CLAIM_TOKEN = re.compile(r"^claim-[A-Za-z0-9_-]{8,100}$")
 _BACKUP = re.compile(r"^obsidian-[A-Za-z0-9.-]+\.db$")
+_IPV4 = re.compile(r"^\d{1,3}(\.\d{1,3}){3}$")
+# Docker's and the apps' own interfaces, which aren't the home network.
+VIRTUAL_INTERFACES = ("docker", "br-", "veth", "kube", "cni", "flannel", "vnet", "lo")
 
 
 def now_iso() -> str:
@@ -174,6 +177,11 @@ class Middleware:
     def pools(self) -> list[dict]:
         with self._client() as c:
             return c.call("pool.query")
+
+    def network(self) -> tuple[dict, dict]:
+        """The box's addresses on the home network right now, and its name."""
+        with self._client() as c:
+            return c.call("network.general.summary"), c.call("network.configuration.config")
 
     def create_drive_pool(self, name: str, disk: str) -> None:
         """One disk, one pool: a box's drives are separate by design."""
@@ -531,6 +539,7 @@ class Updater:
                 self.folder.remove("drive-request.json")
                 self.add_drive(drive_request)
             self.report_storage()
+            self.report_network()
         finally:
             self.folder.close()
 
@@ -655,6 +664,29 @@ class Updater:
             ],
         }
         self.folder.write("storage.json", report)
+
+    def report_network(self) -> None:
+        """The box's address on the home network, for the app to show
+        beside obsidian.local: a phone that can't open .local names can
+        use it. The box gets its address from the router, which can
+        change it, so it's written every run."""
+        try:
+            summary, config = self.mw.network()
+        except Exception as exc:  # noqa: BLE001
+            self.folder.write("network.json", {"at": now_iso(), "error": _reason(exc)})
+            return
+        addresses = []
+        for interface, ips in sorted((summary.get("ips") or {}).items()):
+            if str(interface).startswith(VIRTUAL_INTERFACES):
+                continue
+            for ip in (ips or {}).get("IPV4") or []:
+                address = str(ip).split("/")[0]
+                if _IPV4.match(address) and not address.startswith(("127.", "169.254.")) and address not in addresses:
+                    addresses.append(address)
+        self.folder.write("network.json", {
+            "at": now_iso(), "addresses": addresses, "hostname": config.get("hostname"),
+            "mdns": bool((config.get("service_announcement") or {}).get("mdns")),
+        })
 
     def add_drive(self, request: dict) -> None:
         def drive_state(state: str, message: str, drive: str | None = None) -> None:

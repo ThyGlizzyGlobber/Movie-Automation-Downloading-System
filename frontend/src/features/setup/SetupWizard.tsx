@@ -5,6 +5,7 @@ import TmdbStep from './TmdbStep'
 import QbittorrentStep from './QbittorrentStep'
 import PlexLinkStep from './PlexLinkStep'
 import VpnStep from './VpnStep'
+import BoxAddressNote from './BoxAddressNote'
 import ErrorState from '../../components/ui/ErrorState'
 import './SetupWizard.css'
 import AmbientGlow from '../../components/ui/AmbientGlow'
@@ -80,6 +81,8 @@ export default function SetupWizard() {
         {step === 'plex' && setupToken && (
           <PlexLinkStep setupToken={setupToken} onBox={Boolean(setupStatus.data?.plex_on_box)} />
         )}
+
+        {setupToken && setupStatus.data?.plex_on_box && <BoxAddressNote setupToken={setupToken} />}
       </div>
     </div>
   )

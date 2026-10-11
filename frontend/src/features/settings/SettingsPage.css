@@ -814,6 +814,15 @@
   font-size: 14px;
   font-weight: 700;
 }
+.about-addresses {
+  display: grid;
+  justify-items: end;
+  gap: 2px;
+}
+.about-addresses a {
+  color: var(--accent);
+  text-decoration: none;
+}
 .about-value.mono {
   font-family: var(--font-mono);
   font-size: 13px;
