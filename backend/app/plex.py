@@ -824,9 +824,9 @@ class PlexLinker:
         than undoing a sign-in that worked."""
         self._stage = "libraries"
         try:
-            made = await asyncio.to_thread(box_plex.ensure_libraries, server["url"], server["token"])
-            if made:
-                logger.info("created Plex libraries on the box: %s", ", ".join(made))
+            changes = await asyncio.to_thread(box_plex.sync_libraries, server["url"], server["token"])
+            if changes:
+                logger.info("Plex libraries on the box: %s", "; ".join(changes))
         except Exception:  # noqa: BLE001
             logger.exception("couldn't create the box's Plex libraries")
         finally:
