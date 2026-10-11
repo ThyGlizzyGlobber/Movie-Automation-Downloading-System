@@ -14,7 +14,6 @@ type WizardStep = 'token' | 'tmdb' | 'qbittorrent' | 'vpn' | 'plex'
 export default function SetupWizard() {
   const setupStatus = useSetupStatus()
   const [setupToken, setSetupToken] = useState<string | null>(null)
-  const [restartNeeded, setRestartNeeded] = useState(false)
 
   // Only the steps that still need doing — an env-configured value is
   // never re-collected through the UI (the backend would 409 anyway).
@@ -69,34 +68,16 @@ export default function SetupWizard() {
         )}
 
         {step === 'tmdb' && setupToken && (
-          <TmdbStep
-            setupToken={setupToken}
-            onDone={() => {
-              setRestartNeeded(true)
-              advance()
-            }}
-          />
+          <TmdbStep setupToken={setupToken} onDone={advance} />
         )}
 
         {step === 'qbittorrent' && setupToken && (
-          <QbittorrentStep
-            setupToken={setupToken}
-            onDone={() => {
-              setRestartNeeded(true)
-              advance()
-            }}
-          />
+          <QbittorrentStep setupToken={setupToken} onDone={advance} />
         )}
 
         {step === 'vpn' && setupToken && <VpnStep setupToken={setupToken} onDone={advance} />}
 
         {step === 'plex' && setupToken && <PlexLinkStep setupToken={setupToken} />}
-
-        {restartNeeded && (
-          <p className="setup-skip-note">
-            Saved. Restart Obsidian once you've finished so it picks this up.
-          </p>
-        )}
       </div>
     </div>
   )

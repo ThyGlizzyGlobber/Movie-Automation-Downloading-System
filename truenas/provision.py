@@ -12,6 +12,17 @@ import base64
 import hashlib
 import secrets
 
+# The setup code on a box's card: typed by a person, so no letters that
+# pass for others (no I, L, O, U; no 0 or 1). Twelve of these is about 60
+# bits, and setup only answers on the home network, rate limited.
+_CODE_ALPHABET = "ABCDEFGHJKMNPQRSTVWXYZ23456789"
+
+
+def setup_code() -> str:
+    code = "".join(secrets.choice(_CODE_ALPHABET) for _ in range(12))
+    return "-".join(code[i:i + 4] for i in range(0, 12, 4))
+
+
 # qBittorrent's own password format: PBKDF2-HMAC-SHA512, 100,000 rounds,
 # a 16-byte salt, stored as "@ByteArray(salt:key)" in base64.
 _PBKDF2_ROUNDS = 100_000

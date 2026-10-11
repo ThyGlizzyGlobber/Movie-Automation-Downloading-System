@@ -54,6 +54,9 @@ services:
       # this is also what gives the app its VPN settings and setup step.
       GLUETUN_URL: "http://gluetun:8000"
       GLUETUN_API_KEY: "<GLUETUN_API_KEY>"
+      # The setup code printed on this box's card (provision.py makes it).
+      # Only good for first-run setup, and only from the home network.
+      SETUP_CODE: "<SETUP_CODE>"
       TZ: "<TZ>"
     volumes:
       - "<DATA_PATH>:/app/data"

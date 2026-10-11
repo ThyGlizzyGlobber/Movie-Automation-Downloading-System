@@ -2215,8 +2215,48 @@ def test_update_tmdb_settings_persists_when_not_env_configured(client_and_deps, 
 
     assert response.status_code == 200
     body = response.json()
-    assert body == {"tmdb_configured": True, "tmdb_source": "db", "restart_required": True}
+    assert body == {"tmdb_configured": True, "tmdb_source": "db", "restart_required": False}
     assert store.get_settings()["tmdb_api_key"] == "from-settings-ui"
+
+
+def test_a_printed_setup_code_is_matched_however_it_s_typed():
+    assert deps.setup_code_matches("7kq4 m2xp 9wtd", "7KQ4-M2XP-9WTD")
+    assert deps.setup_code_matches("7KQ4M2XP9WTD", "7KQ4-M2XP-9WTD")
+    assert not deps.setup_code_matches("7KQ4-M2XP-9WTE", "7KQ4-M2XP-9WTD")
+    assert not deps.setup_code_matches("", "7KQ4-M2XP-9WTD")
+    assert not deps.setup_code_matches(None, "7KQ4-M2XP-9WTD")
+
+
+def test_a_box_s_own_setup_code_is_the_code_from_the_first_boot(tmp_path, monkeypatch):
+    monkeypatch.setenv("SETUP_CODE", "7KQ4-M2XP-9WTD")
+    assert RequestStore(str(tmp_path / "t.db")).get_or_create_setup_token() == "7KQ4-M2XP-9WTD"
+    monkeypatch.delenv("SETUP_CODE")
+    assert RequestStore(str(tmp_path / "t.db")).get_or_create_setup_token() == "7KQ4-M2XP-9WTD"  # kept
+
+
+def test_a_saved_tmdb_key_goes_straight_into_the_running_client(tmp_path, monkeypatch):
+    # The routes and the background worker share this one client, so this
+    # is the key being live everywhere, with no restart.
+    from types import SimpleNamespace
+
+    from app.tmdb import TMDBClient
+
+    monkeypatch.setattr(config, "TMDB_API_KEY", None)
+    running = TMDBClient("")
+    setup._update_tmdb_key(setup.SetupTmdbRequest(api_key="fresh"), RequestStore(str(tmp_path / "t.db")),
+                           SimpleNamespace(tmdb=running))
+    assert running.api_key == "fresh"
+
+
+def test_qbittorrent_settings_saved_before_it_was_ever_reached_need_no_restart(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+
+    for name in ("_QBIT_HOST_ENV", "_QBIT_PORT_ENV", "_QBIT_USERNAME_ENV", "_QBIT_PASSWORD_ENV"):
+        monkeypatch.setattr(config, name, None)
+    result = setup._update_qbt_connection(
+        setup.SetupQbtRequest(host="10.0.0.5", port=8080), RequestStore(str(tmp_path / "t.db")), SimpleNamespace(qbt=None)
+    )
+    assert result["restart_required"] is False
 
 
 def test_update_tmdb_settings_refuses_to_override_an_env_configured_key(client_and_deps, monkeypatch):
@@ -2794,7 +2834,7 @@ def test_setup_mutation_refuses_missing_token_before_setup_completes(tmp_path, m
         assert response.status_code == 200
         body = response.json()
         assert body["tmdb_configured"] is True
-        assert body["restart_required"] is True
+        assert body["restart_required"] is False
         assert store.get_settings()["tmdb_api_key"] == "a-key"
 
 

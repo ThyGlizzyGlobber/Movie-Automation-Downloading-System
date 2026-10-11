@@ -3,6 +3,7 @@ dependencies routes declare with `Depends(...)`, the session/login cookie
 helpers, the client-address and rate-limit plumbing, and the two
 default-deny routers themselves (see this package's own docstring)."""
 
+import hmac
 import logging
 from datetime import datetime, timedelta, timezone
 
@@ -337,8 +338,7 @@ def require_admin_or_setup_bootstrap(
     (PlexLinker._keep_linked_servers takes the account's first owned
     server), and that is what completes setup."""
     if store.primary_plex_server() is None:
-        expected = store.get_or_create_setup_token()
-        if request.headers.get("X-Setup-Token") != expected:
+        if not setup_code_matches(request.headers.get("X-Setup-Token"), store.get_or_create_setup_token()):
             raise HTTPException(status_code=401, detail="missing or incorrect setup token")
         return None
     return require_admin(require_session(request, store))
@@ -357,9 +357,16 @@ def require_setup_token(request: Request, store: RequestStore = Depends(get_stor
     docstring for why."""
     if store.primary_plex_server() is not None:
         raise HTTPException(status_code=410, detail="setup already completed")
-    expected = store.get_or_create_setup_token()
-    if request.headers.get("X-Setup-Token") != expected:
+    if not setup_code_matches(request.headers.get("X-Setup-Token"), store.get_or_create_setup_token()):
         raise HTTPException(status_code=401, detail="missing or incorrect setup token")
+
+
+def setup_code_matches(given: str | None, expected: str) -> bool:
+    """Forgiving about how a printed code is typed — case, spaces, dashes —
+    and constant-time about the comparison."""
+    def tidy(code: str) -> str:
+        return "".join(code.split()).replace("-", "").upper()
+    return bool(given) and hmac.compare_digest(tidy(given).encode(), tidy(expected).encode())
 
 
 # Default-deny: every route registered on `router` requires a valid

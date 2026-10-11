@@ -53,7 +53,7 @@ export interface SetupStatus {
 }
 
 export interface SetupMutationResult {
-  restart_required: true
+  restart_required: boolean
 }
 
 export interface PlexServerSummary {

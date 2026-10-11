@@ -51,3 +51,11 @@ def test_qbittorrent_has_no_network_but_the_vpn_s():
     qbittorrent = template[template.index("  qbittorrent:"):template.index("  plex:")]
     assert 'network_mode: "service:gluetun"' in qbittorrent
     assert "ports:" not in qbittorrent
+
+
+def test_a_setup_code_is_easy_to_read_off_a_card():
+    codes = {provision.setup_code() for _ in range(200)}
+    assert len(codes) == 200
+    for code in codes:
+        assert re.fullmatch(r"[A-Z2-9]{4}-[A-Z2-9]{4}-[A-Z2-9]{4}", code)
+        assert not set(code) & set("ILOU01")
