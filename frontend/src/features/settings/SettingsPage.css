@@ -465,6 +465,21 @@
 .drive-confirm .plex-error {
   margin: 0;
 }
+.drive-lost {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 4px;
+  max-height: 220px;
+  overflow-y: auto;
+  font-size: 13.5px;
+  color: var(--text-dim);
+}
+.drive-lost b {
+  color: var(--text);
+  font-weight: 600;
+}
 .drive-check {
   display: flex;
   gap: 8px;

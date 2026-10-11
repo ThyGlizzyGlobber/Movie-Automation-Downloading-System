@@ -1,9 +1,9 @@
 import { useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { addDrive, getDrives } from '../../api/drives'
+import { addDrive, downloadLostAgain, getDrives, getLost } from '../../api/drives'
 import { ApiError } from '../../api/client'
 import { formatBytes } from '../../lib/format'
-import type { BoxDrive, FreeDisk } from '../../types/features'
+import type { BoxDrive, FreeDisk, LostOnDrive } from '../../types/features'
 
 const SUB = 'Each drive is its own storage. New downloads go to the one with the most room.'
 const STATE_LABEL: Record<BoxDrive['state'], string> = {
@@ -49,7 +49,7 @@ export default function DrivesCard() {
       {data.drives.length > 0 && (
         <div className="drive-list">
           {data.drives.map((drive) => (
-            <DriveRow key={drive.id} drive={drive} />
+            <DriveRow key={drive.id} drive={drive} onChanged={done} />
           ))}
         </div>
       )}
@@ -79,7 +79,7 @@ export default function DrivesCard() {
   )
 }
 
-function DriveRow({ drive }: { drive: BoxDrive }) {
+function DriveRow({ drive, onChanged }: { drive: BoxDrive; onChanged: () => void }) {
   const used = drive.used != null && drive.size ? Math.min(100, (drive.used / drive.size) * 100) : 0
   return (
     <div className="drive-row">
@@ -89,10 +89,7 @@ function DriveRow({ drive }: { drive: BoxDrive }) {
         <span className={`drive-state ${drive.state}`}>{STATE_LABEL[drive.state]}</span>
       </div>
       {drive.state === 'missing' ? (
-        <p className="drive-note">
-          {drive.label} can't be reached. If it was taken out, put it back in. If it has failed, what was on it will need
-          downloading again.
-        </p>
+        <MissingDrive drive={drive} onChanged={onChanged} />
       ) : (
         <>
           <div className="storage-bar drive-bar">
@@ -108,6 +105,108 @@ function DriveRow({ drive }: { drive: BoxDrive }) {
       )}
     </div>
   )
+}
+
+// A drive the box can't find. Pulled out, it comes back by putting it back;
+// failed, what Obsidian filed on it can be asked for again, onto the other
+// drives (backend/app/drive_recovery.py).
+function MissingDrive({ drive, onChanged }: { drive: BoxDrive; onChanged: () => void }) {
+  const [open, setOpen] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [done, setDone] = useState<string | null>(null)
+  const lostFiles = drive.lost_files ?? 0
+  const lost = useQuery({ queryKey: ['drive-lost', drive.id], queryFn: () => getLost(drive.id), enabled: open })
+
+  async function again() {
+    setSaving(true)
+    setError(null)
+    try {
+      const result = await downloadLostAgain(drive.id)
+      const asked = result.requested + result.joined
+      const parts = asked ? [`${asked} ${asked === 1 ? 'download' : 'downloads'} asked for again. They're in Requests.`] : []
+      if (result.failed.length) {
+        parts.push(`Couldn't look up ${result.failed.join(', ')} on TMDB, so ${result.failed.length === 1 ? 'it is' : 'they are'} still listed here to try again.`)
+      }
+      setDone(parts.join(' '))
+      setOpen(false)
+      onChanged()
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Something went wrong. Try again.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <>
+      <p className="drive-note">
+        {drive.label} can't be reached. If it was taken out, put it back in.
+        {lostFiles > 0
+          ? ` If it has failed, Obsidian can download what it had put on it again: ${lostFiles} ${lostFiles === 1 ? 'file' : 'files'}.`
+          : ' If it has failed, add a new drive in a free bay.'}
+      </p>
+      {done && <p className="plex-hint" role="status">{done}</p>}
+      {lostFiles > 0 && !open && (
+        <div className="settings-btn-row">
+          <button className="settings-btn ghost sm" onClick={() => setOpen(true)}>
+            See what was on it
+          </button>
+        </div>
+      )}
+      {open && (
+        <div className="drive-confirm">
+          {lost.isLoading && <p className="drive-note">Loading…</p>}
+          {lost.isError && <p className="plex-error">Couldn't load what was on it.</p>}
+          {lost.data && <LostList lost={lost.data} />}
+          <p className="drive-note">
+            Only do this if the drive has failed. Each title downloads onto the other drives, or waits until a drive is
+            added. Anything copied onto the drive by hand isn't on record, so it isn't listed.
+          </p>
+          {error && <p className="plex-error">{error}</p>}
+          <div className="settings-btn-row">
+            <button className="settings-btn" disabled={saving || !lost.data} onClick={again}>
+              {saving ? 'Asking…' : 'Download them again'}
+            </button>
+            <button className="settings-btn ghost" disabled={saving} onClick={() => setOpen(false)}>
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+    </>
+  )
+}
+
+function LostList({ lost }: { lost: LostOnDrive }) {
+  return (
+    <ul className="drive-lost">
+      {lost.movies.map((movie) => (
+        <li key={`m${movie.tmdb_id}`}>
+          <b>{movie.title}</b>
+          {movie.year && <span> ({movie.year})</span>}
+        </li>
+      ))}
+      {lost.shows.map((show) => (
+        <li key={`s${show.tmdb_id}`}>
+          <b>{show.title}</b>
+          <span> · {seasonsLabel(show.seasons)}</span>
+        </li>
+      ))}
+      {lost.unknown_files > 0 && (
+        <li>
+          {lost.unknown_files} other {lost.unknown_files === 1 ? 'file' : 'files'} Obsidian can't put a title to
+        </li>
+      )}
+    </ul>
+  )
+}
+
+function seasonsLabel(seasons: Record<string, number[]>): string {
+  return Object.entries(seasons)
+    .map(([season, episodes]) => `season ${season} (${episodes.length} ${episodes.length === 1 ? 'episode' : 'episodes'})`)
+    .join(', ')
+    .replace(/^s/, 'S')
 }
 
 function NewDisk({ disk, canAdd, onAdded }: { disk: FreeDisk; canAdd: boolean; onAdded: () => void }) {

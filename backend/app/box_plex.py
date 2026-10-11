@@ -92,14 +92,26 @@ def wanted_folders() -> dict[str, list[str]]:
     return {kind: [str(root) for root in drives.library_roots(kind)] for kind in ("movie", "tv")}
 
 
+def dropped_folders(settings: dict) -> list[str]:
+    """The failed drives' library folders Plex is to stop listing
+    (app/drive_recovery.py)."""
+    folders = settings.get("box_plex_drop")
+    return [f for f in folders if isinstance(f, str)] if isinstance(folders, list) else []
+
+
 def sync_libraries(url: str, token: str, folders: dict[str, list[str]] | None = None,
-                   session: requests.Session | None = None) -> list[str]:
+                   session: requests.Session | None = None, drop: list[str] | tuple[str, ...] = ()) -> list[str]:
     """The box's Movies and TV Shows libraries, listing every drive's
     folder: made when missing, and given any drive's folder they don't
     have yet. Folders already there stay, a drive's that has gone
-    missing included (it may come back) and any a person added. A kind
-    with no drive yet is left until there is one: Plex won't make a
-    library with no folder. Returns what changed, for the log."""
+    missing included (it may come back) and any a person added — except
+    those in `drop`, a failed drive's that its titles are being
+    downloaded again from (app/drive_recovery.py): while Plex still lists
+    them it would answer "already on Plex" for every one. A library is
+    never left with no folder at all, which Plex refuses; that waits for
+    the next drive. A kind with no drive yet is left until there is one:
+    Plex won't make a library with no folder. Returns what changed, for
+    the log."""
     folders = folders if folders is not None else wanted_folders()
     http = session or requests.Session()
     headers = {"Accept": "application/json", **({"X-Plex-Token": token} if token else {})}
@@ -122,15 +134,18 @@ def sync_libraries(url: str, token: str, folders: dict[str, list[str]] | None = 
             changes.append(f"made {name}")
             continue
         have = [loc.get("path") for loc in ours.get("Location") or [] if loc.get("path")]
-        missing = [f for f in want if f not in have]
-        if not missing:
+        keep = [f for f in have if f not in drop or f in want]
+        missing = [f for f in want if f not in keep]
+        if not missing and keep == have:
             continue
         # Plex replaces a library's folders with the list it's sent, so it
         # gets them all; the agent keeps its scanner and settings.
         params = [("agent", ours.get("agent") or agent), ("name", ours.get("title") or name),
                   ("language", ours.get("language") or "en-US")]
         edited = http.put(f"{url}/library/sections/{ours['key']}", headers=headers,
-                          params=params + [("location", f) for f in have + missing], timeout=15)
+                          params=params + [("location", f) for f in keep + missing], timeout=15)
         edited.raise_for_status()
-        changes.append(f"{name}: added {', '.join(missing)}")
+        said = [f"added {', '.join(missing)}"] if missing else []
+        said += [f"removed {', '.join(f for f in have if f not in keep)}"] if keep != have else []
+        changes.append(f"{name}: {'; '.join(said)}")
     return changes

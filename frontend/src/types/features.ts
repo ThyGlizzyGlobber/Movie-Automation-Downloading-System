@@ -104,6 +104,15 @@ export interface BoxDrive {
   // missing: the NAS has its pool but it isn't reachable (failed or pulled out).
   state: 'healthy' | 'problem' | 'missing'
   status: string | null
+  // On a missing drive: how many files Obsidian filed there.
+  lost_files?: number
+}
+export interface LostOnDrive {
+  files: number
+  bytes: number
+  unknown_files: number
+  movies: { tmdb_id: number; title: string; year: number | null; files: number }[]
+  shows: { tmdb_id: number; title: string; year: number | null; seasons: Record<string, number[]>; pack_seasons: number[] }[]
 }
 export interface FreeDisk {
   name: string
