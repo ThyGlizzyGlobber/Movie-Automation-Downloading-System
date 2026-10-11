@@ -10,7 +10,7 @@ from fastapi import FastAPI
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 
-from app import config, version
+from app import config, updates, version
 from app.db import RequestStore
 from app.logging_config import configure_logging
 from app.plex import LoginSession, PlexLinker
@@ -25,6 +25,11 @@ configure_logging()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # Before the store opens: if the updater rolled a failed update back to
+    # this version, put back the database copy taken before it (updates.py).
+    restored = updates.restore_pending_backup(config.DB_PATH, version.current().version)
+    if restored:
+        logger.warning("restored the database from %s after a rolled-back update", restored)
     store = RequestStore(config.DB_PATH)
     app.state.store = store
     app.state.started_at = datetime.now(timezone.utc)

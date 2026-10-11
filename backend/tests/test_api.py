@@ -9,9 +9,10 @@ from datetime import datetime, timedelta, timezone
 import pytest
 from fastapi.testclient import TestClient
 
-from app import api, config, trailers
+from app import api, config, trailers, updates, version
 from app.api import deps, helpers, hero, recommendations, setup, shows, system, titles
 from app.api import requests as api_requests
+from app.api import updates as api_updates
 from app.deploy import DeployError
 from app.pipeline_settings import resolve_pipeline_settings
 from app.db import RequestStore
@@ -1906,6 +1907,136 @@ def test_deploy_refuses_on_a_release_image(client_and_deps, monkeypatch):
 
 
 # ---------------------------------------------------------------------------
+# In-app updates on a release install (app/api/updates.py)
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def release_install(client_and_deps, tmp_path, monkeypatch):
+    """A box running 1.0.46 off the beta channel, with 1.0.47 published and
+    an updater that answers. What it was asked for is in `sent`."""
+    monkeypatch.setattr(config, "DB_PATH", tmp_path / "data" / "app.db")
+    monkeypatch.setattr(config, "UPDATE_CHANNEL", None)
+    monkeypatch.setattr(version, "current", lambda: version.Version("1.0.46", "5fd5677", "2026-10-11", "beta"))
+    monkeypatch.setattr(api_updates, "_latest_cache", {})
+    published = {"beta": "1.0.47"}
+    monkeypatch.setattr(updates, "published_version", lambda tag: published.get(tag))
+    monkeypatch.setattr(updates, "release_notes", lambda v: [{"heading": "Added", "items": [f"notes for {v}"]}])
+    updates.shared_token(create=True)
+    sent = []
+
+    class Answer:
+        def __init__(self, status, body):
+            self.status_code, self.ok, self._body = status, status < 400, body
+
+        def json(self):
+            return self._body
+
+    def post(url, json, headers, timeout):
+        sent.append((url, json, headers))
+        return Answer(202, {"state": "updating", "from_version": json["from_version"], "to_version": json["version"]})
+
+    def get(url, headers, timeout):
+        return Answer(200, {"configured": True, "state": "idle"})
+
+    monkeypatch.setattr(api_updates.requests, "post", post)
+    monkeypatch.setattr(api_updates.requests, "get", get)
+    client, store = client_and_deps[0], client_and_deps[1]
+    return client, store, published, sent
+
+
+def test_updates_on_a_git_install_points_at_the_pull(client_and_deps, monkeypatch):
+    client = client_and_deps[0]
+    monkeypatch.setattr(config, "UPDATE_CHANNEL", None)
+    monkeypatch.setattr(version, "current", lambda: version.Version("1.0.46", "5fd5677", None, None))
+
+    assert client.get("/api/admin/updates").json() == {"method": "git", "current": "1.0.46", "channel": None}
+
+
+def test_a_newer_release_is_offered(release_install):
+    client, _, _, _ = release_install
+    body = client.get("/api/admin/updates").json()
+    assert body["method"] == "image"
+    assert (body["current"], body["channel"], body["latest"], body["available"]) == ("1.0.46", "beta", "1.0.47", True)
+    assert body["error"] is None
+    assert body["updater"]["reachable"] and body["updater"]["configured"]
+    # Beta builds have no tag of their own to read notes from.
+    assert body["notes"] == []
+
+
+def test_stable_releases_come_with_their_notes(release_install, monkeypatch):
+    client, _, published, _ = release_install
+    monkeypatch.setattr(config, "UPDATE_CHANNEL", "stable")
+    published["stable"] = "1.1.0"
+    body = client.get("/api/admin/updates").json()
+    assert body["latest"] == "1.1.0"
+    assert body["notes"] == [{"heading": "Added", "items": ["notes for 1.1.0"]}]
+
+
+def test_up_to_date_offers_nothing(release_install):
+    client, _, published, _ = release_install
+    published["beta"] = "1.0.46"
+    body = client.get("/api/admin/updates?refresh=true").json()
+    assert body["available"] is False
+    assert body["notes"] == []
+
+
+def test_a_release_that_was_rolled_back_isnt_offered_again(release_install, monkeypatch):
+    client, _, published, _ = release_install
+
+    class Answer:
+        ok = True
+
+        def json(self):
+            return {"configured": True, "state": "rolled_back", "from_version": "1.0.46", "to_version": "1.0.47"}
+
+    monkeypatch.setattr(api_updates.requests, "get", lambda *a, **k: Answer())
+    body = client.get("/api/admin/updates").json()
+    assert (body["available"], body["skipped"]) == (False, "1.0.47")
+
+    published["beta"] = "1.0.48"  # the next one is
+    body = client.get("/api/admin/updates?refresh=true").json()
+    assert (body["available"], body["latest"], body["skipped"]) == (True, "1.0.48", None)
+
+
+def test_installing_copies_the_database_then_hands_over(release_install):
+    client, store, _, sent = release_install
+
+    response = client.post("/api/admin/updates", json={"version": "1.0.47"})
+
+    assert response.status_code == 202
+    assert response.json()["to_version"] == "1.0.47"
+    (url, body, headers), = sent
+    assert url.endswith("/update")
+    assert body["version"] == "1.0.47" and body["from_version"] == "1.0.46"
+    assert (updates.backups_dir() / body["backup"]).is_file()
+    assert headers == {"X-Updater-Token": updates.shared_token()}
+    events = client.get("/api/admin/audit-log").json()["events"]
+    assert any(e["event_type"] == "update_started" and "1.0.46 to 1.0.47" in e["detail"] for e in events)
+
+
+def test_installing_refuses_anything_not_newer(release_install):
+    client, _, _, sent = release_install
+    assert client.post("/api/admin/updates", json={"version": "1.0.46"}).status_code == 422
+    assert client.post("/api/admin/updates", json={"version": "beta"}).status_code == 422
+    assert sent == []
+
+
+def test_installing_without_the_updater_running_says_so(release_install):
+    client, _, _, sent = release_install
+    updates.token_path().unlink()
+    response = client.post("/api/admin/updates", json={"version": "1.0.47"})
+    assert response.status_code == 409
+    assert sent == []
+
+
+def test_updates_are_admin_only(non_admin_client):
+    client = non_admin_client[0]
+    assert client.get("/api/admin/updates").status_code == 403
+    assert client.post("/api/admin/updates", json={"version": "1.0.47"}).status_code == 403
+
+
+# ---------------------------------------------------------------------------
 # Stage 8: health + admin/jobs
 # ---------------------------------------------------------------------------
 
@@ -1916,7 +2047,7 @@ def test_health_reports_qbittorrent_reachable(client_and_deps):
     response = client.get("/api/health")
 
     assert response.status_code == 200
-    assert response.json() == {"status": "ok", "qbittorrent": True}
+    assert response.json() == {"status": "ok", "qbittorrent": True, "version": version.current().version}
 
 
 def test_health_reports_qbittorrent_unreachable_without_failing(client_and_deps):
@@ -1926,7 +2057,7 @@ def test_health_reports_qbittorrent_unreachable_without_failing(client_and_deps)
     response = client.get("/api/health")
 
     assert response.status_code == 200
-    assert response.json() == {"status": "ok", "qbittorrent": False}
+    assert response.json() == {"status": "ok", "qbittorrent": False, "version": version.current().version}
 
 
 # ---------------------------------------------------------------------------

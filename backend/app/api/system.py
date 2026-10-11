@@ -31,7 +31,9 @@ def health(request: Request) -> dict:
     per "fail safe, not best guess," a flapping external dependency
     shouldn't take this app down with it."""
     qbt = get_qbt(request)
-    return {"status": "ok", "qbittorrent": bool(qbt and qbt.ping())}
+    # The version is how the updater tells the release it just installed
+    # from the one it replaced (app/updater.py).
+    return {"status": "ok", "qbittorrent": bool(qbt and qbt.ping()), "version": version.current().version}
 
 
 @router.get("/api/storage")

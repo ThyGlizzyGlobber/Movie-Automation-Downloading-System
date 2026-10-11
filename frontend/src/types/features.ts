@@ -94,6 +94,37 @@ export interface LibrarySettings {
   plex_refresh_after_import: boolean
   free_space_floor_gb: number
 }
+// backend/app/updater.py's state, as GET/POST /api/admin/updates report it.
+export interface UpdaterStatus {
+  reachable: boolean
+  // null when the updater couldn't be asked and its state file stood in.
+  configured: boolean | null
+  state: 'idle' | 'updating' | 'verifying' | 'rolling_back' | 'done' | 'rolled_back' | 'failed'
+  from_version: string | null
+  to_version: string | null
+  message: string | null
+  started_at: string | null
+  finished_at: string | null
+}
+export interface ReleaseNoteGroup {
+  heading: string
+  items: string[]
+}
+export type UpdatesInfo =
+  | { method: 'git'; current: string | null; channel: null }
+  | {
+      method: 'image'
+      current: string | null
+      channel: string
+      latest: string | null
+      available: boolean
+      // The newest release, when it's the one that was just rolled back:
+      // not offered again until a newer one is published.
+      skipped: string | null
+      notes: ReleaseNoteGroup[]
+      error: string | null
+      updater: UpdaterStatus
+    }
 export interface AboutInfo {
   name: string
   // "1.0.3": the release tag plus one per commit since (backend/app/version.py).

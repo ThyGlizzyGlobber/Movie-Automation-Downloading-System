@@ -10,9 +10,15 @@
 #
 # Channel: `:stable` only ever moves when a vX.Y.Z tag is pushed (README ›
 # Releases). The development box follows `:beta` instead, which moves on
-# every push to main — change the two image lines to `:beta` there. A
-# specific version (`:1.1.0`) pins an install and is how a bad release gets
-# rolled back by hand.
+# every push to main — change the three image lines to `:beta` there.
+#
+# Updates: Settings › Updates installs a newer release from the app. The
+# updater service below does it, by rewriting the image lines in TrueNAS's
+# copy of this config to that exact version (`:1.1.0`) — so after the first
+# update the lines name a version rather than a channel, and that's
+# expected. The channel the box follows is baked into the image, and the
+# updater looks for newer releases on it. If a new release doesn't start
+# properly, the updater puts the previous version back by itself.
 #
 # No secrets in here: the TMDB key and the qBittorrent connection are
 # entered in the first-run setup wizard and kept in the app's own database
@@ -28,6 +34,13 @@
 #   <QBIT_MOVIE_SAVE_PATH>   that "movies" save path as qBittorrent's own
 #                            container sees it (Settings › Downloads in its WebUI)
 #   <QBIT_TV_SAVE_PATH>      the same for "tv"
+#   <TRUENAS_API_KEY>        an API key for a TrueNAS user allowed to manage
+#                            apps (README › Releases › Setting up updates).
+#                            The only secret here; only the updater sees it.
+#
+# The app must be installed under the name `obsidian` (or set
+# TRUENAS_APP_NAME below to whatever name it has), since that's how the
+# updater finds it.
 #
 # The library datasets must be the very same filesystem qBittorrent writes
 # to, not a copy that looks the same: filing hardlinks, and a hardlink
@@ -76,6 +89,34 @@ services:
     # image never builds the frontend, so it needs far less than the
     # git-pull install's backend did.
     mem_limit: 2g
+    restart: unless-stopped
+
+  # The only thing holding a TrueNAS API key, and the only thing that
+  # changes which version this app runs. Same image as the backend, so it
+  # moves with the release it manages. No `ports:`: the backend reaches it
+  # on this app's network, with a token from the shared data folder.
+  updater:
+    image: ghcr.io/thyglizzyglobber/obsidian-backend:stable
+    command: ["uvicorn", "app.updater:app", "--host", "0.0.0.0", "--port", "8001"]
+    environment:
+      TRUENAS_API_USER: "obsidian-updater"
+      TRUENAS_API_KEY: "<TRUENAS_API_KEY>"
+      TRUENAS_APP_NAME: "obsidian"
+      # TrueNAS itself is reached at this container's gateway, the NAS, so a
+      # box whose address changes keeps updating. Set TRUENAS_HOST to an
+      # address only if the NAS's web interface isn't listening on all of
+      # them (System › General › GUI).
+    volumes:
+      - "<APP_DATA_PATH>:/app/data"
+    expose:
+      - "8001"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8001/health', timeout=4)"]
+      interval: 30s
+      timeout: 5s
+      start_period: 20s
+      retries: 3
+    mem_limit: 256m
     restart: unless-stopped
 
 volumes:
