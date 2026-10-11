@@ -28,6 +28,11 @@ records the minor and major releases, and the patches worth calling out. See
   frontend images to GitHub Container Registry on the `beta` channel; a `vX.Y.Z` tag
   publishes `stable`. `truenas/obsidian-release.yaml` installs from them on TrueNAS 25.10,
   with no clone, deploy key or on-box build, and the version, commit and channel baked in.
+- **Updates from the app.** Settings › Updates on a release install shows what's newer on
+  the box's channel, with the release notes, and installs it with one button. The database
+  is copied first. If the new version doesn't start within five minutes, the box goes back
+  to the previous one by itself, restores that copy, and doesn't offer the failed release
+  again. The TrueNAS API key it needs lives only in a separate updater service.
 
 ### Changed
 

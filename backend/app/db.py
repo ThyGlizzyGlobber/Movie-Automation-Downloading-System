@@ -1689,5 +1689,16 @@ class RequestStore(StoreSchema):
             self.update_settings({"setup_token": token})
         return token
 
+    def backup_to(self, path: str | Path) -> None:
+        """A consistent copy of the whole database at `path`, taken while
+        the app keeps running — SQLite's own online backup, under the
+        store's lock so no write lands halfway through it."""
+        target = sqlite3.connect(str(path))
+        try:
+            with self._lock:
+                self._conn.backup(target)
+        finally:
+            target.close()
+
     def close(self) -> None:
         self._conn.close()

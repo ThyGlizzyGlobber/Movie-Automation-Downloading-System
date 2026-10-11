@@ -338,9 +338,28 @@ untouched, so no CORS configuration is ever needed.
 
 ## Updating
 
-**A release install** (Option C) updates by pulling a newer image for its channel. Until
-the in-app updater lands, that means having TrueNAS pull the app's images again and
-redeploy it. Rolling back is pointing the image lines at the previous version.
+**A release install** (Option C): **Settings → Updates.** It shows the running version and
+channel, checks the registry for anything newer on that channel, shows a stable release's
+notes from this changelog, and installs it with one button. Nothing needs a terminal:
+
+1. The backend copies the database to `backups/` in the app's data folder (the newest five
+   are kept).
+2. The **updater** service, the only part of the app holding a TrueNAS API key, rewrites
+   the app's image lines in TrueNAS to that exact version and asks TrueNAS to apply it.
+   TrueNAS pulls the images and restarts the app, the updater included.
+3. The new updater waits up to five minutes for the new version to answer as itself, with
+   the frontend serving. Then the page reloads onto the new version by itself.
+4. If it doesn't come up, the updater puts the previous version back, and that version
+   restores the database copy as it starts. Settings → Updates says what happened, and
+   doesn't offer the failed release again; the next one published is offered as usual.
+
+Rolling back by hand is pointing the image lines at the previous version in TrueNAS. The
+copy from before each update is in `backups/`.
+
+The Docker socket is never mounted, and the backend, the part the internet reaches, never
+holds the TrueNAS key. It asks the updater over the app's private network, with a token
+only the two of them can read. The updater only ever moves this app between published
+versions of its own images.
 
 **A git-pull install** (Options A and B): **Settings → Updates → Check for updates.** That
 runs a `git pull` against the deployed clone (tags included) and rebuilds the frontend in
@@ -409,6 +428,23 @@ The tag build refuses a tag that isn't on `main` or isn't shaped `vX.Y.Z`.
 The images are public, like the repo. After the very first publish, check each package's
 visibility under **GitHub → your profile → Packages**; a box pulls them without logging in
 only if they are public.
+
+### Setting up updates on a box
+
+The updater signs in to TrueNAS with an API key, over TLS (TrueNAS revokes a key that is
+ever sent over plain HTTP, so there is no option to). Give it a key that can manage apps and
+nothing else:
+
+1. In TrueNAS, create a local user `obsidian-updater` with no password login and no shell.
+2. Put it in a group whose privilege grants the **APPS_WRITE** role (Credentials → Groups →
+   Privileges).
+3. Create an API key for that user and put it in the updater's `TRUENAS_API_KEY` in
+   `truenas/obsidian-release.yaml`.
+
+The updater reaches TrueNAS at its own container's gateway, the NAS itself, so it keeps
+working if the box's LAN address changes. If the web interface only listens on one address
+(System → General → GUI), set `TRUENAS_HOST` to it. Without a key, Settings → Updates still
+shows what's available but says updates aren't set up.
 
 ---
 

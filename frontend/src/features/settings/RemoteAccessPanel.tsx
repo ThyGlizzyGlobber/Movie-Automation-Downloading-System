@@ -143,6 +143,8 @@ function eventLabel(eventType: string): string {
       return 'Updated'
     case 'deploy_failed':
       return 'Update failed'
+    case 'update_started':
+      return 'Update started'
     default:
       return eventType
   }
