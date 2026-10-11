@@ -94,6 +94,39 @@ export interface LibrarySettings {
   plex_refresh_after_import: boolean
   free_space_floor_gb: number
 }
+// A box's drives (backend/app/api/storage.py). Off a box: { managed: false }.
+export interface BoxDrive {
+  id: string
+  label: string
+  size: number | null
+  used: number | null
+  free: number | null
+  // missing: the NAS has its pool but it isn't reachable (failed or pulled out).
+  state: 'healthy' | 'problem' | 'missing'
+  status: string | null
+}
+export interface FreeDisk {
+  name: string
+  serial: string
+  model: string | null
+  size: number
+  type: string
+  // Holds a pool from another system: adding it erases that too.
+  has_other_data: boolean
+}
+export type DrivesInfo =
+  | { managed: false }
+  | {
+      managed: true
+      drives: BoxDrive[]
+      unused: FreeDisk[]
+      report_fresh: boolean
+      report_error: string | null
+      pending: boolean
+      last: { state: 'adding' | 'added' | 'failed'; drive: string | null; message: string; at: string } | null
+      updater_running: boolean
+    }
+
 // The box's VPN (backend/app/vpn.py). Never carries a secret.
 export type VpnField = 'private_key' | 'public_key' | 'preshared_key' | 'addresses' | 'endpoint_ip' | 'endpoint_port' | 'user' | 'password'
 export interface VpnProvider {

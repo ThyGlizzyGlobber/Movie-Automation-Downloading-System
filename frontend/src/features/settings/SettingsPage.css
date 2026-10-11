@@ -379,6 +379,100 @@
   color: var(--text-dim);
   white-space: nowrap;
 }
+/* Drives, on a box (DrivesCard) */
+.drive-callout {
+  margin: 0 0 4px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: var(--bg-elevated);
+  color: var(--text);
+  font-size: 14px;
+  line-height: 1.5;
+}
+.drive-list,
+.drive-new {
+  display: grid;
+  gap: 10px;
+}
+.drive-new {
+  margin-top: 20px;
+}
+.drive-new h3 {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+.drive-row {
+  display: grid;
+  gap: 8px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: var(--bg-elevated);
+}
+.drive-row-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 12px;
+  font-size: 14px;
+}
+.drive-row-head b {
+  color: var(--text);
+}
+.drive-size {
+  color: var(--text-dim);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+.drive-row-head .settings-btn,
+.drive-state {
+  margin-left: auto;
+}
+.drive-state {
+  font-size: 12px;
+  font-weight: 700;
+  padding: 3px 10px;
+  border-radius: var(--radius-pill);
+}
+.drive-state.healthy {
+  color: var(--status-complete);
+  background: color-mix(in srgb, var(--status-complete) 14%, transparent);
+}
+.drive-state.problem,
+.drive-state.missing {
+  color: var(--status-failed);
+  background: color-mix(in srgb, var(--status-failed) 14%, transparent);
+}
+.storage-bar.drive-bar {
+  grid-template-columns: 1fr;
+}
+.drive-note {
+  margin: 0;
+  color: var(--text-dim);
+  font-size: 12.5px;
+  line-height: 1.45;
+  font-variant-numeric: tabular-nums;
+}
+.drive-confirm {
+  display: grid;
+  gap: 10px;
+}
+.drive-confirm .plex-error {
+  margin: 0;
+}
+.drive-check {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  font-size: 13.5px;
+  color: var(--text);
+}
+
 /* Storage panel */
 .storage-layout {
   display: grid;

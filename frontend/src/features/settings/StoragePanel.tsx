@@ -4,6 +4,7 @@ import ProgressRing from './ProgressRing'
 import { SettingsCardSkeleton } from './SettingsSkeleton'
 import { formatBytes } from '../../lib/format'
 import LibraryRows from './LibraryRows'
+import DrivesCard from './DrivesCard'
 
 // The reference's Settings › Storage: the library disk as a ring, how
 // much of it each library holds, and request throughput. Library sizes
@@ -29,6 +30,7 @@ export default function StoragePanel() {
   ]
   return (
     <>
+      <DrivesCard />
       <div className="settings-panel-card">
         <h2>Storage</h2>
         <p className="settings-sub">
