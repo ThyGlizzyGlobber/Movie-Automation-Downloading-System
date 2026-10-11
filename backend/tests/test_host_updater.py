@@ -300,6 +300,22 @@ def test_install_creates_the_cron_job_once(box, tmp_path, as_root):
     assert oct(script.stat().st_mode & 0o777) == "0o700"
 
 
+def test_install_runs_once_so_the_heartbeat_is_there_straight_away(box, tmp_path, as_root, monkeypatch, capsys):
+    folder = tmp_path / "updater-home"
+    folder.mkdir()
+    script = folder / "obsidian-updater.py"
+    script.write_text("")
+    monkeypatch.setattr(host, "__file__", str(script))
+    monkeypatch.setattr(host, "Middleware", lambda: box)
+
+    assert host.main(["install", "--app", "obsidian"]) == 0
+
+    out = capsys.readouterr().out
+    assert "First run done." in out
+    assert json.loads(out[out.index("{"):])["heartbeat"]["script"] == host.SCRIPT_VERSION
+    assert len(box.cron) == 1
+
+
 def test_install_refuses_a_folder_the_app_can_write(box, as_root):
     script = box.data / "obsidian-updater.py"
     script.write_text("")

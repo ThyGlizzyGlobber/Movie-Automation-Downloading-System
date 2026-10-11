@@ -47,7 +47,7 @@ import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
 
-SCRIPT_VERSION = 1
+SCRIPT_VERSION = 2
 IMAGE_NAMES = ("obsidian-backend", "obsidian-frontend")
 IMAGE_PREFIX = "ghcr.io/thyglizzyglobber/"
 CRON_DESCRIPTION = "Obsidian updater (installs updates requested in the app)"
@@ -498,6 +498,12 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "install":
         for note in install(middleware, args.app, script, args.image_prefix):
             print(note)
+        # One run now, so a problem shows here rather than in a log a minute
+        # from now, and the app sees the heartbeat straight away.
+        if run_once(middleware, args, script, log) != 0:
+            print(f"The first run failed; see {script.resolve().parent / 'updater.log'}.")
+            return 1
+        print("First run done.")
         args.command = "status"
 
     if args.command == "status":
@@ -509,6 +515,10 @@ def main(argv: list[str] | None = None) -> int:
             folder.close()
         return 0
 
+    return run_once(middleware, args, script, log)
+
+
+def run_once(middleware, args, script: Path, log) -> int:
     lock = open(script.resolve().parent / ".lock", "w")
     try:
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
@@ -519,6 +529,8 @@ def main(argv: list[str] | None = None) -> int:
     except Exception as exc:  # noqa: BLE001 — logged for whoever looks; cron stays quiet
         log(f"run failed: {_reason(exc)}")
         return 1
+    finally:
+        lock.close()
     return 0
 
 
