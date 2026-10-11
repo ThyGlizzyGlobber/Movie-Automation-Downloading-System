@@ -3,28 +3,28 @@ the database copy taken before anything moves.
 
 A release install runs the images .github/workflows/release.yml publishes,
 and updating it means pointing the TrueNAS app at a newer tag of them. That
-last step needs a TrueNAS API key, which lives only in the updater sidecar
-(app/updater.py) — never in this backend, the container the internet
-reaches. Between them:
+step is done by truenas/obsidian-updater.py, a script that runs as root on
+the NAS itself every minute (a TrueNAS cron job), never by this backend: the
+container the internet reaches holds no TrueNAS credential and can't change
+which version runs. Between them:
 
   backend   asks the registry what's newest on this box's channel, shows the
-            release notes, copies the database, then asks the updater to go
-  updater   moves the app's images to that exact version through TrueNAS,
-            then checks the new release came up; if it didn't, it moves them
-            back and leaves a note asking the old backend to restore the
-            database copy as it boots (`restore_pending_backup`)
+            release notes, copies the database, then leaves a request
+  updater   picks the request up, moves the app's images to that exact
+            version, and checks the new release came up; if it didn't, it
+            moves them back and leaves a note asking the old backend to
+            restore the database copy as it boots (`restore_pending_backup`)
 
-The two share nothing but files under the app's data volume (UPDATER_DIR):
-the updater's state, the token the backend proves itself with, and that
-restore note. Every file here is written whole-or-not-at-all, since either
-container can be replaced mid-update.
+They share nothing but files under the app's data folder (`updater/`): the
+request, the updater's state and heartbeat, and that restore note. The
+request is the only thing the backend can ask for, and it is a version
+number the updater checks for itself.
 """
 
 import json
 import logging
 import os
 import re
-import secrets
 import shutil
 import sqlite3
 import time
@@ -54,21 +54,6 @@ def is_newer(candidate: str | None, current: str | None) -> bool:
 def channel() -> str | None:
     """The channel this box follows; None on a git-pull install."""
     return config.UPDATE_CHANNEL or version.current().channel
-
-
-def image_ref(image: str, tag: str) -> str:
-    return f"{config.IMAGE_REGISTRY}/{config.IMAGE_OWNER}/{image}:{tag}"
-
-
-def is_our_image(ref: str) -> str | None:
-    """The image name ("obsidian-backend") when `ref` is one of ours, at any
-    tag. Only these are ever retagged; anything else in the app is left as
-    the person installing it wrote it."""
-    prefix = f"{config.IMAGE_REGISTRY}/{config.IMAGE_OWNER}/"
-    if not ref.startswith(prefix):
-        return None
-    name = ref[len(prefix):].split(":", 1)[0].split("@", 1)[0]
-    return name if name in config.IMAGE_NAMES else None
 
 
 # ---------------------------------------------------------------------------
@@ -204,8 +189,15 @@ def release_notes(release: str) -> list[dict]:
 
 
 # ---------------------------------------------------------------------------
-# Files the backend and the updater share on the data volume
+# Files the backend and the updater share in the data folder
 # ---------------------------------------------------------------------------
+
+# States in which an update is under way, "queued" included: requested,
+# waiting for the updater's next run (at most a minute).
+BUSY = ("queued", "updating", "verifying", "rolling_back")
+# The updater runs every minute and leaves a heartbeat each time. Older
+# than this, it isn't running — or was never set up on this box.
+HEARTBEAT_SECONDS = 180
 
 
 def data_dir() -> Path:
@@ -224,8 +216,12 @@ def restore_path() -> Path:
     return updater_dir() / "restore.json"
 
 
-def token_path() -> Path:
-    return updater_dir() / "token"
+def request_path() -> Path:
+    return updater_dir() / "request.json"
+
+
+def heartbeat_path() -> Path:
+    return updater_dir() / "heartbeat.json"
 
 
 def backups_dir() -> Path:
@@ -247,28 +243,40 @@ def write_json(path: Path, value: dict) -> None:
     os.replace(temporary, path)
 
 
-def shared_token(create: bool = False) -> str | None:
-    """The secret the backend shows the updater on every call. The updater
-    makes it on first start; the backend only ever reads it. Only the two
-    containers mounting the data volume can see it."""
-    path = token_path()
-    try:
-        token = path.read_text().strip()
-    except OSError:
-        token = ""
-    if token or not create:
-        return token or None
-    token = secrets.token_urlsafe(32)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    temporary = path.with_name(f".{path.name}.tmp")
-    temporary.write_text(token)
-    os.chmod(temporary, 0o600)
-    os.replace(temporary, path)
-    return token
-
-
 def now_iso() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
+
+
+def updater_running() -> bool:
+    """Whether the updater has run in the last few minutes."""
+    beat = read_json(heartbeat_path()) or {}
+    try:
+        at = datetime.fromisoformat(beat["at"])
+    except (KeyError, TypeError, ValueError):
+        return False
+    return (datetime.now(timezone.utc) - at).total_seconds() < HEARTBEAT_SECONDS
+
+
+def updater_state() -> dict:
+    return read_json(state_path()) or {"state": "idle"}
+
+
+def request_update(to_version: str, from_version: str, backup: str) -> dict:
+    """Leaves the request the updater picks up on its next run, and marks
+    the update queued so the page says so until then."""
+    write_json(request_path(), {"version": to_version, "backup": backup, "requested_at": now_iso()})
+    state = {
+        "state": "queued",
+        "from_version": from_version,
+        "to_version": to_version,
+        "backup": backup,
+        "started_at": now_iso(),
+        "finished_at": None,
+        "message": None,
+        "updated_at": now_iso(),
+    }
+    write_json(state_path(), state)
+    return state
 
 
 # ---------------------------------------------------------------------------

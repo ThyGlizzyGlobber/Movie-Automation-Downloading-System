@@ -11,7 +11,3 @@ slowapi>=0.1.9
 # Encodes the content page's banner logos small (app/logos.py). Optional at
 # runtime: without it ffmpeg does the encoding, a little less tightly.
 pillow>=10.0
-# app/truenas.py: the updater talks to TrueNAS's JSON-RPC API over a
-# WebSocket. uvicorn[standard] brings it too; named here because it's used
-# directly, and its sync client with `proxy=` needs 15 or later.
-websockets>=15
