@@ -571,7 +571,7 @@ backend/
     tmdb.py, tvmaze.py  metadata and browse; exact episode air times
     qbt.py              qBittorrent client
     trailers.py         trailer download and cache
-    db.py               SQLite store (rows in db_rows.py, schema in db_schema.py)
+    db/                 SQLite store: RequestStore from one mixin per group of tables
     config.py           environment and defaults
     cli.py              recovery commands (python -m app.cli --help)
   tests/                pytest suite
