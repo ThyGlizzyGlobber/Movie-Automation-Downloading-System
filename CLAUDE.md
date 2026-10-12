@@ -41,19 +41,27 @@ State is SQLite. Every browser request is same-origin through `frontend/nginx.co
 
 ### Backend: `backend/app/`
 
-The folder is flat, but every module belongs to exactly one of these areas. Put new code in
-the area it belongs to, and name new modules to make that area obvious.
+Every module belongs to exactly one of these areas, listed lowest first. An area may import
+only from itself and the areas above it in this table (Recommendations imports nothing).
+`tests/test_architecture.py` enforces this: it fails on a module with no area, an import that
+reaches downwards, or a web framework imported outside `api/`. When it fails, move the code;
+don't loosen the rule. A new module goes in the test's `AREAS` table and in this map.
 
 | Area | Modules | Owns |
 |---|---|---|
-| **Core** | `config.py`, `db.py` + `db_rows.py` + `db_schema.py`, `cache.py`, `logging_config.py`, `version.py`, `cli.py` | env and defaults, the SQLite store, TTL cache, recovery CLI |
+| **Core** | `config.py`, `cache.py`, `logging_config.py`, `version.py` | env and defaults, TTL cache, logging, the running version |
+| **Store** (`db`) | `db.py` + `db_rows.py` + `db_schema.py` | the SQLite store (`RequestStore`) |
 | **Catalogue** | `tmdb.py`, `tvmaze.py`, `language.py`, `logos.py`, `trailers.py` | metadata, artwork, trailers |
-| **Recommendations** | `feed.py`, `taste.py`, `moods.py` | home-page rows. Pure logic: every input is an argument |
-| **Release matching** | `normalize.py`, `resolve.py`, `tv_resolve.py`, `score.py`, `tv_score.py`, `pack_score.py`, `pipeline.py`, `pipeline_settings.py`, `tv_settings.py` | title → search queries → filter → score → add. No FastAPI imports |
-| **Downloads** | `qbt.py`, `worker.py` | the qBittorrent client and the background loops that drive requests |
-| **Library** | `media_organizer.py`, `reconcile.py`, `plex.py` | filing finished downloads, cleaning up source torrents, Plex sign-in and lookups |
-| **Box** | `drives.py`, `drive_recovery.py`, `box_plex.py`, `box_address.py`, `vpn.py`, `updates.py`, `deploy.py` | box-only features and the two update paths |
+| **Recommendations** | `feed.py`, `taste.py`, `moods.py` | home-page rows. Pure logic: imports nothing from the app |
+| **qBittorrent** | `qbt.py` | the qBittorrent WebUI client |
+| **Release matching** (`matching`) | `normalize.py`, `resolve.py`, `tv_resolve.py`, `score.py`, `tv_score.py`, `pack_score.py`, `pipeline_settings.py` | title → search queries, then "right title?" and "best release?" rules |
+| **Updater** | `updates.py`, `deploy.py` | the two update paths, and the request files the NAS updater reads |
+| **Box** | `drives.py`, `drive_recovery.py`, `box_plex.py`, `box_address.py`, `vpn.py` | box-only features |
+| **Plex** | `plex.py` | Plex sign-in, library lookups, refresh and audio selection |
+| **Library** | `media_organizer.py`, `reconcile.py` | filing finished downloads, cleaning up source torrents |
+| **Downloads** | `pipeline.py`, `worker.py`, `tv_settings.py` | search → filter → score → add, and the background loops that drive requests. No FastAPI imports |
 | **HTTP** | `api/` | one module per area. The only place auth is enforced |
+| **CLI** | `cli.py` | recovery commands (`python -m app.cli --help`). Never imports `api/` |
 
 - **The HTTP layer, `api/`:**
   - `main.py` builds the app and its lifespan (store, clients, worker).
