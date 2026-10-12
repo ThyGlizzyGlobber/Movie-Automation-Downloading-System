@@ -213,7 +213,7 @@ class StoreLibrary:
 
     def library_items_under(self, folder: str) -> list[dict]:
         """Every file this app filed somewhere under `folder` — on a box,
-        everything that was on one drive (app/drive_recovery.py)."""
+        everything that was on one drive (app/box/drive_recovery.py)."""
         prefix = folder.rstrip("/") + "/"
         rows = self._conn.execute(
             "SELECT * FROM library_items WHERE substr(path, 1, ?) = ? ORDER BY id", (len(prefix), prefix)

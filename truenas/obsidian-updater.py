@@ -79,7 +79,7 @@ LOG_BYTES = 1024 * 1024
 _VERSION = re.compile(r"^\d+\.\d+\.\d+$")
 
 # The VPN providers a box can use and what each connection needs: the same
-# table as the app's (backend/app/vpn.py), checked against again here, since
+# table as the app's (backend/app/box/vpn.py), checked against again here, since
 # this runs as root and the request comes from a folder the app can write.
 VPN_PROVIDERS = {
     "mullvad": {"wireguard": ["private_key", "addresses"]},
@@ -109,7 +109,7 @@ VPN_ENV = {
 VPN_MANAGED = set(VPN_ENV.values()) | {"VPN_SERVICE_PROVIDER", "VPN_TYPE"}
 GLUETUN_IMAGE = "qmcgaw/gluetun:"
 # A box's drives: pools named drive1, drive2, … each mounted at /media/<name>
-# in these services, laid out alike, and marked once ready (app/drives.py).
+# in these services, laid out alike, and marked once ready (app/box/drives.py).
 DRIVE_POOL = re.compile(r"^drive(\d+)$")
 DRIVE_LAYOUT = ("downloads/movies", "downloads/tv", "Movies", "TV Shows")
 DRIVE_MARKER = ".obsidian-drive.json"

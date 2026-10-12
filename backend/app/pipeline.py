@@ -7,7 +7,7 @@ import time
 from collections.abc import Callable
 from dataclasses import dataclass
 
-from app import drives
+from app.box import drives
 from app.catalogue.tmdb import TMDBClient
 from app.core import config
 from app.matching.normalize import tokenize
@@ -189,7 +189,7 @@ def usable_free_space(qbt: QBTClient, settings: "PipelineSettings | None") -> in
 def download_target(qbt: QBTClient, settings: "PipelineSettings | None", category: str) -> tuple[int, str | None]:
     """The free space a download must fit in, and where qBittorrent should
     save it (None: its own setting). On a box, the drive with the most
-    free space (app/drives.py), the same floor applied to it; anywhere
+    free space (app/box/drives.py), the same floor applied to it; anywhere
     else, qBittorrent's own free space and save path, as always."""
     if not drives.managed():
         return usable_free_space(qbt, settings), None

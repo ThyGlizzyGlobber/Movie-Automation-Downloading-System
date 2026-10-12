@@ -23,11 +23,12 @@ import logging
 from pathlib import Path
 import requests
 
-from app import box_plex, drives, updates
+from app.box import drives, plex as box_plex
 from app.catalogue.language import audio_quality_key, is_audio_language
 from app.core.cache import TTLCache
 from app.db import PlexServerRow
 from app.matching.normalize import normalize_text, titles_match
+from app.updater import channel
 
 PLEX_TV_BASE = "https://plex.tv"
 PRODUCT_NAME = "Obsidian"
@@ -207,7 +208,7 @@ class PlexClient:
 
     def claim_token(self, token: str) -> str:
         """A one-time token that lets a new Plex server claim itself for
-        this account (box_plex.py). Good for a few minutes."""
+        this account (box/plex.py). Good for a few minutes."""
         response = self.session.get(
             f"{PLEX_TV_BASE}/api/claim/token.json", headers=self._headers(token), timeout=10
         )
@@ -788,7 +789,7 @@ class PlexLinker:
             self._error = "Couldn't reach this box's Plex server. Give it a minute and try again."
             return None
         if not found["claimed"]:
-            if not updates.updater_running():
+            if not channel.updater_running():
                 self._error = "This box isn't ready to set up Plex yet. Give it a minute and try again."
                 return None
             self._stage = "claiming"

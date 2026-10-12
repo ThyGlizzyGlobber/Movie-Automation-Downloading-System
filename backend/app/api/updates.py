@@ -1,7 +1,7 @@
 """Settings › Updates on a release install: what's running, what's newer on
 this box's channel and what changed in it, and the button that installs it.
 Installing is truenas/obsidian-updater.py's job, on the NAS itself; this side
-copies the database and leaves the request (app/updates.py). On a git-pull
+copies the database and leaves the request (app/updater/updates.py). On a git-pull
 install there's no channel, and `POST /api/admin/deploy` (system.py) is the
 update instead."""
 
@@ -10,10 +10,10 @@ import time
 from fastapi import Depends, HTTPException, Request
 from pydantic import BaseModel
 
-from app import updates
 from app.api.deps import _client_ip, admin_router, get_store
 from app.core import version
 from app.db import RequestStore
+from app.updater import channel, updates
 
 # How long a registry answer is reused before asking again. The button asks
 # again regardless (`refresh`); this only spares the registry a lookup every
@@ -40,7 +40,7 @@ def _updater_status() -> dict:
     """The updater's state, and whether it's running on this box at all —
     it leaves a heartbeat every minute. `reachable` and `configured` say the
     same thing; both are kept for the page."""
-    running = updates.updater_running()
+    running = channel.updater_running()
     state = updates.updater_state()
     keys = ("state", "from_version", "to_version", "message", "started_at", "finished_at")
     return {"reachable": running, "configured": running, **{key: state.get(key) for key in keys}}
@@ -82,7 +82,7 @@ def install_update(request: Request, body: InstallRequest, store: RequestStore =
         raise HTTPException(status_code=409, detail="This install updates with git pull")
     if not updates.is_newer(body.version, current):
         raise HTTPException(status_code=422, detail=f"{body.version} isn't newer than {current}")
-    if not updates.updater_running():
+    if not channel.updater_running():
         raise HTTPException(status_code=409, detail="Updates aren't set up on this box yet")
     if updates.updater_state().get("state") in updates.BUSY:
         raise HTTPException(status_code=409, detail="An update is already under way")

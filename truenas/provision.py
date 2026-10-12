@@ -9,7 +9,7 @@ from the repo's truenas/ folder).
 
 A box boots TrueNAS from one small SSD, keeps its apps on a second internal
 SSD, and has four 3.5" bays for hard drives. A box may ship with no hard
-drives, or with some; each is its own storage (see backend/app/drives.py),
+drives, or with some; each is its own storage (see backend/app/box/drives.py),
 and the buyer adds more from Settings › Storage. In order, it:
 
   1. checks it's on TrueNAS 25.10, as root, with no Obsidian app yet, and

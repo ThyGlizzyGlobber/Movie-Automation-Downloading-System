@@ -407,7 +407,7 @@ DEPLOY_TIMEOUT_SECONDS = int(os.environ.get("DEPLOY_TIMEOUT_SECONDS", "60"))
 # ceiling rather than sharing DEPLOY_TIMEOUT_SECONDS's 60s default.
 DEPLOY_BUILD_TIMEOUT_SECONDS = int(os.environ.get("DEPLOY_BUILD_TIMEOUT_SECONDS", "180"))
 
-# -- In-app updates for a release install (app/updates.py). The installing
+# -- In-app updates for a release install (app/updater/updates.py). The installing
 #    is done by truenas/obsidian-updater.py, on the NAS itself. --
 
 # Where the release images live: <registry>/<owner>/obsidian-{backend,frontend}.

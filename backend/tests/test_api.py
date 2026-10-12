@@ -9,14 +9,15 @@ from datetime import datetime, timedelta, timezone
 import pytest
 from fastapi.testclient import TestClient
 
-from app import api, updates
+from app import api
 from app.api import deps, helpers, hero, recommendations, requests as api_requests, setup, shows, system, titles, updates as api_updates
 from app.catalogue import trailers
 from app.core import config, version
 from app.db import RequestStore
-from app.deploy import DeployError
 from app.matching.pipeline_settings import resolve_pipeline_settings
 from app.plex import PlexClient
+from app.updater import channel, updates
+from app.updater.deploy import DeployError
 
 MOVIE = {
     "id": 693134,
@@ -1923,7 +1924,7 @@ def release_install(client_and_deps, tmp_path, monkeypatch):
     monkeypatch.setattr(updates, "published_version", lambda tag: published.get(tag))
     monkeypatch.setattr(updates, "release_exists", lambda v: v in published.values())
     monkeypatch.setattr(updates, "release_notes", lambda v: [{"heading": "Added", "items": [f"notes for {v}"]}])
-    updates.write_json(updates.heartbeat_path(), {"at": updates.now_iso(), "script": 1})
+    channel.write_json(channel.heartbeat_path(), {"at": channel.now_iso(), "script": 1})
     client, store = client_and_deps[0], client_and_deps[1]
     return client, store, published
 
@@ -1966,7 +1967,7 @@ def test_up_to_date_offers_nothing(release_install):
 
 def test_a_release_that_was_rolled_back_isnt_offered_again(release_install):
     client, _, published = release_install
-    updates.write_json(updates.state_path(), {"state": "rolled_back", "from_version": "1.0.46", "to_version": "1.0.47"})
+    channel.write_json(updates.state_path(), {"state": "rolled_back", "from_version": "1.0.46", "to_version": "1.0.47"})
     body = client.get("/api/admin/updates").json()
     assert (body["available"], body["skipped"]) == (False, "1.0.47")
 
@@ -1982,7 +1983,7 @@ def test_installing_copies_the_database_then_leaves_the_request(release_install)
 
     assert response.status_code == 202
     assert response.json()["state"] == "queued"
-    request = updates.read_json(updates.request_path())
+    request = channel.read_json(updates.request_path())
     assert request["version"] == "1.0.47"
     assert (updates.backups_dir() / request["backup"]).is_file()
     assert updates.updater_state()["to_version"] == "1.0.47"
@@ -1994,7 +1995,7 @@ def test_installing_refuses_anything_not_newer(release_install):
     client, _, _ = release_install
     assert client.post("/api/admin/updates", json={"version": "1.0.46"}).status_code == 422
     assert client.post("/api/admin/updates", json={"version": "beta"}).status_code == 422
-    assert updates.read_json(updates.request_path()) is None
+    assert channel.read_json(updates.request_path()) is None
 
 
 def test_installing_an_unpublished_version_is_refused(release_install):
@@ -2005,7 +2006,7 @@ def test_installing_an_unpublished_version_is_refused(release_install):
 
 def test_installing_without_the_updater_set_up_says_so(release_install):
     client, _, _ = release_install
-    updates.heartbeat_path().unlink()
+    channel.heartbeat_path().unlink()
     response = client.post("/api/admin/updates", json={"version": "1.0.47"})
     assert response.status_code == 409
     assert "aren't set up" in response.json()["detail"]

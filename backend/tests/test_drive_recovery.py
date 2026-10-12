@@ -1,5 +1,5 @@
 """A box's drive that has failed: listing what this app filed on it, and
-asking for all of it again (app/drive_recovery.py, app/api/storage.py)."""
+asking for all of it again (app/box/drive_recovery.py, app/api/storage.py)."""
 
 import json
 from contextlib import asynccontextmanager
@@ -8,11 +8,13 @@ from datetime import datetime, timedelta, timezone
 import pytest
 from fastapi.testclient import TestClient
 
-from app import api, box_plex, drive_recovery, drives, updates
+from app import api
 from app.api import deps
+from app.box import drive_recovery, drives, plex as box_plex
 from app.catalogue.tmdb import TMDBError
 from app.core import config
 from app.db import RequestStore
+from app.updater import channel
 
 TB = 1000**4
 MOVIE = "/media/drive2/Movies/Heat (1995) {tmdb-949}/Heat.1995.1080p.BluRay.mkv"
@@ -61,7 +63,7 @@ def box(tmp_path, monkeypatch):
     media.mkdir()
     monkeypatch.setattr(config, "DB_PATH", tmp_path / "data" / "app.db")
     monkeypatch.setattr(drives, "MEDIA_DRIVES_ROOT", str(media))
-    updates.write_json(updates.heartbeat_path(), {"at": updates.now_iso(), "script": 5})
+    channel.write_json(channel.heartbeat_path(), {"at": channel.now_iso(), "script": 5})
     store = RequestStore(str(tmp_path / "test.db"))
     server = store.save_plex_server("m", "Server", "http://plex.invalid", "t")
     admin = store.upsert_user("admin-id", "admin", True)
@@ -71,7 +73,7 @@ def box(tmp_path, monkeypatch):
     for sub in ("downloads/movies", "Movies", "TV Shows"):
         (media / "drive1" / sub).mkdir(parents=True)
     (media / "drive1" / drives.MARKER).write_text(json.dumps({"label": "Drive 1", "size_bytes": 8 * TB}))
-    updates.write_json(updates.updater_dir() / "storage.json", {"at": updates.now_iso(), "unused": [], "drives": [
+    channel.write_json(channel.updater_dir() / "storage.json", {"at": channel.now_iso(), "unused": [], "drives": [
         {"id": "drive1", "status": "ONLINE", "healthy": True},
         {"id": "drive2", "status": "UNAVAIL", "healthy": False, "size": 4 * TB},
     ]})

@@ -1,4 +1,4 @@
-"""app/drives.py: a box's separate drives, and the download and filing steps
+"""app/box/drives.py: a box's separate drives, and the download and filing steps
 that use them. Off a box there's one implicit drive and nothing changes."""
 
 import asyncio
@@ -7,7 +7,8 @@ from pathlib import Path
 
 import pytest
 
-from app import drives, pipeline, worker
+from app import pipeline, worker
+from app.box import drives
 from app.core import config
 from app.matching.resolve import MediaIdentity
 from app.media_organizer import organize_movie

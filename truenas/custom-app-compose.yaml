@@ -104,7 +104,7 @@ services:
       QBIT_HOST: "192.168.0.133"
       QBIT_PORT: "30024"
       # Stage 6: where the self-update endpoint runs `git pull --ff-only`
-      # and the deploy key it authenticates with — see app/deploy.py.
+      # and the deploy key it authenticates with — see app/updater/deploy.py.
       DEPLOY_REPO_PATH: "/repo"
       GIT_SSH_KEY_PATH: "/run/secrets/deploy_key"
       # Stage 11: this container's path to the mount below.

@@ -7,7 +7,7 @@ token on their account (good for a few minutes) and leaves it for the NAS
 updater, which restarts Plex with it as PLEX_CLAIM: Plex's own image claims
 itself for that account as it starts. Obsidian then finds the server among
 the account's own, links it, and creates the Movies and TV Shows libraries
-on every drive's folders (app/drives.py), adding each new drive's as it
+on every drive's folders (app/box/drives.py), adding each new drive's as it
 comes.
 
 Plex runs on the host's network; from the backend's container that's the
@@ -20,7 +20,8 @@ from pathlib import Path
 
 import requests
 
-from app import drives, updates
+from app.box import drives
+from app.updater import channel
 
 PLEX_LOCAL_URL = os.environ.get("PLEX_LOCAL_URL") or None
 PLEX_PORT = 32400
@@ -70,20 +71,20 @@ def identity(url: str) -> dict | None:
 
 
 def claim_request_path() -> Path:
-    return updates.updater_dir() / "plex-claim-request.json"
+    return channel.updater_dir() / "plex-claim-request.json"
 
 
 def claim_state_path() -> Path:
-    return updates.updater_dir() / "plex-claim-state.json"
+    return channel.updater_dir() / "plex-claim-state.json"
 
 
 def request_claim(claim_token: str) -> None:
-    updates.write_json(claim_request_path(), {"claim_token": claim_token, "requested_at": updates.now_iso()})
+    channel.write_json(claim_request_path(), {"claim_token": claim_token, "requested_at": channel.now_iso()})
     os.chmod(claim_request_path(), 0o600)
 
 
 def claim_state() -> dict:
-    return updates.read_json(claim_state_path()) or {}
+    return channel.read_json(claim_state_path()) or {}
 
 
 def wanted_folders() -> dict[str, list[str]]:
@@ -94,7 +95,7 @@ def wanted_folders() -> dict[str, list[str]]:
 
 def dropped_folders(settings: dict) -> list[str]:
     """The failed drives' library folders Plex is to stop listing
-    (app/drive_recovery.py)."""
+    (app/box/drive_recovery.py)."""
     folders = settings.get("box_plex_drop")
     return [f for f in folders if isinstance(f, str)] if isinstance(folders, list) else []
 
@@ -106,7 +107,7 @@ def sync_libraries(url: str, token: str, folders: dict[str, list[str]] | None = 
     have yet. Folders already there stay, a drive's that has gone
     missing included (it may come back) and any a person added — except
     those in `drop`, a failed drive's that its titles are being
-    downloaded again from (app/drive_recovery.py): while Plex still lists
+    downloaded again from (app/box/drive_recovery.py): while Plex still lists
     them it would answer "already on Plex" for every one. A library is
     never left with no folder at all, which Plex refuses; that waits for
     the next drive. A kind with no drive yet is left until there is one:

@@ -1,4 +1,4 @@
-"""The box's VPN: checking what a buyer enters (app/vpn.py), the routes that
+"""The box's VPN: checking what a buyer enters (app/box/vpn.py), the routes that
 take it (app/api/vpn.py), and the NAS updater applying it to gluetun
 (truenas/obsidian-updater.py) — which checks it all again for itself."""
 
@@ -12,10 +12,12 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-from app import api, updates, vpn
+from app import api
 from app.api import deps
+from app.box import vpn
 from app.core import config
 from app.db import RequestStore
+from app.updater import channel
 
 SCRIPT = Path(__file__).resolve().parents[2] / "truenas" / "obsidian-updater.py"
 spec = importlib.util.spec_from_file_location("obsidian_updater_vpn", SCRIPT)
@@ -91,7 +93,7 @@ def box(tmp_path, monkeypatch):
     monkeypatch.setattr(config, "DB_PATH", tmp_path / "data" / "app.db")
     monkeypatch.setattr(vpn, "GLUETUN_URL", "http://gluetun:8000")
     monkeypatch.setattr(vpn, "status", lambda: {"reachable": True, "connected": False, "public_ip": None, "country": None})
-    updates.write_json(updates.heartbeat_path(), {"at": updates.now_iso(), "script": 3})
+    channel.write_json(channel.heartbeat_path(), {"at": channel.now_iso(), "script": 3})
     store = RequestStore(str(tmp_path / "test.db"))
     store.save_plex_server("m", "Server", "http://plex.invalid", "t")
     admin = store.upsert_user("admin-id", "admin", True)
@@ -148,7 +150,7 @@ def test_bad_details_are_refused_with_the_reason(box):
 
 def test_without_the_updater_running_nothing_is_left_waiting(box):
     client, _ = box
-    updates.heartbeat_path().unlink()
+    channel.heartbeat_path().unlink()
     response = client.put("/api/admin/vpn", json={"provider": "mullvad", "private_key": KEY, "addresses": "10.64.0.2/32"})
     assert response.status_code == 409
     assert not vpn.request_path().exists()
@@ -165,7 +167,7 @@ def test_the_setup_status_says_whether_the_box_has_a_vpn_and_if_it_s_set(box):
     client, _ = box
     status = client.get("/api/setup/status").json()
     assert (status["vpn_managed"], status["vpn_configured"]) == (True, False)
-    updates.write_json(vpn.state_path(), {"state": "applied", "provider": "mullvad", "type": "wireguard"})
+    channel.write_json(vpn.state_path(), {"state": "applied", "provider": "mullvad", "type": "wireguard"})
     assert client.get("/api/setup/status").json()["vpn_configured"] is True
 
 

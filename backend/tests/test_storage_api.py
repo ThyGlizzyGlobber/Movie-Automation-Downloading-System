@@ -9,10 +9,12 @@ from datetime import datetime, timedelta, timezone
 import pytest
 from fastapi.testclient import TestClient
 
-from app import api, drives, updates
+from app import api
 from app.api import deps
+from app.box import drives
 from app.core import config
 from app.db import RequestStore
+from app.updater import channel
 
 TB = 1000**4
 
@@ -26,7 +28,7 @@ def add_drive(media, name, size=8 * TB):
 
 def report(unused=(), pools=(), age=0, **extra):
     at = (datetime.now(timezone.utc) - timedelta(seconds=age)).isoformat(timespec="seconds")
-    updates.write_json(updates.updater_dir() / "storage.json", {"at": at, "unused": list(unused), "drives": list(pools), **extra})
+    channel.write_json(channel.updater_dir() / "storage.json", {"at": at, "unused": list(unused), "drives": list(pools), **extra})
 
 
 def disk(name="sdb", serial="WD-AAA", other=False):
@@ -39,7 +41,7 @@ def box(tmp_path, monkeypatch):
     media.mkdir()
     monkeypatch.setattr(config, "DB_PATH", tmp_path / "data" / "app.db")
     monkeypatch.setattr(drives, "MEDIA_DRIVES_ROOT", str(media))
-    updates.write_json(updates.heartbeat_path(), {"at": updates.now_iso(), "script": 5})
+    channel.write_json(channel.heartbeat_path(), {"at": channel.now_iso(), "script": 5})
     store = RequestStore(str(tmp_path / "test.db"))
     store.save_plex_server("m", "Server", "http://plex.invalid", "t")
     admin = store.upsert_user("admin-id", "admin", True)
@@ -100,7 +102,7 @@ def test_adding_a_drive_leaves_a_private_request_for_the_updater(box):
     report(unused=[disk()])
     response = client.post("/api/admin/drives", json={"disk": "sdb", "serial": "WD-AAA", "confirm": True})
     assert response.status_code == 202
-    path = updates.updater_dir() / "drive-request.json"
+    path = channel.updater_dir() / "drive-request.json"
     assert json.loads(path.read_text())["disk"] == "sdb"
     assert (os.stat(path).st_mode & 0o777) == 0o600
     assert client.get("/api/admin/drives").json()["pending"] is True
@@ -121,7 +123,7 @@ def test_nothing_is_asked_for_without_confirming_the_disk_still_chosen(box, body
     report(unused=[disk()])
     response = client.post("/api/admin/drives", json=body)
     assert response.status_code == status and says in response.json()["detail"]
-    assert not (updates.updater_dir() / "drive-request.json").exists()
+    assert not (channel.updater_dir() / "drive-request.json").exists()
 
 
 def test_a_disk_with_another_system_s_data_needs_that_agreed_too(box):
@@ -135,7 +137,7 @@ def test_a_disk_with_another_system_s_data_needs_that_agreed_too(box):
 def test_without_the_updater_nothing_is_left_waiting(box):
     client, _, _ = box
     report(unused=[disk()])
-    updates.heartbeat_path().unlink()
+    channel.heartbeat_path().unlink()
     assert client.post("/api/admin/drives", json={"disk": "sdb", "serial": "WD-AAA", "confirm": True}).status_code == 409
 
 

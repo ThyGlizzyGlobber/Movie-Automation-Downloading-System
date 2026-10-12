@@ -93,7 +93,7 @@ class QBTClient:
         real successes — whether a pending add actually lands is verified
         for real by pipeline.py's `_capture_new_hashes` retry loop, not
         synchronously here."""
-        # A box names the drive to save on (app/drives.py). Automatic
+        # A box names the drive to save on (app/box/drives.py). Automatic
         # torrent management would move it to the category's own folder,
         # so it's off for a torrent given a path.
         placement = {"save_path": save_path, "use_auto_torrent_management": False} if save_path else {}

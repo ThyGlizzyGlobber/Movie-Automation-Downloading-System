@@ -1,5 +1,5 @@
 """A drive that has failed, on a box: what was on it, and downloading it
-all again onto the drives that are left (app/drives.py).
+all again onto the drives that are left (app/box/drives.py).
 
 What was on it is the library ledger's word (`library_items`): every file
 this app filed there. Anything a person copied on by hand has no record,
@@ -21,7 +21,7 @@ import re
 from collections import defaultdict
 from pathlib import Path
 
-from app import box_plex, drives
+from app.box import drives, plex as box_plex
 from app.catalogue.tmdb import TMDBClient, TMDBError
 from app.db import RequestStore
 from app.matching.resolve import resolve

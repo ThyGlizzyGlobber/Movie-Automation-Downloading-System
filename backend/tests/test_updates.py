@@ -1,4 +1,4 @@
-"""app/updates.py: versions, the registry lookup, release notes, and the
+"""app/updater/updates.py: versions, the registry lookup, release notes, and the
 database copy taken before an update and restored after a rollback."""
 
 import sqlite3
@@ -6,9 +6,9 @@ import sqlite3
 import pytest
 import requests
 
-from app import updates
 from app.core import config, version
 from app.db import RequestStore
+from app.updater import channel, updates
 
 
 @pytest.fixture
@@ -166,7 +166,7 @@ def test_a_version_without_a_section_has_no_notes():
 
 def test_a_request_is_left_for_the_updater_and_the_update_shows_queued(data):
     state = updates.request_update("1.0.47", "1.0.46", "obsidian-x.db")
-    assert updates.read_json(updates.request_path()) == {
+    assert channel.read_json(updates.request_path()) == {
         "version": "1.0.47", "backup": "obsidian-x.db", "requested_at": state["started_at"],
     }
     assert updates.updater_state()["state"] == "queued"
@@ -174,20 +174,20 @@ def test_a_request_is_left_for_the_updater_and_the_update_shows_queued(data):
 
 
 def test_the_updater_counts_as_running_only_with_a_recent_heartbeat(data):
-    assert not updates.updater_running()
-    updates.write_json(updates.heartbeat_path(), {"at": updates.now_iso(), "script": 1})
-    assert updates.updater_running()
-    updates.write_json(updates.heartbeat_path(), {"at": "2026-01-01T00:00:00+00:00"})
-    assert not updates.updater_running()
-    updates.write_json(updates.heartbeat_path(), {"at": "not a time"})
-    assert not updates.updater_running()
+    assert not channel.updater_running()
+    channel.write_json(channel.heartbeat_path(), {"at": channel.now_iso(), "script": 1})
+    assert channel.updater_running()
+    channel.write_json(channel.heartbeat_path(), {"at": "2026-01-01T00:00:00+00:00"})
+    assert not channel.updater_running()
+    channel.write_json(channel.heartbeat_path(), {"at": "not a time"})
+    assert not channel.updater_running()
 
 
 def test_json_files_are_written_whole(data):
-    updates.write_json(updates.state_path(), {"state": "verifying"})
-    assert updates.read_json(updates.state_path()) == {"state": "verifying"}
-    assert [p.name for p in updates.updater_dir().iterdir()] == ["state.json"]
-    assert updates.read_json(updates.updater_dir() / "missing.json") is None
+    channel.write_json(updates.state_path(), {"state": "verifying"})
+    assert channel.read_json(updates.state_path()) == {"state": "verifying"}
+    assert [p.name for p in channel.updater_dir().iterdir()] == ["state.json"]
+    assert channel.read_json(channel.updater_dir() / "missing.json") is None
 
 
 # -- database copies --
@@ -224,7 +224,7 @@ def test_a_rollback_note_restores_the_copy_for_that_version_only(data):
     backup = updates.backup_database(store, "1.0.46", "1.0.47")
     store.create_request(2, "Ronin", 1998, None)  # made after the copy, under the bad release
     store.close()
-    updates.write_json(updates.restore_path(), {"backup": backup.name, "version": "1.0.46"})
+    channel.write_json(updates.restore_path(), {"backup": backup.name, "version": "1.0.46"})
 
     # The new release, still restarting before the rollback replaces it, leaves it alone.
     assert updates.restore_pending_backup(config.DB_PATH, "1.0.47") is None
@@ -240,7 +240,7 @@ def test_a_copy_that_wont_open_is_never_restored(data):
     RequestStore(config.DB_PATH).close()
     updates.backups_dir().mkdir(parents=True)
     (updates.backups_dir() / "obsidian-bad.db").write_text("not a database")
-    updates.write_json(updates.restore_path(), {"backup": "obsidian-bad.db", "version": "1.0.46"})
+    channel.write_json(updates.restore_path(), {"backup": "obsidian-bad.db", "version": "1.0.46"})
 
     assert updates.restore_pending_backup(config.DB_PATH, "1.0.46") is None
     assert not updates.restore_path().exists()
@@ -248,6 +248,6 @@ def test_a_copy_that_wont_open_is_never_restored(data):
 
 
 def test_a_note_naming_a_missing_copy_is_dropped(data):
-    updates.write_json(updates.restore_path(), {"backup": "gone.db", "version": "1.0.46"})
+    channel.write_json(updates.restore_path(), {"backup": "gone.db", "version": "1.0.46"})
     assert updates.restore_pending_backup(config.DB_PATH, "1.0.46") is None
     assert not updates.restore_path().exists()

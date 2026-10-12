@@ -109,7 +109,7 @@ function DriveRow({ drive, onChanged }: { drive: BoxDrive; onChanged: () => void
 
 // A drive the box can't find. Pulled out, it comes back by putting it back;
 // failed, what Obsidian filed on it can be asked for again, onto the other
-// drives (backend/app/drive_recovery.py).
+// drives (backend/app/box/drive_recovery.py).
 function MissingDrive({ drive, onChanged }: { drive: BoxDrive; onChanged: () => void }) {
   const [open, setOpen] = useState(false)
   const [saving, setSaving] = useState(false)

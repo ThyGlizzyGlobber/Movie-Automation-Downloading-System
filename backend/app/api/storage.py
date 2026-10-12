@@ -9,17 +9,18 @@ from datetime import datetime, timezone
 from fastapi import Depends, HTTPException, Request
 from pydantic import BaseModel
 
-from app import box_plex, drive_recovery, drives, updates
 from app.api.deps import _client_ip, admin_router, get_store, get_tmdb, require_admin, require_session_server
+from app.box import drive_recovery, drives, plex as box_plex
 from app.catalogue.tmdb import TMDBClient
 from app.db import PlexServerRow, RequestStore, SessionRow
+from app.updater import channel
 
 # The updater writes its report every minute; older than this, it's stale.
 REPORT_FRESH_SECONDS = 180
 
 
 def _report() -> dict:
-    report = updates.read_json(updates.updater_dir() / "storage.json") or {}
+    report = channel.read_json(channel.updater_dir() / "storage.json") or {}
     try:
         age = (datetime.now(timezone.utc) - datetime.fromisoformat(report["at"])).total_seconds()
     except (KeyError, TypeError, ValueError):
@@ -61,7 +62,7 @@ def get_drives(store: RequestStore = Depends(get_store)) -> dict:
     if not drives.managed():
         return {"managed": False}
     report = _report()
-    pending = (updates.updater_dir() / "drive-request.json").exists()
+    pending = (channel.updater_dir() / "drive-request.json").exists()
     return {
         "managed": True,
         "drives": _drive_rows(report, store),
@@ -70,8 +71,8 @@ def get_drives(store: RequestStore = Depends(get_store)) -> dict:
         "report_fresh": report["fresh"],
         "report_error": report.get("error"),
         "pending": pending,
-        "last": updates.read_json(updates.updater_dir() / "drive-state.json"),
-        "updater_running": updates.updater_running(),
+        "last": channel.read_json(channel.updater_dir() / "drive-state.json"),
+        "updater_running": channel.updater_running(),
     }
 
 
@@ -90,7 +91,7 @@ def add_drive(request: Request, body: AddDrive, store: RequestStore = Depends(ge
         raise HTTPException(status_code=404, detail="This install's storage isn't managed from here")
     if not body.confirm:
         raise HTTPException(status_code=422, detail="Confirm that everything on the drive will be erased")
-    if not updates.updater_running():
+    if not channel.updater_running():
         raise HTTPException(status_code=409, detail="The box's updater isn't running, so the drive can't be added now")
     report = _report()
     found = next((d for d in report.get("unused") or [] if d.get("name") == body.disk and d.get("serial") == body.serial), None)
@@ -98,11 +99,11 @@ def add_drive(request: Request, body: AddDrive, store: RequestStore = Depends(ge
         raise HTTPException(status_code=409, detail="That drive isn't free to add any more. Reload and try again.")
     if found.get("has_other_data") and not body.erase_other_data:
         raise HTTPException(status_code=422, detail="That drive holds data from another system. Confirm erasing it too.")
-    path = updates.updater_dir() / "drive-request.json"
+    path = channel.updater_dir() / "drive-request.json"
     if path.exists():
         raise HTTPException(status_code=409, detail="A drive is already being added")
-    updates.write_json(path, {"disk": body.disk, "serial": body.serial, "erase_other_data": body.erase_other_data,
-                              "requested_at": updates.now_iso()})
+    channel.write_json(path, {"disk": body.disk, "serial": body.serial, "erase_other_data": body.erase_other_data,
+                              "requested_at": channel.now_iso()})
     os.chmod(path, 0o600)
     store.record_auth_event("drive_added", ip_address=_client_ip(request), detail=f"{body.disk} ({body.serial})")
     return {"pending": True}
@@ -142,7 +143,7 @@ def download_lost_again(
     server: PlexServerRow = Depends(require_session_server),
 ) -> dict:
     """Asks for everything that was on a failed drive again, onto the
-    drives that are left (app/drive_recovery.py). With none left, the
+    drives that are left (app/box/drive_recovery.py). With none left, the
     requests wait until a drive is added, like any other; with downloads
     not running (qBittorrent unreachable for now), they wait queued and
     the worker picks them up when it starts."""
