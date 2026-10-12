@@ -35,7 +35,7 @@ from app.api.main import app
 # End-user login (frontend migration Part C3) — Plex PIN sign-in, same
 # mechanism as admin server-linking (app/api/plex.py), different purpose:
 # authenticates *one person* against the already-linked servers rather than
-# linking a server itself. See app/plex.py's LoginSession.
+# linking a server itself. See app/plex/linking.py's LoginSession.
 # ---------------------------------------------------------------------------
 
 

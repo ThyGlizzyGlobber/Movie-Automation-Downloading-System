@@ -216,7 +216,7 @@ def _with_fresh_plex_state(slides: list[dict], store: RequestStore, server: Plex
 
     Cheap enough to do on every request because it is the same cached
     whole-library snapshot the rest of the page annotates itself from
-    (see app/plex.py's plex_library_lookup), taken once per media type here
+    (see app/plex/library.py's plex_library_lookup), taken once per media type here
     rather than once per slide. Copies rather than mutates: these dicts
     are the cache's own."""
     matchers: dict[str, object] = {}

@@ -9,7 +9,7 @@ from app.plex.library import plex_library_lookup
 # Stage 14: "On Plex" badge — annotates already-fetched TMDB result lists
 # (and single-item detail responses) with `on_plex`, using one cached,
 # whole-library Plex lookup per request rather than one live Plex call per
-# item. See app/plex.py's `plex_library_lookup` for the caching design.
+# item. See app/plex/library.py's `plex_library_lookup` for the caching design.
 # ---------------------------------------------------------------------------
 
 

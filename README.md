@@ -549,32 +549,27 @@ Plex are all faked at the boundary.
 
 ```
 backend/
-  app/
+  app/                  one package per area, lowest first; each imports only from those above it
+    core/               config and defaults, TTL cache, logging, the running version
+    db/                 SQLite store: RequestStore from one mixin per group of tables
+    catalogue/          TMDB, TVmaze air times, language, logos, trailers
+    recommendations/    home-page rows (pure logic: feed, taste, moods)
+    qbittorrent/        the qBittorrent WebUI client
+    matching/           the one normaliser, resolving titles, relevance gates and scoring
+    updater/            both update paths, and the request files the NAS updater reads
+    box/                box-only: drives, drive recovery, its Plex, VPN, address
+    plex/               Plex client, sign-in, what's on Plex, audio-track selection
+    library/            filing downloads (files and packs), audio defaults, MKV rewrap, cleanup
+    downloads/          the pipeline (search → score → add) and the background worker,
+                        one module per loop
     api/                FastAPI app, one module per area; the only place auth is enforced
       main.py           app, lifespan, rate limiter
       deps.py           sessions, require_* gates, the default-deny routers
       discover.py, titles.py, hero.py, requests.py, shows.py, plex.py, auth.py,
-      setup.py, settings.py, household.py, recommendations.py, system.py
-    worker.py           the background loop: watch, download, organise, schedule
-    pipeline.py         search → score → download
-    score.py            movie release scoring (and the shared quality filters)
-    tv_score.py         episode scoring
-    pack_score.py       whole-season / complete-series scoring
-    resolve.py          movie resolution
-    tv_resolve.py       show + episode resolution
-    normalize.py        the one token normaliser
-    language.py         which language a title and a household speak
-    media_organizer.py  post-download file placement, audio defaults, MKV rewrap
-    reconcile.py        leftover-source cleanup
-    taste.py, moods.py  recommendation rows
-    plex.py             Plex sign-in, library lookup, refresh
-    tmdb.py, tvmaze.py  metadata and browse; exact episode air times
-    qbt.py              qBittorrent client
-    trailers.py         trailer download and cache
-    db/                 SQLite store: RequestStore from one mixin per group of tables
-    config.py           environment and defaults
+      setup.py, settings.py, household.py, recommendations.py, system.py,
+      updates.py, vpn.py, storage.py
     cli.py              recovery commands (python -m app.cli --help)
-  tests/                pytest suite
+  tests/                pytest suite; test_architecture.py checks the layering above
 frontend/
   src/
     app/                the shell: AppShell, top bar, tab bar, toasts, routes
