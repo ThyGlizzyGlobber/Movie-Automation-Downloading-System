@@ -11,10 +11,10 @@ import pytest
 
 from app.core import config
 from app.db import RequestStore, ShowEpisodeRow
+from app.downloads.tv_settings import TVScheduleSettings
+from app.downloads.worker import Worker
 from app.matching.tv_resolve import resolve_show
 from app.qbittorrent.client import QBTError
-from app.tv_settings import TVScheduleSettings
-from app.worker import Worker
 
 
 def _backdate_show_episode(store: RequestStore, show_id: int, season: int, episode: int, hours_ago: float) -> None:
@@ -263,7 +263,7 @@ def test_run_one_logs_pipeline_result_with_variant_and_score(caplog):
     qbt = FakeQBTClient(results_by_variant={"Dune: Part Two": [_result()]})
     worker = Worker(store, FakeTMDBClient(), qbt)
 
-    with caplog.at_level("INFO", logger="app.worker"):
+    with caplog.at_level("INFO", logger="app.downloads.worker"):
         asyncio.run(worker._run_one(row.id))
 
     [record] = [r for r in caplog.records if "pipeline result" in r.message]
@@ -310,7 +310,7 @@ def test_check_downloading_marks_complete_when_progress_reaches_one(tmp_path, mo
     )
     worker = Worker(store, FakeTMDBClient(), qbt)
 
-    with caplog.at_level("INFO", logger="app.worker"):
+    with caplog.at_level("INFO", logger="app.downloads.worker"):
         asyncio.run(worker._check_downloading())
 
     assert store.get_request(row.id).status == "complete"
@@ -1390,7 +1390,7 @@ def test_a_pack_numbered_past_the_shows_last_season_is_refused(tmp_path, monkeyp
     """Seasons 3-5 of a three-season show: the numbering belongs to
     something bigger — a franchise pack whose first seasons weren't
     counted — and filing it literally invents two seasons (2026-09-29)."""
-    from app import worker as worker_module
+    from app.downloads import worker as worker_module
 
     monkeypatch.setattr(config, "TV_LIBRARY_ROOT", tmp_path / "library")
     downloads = tmp_path / "downloads"
@@ -1573,7 +1573,7 @@ def test_check_show_returns_zero_and_leaves_last_checked_unset_on_tmdb_error(cap
 
     worker = Worker(store, BoomTMDBClient(), FakeQBTClient())
 
-    with caplog.at_level("ERROR", logger="app.worker"):
+    with caplog.at_level("ERROR", logger="app.downloads.worker"):
         created = worker.check_show(show)
 
     assert created == 0
@@ -2536,7 +2536,7 @@ def test_source_cleanup_failure_is_logged_and_stays_pending_for_retry(tmp_path, 
     worker = Worker(store, FakeTMDBClient(), qbt)
     request_id = _pending_cleanup_row(store, "aaaa", [target], ["aaaa"])
 
-    with caplog.at_level("ERROR", logger="app.worker"):
+    with caplog.at_level("ERROR", logger="app.downloads.worker"):
         asyncio.run(worker._attempt_source_cleanup(store.get_request(request_id)))
 
     assert "source cleanup failed" in caplog.text
@@ -2615,7 +2615,7 @@ def test_source_cleanup_superseded_file_failure_is_logged_and_stays_pending_for_
 
     monkeypatch.setattr(Path, "unlink", boom)
 
-    with caplog.at_level("ERROR", logger="app.worker"):
+    with caplog.at_level("ERROR", logger="app.downloads.worker"):
         asyncio.run(worker._attempt_source_cleanup(store.get_request(request_id)))
 
     assert "superseded-file cleanup failed" in caplog.text
@@ -3094,7 +3094,7 @@ def test_a_split_pack_is_not_attempted_again():
     gate, which re-ran it after the cooldown — the source of that show's
     second "Whole series" row, whose own message read "nothing was added:
     every season is already requested or on Plex"."""
-    from app.tv_settings import TVScheduleSettings
+    from app.downloads.tv_settings import TVScheduleSettings
 
     store = RequestStore(":memory:")
     show = store.create_show(tmdb_id=95350, title="The Pitt")

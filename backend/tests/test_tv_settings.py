@@ -1,6 +1,6 @@
 from app.core import config
 from app.db import RequestStore
-from app.tv_settings import TVScheduleSettings, resolve_tv_settings, settings_from_raw
+from app.downloads.tv_settings import TVScheduleSettings, resolve_tv_settings, settings_from_raw
 
 
 def test_from_config_matches_config_defaults():

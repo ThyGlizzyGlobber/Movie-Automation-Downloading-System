@@ -6,9 +6,9 @@ import re
 import pytest
 
 from app.core import config
+from app.downloads.pipeline import download, download_episode, download_pack, find_best_episode_candidate
 from app.matching.pipeline_settings import PipelineSettings
 from app.matching.tv_resolve import ShowIdentity, season_pack_queries
-from app.pipeline import download, download_episode, download_pack, find_best_episode_candidate
 from app.qbittorrent.client import QBTError
 
 _BTIH_RE = re.compile(r"btih:([a-zA-Z0-9]+)")

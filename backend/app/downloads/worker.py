@@ -108,6 +108,8 @@ from app.catalogue.tmdb import TMDBClient, TMDBError
 from app.catalogue.tvmaze import TVMazeClient, season_airstamps
 from app.core import config
 from app.db import FAILURE_STATUSES, NON_TERMINAL_STATUSES, RequestStore, ShowEpisodeRow, ShowRow
+from app.downloads.pipeline import download, download_episode, download_pack, find_best_episode_candidate, same_release
+from app.downloads.tv_settings import TVScheduleSettings, resolve_tv_settings
 from app.library import reconcile
 from app.library.filing import (
     MediaOrganizerError,
@@ -131,12 +133,10 @@ from app.matching.tv_resolve import (
     resolve_show,
     season_is_complete,
 )
-from app.pipeline import download, download_episode, download_pack, find_best_episode_candidate, same_release
 from app.plex import audio as plex_audio, client as plex_client, library as plex_library
 from app.qbittorrent.client import QBTClient, QBTError
-from app.tv_settings import TVScheduleSettings, resolve_tv_settings
 
-logger = logging.getLogger("app.worker")
+logger = logging.getLogger("app.downloads.worker")
 
 # Pipeline statuses that map directly onto a terminal request status of the
 # same name; anything else falls through to "failed" (see _run_one).

@@ -43,9 +43,6 @@ PURE = {"recommendations"}
 # area (app/<area>/...), their entries here go: a module inside one of those
 # packages belongs to it.
 AREAS = {
-    "app.pipeline": "downloads",
-    "app.worker": "downloads",
-    "app.tv_settings": "downloads",
     "app.cli": "cli",
 }
 
@@ -170,5 +167,5 @@ def test_only_the_api_speaks_http():
 def test_the_checker_sees_imports():
     # Guards the guard: if parsing silently found nothing, every test above
     # would pass on an empty list.
-    assert (_app_imports("app.worker")) and any(name == "app.core.config" for _, name in _app_imports("app.worker"))
+    assert (_app_imports("app.downloads.worker")) and any(name == "app.core.config" for _, name in _app_imports("app.downloads.worker"))
     assert any(name.split(".")[0] == "fastapi" for _, name in _imports("app.api.main"))

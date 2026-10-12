@@ -199,7 +199,7 @@ def test_without_a_drive_there_is_no_library_to_make_yet():
 
 
 def test_plex_hears_about_drives_only_when_they_change(box, tmp_path, monkeypatch):
-    from app import worker as worker_module
+    from app.downloads import worker as worker_module
 
     store, _ = box
     store.save_plex_server(MACHINE, "obsidian", BOX_URL, "server-token")

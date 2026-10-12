@@ -7,11 +7,11 @@ from pathlib import Path
 
 import pytest
 
-from app import pipeline, worker
 from app.box import drives
 from app.core import config
-from app.matching.resolve import MediaIdentity
+from app.downloads import pipeline, worker
 from app.library.filing import organize_movie
+from app.matching.resolve import MediaIdentity
 
 
 def add_drive(media: Path, name: str, label: str | None = None, size: int = 8_000_000_000_000) -> Path:

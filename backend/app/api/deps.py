@@ -13,9 +13,9 @@ from slowapi.util import get_remote_address
 
 from app.catalogue.tmdb import TMDBClient
 from app.db import PlexServerRow, RequestStore, SessionRow
+from app.downloads.worker import Worker
 from app.plex.linking import LoginSession, PlexLinker
 from app.qbittorrent.client import QBTClient
-from app.worker import Worker
 
 
 logger = logging.getLogger("app.api")
