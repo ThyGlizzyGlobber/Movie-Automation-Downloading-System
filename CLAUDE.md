@@ -45,7 +45,10 @@ Every module belongs to exactly one of these areas, listed lowest first. An area
 only from itself and the areas above it in this table (Recommendations imports nothing).
 `tests/test_architecture.py` enforces this: it fails on a module with no area, an import that
 reaches downwards, or a web framework imported outside `api/`. When it fails, move the code;
-don't loosen the rule. A new module goes in the test's `AREAS` table and in this map.
+don't loosen the rule. A new module goes in its area's package and in this map (only a
+module outside every area package needs an entry in the test's `AREAS` table). Import from
+the module that has the code (`app.plex.library`, not `app.plex`): package `__init__.py`
+files hold a docstring, not re-exports, except `app.db` (the store's one entry point) and `app.api` (the ASGI app).
 
 | Area | Modules | Owns |
 |---|---|---|
@@ -108,9 +111,9 @@ don't loosen the rule. A new module goes in the test's `AREAS` table and in this
   - Import from `app.db`, never from the modules inside it. Never write SQL outside the
     store.
 - **New setting.**
-  - If it's editable in the app, follow the `matching/pipeline_settings.py` / `downloads/tv_settings.py`
-    pattern: a dataclass resolved fresh from the store each time it's used, so edits apply
-    with no restart.
+  - If it's editable in the app, follow the pattern of `matching/pipeline_settings.py` and
+    `downloads/tv_settings.py`: a dataclass resolved fresh from the store each time it's
+    used, so edits apply with no restart.
   - If it comes from the environment, put it in `core/config.py`.
 - **New page.** Make a `features/<area>/` folder and add a lazy route in `app/routes.tsx`.
   Add its API calls to `api/<area>.ts` and its types to `types/<area>.ts`.

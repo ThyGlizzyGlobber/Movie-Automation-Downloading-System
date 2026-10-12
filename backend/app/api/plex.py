@@ -32,7 +32,7 @@ from app.api.main import app
 
 # -- Plex account linking (admin server-linking, PIN sign-in). The
 #    resulting token is stored server-side only — these routes never
-#    return it. See app/plex.py. Gated by require_admin_or_setup_bootstrap
+#    return it. See app/plex/linking.py. Gated by require_admin_or_setup_bootstrap
 #    (frontend migration Part C3): unauthenticated-but-token-checked while
 #    no server is linked yet (there's no admin to authenticate as before
 #    this completes — the admin's identity *is* whoever completes it),
@@ -322,7 +322,7 @@ def get_plex_on_deck(
     episodes, which is both wrong and a small privacy leak between members.
 
     The token is captured during the access check every sign-in already makes
-    (app/plex.py's access_by_server), so it arrives without an extra round
+    (app/plex/client.py's access_by_server), so it arrives without an extra round
     trip. Someone whose session predates that has none stored yet; rather
     than fall back to the admin's and quietly reintroduce the bug for the
     people it most affects, the row simply stays empty until they next sign

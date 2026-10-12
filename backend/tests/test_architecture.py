@@ -39,9 +39,10 @@ LAYERS = [
 # be tested without TMDB, Plex or a browser (see feed.py's docstring).
 PURE = {"recommendations"}
 
-# Where each module lives. As modules move into packages named for their
-# area (app/<area>/...), their entries here go: a module inside one of those
-# packages belongs to it.
+# A module inside a package named for an area (app/<area>/...) belongs to
+# it. Only a module outside one needs an entry here — today, just the CLI
+# entry point, which stays at app/cli.py so `python -m app.cli` keeps
+# working on every installed box.
 AREAS = {
     "app.cli": "cli",
 }

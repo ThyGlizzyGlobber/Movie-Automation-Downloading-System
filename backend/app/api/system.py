@@ -33,7 +33,7 @@ def health(request: Request) -> dict:
     shouldn't take this app down with it."""
     qbt = get_qbt(request)
     # The version is how the updater tells the release it just installed
-    # from the one it replaced (app/updater.py).
+    # from the one it replaced (truenas/obsidian-updater.py).
     return {"status": "ok", "qbittorrent": bool(qbt and qbt.ping()), "version": version.current().version}
 
 
