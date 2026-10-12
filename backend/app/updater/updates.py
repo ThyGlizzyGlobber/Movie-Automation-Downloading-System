@@ -21,7 +21,6 @@ request is the only thing the backend can ask for, and it is a version
 number the updater checks for itself.
 """
 
-import json
 import logging
 import os
 import re
@@ -34,6 +33,7 @@ from pathlib import Path
 import requests
 
 from app.core import config, version
+from app.updater.channel import data_dir, now_iso, read_json, updater_dir, write_json
 
 logger = logging.getLogger(__name__)
 
@@ -189,23 +189,12 @@ def release_notes(release: str) -> list[dict]:
 
 
 # ---------------------------------------------------------------------------
-# Files the backend and the updater share in the data folder
+# The update's own files in the updater's folder (channel.py has the rest)
 # ---------------------------------------------------------------------------
 
 # States in which an update is under way, "queued" included: requested,
 # waiting for the updater's next run (at most a minute).
 BUSY = ("queued", "updating", "verifying", "rolling_back")
-# The updater runs every minute and leaves a heartbeat each time. Older
-# than this, it isn't running — or was never set up on this box.
-HEARTBEAT_SECONDS = 180
-
-
-def data_dir() -> Path:
-    return Path(config.DB_PATH).parent
-
-
-def updater_dir() -> Path:
-    return data_dir() / "updater"
 
 
 def state_path() -> Path:
@@ -220,41 +209,8 @@ def request_path() -> Path:
     return updater_dir() / "request.json"
 
 
-def heartbeat_path() -> Path:
-    return updater_dir() / "heartbeat.json"
-
-
 def backups_dir() -> Path:
     return data_dir() / "backups"
-
-
-def read_json(path: Path) -> dict | None:
-    try:
-        return json.loads(path.read_text())
-    except (OSError, ValueError):
-        return None
-
-
-def write_json(path: Path, value: dict) -> None:
-    """Whole or not at all: written beside, then renamed over."""
-    path.parent.mkdir(parents=True, exist_ok=True)
-    temporary = path.with_name(f".{path.name}.{os.getpid()}.tmp")
-    temporary.write_text(json.dumps(value, indent=2))
-    os.replace(temporary, path)
-
-
-def now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat(timespec="seconds")
-
-
-def updater_running() -> bool:
-    """Whether the updater has run in the last few minutes."""
-    beat = read_json(heartbeat_path()) or {}
-    try:
-        at = datetime.fromisoformat(beat["at"])
-    except (KeyError, TypeError, ValueError):
-        return False
-    return (datetime.now(timezone.utc) - at).total_seconds() < HEARTBEAT_SECONDS
 
 
 def updater_state() -> dict:

@@ -1,4 +1,4 @@
-"""Where a box is on its home network (app/box_address.py), as the NAS
+"""Where a box is on its home network (app/box/address.py), as the NAS
 updater reports it, and the report itself (truenas/obsidian-updater.py)."""
 
 import importlib.util
@@ -8,8 +8,9 @@ from pathlib import Path
 
 import pytest
 
-from app import box_address, drives, updates
+from app.box import address as box_address, drives
 from app.core import config
+from app.updater import channel
 
 SCRIPT = Path(__file__).resolve().parents[2] / "truenas" / "obsidian-updater.py"
 spec = importlib.util.spec_from_file_location("obsidian_updater_network", SCRIPT)
@@ -25,7 +26,7 @@ def box(tmp_path, monkeypatch):
 
 def report(age=0, **fields):
     at = (datetime.now(timezone.utc) - timedelta(seconds=age)).isoformat(timespec="seconds")
-    updates.write_json(updates.updater_dir() / "network.json", {"at": at, **fields})
+    channel.write_json(channel.updater_dir() / "network.json", {"at": at, **fields})
 
 
 def test_a_box_is_its_name_and_the_address_the_router_gave_it(box):

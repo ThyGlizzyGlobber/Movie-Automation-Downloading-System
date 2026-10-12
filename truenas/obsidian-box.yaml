@@ -16,7 +16,7 @@
 #   plex         Plex Media Server, on the host's network so it's found and
 #                claimed like any Plex server on the LAN
 #
-# Every hard drive is its own storage (backend/app/drives.py), mounted at
+# Every hard drive is its own storage (backend/app/box/drives.py), mounted at
 # /media/<drive> in the backend, qBittorrent and Plex alike, and laid out
 # the same way: downloads/<category>, Movies, TV Shows. A download goes to
 # the drive with the most space and is filed on that same drive, so it's a
@@ -53,7 +53,7 @@ services:
       QBIT_PORT: "8080"
       QBIT_USERNAME: "admin"
       QBIT_PASSWORD: "<QBIT_PASSWORD>"
-      # Where the VPN reports whether its tunnel is up (app/vpn.py). Set,
+      # Where the VPN reports whether its tunnel is up (app/box/vpn.py). Set,
       # this is also what gives the app its VPN settings and setup step.
       GLUETUN_URL: "http://gluetun:8000"
       GLUETUN_API_KEY: "<GLUETUN_API_KEY>"

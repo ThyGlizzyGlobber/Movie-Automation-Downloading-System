@@ -1,4 +1,4 @@
-"""A box's own Plex (app/box_plex.py): claimed for the buyer as they sign in,
+"""A box's own Plex (app/box/plex.py): claimed for the buyer as they sign in,
 linked, and given its libraries — and the NAS updater's half of the claim
 (truenas/obsidian-updater.py)."""
 
@@ -10,10 +10,11 @@ from pathlib import Path
 
 import pytest
 
-from app import box_plex, updates
+from app.box import plex as box_plex
 from app.core import config
 from app.db import RequestStore
 from app.plex import PlexClient, PlexLinker
+from app.updater import channel
 
 SCRIPT = Path(__file__).resolve().parents[2] / "truenas" / "obsidian-updater.py"
 spec = importlib.util.spec_from_file_location("obsidian_updater_plex", SCRIPT)
@@ -35,7 +36,7 @@ def box(tmp_path, monkeypatch):
     running, the buyer about to approve the sign-in."""
     monkeypatch.setattr(config, "DB_PATH", tmp_path / "data" / "app.db")
     monkeypatch.setattr(box_plex, "PLEX_LOCAL_URL", BOX_URL)
-    updates.write_json(updates.heartbeat_path(), {"at": updates.now_iso(), "script": 4})
+    channel.write_json(channel.heartbeat_path(), {"at": channel.now_iso(), "script": 4})
     state = {"claimed": False, "resources": [], "libraries": []}
     monkeypatch.setattr(box_plex, "identity", lambda url: {"machine_identifier": MACHINE, "claimed": state["claimed"]})
     monkeypatch.setattr(box_plex, "sync_libraries", lambda url, token: state["libraries"].append((url, token)) or ["made Movies"])
@@ -105,7 +106,7 @@ def test_a_box_claimed_by_someone_else_says_so(box):
 
 def test_without_the_updater_running_it_waits_rather_than_hangs(box):
     store, _ = box
-    updates.heartbeat_path().unlink()
+    channel.heartbeat_path().unlink()
     linker = sign_in(store)
     assert "isn't ready" in linker.status()["error"]
     assert store.primary_plex_server() is None
@@ -122,7 +123,7 @@ def test_a_claim_that_never_lands_gives_up_with_the_updater_s_reason(box, monkey
     store, _ = box
     monkeypatch.setattr(PlexClient, "list_resources", lambda self, token: [])
     monkeypatch.setattr(PlexLinker, "BOX_CLAIM_SECONDS", 0)
-    updates.write_json(box_plex.claim_state_path(), {"state": "failed", "message": "TrueNAS said no"})
+    channel.write_json(box_plex.claim_state_path(), {"state": "failed", "message": "TrueNAS said no"})
     linker = sign_in(store)
     assert "didn't finish setting up (TrueNAS said no)" in linker.status()["error"]
 

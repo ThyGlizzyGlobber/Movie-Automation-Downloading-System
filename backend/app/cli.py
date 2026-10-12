@@ -4,7 +4,7 @@ import sys
 import time
 from pathlib import Path
 
-from app import drives
+from app.box import drives
 from app.catalogue.tmdb import TMDBClient
 from app.core import config
 from app.db import RequestStore

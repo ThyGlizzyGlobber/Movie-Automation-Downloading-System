@@ -1,15 +1,16 @@
 """The box's VPN from the app: Settings › VPN for the admin, and the setup
 wizard's VPN step before there is one (setup-code gated, like the rest of
 /api/setup/*). Both only check what's entered and leave it for the NAS
-updater to apply — see app/vpn.py. Neither returns a secret, ever."""
+updater to apply — see app/box/vpn.py. Neither returns a secret, ever."""
 
 from fastapi import Depends, HTTPException, Request
 from pydantic import BaseModel
 
-from app import updates, vpn
-from app.db import RequestStore
 from app.api.deps import _client_ip, admin_router, get_store, limiter, require_setup_token
 from app.api.main import app
+from app.box import vpn
+from app.db import RequestStore
+from app.updater import channel
 
 
 class VPNSettings(BaseModel):
@@ -36,14 +37,14 @@ def _overview() -> dict:
         "providers": vpn.providers(),
         "applied": vpn.applied(),
         "status": vpn.status(),
-        "updater_running": updates.updater_running(),
+        "updater_running": channel.updater_running(),
     }
 
 
 def _save(body: VPNSettings) -> dict:
     if not vpn.managed():
         raise HTTPException(status_code=404, detail="This install has no VPN of its own")
-    if not updates.updater_running():
+    if not channel.updater_running():
         raise HTTPException(status_code=409, detail="The box's updater isn't running, so this can't be applied")
     fields = body.model_dump(exclude_none=True)
     try:

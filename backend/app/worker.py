@@ -103,7 +103,8 @@ import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from app import box_plex, drives, plex, reconcile
+from app import plex, reconcile
+from app.box import drives, plex as box_plex
 from app.catalogue.tmdb import TMDBClient, TMDBError
 from app.catalogue.tvmaze import TVMazeClient, season_airstamps
 from app.core import config
@@ -333,7 +334,7 @@ class Worker:
 
         On a box with no drive yet there's nowhere to download to, so a
         request waits, still queued, and goes ahead once a drive is added
-        (app/drives.py)."""
+        (app/box/drives.py)."""
         while True:
             request_id = await self.queue.get()
             while not await asyncio.to_thread(drives.ready):
@@ -1121,7 +1122,7 @@ class Worker:
     async def _watch_box_libraries(self) -> None:
         """On a box: keeps Plex's Movies and TV Shows listing every drive,
         so a drive added from Settings › Storage shows up in Plex by itself
-        (app/box_plex.py). Only does anything when the drives have changed
+        (app/box/plex.py). Only does anything when the drives have changed
         since the last time Plex was told."""
         while True:
             await asyncio.sleep(BOX_LIBRARIES_INTERVAL_SECONDS)

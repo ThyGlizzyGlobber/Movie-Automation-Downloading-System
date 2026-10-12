@@ -136,7 +136,7 @@ export type DrivesInfo =
       updater_running: boolean
     }
 
-// The box's VPN (backend/app/vpn.py). Never carries a secret.
+// The box's VPN (backend/app/box/vpn.py). Never carries a secret.
 export type VpnField = 'private_key' | 'public_key' | 'preshared_key' | 'addresses' | 'endpoint_ip' | 'endpoint_port' | 'user' | 'password'
 export interface VpnProvider {
   id: string

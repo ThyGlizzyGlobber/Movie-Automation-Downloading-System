@@ -55,8 +55,8 @@ don't loosen the rule. A new module goes in the test's `AREAS` table and in this
 | **Recommendations** | `recommendations/`: `feed.py`, `taste.py`, `moods.py` | home-page rows. Pure logic: imports nothing from the app |
 | **qBittorrent** | `qbittorrent/client.py` | the qBittorrent WebUI client |
 | **Release matching** (`matching`) | `matching/`: `normalize.py`, `resolve.py`, `tv_resolve.py`, `score.py`, `tv_score.py`, `pack_score.py`, `pipeline_settings.py` | title → search queries, then "right title?" and "best release?" rules |
-| **Updater** | `updates.py`, `deploy.py` | the two update paths, and the request files the NAS updater reads |
-| **Box** | `drives.py`, `drive_recovery.py`, `box_plex.py`, `box_address.py`, `vpn.py` | box-only features |
+| **Updater** | `updater/`: `updates.py`, `deploy.py`, `channel.py` | the two update paths, and `channel.py`: the request files the NAS updater reads |
+| **Box** | `box/`: `drives.py`, `drive_recovery.py`, `plex.py`, `address.py`, `vpn.py` | box-only features |
 | **Plex** | `plex.py` | Plex sign-in, library lookups, refresh and audio selection |
 | **Library** | `media_organizer.py`, `reconcile.py` | filing finished downloads, cleaning up source torrents |
 | **Downloads** | `pipeline.py`, `worker.py`, `tv_settings.py` | search → filter → score → add, and the background loops that drive requests. No FastAPI imports |
@@ -98,7 +98,7 @@ don't loosen the rule. A new module goes in the test's `AREAS` table and in this
   - Make a new `api/` module only for a genuinely new area. Import it in `api/__init__.py`,
     where the import order is load-bearing (see the comment there).
 - **New background job.** Don't add it to `worker.py`. Write it as functions in its own
-  module (as `reconcile.py` and `drive_recovery.py` are), and keep only the loop that calls
+  module (as `reconcile.py` and `box/drive_recovery.py` are), and keep only the loop that calls
   it in the worker.
 - **New table or column.**
   - Change the schema and add an in-place migration in `db/schema.py`.
@@ -130,7 +130,7 @@ don't loosen the rule. A new module goes in the test's `AREAS` table and in this
   credentials and the VPN details. No response returns one.
 - **No Docker socket and no TrueNAS credential in the container, ever.**
   - Anything that changes the host is left as a request file in the data folder
-    (`data/updater/*.json`).
+    (`data/updater/*.json`) through `updater/channel.py`.
   - `truenas/obsidian-updater.py` applies it as root.
 - **Box features are gated by env vars:** `MEDIA_DRIVES_ROOT`, `GLUETUN_URL`,
   `PLEX_LOCAL_URL`, `SETUP_CODE`.

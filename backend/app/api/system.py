@@ -11,13 +11,13 @@ from datetime import datetime, timedelta, timezone
 from fastapi import Depends, HTTPException, Request
 from pydantic import BaseModel
 
-from app import box_address, drives
 from app.api.deps import _client_ip, admin_router, get_qbt, get_store, router
 from app.api.main import app
 from app.api.schemas import RequestOut
+from app.box import address as box_address, drives
 from app.core import config, version
 from app.db import FAILURE_STATUSES, RequestStore
-from app.deploy import DeployError, run_git_pull
+from app.updater.deploy import DeployError, run_git_pull
 
 
 @app.get("/api/health")
@@ -272,7 +272,7 @@ def revoke_all_sessions(request: Request, store: RequestStore = Depends(get_stor
 @admin_router.post("/api/admin/deploy")
 def deploy(request: Request, store: RequestStore = Depends(get_store)) -> dict:
     """Runs exactly `git pull --ff-only` against the deployed-copy clone —
-    see app/deploy.py. No parameters ever accepted. Originally gated only
+    see app/updater/deploy.py. No parameters ever accepted. Originally gated only
     by the Settings panel's hidden long-press control with no real auth
     (an accepted Stage 6 risk, since it only ever ran this one fixed
     command) — now admin-only (frontend migration Part C3), on top of

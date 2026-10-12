@@ -1,4 +1,4 @@
-"""app/deploy.py against real, local, offline git repos — file:// remotes,
+"""app/updater/deploy.py against real, local, offline git repos — file:// remotes,
 no network. Covers the actual git plumbing `POST /api/admin/deploy` runs;
 see test_api.py's deploy tests for route wiring/error-mapping instead."""
 
@@ -6,8 +6,8 @@ import subprocess
 
 import pytest
 
-from app import deploy
 from app.core import config
+from app.updater import deploy
 
 
 def _run(*args, cwd):

@@ -24,7 +24,7 @@ import socket
 
 import requests
 
-from app import updates
+from app.updater import channel
 
 GLUETUN_URL = os.environ.get("GLUETUN_URL") or None
 GLUETUN_API_KEY = os.environ.get("GLUETUN_API_KEY") or ""
@@ -189,22 +189,22 @@ def parse_wireguard_file(text: str) -> dict:
 
 
 def request_path():
-    return updates.updater_dir() / "vpn-request.json"
+    return channel.updater_dir() / "vpn-request.json"
 
 
 def state_path():
-    return updates.updater_dir() / "vpn-state.json"
+    return channel.updater_dir() / "vpn-state.json"
 
 
 def request(settings: dict) -> None:
-    updates.write_json(request_path(), {**settings, "requested_at": updates.now_iso()})
+    channel.write_json(request_path(), {**settings, "requested_at": channel.now_iso()})
     os.chmod(request_path(), 0o600)
 
 
 def applied() -> dict:
     """What the updater last applied (provider, type, countries; never a
     secret), and whether a change is still waiting for it."""
-    state = updates.read_json(state_path()) or {}
+    state = channel.read_json(state_path()) or {}
     return {
         "pending": request_path().exists(),
         "state": state.get("state"),

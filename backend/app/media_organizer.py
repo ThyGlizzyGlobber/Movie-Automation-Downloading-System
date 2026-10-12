@@ -28,7 +28,7 @@ from collections.abc import Callable
 from threading import Lock
 from pathlib import Path, PurePosixPath
 
-from app import drives
+from app.box import drives
 from app.catalogue.language import audio_quality_key, is_audio_language
 from app.core import config
 from app.core.cache import TTLCache
@@ -155,7 +155,7 @@ def find_existing_episode_file(show_identity: ShowIdentity, season: int, episode
     exist at all — nothing local exercises the real mount, same as every
     other `TV_LIBRARY_ROOT` caller.
 
-    On a box, every drive's TV Shows folder is looked through (app/drives.py)."""
+    On a box, every drive's TV Shows folder is looked through (app/box/drives.py)."""
     for root in drives.library_roots("tv"):
         if not root.is_dir():
             continue

@@ -13,7 +13,8 @@ Only on a box: its web page is on port 80, so the address alone opens it.
 
 from datetime import datetime, timezone
 
-from app import drives, updates
+from app.box import drives
+from app.updater import channel
 
 # The updater writes it every minute; much older, and the box may have
 # moved since.
@@ -24,7 +25,7 @@ def addresses() -> list[str]:
     """The box's web addresses, its name first; empty off a box."""
     if not drives.managed():
         return []
-    report = updates.read_json(updates.updater_dir() / "network.json") or {}
+    report = channel.read_json(channel.updater_dir() / "network.json") or {}
     try:
         age = (datetime.now(timezone.utc) - datetime.fromisoformat(report["at"])).total_seconds()
     except (KeyError, TypeError, ValueError):
