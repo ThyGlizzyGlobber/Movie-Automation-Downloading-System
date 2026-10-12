@@ -8,7 +8,8 @@ from fastapi import Depends, HTTPException, Request, Response
 from pydantic import BaseModel
 
 from app.db import PlexServerRow, RequestStore, SessionRow
-from app.plex import PIN_TIMEOUT_SECONDS, LoginSession, PlexError
+from app.plex.client import PIN_TIMEOUT_SECONDS, PlexError
+from app.plex.linking import LoginSession
 from app.api.deps import (
     DEFAULT_CERTIFICATION_REGION,
     LOGIN_ATTEMPT_COOKIE_NAME,

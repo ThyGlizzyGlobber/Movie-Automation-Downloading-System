@@ -13,7 +13,8 @@ import pytest
 from app.box import plex as box_plex
 from app.core import config
 from app.db import RequestStore
-from app.plex import PlexClient, PlexLinker
+from app.plex.client import PlexClient
+from app.plex.linking import PlexLinker
 from app.updater import channel
 
 SCRIPT = Path(__file__).resolve().parents[2] / "truenas" / "obsidian-updater.py"

@@ -14,7 +14,7 @@ from app.catalogue.tmdb import TMDBClient, TMDBError, best_logo_path, is_movie_c
 from app.core import config
 from app.core.cache import TTLCache
 from app.db import PlexServerRow, RequestStore
-from app.plex import local_file_for_title, plex_show_episodes
+from app.plex.library import local_file_for_title, plex_show_episodes
 
 
 # Cache filenames are always trailers.cached_trailer_path()'s own

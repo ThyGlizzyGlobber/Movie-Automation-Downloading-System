@@ -10,7 +10,9 @@ from fastapi.responses import Response as RawResponse
 from pydantic import BaseModel, Field
 
 from app.db import PlexServerRow, RequestStore, SessionRow
-from app.plex import PlexClient, PlexError, PlexLinker, client_from_settings, locate_title
+from app.plex.client import PlexClient, PlexError, client_from_settings
+from app.plex.library import locate_title
+from app.plex.linking import PlexLinker
 from app.api.deps import (
     _client_ip,
     _new_session_expiry,

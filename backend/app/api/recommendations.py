@@ -25,7 +25,7 @@ from app.api.helpers import _annotate_on_plex
 from app.catalogue import language
 from app.catalogue.tmdb import TMDBClient
 from app.db import PlexServerRow, RequestStore, SessionRow
-from app.plex import user_watch_history
+from app.plex.library import user_watch_history
 from app.recommendations import feed, moods, taste
 
 logger = logging.getLogger(__name__)

@@ -9,7 +9,7 @@ from app.api.titles import get_movie_detail, get_tv_detail
 from app.catalogue.tmdb import TMDBClient, TMDBError
 from app.core.cache import ttl_cache
 from app.db import PlexServerRow, RequestStore
-from app.plex import plex_library_lookup
+from app.plex.library import plex_library_lookup
 
 
 # ---------------------------------------------------------------------------

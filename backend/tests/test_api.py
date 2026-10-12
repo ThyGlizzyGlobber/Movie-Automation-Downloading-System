@@ -15,7 +15,7 @@ from app.catalogue import trailers
 from app.core import config, version
 from app.db import RequestStore
 from app.matching.pipeline_settings import resolve_pipeline_settings
-from app.plex import PlexClient
+from app.plex.client import PlexClient
 from app.updater import channel, updates
 from app.updater.deploy import DeployError
 
@@ -1001,7 +1001,7 @@ def test_plex_link_start_returns_auth_url(client_and_deps):
 
 
 def test_plex_link_start_maps_plex_error_to_502(client_and_deps):
-    from app.plex import PlexError
+    from app.plex.client import PlexError
 
     client, _, _, _, _, plex_linker = client_and_deps
     plex_linker.raise_on_start = PlexError("plex.tv is down")
