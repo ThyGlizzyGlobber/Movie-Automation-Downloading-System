@@ -28,10 +28,10 @@ from app.db import (
     SessionRow,
     ShowRow,
 )
-from app.matching.tv_resolve import ShowIdentity, episode_is_released, resolve_show
+from app.downloads.tv_settings import resolve_tv_settings
+from app.downloads.worker import Worker
 from app.library.filing import find_existing_episode_files
-from app.tv_settings import resolve_tv_settings
-from app.worker import Worker
+from app.matching.tv_resolve import ShowIdentity, episode_is_released, resolve_show
 
 
 class SubscribeShowRequest(BaseModel):
@@ -125,7 +125,7 @@ def _season_airstamps_for(identity: ShowIdentity | None, season_number: int) -> 
 #    season from 1 through the current latest, not just the latest), so
 #    subscribing to a show with nothing downloaded at all grabs everything
 #    already aired, not only its newest season. Every subsequent scheduled
-#    recheck (worker.py's `_check_all_watching_shows`) keeps checking only
+#    recheck (downloads/shows.py's `_check_all_watching_shows`) keeps checking only
 #    the latest season, same as always — this full sweep only ever runs
 #    once, right here, at the moment of subscribing.
 #
@@ -204,7 +204,7 @@ def unsubscribe_show(
 #    of whether it's still airing, per the plan's "independent, not
 #    mutually exclusive" call. Goes through the same requests table/worker
 #    queue as every other download (`media_type='pack'`), so it never races
-#    a queued movie/episode search — see worker.py's `_run_one`.
+#    a queued movie/episode search — see downloads/searching.py's `_run_one`.
 #
 #    Stage 14.x: keyed by `tmdb_id`, not a local `shows.id` — bulk
 #    download is meant to work whether or not the show has ever been

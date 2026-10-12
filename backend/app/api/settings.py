@@ -17,13 +17,13 @@ from app.api.setup import (
 from app.catalogue import language
 from app.core import config
 from app.db import RequestStore
+from app.downloads.tv_settings import resolve_tv_settings
 from app.matching.pipeline_settings import (
     VALID_MIN_RESOLUTIONS,
     is_valid_min_resolution,
     resolve_pipeline_settings,
     settings_from_raw,
 )
-from app.tv_settings import resolve_tv_settings
 
 
 class RetentionSettings(BaseModel):

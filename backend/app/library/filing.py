@@ -127,7 +127,7 @@ def select_video_file(
 
 def find_existing_episode_file(show_identity: ShowIdentity, season: int, episode: int) -> Path | None:
     """Best-effort scan of the whole `TV_LIBRARY_ROOT` for a video file that
-    already represents this episode — checked by worker.py's `check_show()`
+    already represents this episode — checked by downloads/shows.py's `check_show()`
     (Stage 12) before ever creating a download request for a newly-
     discovered aired episode, so a first-time subscribe to a show that
     already has episodes on disk doesn't try to re-grab them.

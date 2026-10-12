@@ -34,12 +34,12 @@ class RequestRow:
     season_range_end: int | None = None
     # Durable, restart-safe post-organize source cleanup (replaces Stage
     # 13.x's original fire-and-forget in-memory version — see
-    # worker.py's _watch_source_cleanup). NULL means "not applicable"
+    # downloads/housekeeping.py's _watch_source_cleanup). NULL means "not applicable"
     # (every row created before this existed, or a row that was never
     # organized); 'pending' means a cleanup attempt is owed once
     # `source_cleanup_next_attempt_at` arrives; 'done' means it either
     # succeeded or was deliberately, permanently skipped (see
-    # worker.py's `_attempt_source_cleanup`) — either way, never retried
+    # downloads/housekeeping.py's `_attempt_source_cleanup`) — either way, never retried
     # again. `result["organized_paths"]`/`result["pending_cleanup_hashes"]`
     # (plain JSON inside the existing result blob, not new columns) carry
     # what actually needs cleaning up.

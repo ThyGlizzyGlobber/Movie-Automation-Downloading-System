@@ -127,7 +127,7 @@ class StoreRequests:
         distinguishable this way. `episode_number` is always NULL: a pack
         row is never about one specific episode, only once it's organized
         does each actual episode found inside it get its own normal
-        episode row (see worker.py's `_organize_and_complete_pack`).
+        episode row (see downloads/watching.py's `_organize_and_complete_pack`).
 
         Asked for the same way as `create_episode_request`."""
         poster_path = poster_path or self._show_poster(show_id)
@@ -244,7 +244,7 @@ class StoreRequests:
         single-season attempt starting at the same season track
         completely independent histories, matched on both columns via
         `IS`, which is NULL-safe (`x IS NULL` is true when `x` is NULL,
-        unlike `x = NULL`, which is never true in SQL). Used by worker.py's
+        unlike `x = NULL`, which is never true in SQL). Used by downloads/shows.py's
         check_show() (Stage 14.x) to decide whether a new automatic pack
         attempt is warranted: none tried yet, one already succeeded or is
         still in flight (don't duplicate), or a prior attempt failed and

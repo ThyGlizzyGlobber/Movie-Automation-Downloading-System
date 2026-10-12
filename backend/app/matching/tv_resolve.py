@@ -183,7 +183,7 @@ def aired_episode_numbers(
     airstamps: dict[int, datetime] | None = None,
 ) -> list[int]:
     """Episode numbers from a TMDB season's episode list that are out and
-    past their buffer — shared by worker.py's check_show() (Stage 12) and
+    past their buffer — shared by downloads/shows.py's check_show() (Stage 12) and
     pipeline.py's download_pack() (Stage 13), which both need to turn a
     raw TMDB season listing into "which episodes should actually exist by
     now".
@@ -215,7 +215,7 @@ def season_is_complete(
     listed at all (nothing to judge either way). See `aired_cutoff_date` for
     what `buffer_hours` does and why it exists.
 
-    Used by worker.py's check_show() (Stage 14.x) to decide whether a
+    Used by downloads/shows.py's check_show() (Stage 14.x) to decide whether a
     season's still-unhandled aired episodes should be requested as a
     single season pack instead of individual per-episode searches — an
     older, fully-aired season is realistically far more likely to still

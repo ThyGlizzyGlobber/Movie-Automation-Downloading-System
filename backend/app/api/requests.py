@@ -25,11 +25,11 @@ from app.api.deps import (
 from app.api.schemas import RequestOut
 from app.catalogue.tmdb import TMDBClient, TMDBError
 from app.db import NON_TERMINAL_STATUSES, PlexServerRow, RequestRow, RequestStore, SessionRow
+from app.downloads.worker import Worker
 from app.matching.resolve import resolve
 from app.matching.tv_resolve import resolve_show
 from app.plex.library import local_file_for_title
 from app.qbittorrent.client import QBTClient
-from app.worker import Worker
 
 
 class CreateRequest(BaseModel):
@@ -142,7 +142,7 @@ def clear_requests(
 
 # A "queued" request hasn't touched qBittorrent (or even started
 # resolving/searching) at all yet, so cancelling one is a plain status
-# flip — no torrent to delete. worker.py's `_run_one` already re-checks
+# flip — no torrent to delete. downloads/searching.py's `_run_one` already re-checks
 # `status == "queued"` the moment it's dequeued (guarding against a stale
 # queue entry across a restart), so a row cancelled while still sitting in
 # the in-memory queue is simply skipped when the worker gets to it,

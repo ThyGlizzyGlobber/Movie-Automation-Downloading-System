@@ -1,7 +1,7 @@
 """Structured stdout logging, configured once at process startup (api/main.py's
 module load, cli.py's entrypoint) rather than left to whatever default a
 bare `logging.info()` call would fall back to. Attaches its own handler to
-the "app" logger (the shared parent of "app.worker" etc.) and disables
+the "app" logger (the shared parent of "app.downloads.worker" etc.) and disables
 propagation, so output format is identical whether the process is started
 under uvicorn, gunicorn, or plain `python`, and never doubles up if the
 runner also configures the root logger — TrueNAS's app log viewer just

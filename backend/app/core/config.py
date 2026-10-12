@@ -469,7 +469,7 @@ VIDEO_EXTENSIONS = frozenset({".mkv", ".mp4", ".avi", ".m4v", ".ts", ".m2ts", ".
 # override all of these from the Settings panel (`GET`/`PUT
 # /api/settings/tv`), same "plain config.py default, real value lives in
 # the settings table" pattern Stage 7 established for PipelineSettings.
-# How often worker.py's `_watch_shows` loop rechecks every "watching" show
+# How often downloads/shows.py's `_watch_shows` loop rechecks every "watching" show
 # for newly-aired episodes.
 SHOW_CHECK_INTERVAL_HOURS = 6.0
 
@@ -494,7 +494,7 @@ EPISODE_RECHECK_ENABLED = False
 EPISODE_RECHECK_INTERVAL_HOURS = 1.0
 EPISODE_RECHECK_MAX_ATTEMPTS = 3  # 0 = keep rechecking indefinitely
 
-# How often worker.py's `_watch_episode_rechecks` loop wakes up to ask "is
+# How often downloads/rechecks.py's `_watch_episode_rechecks` loop wakes up to ask "is
 # anything due for a recheck right now" — a fixed polling granularity, not
 # itself a Settings-panel value (the *interval* between actual rechecks is
 # the adjustable knob; this is just how finely that's measured).
@@ -532,7 +532,7 @@ SOURCE_CLEANUP_VERIFY_ATTEMPTS = int(os.environ.get("SOURCE_CLEANUP_VERIFY_ATTEM
 # Post-fix (originally fire-and-forget, in-memory only — lost its work
 # permanently if the backend restarted or the one-shot delete failed
 # anywhere in the delay window, a real gap found live): how often
-# worker.py's `_watch_source_cleanup` loop wakes up to check "is any
+# downloads/housekeeping.py's `_watch_source_cleanup` loop wakes up to check "is any
 # organized request's cleanup due right now" — a fixed polling
 # granularity, same relationship to SOURCE_CLEANUP_DELAY_SECONDS that
 # EPISODE_RECHECK_POLL_INTERVAL_SECONDS has to *_INTERVAL_HOURS above.

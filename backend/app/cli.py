@@ -8,6 +8,7 @@ from app.box import drives
 from app.catalogue.tmdb import TMDBClient
 from app.core import config
 from app.db import RequestStore
+from app.downloads.worker import Worker
 from app.library.audio import apply_audio_default_fix, plan_audio_default_fix
 from app.library.containers import apply_container_conversion, plan_container_conversion
 from app.library.filing import MediaOrganizerError
@@ -18,7 +19,6 @@ from app.matching.tv_resolve import resolve_show
 from app.plex.audio import apply_audio_selection, plan_audio_selection
 from app.plex.client import PlexClient, PlexError
 from app.qbittorrent.client import QBTClient
-from app.worker import Worker
 
 
 def _store() -> RequestStore:
