@@ -1,8 +1,8 @@
 from app.core import config
-from app.normalize import extract_episode_identity, tokenize
-from app.pipeline_settings import PipelineSettings
-from app.tv_resolve import ShowIdentity
-from app.tv_score import passes_episode_relevance_gate
+from app.matching.normalize import extract_episode_identity, tokenize
+from app.matching.pipeline_settings import PipelineSettings
+from app.matching.tv_resolve import ShowIdentity
+from app.matching.tv_score import passes_episode_relevance_gate
 
 LANTERNS = ShowIdentity(
     tmdb_id=95350,
@@ -205,9 +205,9 @@ def test_extract_episode_identity_none_when_absent():
 
 
 def test_episode_gate_rejects_batman_beyond_for_brave_and_the_bold():
-    from app.tv_resolve import ShowIdentity
-    from app.tv_score import passes_episode_relevance_gate
-    from app.normalize import generate_variants
+    from app.matching.tv_resolve import ShowIdentity
+    from app.matching.tv_score import passes_episode_relevance_gate
+    from app.matching.normalize import generate_variants
 
     title = "Batman: The Brave and the Bold"
     identity = ShowIdentity(tmdb_id=1, title=title, original_title=title, variants=generate_variants(title, title, None))

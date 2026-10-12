@@ -1,4 +1,4 @@
-from app.normalize import extract_episode_identity, has_token, normalize_text, titles_match, token_overlap, tokenize
+from app.matching.normalize import extract_episode_identity, has_token, normalize_text, titles_match, token_overlap, tokenize
 
 
 def test_normalize_text_lowercases_and_strips_punctuation():

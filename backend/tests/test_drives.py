@@ -9,8 +9,8 @@ import pytest
 
 from app import drives, pipeline, worker
 from app.core import config
+from app.matching.resolve import MediaIdentity
 from app.media_organizer import organize_movie
-from app.resolve import MediaIdentity
 
 
 def add_drive(media: Path, name: str, label: str | None = None, size: int = 8_000_000_000_000) -> Path:

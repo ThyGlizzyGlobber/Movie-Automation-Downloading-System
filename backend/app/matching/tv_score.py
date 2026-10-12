@@ -11,13 +11,13 @@ episode. Pass two (quality score) needs no TV-specific version at all:
 `score.py`'s `rank_candidates`/`score_candidate` are reused completely
 unchanged by pipeline.py's `download_episode()`."""
 
-from app.normalize import normalize_text, tokenize
-from app.pipeline_settings import PipelineSettings
-from app.score import (
+from app.matching.normalize import normalize_text, tokenize
+from app.matching.pipeline_settings import PipelineSettings
+from app.matching.score import (
     matches_any_variant,
     passes_quality_filters,
 )
-from app.tv_resolve import ShowIdentity
+from app.matching.tv_resolve import ShowIdentity
 
 
 def has_episode_token(tokens: list[str], season: int, episode: int) -> bool:

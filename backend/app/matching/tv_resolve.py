@@ -11,9 +11,9 @@ from datetime import date, datetime, timedelta, timezone
 from collections import Counter
 
 from app.catalogue.tmdb import TMDBClient
-from app.normalize import normalize_text, generate_variants, token_overlap, tokenize
+from app.matching.normalize import normalize_text, generate_variants, token_overlap, tokenize
 
-logger = logging.getLogger("app.tv_resolve")
+logger = logging.getLogger("app.matching.tv_resolve")
 
 # S01E04-style, the dominant modern scene/indexer convention. Alternate
 # formats (1x04, "Season 1 Episode 4") are a named, documented gap for v1 —

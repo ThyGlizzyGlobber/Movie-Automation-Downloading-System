@@ -43,14 +43,6 @@ PURE = {"recommendations"}
 # area (app/<area>/...), their entries here go: a module inside one of those
 # packages belongs to it.
 AREAS = {
-    "app.qbt": "qbittorrent",
-    "app.normalize": "matching",
-    "app.resolve": "matching",
-    "app.tv_resolve": "matching",
-    "app.score": "matching",
-    "app.tv_score": "matching",
-    "app.pack_score": "matching",
-    "app.pipeline_settings": "matching",
     "app.updates": "updater",
     "app.deploy": "updater",
     "app.drives": "box",

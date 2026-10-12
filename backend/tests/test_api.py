@@ -15,7 +15,7 @@ from app.catalogue import trailers
 from app.core import config, version
 from app.db import RequestStore
 from app.deploy import DeployError
-from app.pipeline_settings import resolve_pipeline_settings
+from app.matching.pipeline_settings import resolve_pipeline_settings
 from app.plex import PlexClient
 
 MOVIE = {

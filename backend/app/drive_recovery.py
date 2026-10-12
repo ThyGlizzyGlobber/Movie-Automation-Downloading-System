@@ -24,8 +24,8 @@ from pathlib import Path
 from app import box_plex, drives
 from app.catalogue.tmdb import TMDBClient, TMDBError
 from app.db import RequestStore
-from app.resolve import resolve
-from app.tv_resolve import resolve_show
+from app.matching.resolve import resolve
+from app.matching.tv_resolve import resolve_show
 
 logger = logging.getLogger(__name__)
 

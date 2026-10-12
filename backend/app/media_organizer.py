@@ -32,12 +32,12 @@ from app import drives
 from app.catalogue.language import audio_quality_key, is_audio_language
 from app.core import config
 from app.core.cache import TTLCache
-from app.normalize import extract_episode_identity, has_token, normalize_text, tokenize
-from app.qbt import QBTClient
-from app.resolve import MediaIdentity
-from app.score import matches_any_variant
-from app.tv_resolve import ShowIdentity
-from app.tv_score import has_episode_token
+from app.matching.normalize import extract_episode_identity, has_token, normalize_text, tokenize
+from app.matching.resolve import MediaIdentity
+from app.matching.score import matches_any_variant
+from app.matching.tv_resolve import ShowIdentity
+from app.matching.tv_score import has_episode_token
+from app.qbittorrent.client import QBTClient
 
 logger = logging.getLogger("app.media_organizer")
 
