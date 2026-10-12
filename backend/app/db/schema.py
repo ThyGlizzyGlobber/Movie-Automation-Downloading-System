@@ -187,7 +187,7 @@ class StoreSchema:
             self._conn.execute("INSERT OR IGNORE INTO settings (id, data_json) VALUES (1, '{}')")
 
             # Frontend migration Part C2 — Plex-authenticated users and
-            # their signed-in sessions. See UserRow/SessionRow in db_rows.py.
+            # their signed-in sessions. See UserRow/SessionRow in rows.py.
             self._conn.execute(
                 """
                 CREATE TABLE IF NOT EXISTS users (

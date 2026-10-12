@@ -50,7 +50,7 @@ don't loosen the rule. A new module goes in the test's `AREAS` table and in this
 | Area | Modules | Owns |
 |---|---|---|
 | **Core** | `config.py`, `cache.py`, `logging_config.py`, `version.py` | env and defaults, TTL cache, logging, the running version |
-| **Store** (`db`) | `db.py` + `db_rows.py` + `db_schema.py` | the SQLite store (`RequestStore`) |
+| **Store** (`db`) | `db/` | the SQLite store: `RequestStore` (`store.py`) built from one mixin per group of tables, plus `rows.py` and `schema.py` |
 | **Catalogue** | `tmdb.py`, `tvmaze.py`, `language.py`, `logos.py`, `trailers.py` | metadata, artwork, trailers |
 | **Recommendations** | `feed.py`, `taste.py`, `moods.py` | home-page rows. Pure logic: imports nothing from the app |
 | **qBittorrent** | `qbt.py` | the qBittorrent WebUI client |
@@ -101,9 +101,11 @@ don't loosen the rule. A new module goes in the test's `AREAS` table and in this
   module (as `reconcile.py` and `drive_recovery.py` are), and keep only the loop that calls
   it in the worker.
 - **New table or column.**
-  - Change the schema and add an in-place migration in `db_schema.py`.
-  - Add the row dataclass to `db_rows.py` and the store methods to `RequestStore`.
-  - Never write SQL outside the store.
+  - Change the schema and add an in-place migration in `db/schema.py`.
+  - Add the row dataclass to `db/rows.py`, and the store methods to the `db/` mixin for
+    that group of tables (or a new mixin, added to `RequestStore` in `db/store.py`).
+  - Import from `app.db`, never from the modules inside it. Never write SQL outside the
+    store.
 - **New setting.**
   - If it's editable in the app, follow the `pipeline_settings.py` / `tv_settings.py`
     pattern: a dataclass resolved fresh from the store each time it's used, so edits apply
@@ -113,8 +115,8 @@ don't loosen the rule. A new module goes in the test's `AREAS` table and in this
   Add its API calls to `api/<area>.ts` and its types to `types/<area>.ts`.
 - **Shared frontend code.** Code used by one feature stays in that feature's folder. Move
   it to `lib/` or `components/` the moment a second feature needs it.
-- **Big files.** `worker.py`, `db.py`, `plex.py` and `media_organizer.py` are already
-  1,300–2,000 lines. Don't grow them. Add a new module next to them instead, and split by
+- **Big files.** `worker.py`, `plex.py` and `media_organizer.py` are already 1,300–2,000
+  lines. Don't grow them. Add a new module next to them instead, and split by
   responsibility whenever you're already making a large change in one.
 
 ## Rules that must not break
