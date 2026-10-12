@@ -21,7 +21,7 @@ it's a movie, an episode, or a pack."""
 
 import re
 
-from app import config
+from app.core import config
 from app.normalize import normalize_text, tokenize
 from app.pipeline_settings import PipelineSettings
 from app.score import (

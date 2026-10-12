@@ -1,4 +1,4 @@
-from app import config
+from app.core import config
 from app.normalize import extract_episode_identity, tokenize
 from app.pipeline_settings import PipelineSettings
 from app.tv_resolve import ShowIdentity

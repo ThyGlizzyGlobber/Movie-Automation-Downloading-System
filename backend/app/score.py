@@ -7,7 +7,7 @@ import re
 from dataclasses import dataclass
 from urllib.parse import urlparse
 
-from app import config
+from app.core import config
 from app.normalize import extract_episode_identity, normalize_text, tokenize
 from app.pipeline_settings import PipelineSettings
 from app.resolve import MediaIdentity

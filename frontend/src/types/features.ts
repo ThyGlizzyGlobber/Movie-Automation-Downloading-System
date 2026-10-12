@@ -205,7 +205,7 @@ export type UpdatesInfo =
     }
 export interface AboutInfo {
   name: string
-  // "1.0.3": the release tag plus one per commit since (backend/app/version.py).
+  // "1.0.3": the release tag plus one per commit since (backend/app/core/version.py).
   version: string | null
   commit: string | null
   date: string | null

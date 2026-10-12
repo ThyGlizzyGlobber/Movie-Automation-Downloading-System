@@ -1,4 +1,4 @@
-from app import config
+from app.core import config
 from app.pack_score import (
     has_any_episode_token,
     has_complete_series_marker,

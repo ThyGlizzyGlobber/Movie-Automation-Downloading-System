@@ -4,12 +4,13 @@ and the TMDB/qBittorrent helpers Settings' Connections panel reuses."""
 from fastapi import Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 
-from app import box_address, box_plex, config, vpn
-from app.db import RequestStore
-from app.qbt import QBTClient
-from app.tmdb import TMDBClient
+from app import box_address, box_plex, vpn
 from app.api.deps import get_store, limiter, require_setup_token
 from app.api.main import app
+from app.catalogue.tmdb import TMDBClient
+from app.core import config
+from app.db import RequestStore
+from app.qbt import QBTClient
 
 
 # ---------------------------------------------------------------------------

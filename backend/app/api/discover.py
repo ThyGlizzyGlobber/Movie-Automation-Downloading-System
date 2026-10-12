@@ -5,10 +5,10 @@ result annotated with whether it is already on Plex."""
 from fastapi import Depends, HTTPException
 from pydantic import BaseModel, Field
 
-from app.db import PlexServerRow, RequestStore
-from app.tmdb import BROWSE_SORTS, TMDBClient, TMDBError
 from app.api.deps import get_plex_server, get_store, get_tmdb, resolve_region, router
 from app.api.helpers import _annotate_on_plex
+from app.catalogue.tmdb import BROWSE_SORTS, TMDBClient, TMDBError
+from app.db import PlexServerRow, RequestStore
 
 
 class SearchRequest(BaseModel):

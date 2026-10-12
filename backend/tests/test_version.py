@@ -1,7 +1,7 @@
 """Version numbers come from the release tag plus one patch per commit
-since it — see app/version.py."""
+since it — see app/core/version.py."""
 
-from app import version
+from app.core import config, version
 
 
 def test_the_tagged_commit_is_the_release_itself():
@@ -49,3 +49,17 @@ def test_a_git_clone_has_no_channel(monkeypatch):
 
     assert version.current().channel is None
     monkeypatch.setattr(version, "_cached", None)
+
+
+def test_without_a_deployed_clone_the_repo_is_the_one_this_code_is_in(monkeypatch, tmp_path):
+    monkeypatch.setattr(config, "DEPLOY_REPO_PATH", str(tmp_path / "no-clone-here"))
+
+    assert (version._repo() / "backend" / "app" / "core" / "version.py").is_file()
+
+
+def test_the_data_folder_and_env_file_are_found_from_backend():
+    # config.py builds its default paths (.env, data/app.db, the caches)
+    # from its own location; a move that left them pointing elsewhere would
+    # start the app on an empty database.
+    assert (config.BACKEND_DIR / "requirements.txt").is_file()
+    assert (config.BACKEND_DIR / "app" / "core" / "config.py").is_file()

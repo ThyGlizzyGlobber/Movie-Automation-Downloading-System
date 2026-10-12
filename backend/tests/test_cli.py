@@ -4,7 +4,8 @@ the settings table, not the env."""
 
 from pathlib import Path
 
-from app import cli, config
+from app import cli
+from app.core import config
 from app.db import RequestStore
 
 

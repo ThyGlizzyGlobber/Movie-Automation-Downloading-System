@@ -1,6 +1,6 @@
 from datetime import datetime, timedelta, timezone
 
-from app.tmdb import TMDBClient
+from app.catalogue.tmdb import TMDBClient
 from app.tv_resolve import (
     align_pack_episodes,
     find_predecessor_show,

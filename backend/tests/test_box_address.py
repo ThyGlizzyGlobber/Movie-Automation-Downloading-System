@@ -8,7 +8,8 @@ from pathlib import Path
 
 import pytest
 
-from app import box_address, config, drives, updates
+from app import box_address, drives, updates
+from app.core import config
 
 SCRIPT = Path(__file__).resolve().parents[2] / "truenas" / "obsidian-updater.py"
 spec = importlib.util.spec_from_file_location("obsidian_updater_network", SCRIPT)

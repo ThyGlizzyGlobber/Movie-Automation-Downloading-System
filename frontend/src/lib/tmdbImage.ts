@@ -54,7 +54,7 @@ export function logoUrl(path: string | null | undefined, size: 'w500' | 'origina
 }
 
 // The content page's banner logo: TMDB's original fitted to the banner
-// and re-encoded as WebP by the backend (app/logos.py) — 15KB-4.7MB
+// and re-encoded as WebP by the backend (app/catalogue/logos.py) — 15KB-4.7MB
 // originals down to 4-130KB, indistinguishable at the banner's size. An
 // SVG logo is small already and goes to TMDB as it is.
 //

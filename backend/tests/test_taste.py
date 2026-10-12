@@ -10,7 +10,7 @@ server, a TMDB key or a browser to be wrong.
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 
-from app import taste
+from app.recommendations import taste
 
 
 NOW = datetime(2026, 9, 24, 12, 0, tzinfo=timezone.utc)

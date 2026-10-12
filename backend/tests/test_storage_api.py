@@ -9,8 +9,9 @@ from datetime import datetime, timedelta, timezone
 import pytest
 from fastapi.testclient import TestClient
 
-from app import api, config, drives, updates
+from app import api, drives, updates
 from app.api import deps
+from app.core import config
 from app.db import RequestStore
 
 TB = 1000**4

@@ -8,7 +8,11 @@ from dotenv import load_dotenv
 if TYPE_CHECKING:
     from app.db import RequestStore
 
-load_dotenv(Path(__file__).resolve().parent.parent / ".env")
+# backend/ — this file is backend/app/core/config.py. The .env file and the
+# data folder are found from here, so moving this file means changing this.
+BACKEND_DIR = Path(__file__).resolve().parents[2]
+
+load_dotenv(BACKEND_DIR / ".env")
 
 TMDB_API_KEY = os.environ.get("TMDB_API_KEY")
 
@@ -96,7 +100,7 @@ def qbt_config_source(store: "RequestStore") -> str:
 
 # -- Stage 3: API/persistence layer. --
 
-DB_PATH = Path(os.environ.get("DB_PATH", Path(__file__).resolve().parent.parent / "data" / "app.db"))
+DB_PATH = Path(os.environ.get("DB_PATH", BACKEND_DIR / "data" / "app.db"))
 
 # How often the download watcher polls qBittorrent for requests already
 # added and sitting in "downloading", to flip them to "complete". Doesn't
@@ -417,7 +421,7 @@ IMAGE_NAMES = ("obsidian-backend", "obsidian-frontend")
 SOURCE_REPO = os.environ.get("SOURCE_REPO", "ThyGlizzyGlobber/Movie-Automation-Downloading-System")
 
 # Which release channel this box follows. Unset, it's the channel the
-# running image was published on (app/version.py's APP_CHANNEL), which is
+# running image was published on (app/core/version.py's APP_CHANNEL), which is
 # right as long as updates stay within one channel — and they do.
 UPDATE_CHANNEL = os.environ.get("UPDATE_CHANNEL") or None
 
@@ -560,7 +564,7 @@ QBIT_MOVIE_SAVE_PATH = os.environ.get("QBIT_MOVIE_SAVE_PATH")
 # limitation was explained. Same DB_PATH pattern/volume: resolves to
 # /app/data/trailers in Docker, reusing the backend-data volume already
 # mounted at /app/data rather than needing a new one.
-TRAILER_CACHE_DIR = Path(os.environ.get("TRAILER_CACHE_DIR", Path(__file__).resolve().parent.parent / "data" / "trailers"))
+TRAILER_CACHE_DIR = Path(os.environ.get("TRAILER_CACHE_DIR", BACKEND_DIR / "data" / "trailers"))
 
 # Where nginx will serve trailer files from on this app's behalf — an
 # `internal` location, so only a redirect from here can reach it and
@@ -587,7 +591,7 @@ TRAILER_DOWNLOAD_TIMEOUT_SECONDS = int(os.environ.get("TRAILER_DOWNLOAD_TIMEOUT_
 # The content page's banner logos, re-encoded small (logos.py). Same data
 # volume as the trailers. Two files a title, 5-130KB each, so the cap is
 # about what a household browses in a long while, at a few hundred MB.
-LOGO_CACHE_DIR = Path(os.environ.get("LOGO_CACHE_DIR", Path(__file__).resolve().parent.parent / "data" / "logos"))
+LOGO_CACHE_DIR = Path(os.environ.get("LOGO_CACHE_DIR", BACKEND_DIR / "data" / "logos"))
 LOGO_CACHE_MAX_FILES = int(os.environ.get("LOGO_CACHE_MAX_FILES", "6000"))
 
 # The hero prefers the shortest preview that is still a preview. Under

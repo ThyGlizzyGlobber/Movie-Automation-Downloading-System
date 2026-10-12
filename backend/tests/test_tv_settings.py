@@ -1,4 +1,4 @@
-from app import config
+from app.core import config
 from app.db import RequestStore
 from app.tv_settings import TVScheduleSettings, resolve_tv_settings, settings_from_raw
 

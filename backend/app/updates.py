@@ -33,7 +33,7 @@ from pathlib import Path
 
 import requests
 
-from app import config, version
+from app.core import config, version
 
 logger = logging.getLogger(__name__)
 

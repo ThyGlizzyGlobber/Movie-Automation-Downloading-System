@@ -9,13 +9,13 @@ from datetime import datetime, timedelta, timezone
 import pytest
 from fastapi.testclient import TestClient
 
-from app import api, config, trailers, updates, version
-from app.api import deps, helpers, hero, recommendations, setup, shows, system, titles
-from app.api import requests as api_requests
-from app.api import updates as api_updates
+from app import api, updates
+from app.api import deps, helpers, hero, recommendations, requests as api_requests, setup, shows, system, titles, updates as api_updates
+from app.catalogue import trailers
+from app.core import config, version
+from app.db import RequestStore
 from app.deploy import DeployError
 from app.pipeline_settings import resolve_pipeline_settings
-from app.db import RequestStore
 from app.plex import PlexClient
 
 MOVIE = {
@@ -111,7 +111,7 @@ class FakeTMDBClient:
 
     def get_movie(self, tmdb_id):
         if self._raise_on_get_movie:
-            from app.tmdb import TMDBError
+            from app.catalogue.tmdb import TMDBError
 
             raise TMDBError("not found")
         return self._movie
@@ -149,7 +149,7 @@ class FakeTMDBClient:
 
     def get_tv(self, tmdb_id):
         if self._raise_on_get_movie or self._raise_on_get_tv:
-            from app.tmdb import TMDBError
+            from app.catalogue.tmdb import TMDBError
 
             raise TMDBError("not found")
         return dict(SHOW, id=tmdb_id)
@@ -184,7 +184,7 @@ class FakeTMDBClient:
 
     def get_person(self, person_id):
         if self._raise_on_get_person:
-            from app.tmdb import TMDBError
+            from app.catalogue.tmdb import TMDBError
 
             raise TMDBError("not found")
         return dict(self._person, id=person_id)
@@ -193,14 +193,14 @@ class FakeTMDBClient:
 
     def get_movie_videos(self, tmdb_id):
         if self._raise_on_get_movie_videos:
-            from app.tmdb import TMDBError
+            from app.catalogue.tmdb import TMDBError
 
             raise TMDBError("upstream error")
         return self._movie_videos
 
     def get_tv_videos(self, tmdb_id):
         if self._raise_on_get_tv_videos:
-            from app.tmdb import TMDBError
+            from app.catalogue.tmdb import TMDBError
 
             raise TMDBError("upstream error")
         return self._tv_videos
@@ -783,7 +783,7 @@ def test_set_retention_persists_and_reads_back(client_and_deps):
 
 
 def test_get_pipeline_settings_defaults_match_config(client_and_deps):
-    from app import config
+    from app.core import config
 
     client, _, _, _, _, _ = client_and_deps
     response = client.get("/api/settings/pipeline")
@@ -829,7 +829,7 @@ def test_set_pipeline_settings_persists_and_reads_back(client_and_deps):
 
 
 def test_set_pipeline_settings_null_fields_reset_to_default(client_and_deps):
-    from app import config
+    from app.core import config
 
     client, _, _, _, _, _ = client_and_deps
     client.put("/api/settings/pipeline", json={"min_resolution": "720p"})
@@ -889,7 +889,7 @@ def test_set_pipeline_settings_rejects_a_partial_edit_that_would_invert_the_effe
 
 
 def test_get_tv_settings_defaults_match_config(client_and_deps):
-    from app import config
+    from app.core import config
 
     client, _, _, _, _, _ = client_and_deps
     response = client.get("/api/settings/tv")
@@ -929,7 +929,7 @@ def test_set_tv_settings_persists_and_reads_back(client_and_deps):
 
 
 def test_set_tv_settings_null_fields_reset_to_default(client_and_deps):
-    from app import config
+    from app.core import config
 
     client, _, _, _, _, _ = client_and_deps
     client.put("/api/settings/tv", json={"episode_recheck_enabled": True})
@@ -1378,7 +1378,7 @@ def test_a_film_standing_alone_has_no_collection(client_and_deps):
 
 def test_a_collection_tmdb_cannot_serve_is_just_no_row(client_and_deps, monkeypatch):
     """The page must still load; the row is a nicety."""
-    from app.tmdb import TMDBError
+    from app.catalogue.tmdb import TMDBError
 
     client, _, tmdb, _, _, _ = client_and_deps
     _in_a_collection(tmdb, monkeypatch)
@@ -1572,7 +1572,7 @@ def test_get_tv_trailer_returns_cached_file_url(client_and_deps, trailer_downloa
 
 
 def test_banner_logo_is_served_small_or_sends_the_browser_to_the_original(client_and_deps, monkeypatch, tmp_path):
-    from app import logos
+    from app.catalogue import logos
 
     client, _, _, _, _, _ = client_and_deps
     stored = tmp_path / "abcdEFGH1234.webp"
@@ -2067,7 +2067,7 @@ def test_get_storage_unavailable_when_library_root_is_not_a_real_mount(client_an
 
 
 def test_get_storage_reports_real_usage_when_the_path_exists(client_and_deps, monkeypatch, tmp_path):
-    from app import config
+    from app.core import config
 
     monkeypatch.setattr(config, "TV_LIBRARY_ROOT", tmp_path)
     client, _, _, _, _, _ = client_and_deps
@@ -2239,7 +2239,7 @@ def test_a_saved_tmdb_key_goes_straight_into_the_running_client(tmp_path, monkey
     # is the key being live everywhere, with no restart.
     from types import SimpleNamespace
 
-    from app.tmdb import TMDBClient
+    from app.catalogue.tmdb import TMDBClient
 
     monkeypatch.setattr(config, "TMDB_API_KEY", None)
     running = TMDBClient("")
@@ -3165,7 +3165,7 @@ def test_hero_survives_a_title_tmdb_wont_answer_for(client_and_deps):
     _hero_trending(tmdb)
 
     def unanswerable(tmdb_id):
-        from app.tmdb import TMDBError
+        from app.catalogue.tmdb import TMDBError
 
         raise TMDBError("not found")
 
@@ -3963,7 +3963,7 @@ def _asked_in(params: dict, language: str) -> bool:
     household's language passed on the day it was written and failed on
     any day the draw included that row, which on 2026-10-04 it did.
     Behaviour was correct throughout; the test was not."""
-    from app import moods
+    from app.recommendations import moods
 
     if params.get("with_original_language") == language:
         return True
@@ -4292,7 +4292,7 @@ def test_about_reports_the_basics(client_and_deps):
 
 
 def test_best_logo_prefers_english_png_with_votes():
-    from app.tmdb import best_logo_path
+    from app.catalogue.tmdb import best_logo_path
 
     assert best_logo_path(None) is None
     assert best_logo_path({"logos": []}) is None
@@ -4308,7 +4308,7 @@ def test_best_logo_prefers_english_png_with_votes():
 def test_best_logo_ranks_rating_over_vote_count():
     """Pacific Rim's real numbers: the wrong title's logo, voted down on
     more votes than the right one has."""
-    from app.tmdb import best_logo_path
+    from app.catalogue.tmdb import best_logo_path
 
     logos = [
         {"iso_639_1": "en", "file_path": "/ready-player-one.png", "vote_count": 5, "vote_average": 0.5},

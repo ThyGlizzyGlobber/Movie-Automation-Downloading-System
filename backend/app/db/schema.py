@@ -5,7 +5,7 @@ date. Runs once, from RequestStore's constructor."""
 import json
 from datetime import datetime, timezone
 
-from app import config
+from app.core import config
 
 
 class StoreSchema:

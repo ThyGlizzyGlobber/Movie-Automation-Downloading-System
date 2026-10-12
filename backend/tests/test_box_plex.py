@@ -10,7 +10,8 @@ from pathlib import Path
 
 import pytest
 
-from app import box_plex, config, updates
+from app import box_plex, updates
+from app.core import config
 from app.db import RequestStore
 from app.plex import PlexClient, PlexLinker
 

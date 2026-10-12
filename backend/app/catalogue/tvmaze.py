@@ -26,7 +26,7 @@ from datetime import datetime
 
 import requests
 
-from app.cache import ttl_cache
+from app.core.cache import ttl_cache
 
 BASE_URL = "https://api.tvmaze.com"
 TIMEOUT_SECONDS = 10

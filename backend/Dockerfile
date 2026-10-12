@@ -41,7 +41,7 @@ FROM runtime AS release
 
 COPY app app
 
-# Filled in by CI — see app/version.py. APP_CHANNEL is the image tag this
+# Filled in by CI — see app/core/version.py. APP_CHANNEL is the image tag this
 # build is published under ("stable" or "beta"), and being set at all is
 # what tells the app it updates by image rather than by `git pull`.
 ARG APP_VERSION

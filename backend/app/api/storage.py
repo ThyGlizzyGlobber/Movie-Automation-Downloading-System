@@ -10,9 +10,9 @@ from fastapi import Depends, HTTPException, Request
 from pydantic import BaseModel
 
 from app import box_plex, drive_recovery, drives, updates
-from app.db import PlexServerRow, RequestStore, SessionRow
-from app.tmdb import TMDBClient
 from app.api.deps import _client_ip, admin_router, get_store, get_tmdb, require_admin, require_session_server
+from app.catalogue.tmdb import TMDBClient
+from app.db import PlexServerRow, RequestStore, SessionRow
 
 # The updater writes its report every minute; older than this, it's stale.
 REPORT_FRESH_SECONDS = 180

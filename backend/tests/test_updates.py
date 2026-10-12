@@ -6,7 +6,8 @@ import sqlite3
 import pytest
 import requests
 
-from app import config, updates, version
+from app import updates
+from app.core import config, version
 from app.db import RequestStore
 
 

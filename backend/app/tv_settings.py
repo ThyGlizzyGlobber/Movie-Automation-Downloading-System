@@ -9,7 +9,7 @@ next wake-up — no restart, no deploy, same as pipeline settings."""
 from dataclasses import dataclass, fields, replace
 from typing import TYPE_CHECKING
 
-from app import config
+from app.core import config
 
 if TYPE_CHECKING:
     from app.db import RequestStore

@@ -23,7 +23,7 @@ no frontend container restart needed, exactly mirroring the backend's own
 import os
 import subprocess
 
-from app import config
+from app.core import config
 
 
 class DeployError(Exception):
@@ -74,7 +74,7 @@ def run_git_pull() -> dict:
         raise DeployError(f"{config.DEPLOY_REPO_PATH} is not a git clone")
 
     try:
-        # --tags: the release tags are what app/version.py counts from, and
+        # --tags: the release tags are what app/core/version.py counts from, and
         # a tag pushed after the commit it names wouldn't otherwise arrive.
         result = _git("pull", "--ff-only", "--tags")
     except subprocess.TimeoutExpired as exc:

@@ -24,9 +24,9 @@ from pathlib import Path
 import requests
 
 from app import box_plex, drives, updates
-from app.cache import TTLCache
+from app.catalogue.language import audio_quality_key, is_audio_language
+from app.core.cache import TTLCache
 from app.db import PlexServerRow
-from app.language import audio_quality_key, is_audio_language
 from app.normalize import normalize_text, titles_match
 
 PLEX_TV_BASE = "https://plex.tv"

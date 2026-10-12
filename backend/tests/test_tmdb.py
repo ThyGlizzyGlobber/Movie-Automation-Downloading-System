@@ -1,6 +1,6 @@
 from datetime import datetime, timedelta, timezone
 
-from app.tmdb import (
+from app.catalogue.tmdb import (
     TMDBClient,
     _available_on_provider,
     _is_recent_release,
@@ -768,7 +768,7 @@ def test_search_tv_within_provider_filters_to_shows_on_that_service(monkeypatch)
 
 
 def test_logo_aspect_reads_the_chosen_logos_own_shape():
-    from app.tmdb import logo_aspect
+    from app.catalogue.tmdb import logo_aspect
 
     images = {"logos": [{"file_path": "/a.png", "aspect_ratio": 4.21}, {"file_path": "/b.png", "width": 600, "height": 400}]}
     assert logo_aspect(images, "/a.png") == 4.21

@@ -443,7 +443,7 @@ from git rather than kept in a file:
   that breaks an existing install.
 
 **Settings → About** shows the running version with its build hash and commit date, read
-from the deployed clone on each check (`backend/app/version.py`). Setting `APP_VERSION` in
+from the deployed clone on each check (`backend/app/core/version.py`). Setting `APP_VERSION` in
 the backend's environment overrides it, for a build made without its `.git`.
 
 A release install has no `.git`, so CI works the version out the same way at build time and

@@ -5,8 +5,8 @@ It keeps trying, and starts downloads the moment qBittorrent answers."""
 import asyncio
 from types import SimpleNamespace
 
-from app import config
 from app.api import main
+from app.core import config
 
 
 def test_qbittorrent_late_to_start_is_picked_up_without_a_restart(monkeypatch):

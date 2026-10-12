@@ -28,9 +28,10 @@ from collections.abc import Callable
 from threading import Lock
 from pathlib import Path, PurePosixPath
 
-from app import config, drives
-from app.cache import TTLCache
-from app.language import audio_quality_key, is_audio_language
+from app import drives
+from app.catalogue.language import audio_quality_key, is_audio_language
+from app.core import config
+from app.core.cache import TTLCache
 from app.normalize import extract_episode_identity, has_token, normalize_text, tokenize
 from app.qbt import QBTClient
 from app.resolve import MediaIdentity

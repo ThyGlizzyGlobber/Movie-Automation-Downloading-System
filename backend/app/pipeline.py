@@ -7,8 +7,11 @@ import time
 from collections.abc import Callable
 from dataclasses import dataclass
 
-from app import config, drives
+from app import drives
+from app.catalogue.tmdb import TMDBClient
+from app.core import config
 from app.normalize import tokenize
+from app.pack_score import passes_season_pack_gate, passes_season_range_pack_gate, passes_series_pack_gate
 from app.pipeline_settings import PipelineSettings
 from app.qbt import QBTClient, QBTError
 from app.resolve import MediaIdentity, resolve
@@ -22,8 +25,6 @@ from app.score import (
     rank_candidates,
     states_resolution,
 )
-from app.pack_score import passes_season_pack_gate, passes_season_range_pack_gate, passes_series_pack_gate
-from app.tmdb import TMDBClient
 from app.tv_resolve import (
     ShowIdentity,
     episode_query,

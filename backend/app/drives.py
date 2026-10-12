@@ -29,7 +29,7 @@ import shutil
 from dataclasses import dataclass
 from pathlib import Path
 
-from app import config
+from app.core import config
 
 MEDIA_DRIVES_ROOT = os.environ.get("MEDIA_DRIVES_ROOT") or None
 MARKER = ".obsidian-drive.json"

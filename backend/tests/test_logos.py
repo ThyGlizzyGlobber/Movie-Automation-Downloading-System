@@ -3,7 +3,8 @@ import io
 import pytest
 from PIL import Image
 
-from app import config, logos
+from app.catalogue import logos
+from app.core import config
 
 NAME = "abcdEFGH1234.png"
 

@@ -10,7 +10,7 @@ in the recommender when it is really a missing vote floor.
 import random
 from collections import Counter
 
-from app import moods
+from app.recommendations import moods
 
 
 class FakeRow:

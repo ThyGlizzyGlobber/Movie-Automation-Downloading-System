@@ -11,12 +11,13 @@ from datetime import datetime, timedelta, timezone
 from fastapi import Depends, HTTPException, Request
 from pydantic import BaseModel
 
-from app import box_address, config, drives, version
+from app import box_address, drives
+from app.api.deps import _client_ip, admin_router, get_qbt, get_store, router
+from app.api.main import app
+from app.api.schemas import RequestOut
+from app.core import config, version
 from app.db import FAILURE_STATUSES, RequestStore
 from app.deploy import DeployError, run_git_pull
-from app.api.deps import _client_ip, admin_router, get_qbt, get_store, router
-from app.api.schemas import RequestOut
-from app.api.main import app
 
 
 @app.get("/api/health")
