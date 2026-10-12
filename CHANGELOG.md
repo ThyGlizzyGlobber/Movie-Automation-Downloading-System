@@ -84,6 +84,8 @@ records the minor and major releases, and the patches worth calling out. See
   pannable; row headings now end in an ellipsis instead.
 - "On Plex" and status badges could flash as blank pills while a row was scrolling
   on iPhone.
+- Retrying an episode that ended in "No match" from the show page was refused with
+  "this episode is already tracked". Retry now files a fresh request.
 
 ## [1.0.0] — 2026-09-28
 
