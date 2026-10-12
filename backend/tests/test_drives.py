@@ -9,7 +9,7 @@ import pytest
 
 from app.box import drives
 from app.core import config
-from app.downloads import pipeline, worker
+from app.downloads import pipeline, searching, worker
 from app.library.filing import organize_movie
 from app.matching.resolve import MediaIdentity
 
@@ -146,7 +146,7 @@ def test_the_sweeps_look_in_every_drive_s_downloads(box):
 
 
 def test_a_request_waits_for_a_drive_rather_than_failing(box, monkeypatch):
-    monkeypatch.setattr(worker, "NO_DRIVE_RECHECK_SECONDS", 0)
+    monkeypatch.setattr(searching, "NO_DRIVE_RECHECK_SECONDS", 0)
     ran = []
     checks = iter([False, False, True])
     monkeypatch.setattr(drives, "ready", lambda: next(checks))

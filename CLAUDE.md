@@ -59,7 +59,7 @@ don't loosen the rule. A new module goes in the test's `AREAS` table and in this
 | **Box** | `box/`: `drives.py`, `drive_recovery.py`, `plex.py`, `address.py`, `vpn.py` | box-only features |
 | **Plex** | `plex/`: `client.py`, `linking.py`, `library.py`, `audio.py` | the Plex HTTP client, sign-in, what's on Plex across every server, audio-track selection |
 | **Library** | `library/`: `filing.py`, `packs.py`, `audio.py`, `containers.py`, `reconcile.py` | filing finished downloads (single files and packs), default audio tracks, rewrapping containers, cleaning up source torrents |
-| **Downloads** | `pipeline.py`, `worker.py`, `tv_settings.py` | search → filter → score → add, and the background loops that drive requests. No FastAPI imports |
+| **Downloads** | `downloads/`: `pipeline.py`, `worker.py` + `searching.py`, `watching.py`, `shows.py`, `rechecks.py`, `housekeeping.py`, `tv_settings.py` | search → filter → score → add, and the background worker: `worker.py` owns the shared state and starts the loops, each loop's work is a mixin in its own module |
 | **HTTP** | `api/` | one module per area. The only place auth is enforced |
 | **CLI** | `cli.py` | recovery commands (`python -m app.cli --help`). Never imports `api/` |
 
@@ -97,9 +97,10 @@ don't loosen the rule. A new module goes in the test's `AREAS` table and in this
     from `deps.py`.
   - Make a new `api/` module only for a genuinely new area. Import it in `api/__init__.py`,
     where the import order is load-bearing (see the comment there).
-- **New background job.** Don't add it to `worker.py`. Write it as functions in its own
-  module (as `library/reconcile.py` and `box/drive_recovery.py` are), and keep only the loop that calls
-  it in the worker.
+- **New background job.** Don't add it to `downloads/worker.py`. Put the work in its own
+  module (as `library/reconcile.py` and `box/drive_recovery.py` are), and its loop in the
+  `downloads/` mixin it belongs with, or a new mixin added to `Worker`'s bases. Tests patch
+  a name on the module that uses it, not on `worker.py`.
 - **New table or column.**
   - Change the schema and add an in-place migration in `db/schema.py`.
   - Add the row dataclass to `db/rows.py`, and the store methods to the `db/` mixin for
@@ -107,7 +108,7 @@ don't loosen the rule. A new module goes in the test's `AREAS` table and in this
   - Import from `app.db`, never from the modules inside it. Never write SQL outside the
     store.
 - **New setting.**
-  - If it's editable in the app, follow the `matching/pipeline_settings.py` / `tv_settings.py`
+  - If it's editable in the app, follow the `matching/pipeline_settings.py` / `downloads/tv_settings.py`
     pattern: a dataclass resolved fresh from the store each time it's used, so edits apply
     with no restart.
   - If it comes from the environment, put it in `core/config.py`.

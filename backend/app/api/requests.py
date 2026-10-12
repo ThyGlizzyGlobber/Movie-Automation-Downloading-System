@@ -142,7 +142,7 @@ def clear_requests(
 
 # A "queued" request hasn't touched qBittorrent (or even started
 # resolving/searching) at all yet, so cancelling one is a plain status
-# flip — no torrent to delete. worker.py's `_run_one` already re-checks
+# flip — no torrent to delete. downloads/searching.py's `_run_one` already re-checks
 # `status == "queued"` the moment it's dequeued (guarding against a stale
 # queue entry across a restart), so a row cancelled while still sitting in
 # the in-memory queue is simply skipped when the worker gets to it,

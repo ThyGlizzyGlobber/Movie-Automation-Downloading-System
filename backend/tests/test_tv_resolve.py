@@ -120,7 +120,7 @@ def test_resolve_show_requests_credits_append():
 
 # ---------------------------------------------------------------------------
 # Stage 13: pack query builders + aired-episode filtering (shared with
-# worker.py's check_show).
+# downloads/shows.py's check_show).
 # ---------------------------------------------------------------------------
 
 
