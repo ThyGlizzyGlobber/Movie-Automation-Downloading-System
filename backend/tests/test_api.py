@@ -3815,6 +3815,31 @@ def test_request_episode_and_season_status(client_and_deps):
     assert body["in_plex"] == 1
 
 
+def test_retrying_a_failed_episode_files_a_new_request(client_and_deps):
+    """The page's Retry button on a "No match" episode. The failed
+    attempt keeps the ledger slot for the scheduler's recheck, but a
+    person asking again must not be told it's already tracked."""
+    client, store, tmdb, worker, _, _ = client_and_deps
+    tmdb.get_tv_season = lambda tmdb_id, season_number: [{"episode_number": 2, "air_date": "2020-01-08"}]
+    first = client.post("/api/tv/95350/episodes/1/2").json()["id"]
+    store.update_status(first, "no qualifying results")
+    assert client.get("/api/tv/95350/season/1/episodes").json()["episodes"][0]["state"] == "failed"
+
+    retried = client.post("/api/tv/95350/episodes/1/2")
+    assert retried.status_code == 201, retried.text
+    second = retried.json()["id"]
+    assert second != first and second in worker.enqueued
+    show = store.get_show_by_tmdb_id(95350)
+    [ledger] = store.list_show_episodes(show.id)
+    assert ledger.request_id == second
+    episode = client.get("/api/tv/95350/season/1/episodes").json()["episodes"][0]
+    assert episode["state"] == "requested" and episode["request_id"] == second
+
+    # Once it lands, asking again is still refused.
+    store.update_status(second, "complete")
+    assert client.post("/api/tv/95350/episodes/1/2").status_code == 409
+
+
 def test_storage_details_shape(client_and_deps):
     client, _, _, _, _, _ = client_and_deps
     body = client.get("/api/storage/details").json()

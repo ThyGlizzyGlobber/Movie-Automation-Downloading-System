@@ -403,9 +403,12 @@ def request_episode(
 ) -> RequestOut:
     """Ask for one specific episode (the show page's per-row Request
     button). Same ledger the subscription scheduler uses, so the two never
-    double-request the same episode; 409 if it is already tracked —
-    unless it is on its way for another server, which this one then
-    joins."""
+    double-request the same episode; 409 if it is on the way or already
+    landed — unless it is on its way for another server, which this one
+    then joins. A slot whose last attempt failed is not "tracked": the
+    page offers Retry on exactly those, and the new request takes the
+    slot over (live 2026-10-13: Marshals S02E02 sat at "No match" and
+    every Retry was refused as already tracked)."""
     show = store.get_show_by_tmdb_id(tmdb_id)
     identity = None
     if show is None:
@@ -414,7 +417,7 @@ def request_episode(
         except TMDBError as exc:
             raise HTTPException(status_code=404, detail=f"tmdb_id {tmdb_id} not found") from exc
         show = store.create_show(tmdb_id=tmdb_id, title=identity.title, status="paused", poster_path=identity.poster_path)
-    if store.has_show_episode(show.id, season_number, episode_number):
+    if store.has_live_show_episode(show.id, season_number, episode_number):
         live = store.find_live_request(tmdb_id, "episode", season_number, episode_number)
         if live is None or store.get_request_for_server(live.id, server.id) is not None:
             raise HTTPException(status_code=409, detail="this episode is already tracked")
