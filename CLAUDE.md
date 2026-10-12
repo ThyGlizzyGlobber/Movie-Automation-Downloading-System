@@ -58,7 +58,7 @@ don't loosen the rule. A new module goes in the test's `AREAS` table and in this
 | **Updater** | `updater/`: `updates.py`, `deploy.py`, `channel.py` | the two update paths, and `channel.py`: the request files the NAS updater reads |
 | **Box** | `box/`: `drives.py`, `drive_recovery.py`, `plex.py`, `address.py`, `vpn.py` | box-only features |
 | **Plex** | `plex/`: `client.py`, `linking.py`, `library.py`, `audio.py` | the Plex HTTP client, sign-in, what's on Plex across every server, audio-track selection |
-| **Library** | `media_organizer.py`, `reconcile.py` | filing finished downloads, cleaning up source torrents |
+| **Library** | `library/`: `filing.py`, `packs.py`, `audio.py`, `containers.py`, `reconcile.py` | filing finished downloads (single files and packs), default audio tracks, rewrapping containers, cleaning up source torrents |
 | **Downloads** | `pipeline.py`, `worker.py`, `tv_settings.py` | search → filter → score → add, and the background loops that drive requests. No FastAPI imports |
 | **HTTP** | `api/` | one module per area. The only place auth is enforced |
 | **CLI** | `cli.py` | recovery commands (`python -m app.cli --help`). Never imports `api/` |
@@ -98,7 +98,7 @@ don't loosen the rule. A new module goes in the test's `AREAS` table and in this
   - Make a new `api/` module only for a genuinely new area. Import it in `api/__init__.py`,
     where the import order is load-bearing (see the comment there).
 - **New background job.** Don't add it to `worker.py`. Write it as functions in its own
-  module (as `reconcile.py` and `box/drive_recovery.py` are), and keep only the loop that calls
+  module (as `library/reconcile.py` and `box/drive_recovery.py` are), and keep only the loop that calls
   it in the worker.
 - **New table or column.**
   - Change the schema and add an in-place migration in `db/schema.py`.
@@ -115,8 +115,9 @@ don't loosen the rule. A new module goes in the test's `AREAS` table and in this
   Add its API calls to `api/<area>.ts` and its types to `types/<area>.ts`.
 - **Shared frontend code.** Code used by one feature stays in that feature's folder. Move
   it to `lib/` or `components/` the moment a second feature needs it.
-- **Big files.** `worker.py` and `media_organizer.py` are already 1,300–2,000 lines. Don't grow them. Add a new module next to them instead, and split by
-  responsibility whenever you're already making a large change in one.
+- **Big files.** Keep modules to one responsibility. When one passes roughly 800 lines, add
+  a new module beside it rather than growing it, and split it whenever you're already making
+  a large change there.
 
 ## Rules that must not break
 

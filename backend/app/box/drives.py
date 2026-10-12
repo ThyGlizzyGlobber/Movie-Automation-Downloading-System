@@ -95,7 +95,7 @@ def library_roots(kind: str) -> list[Path]:
 
 def download_roots() -> list[Path]:
     """Where download folders sit, for the sweeps that clear finished ones
-    (app/reconcile.py): each drive's downloads/<category> on a box; off a
+    (app/library/reconcile.py): each drive's downloads/<category> on a box; off a
     box, the library folders, where qBittorrent's categories save."""
     if not managed():
         return [config.MOVIE_LIBRARY_ROOT, config.TV_LIBRARY_ROOT]

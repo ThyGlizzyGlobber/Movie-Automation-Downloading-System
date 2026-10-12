@@ -206,7 +206,7 @@ INFERRED_SD_SOURCES = (
 MIN_RESOLUTION = "480p"
 
 # Which audio track the organiser flags as default in the files it
-# places — see media_organizer._audio_default_disposition. Overridden
+# places — see library/audio.py's audio_default_disposition. Overridden
 # per household in Settings › Region.
 PREFERRED_AUDIO_LANGUAGE = os.environ.get("PREFERRED_AUDIO_LANGUAGE", "en")
 
@@ -263,7 +263,7 @@ CAM_BLOCKLIST: tuple[str, ...] = (
 # Non-video payload markers — a release whose real payload is an archive
 # or, worse, an executable, rather than a raw video file. Confirmed live
 # twice on the same Ted Lasso S04 subscription (2026-09-08): first a
-# .zipx result with no video file for media_organizer.select_video_file()
+# .zipx result with no video file for library/filing.py's select_video_file()
 # to find and organize; then, after archives alone were blocked, a
 # "Ted.Lasso.S04E06.1080p.ATVP.WEB.H264-NTb.exe" result — a fake-release
 # executable, the classic disguised-malware-download shape, not merely an
@@ -432,7 +432,7 @@ UPDATE_BACKUPS_KEPT = int(os.environ.get("UPDATE_BACKUPS_KEPT", "5"))
 
 # This container's path to the root of Plex's TV library, on the same
 # underlying dataset qBittorrent's "tv" category downloads into (required
-# for the hardlink in media_organizer.py to work at all — a hardlink can't
+# for the hardlink in library/filing.py to work at all — a hardlink can't
 # cross filesystems). Real host path is a NAS-deployment detail pinned down
 # in truenas/custom-app-compose.yaml, not here; local/test runs default to
 # a plainly-fake path since nothing local exercises this without the mount.
@@ -444,14 +444,14 @@ TV_LIBRARY_ROOT = Path(os.environ.get("TV_LIBRARY_ROOT", "/tv-library"))
 # reports `save_path` in its own container's namespace (e.g. "/media/TV
 # Shows"), which is a completely different string from this container's
 # own TV_LIBRARY_ROOT ("/tv-library") for the identical bytes on disk.
-# media_organizer.py needs both: this to recognize/strip qBittorrent's
+# library/filing.py needs both: this to recognize/strip qBittorrent's
 # prefix, TV_LIBRARY_ROOT to rebuild the equivalent path this container can
 # actually open. Unset by default — translation is then a no-op, matching
 # every environment (tests, this workstation) that doesn't run two
 # containers pointed at one shared mount.
 QBIT_TV_SAVE_PATH = os.environ.get("QBIT_TV_SAVE_PATH")
 
-# Extensions media_organizer.select_video_file() will consider an episode's
+# Extensions library/filing.py's select_video_file() will consider an episode's
 # real video file. Anything else in a torrent (.nfo, .srt, .txt) is
 # ignored outright, not just deprioritized.
 #
@@ -509,7 +509,7 @@ EPISODE_RECHECK_POLL_INTERVAL_SECONDS = int(os.environ.get("EPISODE_RECHECK_POLL
 # re-check confirms every organized copy is genuinely still in place. A
 # hardlinked organized copy shares the same underlying bytes as the
 # torrent's own file, so this never loses real data; the copy-fallback
-# case (hardlink unsupported — see media_organizer.py's `_link_or_copy`)
+# case (hardlink unsupported — see library/filing.py's `link_or_copy`)
 # already made a fully independent copy at organize time, so the same
 # holds there too. This is a deliberate tradeoff against continuing to
 # seed that torrent, made at the user's explicit request to keep the
@@ -616,7 +616,7 @@ TRAILER_PROBE_LIMIT = int(os.environ.get("TRAILER_PROBE_LIMIT", "6"))
 # tagged as an image) — Plex's scanner reads this straight from the file
 # itself, so it shows up as the item's poster/art regardless of what TMDB
 # metadata Plex would otherwise use, and no external image file needs to
-# exist alongside it for that to happen. media_organizer.py's ffprobe
+# exist alongside it for that to happen. library/containers.py's ffprobe
 # check (read-only, near-instant even on a huge file) needs its own
 # timeout distinct from the actual ffmpeg remux below.
 FFPROBE_TIMEOUT_SECONDS = int(os.environ.get("FFPROBE_TIMEOUT_SECONDS", "15"))
@@ -632,7 +632,7 @@ FFMPEG_STRIP_TIMEOUT_SECONDS = int(os.environ.get("FFMPEG_STRIP_TIMEOUT_SECONDS"
 # -- Settings › Plex: the library folders can be changed from the UI.
 #    An env var still wins (same convention as the qBittorrent fields);
 #    otherwise a saved value replaces the module constant at startup and
-#    again whenever the setting is saved, so media_organizer's callers,
+#    again whenever the setting is saved, so the library's callers,
 #    which read `config.MOVIE_LIBRARY_ROOT` at call time, follow along. --
 
 _MOVIE_ROOT_ENV = os.environ.get("MOVIE_LIBRARY_ROOT")
