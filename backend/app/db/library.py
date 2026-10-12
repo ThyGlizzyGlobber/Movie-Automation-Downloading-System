@@ -143,7 +143,7 @@ class StoreLibrary:
         """Every filed path, grouped by the name of the release it came
         from — the indexer's name for it, which is also how a download
         folder is found again once qBittorrent has forgotten the torrent
-        (see media_organizer.find_release_dir)."""
+        (see library/filing.py's find_release_dir)."""
         rows = self._conn.execute(
             "SELECT release_name, path FROM library_items WHERE release_name IS NOT NULL AND release_name != ''"
         ).fetchall()

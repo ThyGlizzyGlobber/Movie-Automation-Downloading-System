@@ -90,7 +90,7 @@ def test_add_torrent_raises_when_metadata_reports_a_failure():
         client.add_torrent("http://dead-link.example/x.torrent", category="movies")
 
 
-# -- torrent_files() — Stage 11's media_organizer reads this to pick the
+# -- torrent_files() — Stage 11's library/filing.py reads this to pick the
 #    real episode file out of a completed torrent --
 
 

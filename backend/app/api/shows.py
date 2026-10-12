@@ -29,7 +29,7 @@ from app.db import (
     ShowRow,
 )
 from app.matching.tv_resolve import ShowIdentity, episode_is_released, resolve_show
-from app.media_organizer import find_existing_episode_files
+from app.library.filing import find_existing_episode_files
 from app.tv_settings import resolve_tv_settings
 from app.worker import Worker
 

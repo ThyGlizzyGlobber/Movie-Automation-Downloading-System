@@ -46,7 +46,7 @@ def get_storage() -> dict:
     capacity (confirmed live against the real instance), so there's no way
     to derive a used-percentage from qBittorrent alone. TV_LIBRARY_ROOT is
     the same underlying dataset qBittorrent itself downloads into (see
-    media_organizer.py's translate_qbit_save_path comment), so this is
+    library/filing.py's translate_qbit_save_path comment), so this is
     still genuinely "the same disk qBittorrent is filling up" — just read
     from the one place that actually knows its total size. Movie and TV
     libraries currently share that one dataset too (see truenas/custom-

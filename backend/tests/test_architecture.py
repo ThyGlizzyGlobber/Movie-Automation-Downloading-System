@@ -43,8 +43,6 @@ PURE = {"recommendations"}
 # area (app/<area>/...), their entries here go: a module inside one of those
 # packages belongs to it.
 AREAS = {
-    "app.media_organizer": "library",
-    "app.reconcile": "library",
     "app.pipeline": "downloads",
     "app.worker": "downloads",
     "app.tv_settings": "downloads",

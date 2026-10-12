@@ -72,8 +72,8 @@ class PackDownloadResult:
     """Stage 13: one season- or complete-series-pack add attempt. Unlike
     `EpisodeDownloadResult`, this carries no single `season`/`episode` —
     which episodes a pack actually turns out to contain is only knowable
-    once its file list is inspected post-download (`media_organizer.
-    organize_pack`), not at search/add time."""
+    once its file list is inspected post-download (`library/packs.py`'s
+    `organize_pack`), not at search/add time."""
 
     status: str  # same vocabulary as DownloadResult/EpisodeDownloadResult
     identity: ShowIdentity

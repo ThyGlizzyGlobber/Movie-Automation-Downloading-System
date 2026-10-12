@@ -65,7 +65,7 @@ def extract_episode_identity(tokens: list[str], *, allow_x_form: bool = False) -
     already-tokenized tokens, if one is present — a contiguous "s01e04"
     token, or adjacent "s01"/"e04" tokens, first match wins; `None` if
     neither shape appears anywhere. Two independent callers: Stage 13's
-    `media_organizer.organize_pack` (which episode a pack's individual
+    `library/packs.py`'s `organize_pack` (which episode a pack's individual
     file represents) and score.py's `passes_not_a_tv_episode_filter`
     (whether a *movie* candidate is actually shaped like a TV episode at
     all — same title, wrong kind of thing, confirmed live: a movie

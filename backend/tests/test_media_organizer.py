@@ -6,11 +6,11 @@ from pathlib import Path
 
 import pytest
 
-from app import media_organizer
+from app.library import audio, containers, packs
 from app.core import config
 from app.matching.resolve import MediaIdentity
 from app.matching.tv_resolve import ShowIdentity
-from app.media_organizer import (
+from app.library.filing import (
     MediaOrganizerError,
     NoVideoFileError,
     build_episode_path,
@@ -18,10 +18,10 @@ from app.media_organizer import (
     find_existing_episode_file,
     organize_episode,
     organize_movie,
-    organize_pack,
     select_video_file,
     translate_qbit_save_path,
 )
+from app.library.packs import organize_pack
 
 LANTERNS = ShowIdentity(
     tmdb_id=95350,
@@ -391,7 +391,7 @@ def test_organize_episode_falls_back_to_copy_across_filesystems(tmp_path, monkey
     def _raise_exdev(_src, _dst):
         raise OSError(errno.EXDEV, "Invalid cross-device link")
 
-    monkeypatch.setattr("app.media_organizer.os.link", _raise_exdev)
+    monkeypatch.setattr("app.library.filing.os.link", _raise_exdev)
 
     target = organize_episode(LANTERNS, 1, 1, source)
 
@@ -412,7 +412,7 @@ def test_organize_episode_falls_back_to_copy_when_filesystem_lacks_hardlink_supp
     def _raise_enotsup(_src, _dst):
         raise OSError(errno.ENOTSUP, "Operation not supported")
 
-    monkeypatch.setattr("app.media_organizer.os.link", _raise_enotsup)
+    monkeypatch.setattr("app.library.filing.os.link", _raise_enotsup)
 
     target = organize_episode(LANTERNS, 1, 1, source)
 
@@ -953,7 +953,7 @@ def _fake_probe(monkeypatch, payload, returncode=0):
     def run(cmd, **kwargs):
         return subprocess.CompletedProcess(cmd, returncode, stdout=payload, stderr="")
 
-    monkeypatch.setattr(media_organizer.subprocess, "run", run)
+    monkeypatch.setattr(containers.subprocess, "run", run)
 
 
 def test_the_preferred_track_is_made_default_when_another_one_holds_it(monkeypatch, tmp_path):
@@ -961,7 +961,7 @@ def test_the_preferred_track_is_made_default_when_another_one_holds_it(monkeypat
     French flagged default, English sitting behind it."""
     _fake_probe(monkeypatch, _ffprobe_audio([_audio(1, "fre", default=1), _audio(2, "eng")]))
 
-    args = media_organizer._audio_default_disposition(tmp_path / "f.mkv", "en")
+    args = audio.audio_default_disposition(tmp_path / "f.mkv", "en")
 
     assert args == ["-disposition:a:0", "0", "-disposition:a:1", "default"]
 
@@ -971,14 +971,14 @@ def test_nothing_is_rewritten_when_the_preferred_track_is_already_default(monkey
     their free hardlink instead of paying for a remux to change nothing."""
     _fake_probe(monkeypatch, _ffprobe_audio([_audio(1, "eng", default=1), _audio(2, "fre")]))
 
-    assert media_organizer._audio_default_disposition(tmp_path / "f.mkv", "en") == []
+    assert audio.audio_default_disposition(tmp_path / "f.mkv", "en") == []
 
 
 def test_a_single_audio_track_is_left_alone(monkeypatch, tmp_path):
     """Nothing to choose between, whatever it is tagged."""
     _fake_probe(monkeypatch, _ffprobe_audio([_audio(1, "fre", default=1)]))
 
-    assert media_organizer._audio_default_disposition(tmp_path / "f.mkv", "en") == []
+    assert audio.audio_default_disposition(tmp_path / "f.mkv", "en") == []
 
 
 def test_a_file_with_no_track_in_that_language_is_left_alone(monkeypatch, tmp_path):
@@ -986,13 +986,13 @@ def test_a_file_with_no_track_in_that_language_is_left_alone(monkeypatch, tmp_pa
     than being pointed at a track that isn't there."""
     _fake_probe(monkeypatch, _ffprobe_audio([_audio(1, "jpn", default=1), _audio(2, "kor")]))
 
-    assert media_organizer._audio_default_disposition(tmp_path / "f.mkv", "en") == []
+    assert audio.audio_default_disposition(tmp_path / "f.mkv", "en") == []
 
 
 def test_an_untagged_track_is_not_assumed_to_be_the_preferred_one(monkeypatch, tmp_path):
     _fake_probe(monkeypatch, _ffprobe_audio([_audio(1, "fre", default=1), _audio(2, None)]))
 
-    assert media_organizer._audio_default_disposition(tmp_path / "f.mkv", "en") == []
+    assert audio.audio_default_disposition(tmp_path / "f.mkv", "en") == []
 
 
 def test_two_tracks_both_flagged_default_are_reduced_to_one(monkeypatch, tmp_path):
@@ -1000,7 +1000,7 @@ def test_two_tracks_both_flagged_default_are_reduced_to_one(monkeypatch, tmp_pat
     defaults is its own business — so say it once, explicitly."""
     _fake_probe(monkeypatch, _ffprobe_audio([_audio(1, "eng", default=1), _audio(2, "fre", default=1)]))
 
-    args = media_organizer._audio_default_disposition(tmp_path / "f.mkv", "en")
+    args = audio.audio_default_disposition(tmp_path / "f.mkv", "en")
 
     assert args == ["-disposition:a:0", "default", "-disposition:a:1", "0"]
 
@@ -1010,7 +1010,7 @@ def test_a_failed_probe_leaves_the_file_alone(monkeypatch, tmp_path):
     organizing a file over this."""
     _fake_probe(monkeypatch, "", returncode=1)
 
-    assert media_organizer._audio_default_disposition(tmp_path / "f.mkv", "en") == []
+    assert audio.audio_default_disposition(tmp_path / "f.mkv", "en") == []
 
 
 # ---------------------------------------------------------------------------
@@ -1049,14 +1049,14 @@ def _probe_returns(monkeypatch, by_name):
         ]
         return subprocess.CompletedProcess(cmd, 0, stdout=json.dumps({"streams": streams}), stderr="")
 
-    monkeypatch.setattr(media_organizer.subprocess, "run", run)
+    monkeypatch.setattr(containers.subprocess, "run", run)
 
 
 def test_the_backfill_plans_the_same_change_the_organiser_would(monkeypatch, tmp_path):
     _mkv(_filed(tmp_path) / "French Release.mkv", None)
     _probe_returns(monkeypatch, {"French Release.mkv": [("fre", True), ("eng", False)]})
 
-    plans = media_organizer.plan_audio_default_fix(tmp_path, "en")
+    plans = audio.plan_audio_default_fix(tmp_path, "en")
 
     assert [(p.path.name, p.wanted, p.skipped) for p in plans] == [("French Release.mkv", 1, None)]
     assert plans[0].summary == "[fre* eng]"
@@ -1069,7 +1069,7 @@ def test_a_file_that_is_already_right_is_not_in_the_plan_at_all(monkeypatch, tmp
     _mkv(tmp_path / "Fine.mkv", None)
     _probe_returns(monkeypatch, {"Fine.mkv": [("eng", True), ("fre", False)]})
 
-    assert media_organizer.plan_audio_default_fix(tmp_path, "en") == []
+    assert audio.plan_audio_default_fix(tmp_path, "en") == []
 
 
 def test_a_still_hardlinked_file_is_skipped_rather_than_edited(monkeypatch, tmp_path):
@@ -1084,7 +1084,7 @@ def test_a_still_hardlinked_file_is_skipped_rather_than_edited(monkeypatch, tmp_
         "torrent-copy.mkv": [("fre", True), ("eng", False)],
     })
 
-    plans = media_organizer.plan_audio_default_fix(tmp_path, "en")
+    plans = audio.plan_audio_default_fix(tmp_path, "en")
 
     assert plans and all(p.wanted is None for p in plans)
     assert all("hardlinked" in p.skipped for p in plans)
@@ -1096,7 +1096,7 @@ def test_a_non_mkv_is_skipped_loudly_rather_than_dropped(monkeypatch, tmp_path):
     _mkv(_filed(tmp_path) / "Movie.mp4", None)
     _probe_returns(monkeypatch, {"Movie.mp4": [("fre", True), ("eng", False)]})
 
-    plans = media_organizer.plan_audio_default_fix(tmp_path, "en")
+    plans = audio.plan_audio_default_fix(tmp_path, "en")
 
     assert len(plans) == 1
     assert plans[0].wanted is None
@@ -1110,8 +1110,8 @@ def test_the_backfill_and_the_organiser_cannot_disagree(monkeypatch, tmp_path):
     source = _mkv(_filed(tmp_path) / "Both.mkv", None)
     _probe_returns(monkeypatch, {"Both.mkv": [("ita", True), ("eng", False)]})
 
-    organiser = media_organizer._audio_default_disposition(source, "en")
-    backfill = media_organizer.plan_audio_default_fix(tmp_path, "en")[0]
+    organiser = audio.audio_default_disposition(source, "en")
+    backfill = audio.plan_audio_default_fix(tmp_path, "en")[0]
 
     assert organiser == ["-disposition:a:0", "0", "-disposition:a:1", "default"]
     assert backfill.wanted == 1
@@ -1122,9 +1122,9 @@ def test_apply_builds_the_track_selectors_mkvpropedit_expects(monkeypatch, tmp_p
     second audio track is `track:a2`. Off by one here would silently flag
     the wrong track."""
     path = _mkv(tmp_path / "X.mkv", None)
-    plan = media_organizer.AudioFixPlan(
+    plan = audio.AudioFixPlan(
         path=path,
-        tracks=[media_organizer.AudioTrack("fre", True), media_organizer.AudioTrack("eng", False)],
+        tracks=[audio.AudioTrack("fre", True), audio.AudioTrack("eng", False)],
         wanted=1,
         skipped=None,
     )
@@ -1134,9 +1134,9 @@ def test_apply_builds_the_track_selectors_mkvpropedit_expects(monkeypatch, tmp_p
         seen["cmd"] = cmd
         return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
 
-    monkeypatch.setattr(media_organizer.subprocess, "run", run)
+    monkeypatch.setattr(containers.subprocess, "run", run)
 
-    assert media_organizer.apply_audio_default_fix(plan) is None
+    assert audio.apply_audio_default_fix(plan) is None
     assert seen["cmd"][2:] == [
         "--edit", "track:a1", "--set", "flag-default=0",
         "--edit", "track:a2", "--set", "flag-default=1",
@@ -1145,9 +1145,9 @@ def test_apply_builds_the_track_selectors_mkvpropedit_expects(monkeypatch, tmp_p
 
 def test_a_missing_mkvpropedit_says_so_instead_of_crashing(monkeypatch, tmp_path):
     path = _mkv(tmp_path / "X.mkv", None)
-    plan = media_organizer.AudioFixPlan(
+    plan = audio.AudioFixPlan(
         path=path,
-        tracks=[media_organizer.AudioTrack("fre", True), media_organizer.AudioTrack("eng", False)],
+        tracks=[audio.AudioTrack("fre", True), audio.AudioTrack("eng", False)],
         wanted=1,
         skipped=None,
     )
@@ -1155,9 +1155,9 @@ def test_a_missing_mkvpropedit_says_so_instead_of_crashing(monkeypatch, tmp_path
     def run(cmd, **kwargs):
         raise FileNotFoundError("mkvpropedit")
 
-    monkeypatch.setattr(media_organizer.subprocess, "run", run)
+    monkeypatch.setattr(containers.subprocess, "run", run)
 
-    assert "mkvtoolnix" in media_organizer.apply_audio_default_fix(plan)
+    assert "mkvtoolnix" in audio.apply_audio_default_fix(plan)
 
 
 # ---------------------------------------------------------------------------
@@ -1186,10 +1186,10 @@ def test_a_successful_rewrap_removes_the_mp4(monkeypatch, tmp_path):
         Path(cmd[-1]).write_bytes(b"mkv")
         return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
 
-    monkeypatch.setattr(media_organizer.subprocess, "run", run)
-    plan = media_organizer.plan_container_conversion(tmp_path)[0]
+    monkeypatch.setattr(containers.subprocess, "run", run)
+    plan = containers.plan_container_conversion(tmp_path)[0]
 
-    assert media_organizer.apply_container_conversion(plan) is None
+    assert containers.apply_container_conversion(plan) is None
     assert plan.target.exists()
     assert not source.exists()
 
@@ -1203,10 +1203,10 @@ def test_a_failed_rewrap_leaves_the_mp4_exactly_as_it_was(monkeypatch, tmp_path)
             return subprocess.CompletedProcess(cmd, 0, stdout=_streams_json(["video", "audio"]), stderr="")
         return subprocess.CompletedProcess(cmd, 1, stdout="", stderr="ffmpeg exploded")
 
-    monkeypatch.setattr(media_organizer.subprocess, "run", run)
-    plan = media_organizer.plan_container_conversion(tmp_path)[0]
+    monkeypatch.setattr(containers.subprocess, "run", run)
+    plan = containers.plan_container_conversion(tmp_path)[0]
 
-    assert media_organizer.apply_container_conversion(plan) is not None
+    assert containers.apply_container_conversion(plan) is not None
     assert source.read_bytes() == b"mp4"
     assert not plan.target.exists()
     assert list(source.parent.iterdir()) == [source]
@@ -1229,10 +1229,10 @@ def test_a_rewrap_that_lost_a_track_does_not_delete_the_original(monkeypatch, tm
         Path(cmd[-1]).write_bytes(b"truncated")
         return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
 
-    monkeypatch.setattr(media_organizer.subprocess, "run", run)
-    plan = media_organizer.plan_container_conversion(tmp_path)[0]
+    monkeypatch.setattr(containers.subprocess, "run", run)
+    plan = containers.plan_container_conversion(tmp_path)[0]
 
-    error = media_organizer.apply_container_conversion(plan)
+    error = containers.apply_container_conversion(plan)
 
     assert "stream count changed" in error
     assert source.exists()
@@ -1254,9 +1254,9 @@ def test_mov_text_subtitles_are_converted_rather_than_copied(monkeypatch, tmp_pa
         Path(cmd[-1]).write_bytes(b"mkv")
         return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
 
-    monkeypatch.setattr(media_organizer.subprocess, "run", run)
-    plan = media_organizer.plan_container_conversion(tmp_path)[0]
-    media_organizer.apply_container_conversion(plan)
+    monkeypatch.setattr(containers.subprocess, "run", run)
+    plan = containers.plan_container_conversion(tmp_path)[0]
+    containers.apply_container_conversion(plan)
 
     assert "-c:s" in seen["cmd"]
     assert seen["cmd"][seen["cmd"].index("-c:s") + 1] == "srt"
@@ -1270,8 +1270,8 @@ def test_an_existing_mkv_of_the_same_name_stops_the_conversion(monkeypatch, tmp_
     def run(cmd, **kwargs):
         return subprocess.CompletedProcess(cmd, 0, stdout=_streams_json(["video", "audio"]), stderr="")
 
-    monkeypatch.setattr(media_organizer.subprocess, "run", run)
-    plan = media_organizer.plan_container_conversion(tmp_path)[0]
+    monkeypatch.setattr(containers.subprocess, "run", run)
+    plan = containers.plan_container_conversion(tmp_path)[0]
 
     assert plan.skipped is not None
     assert (_filed(tmp_path) / "Show - s01e01.mkv").read_bytes() == b"already here"
@@ -1280,7 +1280,7 @@ def test_an_existing_mkv_of_the_same_name_stops_the_conversion(monkeypatch, tmp_
 def test_mkvs_are_left_out_of_the_plan_entirely(monkeypatch, tmp_path):
     (tmp_path / "Already Fine.mkv").write_bytes(b"mkv")
 
-    assert media_organizer.plan_container_conversion(tmp_path) == []
+    assert containers.plan_container_conversion(tmp_path) == []
 
 
 # ---------------------------------------------------------------------------
@@ -1298,7 +1298,7 @@ def _remux_writes_an_mkv(monkeypatch, streams=("video", "audio")):
         Path(cmd[-1]).write_bytes(b"remuxed")
         return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
 
-    monkeypatch.setattr(media_organizer.subprocess, "run", run)
+    monkeypatch.setattr(containers.subprocess, "run", run)
 
 
 def test_an_mp4_episode_is_filed_as_an_mkv(tmp_path, monkeypatch):
@@ -1368,7 +1368,7 @@ def test_a_failed_rewrap_files_the_mp4_under_its_own_name(tmp_path, monkeypatch)
             return subprocess.CompletedProcess(cmd, 0, stdout='{"streams": []}', stderr="")
         return subprocess.CompletedProcess(cmd, 1, stdout="", stderr="nope")
 
-    monkeypatch.setattr(media_organizer.subprocess, "run", run)
+    monkeypatch.setattr(containers.subprocess, "run", run)
 
     target = organize_episode(LANTERNS, 1, 1, source)
 
@@ -1405,9 +1405,9 @@ def test_data_streams_are_dropped_because_matroska_refuses_them(monkeypatch, tmp
         Path(cmd[-1]).write_bytes(b"mkv")
         return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
 
-    monkeypatch.setattr(media_organizer.subprocess, "run", run)
-    plan = media_organizer.plan_container_conversion(tmp_path)[0]
-    media_organizer.apply_container_conversion(plan)
+    monkeypatch.setattr(containers.subprocess, "run", run)
+    plan = containers.plan_container_conversion(tmp_path)[0]
+    containers.apply_container_conversion(plan)
 
     assert "-0:d?" in seen["cmd"]
 
@@ -1432,9 +1432,9 @@ def test_cover_art_is_dropped_by_index_not_by_a_metadata_specifier(monkeypatch, 
         Path(cmd[-1]).write_bytes(b"mkv")
         return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
 
-    monkeypatch.setattr(media_organizer.subprocess, "run", run)
-    plan = media_organizer.plan_container_conversion(tmp_path)[0]
-    media_organizer.apply_container_conversion(plan)
+    monkeypatch.setattr(containers.subprocess, "run", run)
+    plan = containers.plan_container_conversion(tmp_path)[0]
+    containers.apply_container_conversion(plan)
 
     assert "-0:2" in seen["cmd"]
     assert not any("attached_pic" in str(arg) for arg in seen["cmd"])
@@ -1452,8 +1452,8 @@ def test_a_file_with_no_index_says_so_rather_than_ffprobe_cant_read_it(monkeypat
             cmd, 1, stdout="", stderr="[mov,mp4 @ 0x1] moov atom not found\nBroken.mp4: Invalid data found"
         )
 
-    monkeypatch.setattr(media_organizer.subprocess, "run", run)
-    plan = media_organizer.plan_container_conversion(tmp_path)[0]
+    monkeypatch.setattr(containers.subprocess, "run", run)
+    plan = containers.plan_container_conversion(tmp_path)[0]
 
     assert "no moov atom" in plan.skipped
     assert "will not play anywhere" in plan.skipped
@@ -1471,12 +1471,12 @@ def test_the_failure_reason_is_the_line_that_explains_it():
         "Conversion failed!\n"
     )
 
-    assert "supported for Matroska" in media_organizer._ffmpeg_reason(stderr)
+    assert "supported for Matroska" in containers.ffmpeg_reason(stderr)
 
 
 def test_the_failure_reason_never_comes_back_empty():
-    assert media_organizer._ffmpeg_reason("") == "ffmpeg failed with no output"
-    assert media_organizer._ffmpeg_reason(None) == "ffmpeg failed with no output"
+    assert containers.ffmpeg_reason("") == "ffmpeg failed with no output"
+    assert containers.ffmpeg_reason(None) == "ffmpeg failed with no output"
 
 
 # ---------------------------------------------------------------------------
@@ -1498,7 +1498,7 @@ def test_a_download_in_progress_is_not_converted(monkeypatch, tmp_path):
     release.mkdir()
     (release / "IT.S01E01.mp4").write_bytes(b"still downloading")
 
-    plans = media_organizer.plan_container_conversion(tmp_path)
+    plans = containers.plan_container_conversion(tmp_path)
 
     assert len(plans) == 1
     assert plans[0].skipped is not None
@@ -1516,8 +1516,8 @@ def test_a_filed_copy_is_converted(monkeypatch, tmp_path):
         payload = {"streams": [{"index": 0, "codec_type": "video"}, {"index": 1, "codec_type": "audio"}]}
         return subprocess.CompletedProcess(cmd, 0, stdout=json.dumps(payload), stderr="")
 
-    monkeypatch.setattr(media_organizer.subprocess, "run", run)
-    plans = media_organizer.plan_container_conversion(tmp_path)
+    monkeypatch.setattr(containers.subprocess, "run", run)
+    plans = containers.plan_container_conversion(tmp_path)
 
     assert len(plans) == 1
     assert plans[0].skipped is None
@@ -1531,7 +1531,7 @@ def test_the_audio_fix_also_leaves_downloads_alone(monkeypatch, tmp_path):
     (release / "Some.Show.S01E01.mkv").write_bytes(b"downloading")
     _probe_returns(monkeypatch, {"Some.Show.S01E01.mkv": [("fre", True), ("eng", False)]})
 
-    plans = media_organizer.plan_audio_default_fix(tmp_path, "en")
+    plans = audio.plan_audio_default_fix(tmp_path, "en")
 
     assert len(plans) == 1
     assert plans[0].wanted is None
@@ -1569,7 +1569,7 @@ def test_the_pack_span_is_read_from_the_files_not_the_name(tmp_path, monkeypatch
     decides whether more than one show is in here."""
     qbt = _franchise_pack(tmp_path)
 
-    assert media_organizer.pack_season_span("hash", qbt) == (1, 5)
+    assert packs.pack_season_span("hash", qbt) == (1, 5)
 
 
 def test_a_slice_of_the_pack_is_filed_and_renumbered(tmp_path, monkeypatch):
@@ -1580,7 +1580,7 @@ def test_a_slice_of_the_pack_is_filed_and_renumbered(tmp_path, monkeypatch):
     monkeypatch.setattr(config, "TV_LIBRARY_ROOT", tmp_path / "library")
     qbt = _franchise_pack(tmp_path)
 
-    placed = media_organizer.organize_pack(
+    placed = packs.organize_pack(
         JLU, "hash", qbt, None, None, None, only_seasons=(3, 5), season_offset=-2
     )
 
@@ -1594,7 +1594,7 @@ def test_the_other_half_of_the_pack_is_filed_as_the_other_show(tmp_path, monkeyp
     monkeypatch.setattr(config, "TV_LIBRARY_ROOT", tmp_path / "library")
     qbt = _franchise_pack(tmp_path)
 
-    placed = media_organizer.organize_pack(JL, "hash", qbt, None, None, None, only_seasons=(1, 2), season_offset=0)
+    placed = packs.organize_pack(JL, "hash", qbt, None, None, None, only_seasons=(1, 2), season_offset=0)
 
     assert sorted(season for season, _ep, _path in placed) == [1, 2]
     assert all("Justice League (2001)" in str(p) for _s, _e, p in placed)
@@ -1606,8 +1606,8 @@ def test_the_two_passes_together_account_for_every_file(tmp_path, monkeypatch):
     monkeypatch.setattr(config, "TV_LIBRARY_ROOT", tmp_path / "library")
     qbt = _franchise_pack(tmp_path)
 
-    lead = media_organizer.organize_pack(JL, "hash", qbt, None, None, None, only_seasons=(1, 2), season_offset=0)
-    rest = media_organizer.organize_pack(JLU, "hash", qbt, None, None, None, only_seasons=(3, 5), season_offset=-2)
+    lead = packs.organize_pack(JL, "hash", qbt, None, None, None, only_seasons=(1, 2), season_offset=0)
+    rest = packs.organize_pack(JLU, "hash", qbt, None, None, None, only_seasons=(3, 5), season_offset=-2)
 
     paths = [p for _s, _e, p in lead + rest]
     assert len(paths) == 5
@@ -1630,7 +1630,7 @@ def test_every_file_the_organizer_can_place_is_counted_in_the_span(tmp_path):
     ]
     qbt = FakeQBTClient(str(root), [{"name": n} for n in names])
 
-    assert media_organizer.pack_season_span("hash", qbt) == (1, 5)
+    assert packs.pack_season_span("hash", qbt) == (1, 5)
 
 
 def test_what_the_organizer_wont_file_does_not_count_toward_the_span(tmp_path):
@@ -1639,4 +1639,4 @@ def test_what_the_organizer_wont_file_does_not_count_toward_the_span(tmp_path):
     names = ["Show.S01E01.mkv", "Show.S02E01.mkv", "Show.S07E01.nfo", "sample-Show.S08E01.mkv"]
     qbt = FakeQBTClient(str(root), [{"name": n} for n in names])
 
-    assert media_organizer.pack_season_span("hash", qbt) == (1, 2)
+    assert packs.pack_season_span("hash", qbt) == (1, 2)

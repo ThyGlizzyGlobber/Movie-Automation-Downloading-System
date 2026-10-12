@@ -46,7 +46,7 @@ def library_folders(drive_id: str) -> list[str]:
 
 def _title_folder(name: str) -> tuple[str, int | None, int | None]:
     """"Title (2019) {tmdb-123}" as this app names a title's folder
-    (media_organizer.build_movie_path / build_episode_path)."""
+    (library/filing.py's build_movie_path / build_episode_path)."""
     hint = _TMDB_HINT.search(name)
     name = _TMDB_HINT.sub("", name)
     year = _YEAR.search(name)
