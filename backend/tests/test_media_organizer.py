@@ -6,7 +6,8 @@ from pathlib import Path
 
 import pytest
 
-from app import config, media_organizer
+from app import media_organizer
+from app.core import config
 from app.media_organizer import (
     MediaOrganizerError,
     NoVideoFileError,

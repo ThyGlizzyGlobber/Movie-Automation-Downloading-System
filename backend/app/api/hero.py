@@ -4,12 +4,12 @@ import concurrent.futures
 
 from fastapi import Depends, HTTPException
 
-from app.cache import ttl_cache
-from app.db import PlexServerRow, RequestStore
-from app.plex import plex_library_lookup
-from app.tmdb import TMDBClient, TMDBError
 from app.api.deps import get_plex_server, get_store, get_tmdb, logger, resolve_region, router
 from app.api.titles import get_movie_detail, get_tv_detail
+from app.catalogue.tmdb import TMDBClient, TMDBError
+from app.core.cache import ttl_cache
+from app.db import PlexServerRow, RequestStore
+from app.plex import plex_library_lookup
 
 
 # ---------------------------------------------------------------------------

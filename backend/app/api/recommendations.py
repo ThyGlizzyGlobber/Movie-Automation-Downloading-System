@@ -20,12 +20,13 @@ from typing import Literal
 from fastapi import Depends, Query
 from pydantic import BaseModel, Field
 
-from app import feed, language, moods, taste
-from app.db import PlexServerRow, RequestStore, SessionRow
-from app.plex import user_watch_history
-from app.tmdb import TMDBClient
 from app.api.deps import get_plex_server, get_store, get_tmdb, require_session, resolve_region, router
 from app.api.helpers import _annotate_on_plex
+from app.catalogue import language
+from app.catalogue.tmdb import TMDBClient
+from app.db import PlexServerRow, RequestStore, SessionRow
+from app.plex import user_watch_history
+from app.recommendations import feed, moods, taste
 
 logger = logging.getLogger(__name__)
 

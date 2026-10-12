@@ -10,9 +10,10 @@ import time
 from fastapi import Depends, HTTPException, Request
 from pydantic import BaseModel
 
-from app import updates, version
-from app.db import RequestStore
+from app import updates
 from app.api.deps import _client_ip, admin_router, get_store
+from app.core import version
+from app.db import RequestStore
 
 # How long a registry answer is reused before asking again. The button asks
 # again regardless (`refresh`); this only spares the registry a lookup every

@@ -11,10 +11,10 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 
+from app.catalogue.tmdb import TMDBClient
 from app.db import PlexServerRow, RequestStore, SessionRow
 from app.plex import LoginSession, PlexLinker
 from app.qbt import QBTClient
-from app.tmdb import TMDBClient
 from app.worker import Worker
 
 

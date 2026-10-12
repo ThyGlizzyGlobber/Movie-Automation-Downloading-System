@@ -10,8 +10,8 @@ from datetime import date, datetime, timedelta, timezone
 
 from collections import Counter
 
+from app.catalogue.tmdb import TMDBClient
 from app.normalize import normalize_text, generate_variants, token_overlap, tokenize
-from app.tmdb import TMDBClient
 
 logger = logging.getLogger("app.tv_resolve")
 

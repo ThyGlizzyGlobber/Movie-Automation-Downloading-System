@@ -20,7 +20,7 @@ import logging
 import shutil
 from pathlib import Path
 
-from app import config
+from app.core import config
 from app.media_organizer import find_release_dir
 from app.normalize import normalize_text
 

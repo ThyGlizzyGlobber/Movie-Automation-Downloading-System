@@ -11,14 +11,15 @@ from fastapi import FastAPI
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 
-from app import config, updates, version
+from app import updates
+from app.api.deps import limiter, logger
+from app.catalogue.tmdb import TMDBClient
+from app.core import config, version
+from app.core.logging_config import configure_logging
 from app.db import RequestStore
-from app.logging_config import configure_logging
 from app.plex import LoginSession, PlexLinker
 from app.qbt import QBTClient
-from app.tmdb import TMDBClient
 from app.worker import Worker
-from app.api.deps import limiter, logger
 
 
 configure_logging()

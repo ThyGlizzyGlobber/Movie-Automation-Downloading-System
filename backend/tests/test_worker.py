@@ -9,11 +9,11 @@ from pathlib import Path
 
 import pytest
 
-from app import config
+from app.core import config
 from app.db import RequestStore, ShowEpisodeRow
 from app.qbt import QBTError
-from app.tv_settings import TVScheduleSettings
 from app.tv_resolve import resolve_show
+from app.tv_settings import TVScheduleSettings
 from app.worker import Worker
 
 
@@ -1562,7 +1562,7 @@ def test_check_show_skips_episodes_already_in_ledger():
 
 
 def test_check_show_returns_zero_and_leaves_last_checked_unset_on_tmdb_error(caplog):
-    from app.tmdb import TMDBError
+    from app.catalogue.tmdb import TMDBError
 
     store = RequestStore(":memory:")
     show = store.create_show(tmdb_id=95350, title="Lanterns")

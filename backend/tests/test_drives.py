@@ -7,7 +7,8 @@ from pathlib import Path
 
 import pytest
 
-from app import config, drives, pipeline, worker
+from app import drives, pipeline, worker
+from app.core import config
 from app.media_organizer import organize_movie
 from app.resolve import MediaIdentity
 

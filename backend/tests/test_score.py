@@ -1,7 +1,7 @@
-from app import config
+from app.core import config
+from app.normalize import tokenize
 from app.pipeline_settings import PipelineSettings
 from app.resolve import MediaIdentity
-from app.normalize import tokenize
 from app.score import (
     passes_resolution_floor,
     dedup_candidates,

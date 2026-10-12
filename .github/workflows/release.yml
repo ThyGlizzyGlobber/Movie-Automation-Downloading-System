@@ -9,7 +9,7 @@
 #
 # Your own box follows beta, a customer's follows stable, and the only way
 # anything reaches stable is a tag you push by hand (README › Releases).
-# Versions are worked out exactly as backend/app/version.py does from the
+# Versions are worked out exactly as backend/app/core/version.py does from the
 # deployed clone, then baked into the image, which has no .git of its own.
 name: Release
 

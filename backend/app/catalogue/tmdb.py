@@ -7,7 +7,7 @@ from datetime import datetime, timedelta, timezone
 
 import requests
 
-from app.cache import ttl_cache
+from app.core.cache import ttl_cache
 
 BASE_URL = "https://api.themoviedb.org/3"
 POPULAR_DISCOVER_TTL_SECONDS = 60 * 60
@@ -214,7 +214,7 @@ def logo_aspect(images: dict | None, path: str | None) -> float | None:
     The page needs it before the image arrives to say how wide the logo
     will be drawn — a squarish mark is held by the banner's height to a
     fraction of a wide one's width — and so fetch the smaller encoding
-    when that is all the screen needs (app/logos.py)."""
+    when that is all the screen needs (app/catalogue/logos.py)."""
     for logo in (images or {}).get("logos") or []:
         if path and logo.get("file_path") == path:
             ratio = logo.get("aspect_ratio")

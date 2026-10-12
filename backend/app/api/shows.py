@@ -6,21 +6,6 @@ from datetime import datetime, timezone
 from fastapi import Depends, HTTPException
 from pydantic import BaseModel, field_validator, model_validator
 
-from app.db import (
-    FAILED_OR_CANCELLED_STATUSES,
-    NON_TERMINAL_STATUSES,
-    PlexServerRow,
-    RequestRow,
-    RequestStore,
-    SessionRow,
-    ShowRow,
-)
-from app.media_organizer import find_existing_episode_files
-from app.tmdb import TMDBClient, TMDBError
-from app.tv_resolve import ShowIdentity, episode_is_released, resolve_show
-from app.tv_settings import resolve_tv_settings
-from app.tvmaze import TVMazeClient, season_airstamps
-from app.worker import Worker
 from app.api.deps import (
     ensure_can_replace_copies,
     get_store,
@@ -32,6 +17,21 @@ from app.api.deps import (
     router,
 )
 from app.api.schemas import RequestOut
+from app.catalogue.tmdb import TMDBClient, TMDBError
+from app.catalogue.tvmaze import TVMazeClient, season_airstamps
+from app.db import (
+    FAILED_OR_CANCELLED_STATUSES,
+    NON_TERMINAL_STATUSES,
+    PlexServerRow,
+    RequestRow,
+    RequestStore,
+    SessionRow,
+    ShowRow,
+)
+from app.media_organizer import find_existing_episode_files
+from app.tv_resolve import ShowIdentity, episode_is_released, resolve_show
+from app.tv_settings import resolve_tv_settings
+from app.worker import Worker
 
 
 class SubscribeShowRequest(BaseModel):

@@ -14,7 +14,7 @@ score.py/pipeline.py stay decoupled from the SQLite settings table (the
 from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING
 
-from app import config
+from app.core import config
 from app.normalize import normalize_text
 
 if TYPE_CHECKING:

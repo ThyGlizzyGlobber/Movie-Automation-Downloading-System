@@ -4,7 +4,8 @@ The numbers in language.py's docstring are the reason this exists; these
 are the rules that produce them.
 """
 
-from app import language, moods
+from app.catalogue import language
+from app.recommendations import moods
 
 
 def test_a_mood_is_asked_in_the_households_language():

@@ -24,7 +24,7 @@ import time
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
-from app import config
+from app.core import config
 
 _DESCRIBE = re.compile(r"^v(\d+)\.(\d+)\.(\d+)-(\d+)-g([0-9a-f]+)$")
 _CACHE_SECONDS = 60
@@ -52,7 +52,7 @@ def _repo() -> Path:
     deployed = Path(config.DEPLOY_REPO_PATH)
     if (deployed / ".git").exists():
         return deployed
-    return Path(__file__).resolve().parents[2]
+    return config.BACKEND_DIR.parent
 
 
 def _git(*args: str) -> str | None:

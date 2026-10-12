@@ -5,7 +5,7 @@ import re
 
 import pytest
 
-from app import config
+from app.core import config
 from app.pipeline import download, download_episode, download_pack, find_best_episode_candidate
 from app.pipeline_settings import PipelineSettings
 from app.qbt import QBTError

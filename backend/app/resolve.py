@@ -5,8 +5,8 @@ already-specific movie (Stage 2's job)."""
 
 from dataclasses import dataclass, field
 
+from app.catalogue.tmdb import TMDBClient
 from app.normalize import generate_variants
-from app.tmdb import TMDBClient
 
 
 @dataclass

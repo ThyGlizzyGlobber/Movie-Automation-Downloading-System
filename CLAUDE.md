@@ -49,10 +49,10 @@ don't loosen the rule. A new module goes in the test's `AREAS` table and in this
 
 | Area | Modules | Owns |
 |---|---|---|
-| **Core** | `config.py`, `cache.py`, `logging_config.py`, `version.py` | env and defaults, TTL cache, logging, the running version |
+| **Core** | `core/`: `config.py`, `cache.py`, `logging_config.py`, `version.py` | env and defaults, TTL cache, logging, the running version |
 | **Store** (`db`) | `db/` | the SQLite store: `RequestStore` (`store.py`) built from one mixin per group of tables, plus `rows.py` and `schema.py` |
-| **Catalogue** | `tmdb.py`, `tvmaze.py`, `language.py`, `logos.py`, `trailers.py` | metadata, artwork, trailers |
-| **Recommendations** | `feed.py`, `taste.py`, `moods.py` | home-page rows. Pure logic: imports nothing from the app |
+| **Catalogue** | `catalogue/`: `tmdb.py`, `tvmaze.py`, `language.py`, `logos.py`, `trailers.py` | metadata, artwork, trailers |
+| **Recommendations** | `recommendations/`: `feed.py`, `taste.py`, `moods.py` | home-page rows. Pure logic: imports nothing from the app |
 | **qBittorrent** | `qbt.py` | the qBittorrent WebUI client |
 | **Release matching** (`matching`) | `normalize.py`, `resolve.py`, `tv_resolve.py`, `score.py`, `tv_score.py`, `pack_score.py`, `pipeline_settings.py` | title → search queries, then "right title?" and "best release?" rules |
 | **Updater** | `updates.py`, `deploy.py` | the two update paths, and the request files the NAS updater reads |
@@ -110,7 +110,7 @@ don't loosen the rule. A new module goes in the test's `AREAS` table and in this
   - If it's editable in the app, follow the `pipeline_settings.py` / `tv_settings.py`
     pattern: a dataclass resolved fresh from the store each time it's used, so edits apply
     with no restart.
-  - If it comes from the environment, put it in `config.py`.
+  - If it comes from the environment, put it in `core/config.py`.
 - **New page.** Make a `features/<area>/` folder and add a lazy route in `app/routes.tsx`.
   Add its API calls to `api/<area>.ts` and its types to `types/<area>.ts`.
 - **Shared frontend code.** Code used by one feature stays in that feature's folder. Move

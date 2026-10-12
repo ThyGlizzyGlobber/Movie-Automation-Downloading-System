@@ -1,4 +1,4 @@
-from app import config
+from app.core import config
 from app.db import RequestStore
 from app.pipeline_settings import (
     PipelineSettings,

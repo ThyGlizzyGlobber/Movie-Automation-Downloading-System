@@ -8,10 +8,11 @@ from datetime import datetime, timedelta, timezone
 import pytest
 from fastapi.testclient import TestClient
 
-from app import api, box_plex, config, drive_recovery, drives, updates
+from app import api, box_plex, drive_recovery, drives, updates
 from app.api import deps
+from app.catalogue.tmdb import TMDBError
+from app.core import config
 from app.db import RequestStore
-from app.tmdb import TMDBError
 
 TB = 1000**4
 MOVIE = "/media/drive2/Movies/Heat (1995) {tmdb-949}/Heat.1995.1080p.BluRay.mkv"

@@ -6,15 +6,6 @@ from dataclasses import asdict
 from fastapi import Depends, HTTPException, Request
 from pydantic import BaseModel, Field, field_validator, model_validator
 
-from app import config, language
-from app.db import RequestStore
-from app.pipeline_settings import (
-    VALID_MIN_RESOLUTIONS,
-    is_valid_min_resolution,
-    resolve_pipeline_settings,
-    settings_from_raw,
-)
-from app.tv_settings import resolve_tv_settings
 from app.api.deps import DEFAULT_CERTIFICATION_REGION, _client_ip, admin_router, get_store
 from app.api.setup import (
     SetupQbtRequest,
@@ -23,6 +14,16 @@ from app.api.setup import (
     _update_qbt_connection,
     _update_tmdb_key,
 )
+from app.catalogue import language
+from app.core import config
+from app.db import RequestStore
+from app.pipeline_settings import (
+    VALID_MIN_RESOLUTIONS,
+    is_valid_min_resolution,
+    resolve_pipeline_settings,
+    settings_from_raw,
+)
+from app.tv_settings import resolve_tv_settings
 
 
 class RetentionSettings(BaseModel):

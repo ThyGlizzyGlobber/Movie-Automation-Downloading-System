@@ -7,7 +7,8 @@ import os
 
 import pytest
 
-from app import config, trailers
+from app.catalogue import trailers
+from app.core import config
 
 
 @pytest.fixture(autouse=True)

@@ -7,13 +7,14 @@ from datetime import datetime, timezone
 from fastapi import Depends, HTTPException
 from fastapi.responses import FileResponse, RedirectResponse, Response as RawResponse
 
-from app import config, logos, trailers
-from app.cache import TTLCache
-from app.db import PlexServerRow, RequestStore
-from app.plex import local_file_for_title, plex_show_episodes
-from app.tmdb import TMDBClient, TMDBError, best_logo_path, is_movie_coming_soon, is_tv_upcoming, logo_aspect, trailer_candidates
 from app.api.deps import get_plex_server, get_store, get_tmdb, router
 from app.api.helpers import _annotate_on_plex, _on_plex_for
+from app.catalogue import logos, trailers
+from app.catalogue.tmdb import TMDBClient, TMDBError, best_logo_path, is_movie_coming_soon, is_tv_upcoming, logo_aspect, trailer_candidates
+from app.core import config
+from app.core.cache import TTLCache
+from app.db import PlexServerRow, RequestStore
+from app.plex import local_file_for_title, plex_show_episodes
 
 
 # Cache filenames are always trailers.cached_trailer_path()'s own

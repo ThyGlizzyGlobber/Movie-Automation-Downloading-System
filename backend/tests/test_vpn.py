@@ -12,8 +12,9 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-from app import api, config, updates, vpn
+from app import api, updates, vpn
 from app.api import deps
+from app.core import config
 from app.db import RequestStore
 
 SCRIPT = Path(__file__).resolve().parents[2] / "truenas" / "obsidian-updater.py"

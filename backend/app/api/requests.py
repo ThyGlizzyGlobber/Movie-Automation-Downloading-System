@@ -7,13 +7,6 @@ from pathlib import Path
 from fastapi import Depends, HTTPException
 from pydantic import BaseModel, field_validator
 
-from app.db import NON_TERMINAL_STATUSES, PlexServerRow, RequestRow, RequestStore, SessionRow
-from app.plex import local_file_for_title
-from app.qbt import QBTClient
-from app.resolve import resolve
-from app.tv_resolve import resolve_show
-from app.tmdb import TMDBClient, TMDBError
-from app.worker import Worker
 from app.api.deps import (
     can_clear_requests,
     ensure_can_replace_copies,
@@ -30,6 +23,13 @@ from app.api.deps import (
     router,
 )
 from app.api.schemas import RequestOut
+from app.catalogue.tmdb import TMDBClient, TMDBError
+from app.db import NON_TERMINAL_STATUSES, PlexServerRow, RequestRow, RequestStore, SessionRow
+from app.plex import local_file_for_title
+from app.qbt import QBTClient
+from app.resolve import resolve
+from app.tv_resolve import resolve_show
+from app.worker import Worker
 
 
 class CreateRequest(BaseModel):

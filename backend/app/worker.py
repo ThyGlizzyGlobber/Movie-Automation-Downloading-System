@@ -103,7 +103,10 @@ import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from app import box_plex, config, drives, plex, reconcile
+from app import box_plex, drives, plex, reconcile
+from app.catalogue.tmdb import TMDBClient, TMDBError
+from app.catalogue.tvmaze import TVMazeClient, season_airstamps
+from app.core import config
 from app.db import FAILURE_STATUSES, NON_TERMINAL_STATUSES, RequestStore, ShowEpisodeRow, ShowRow
 from app.media_organizer import (
     MediaOrganizerError,
@@ -119,7 +122,6 @@ from app.pipeline import download, download_episode, download_pack, find_best_ep
 from app.pipeline_settings import resolve_pipeline_settings
 from app.qbt import QBTClient, QBTError
 from app.resolve import resolve
-from app.tmdb import TMDBClient, TMDBError
 from app.tv_resolve import (
     ShowIdentity,
     find_predecessor_show,
@@ -131,7 +133,6 @@ from app.tv_resolve import (
     resolve_show,
     season_is_complete,
 )
-from app.tvmaze import TVMazeClient, season_airstamps
 from app.tv_settings import TVScheduleSettings, resolve_tv_settings
 
 logger = logging.getLogger("app.worker")

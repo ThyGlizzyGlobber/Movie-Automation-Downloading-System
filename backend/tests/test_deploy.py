@@ -6,7 +6,8 @@ import subprocess
 
 import pytest
 
-from app import config, deploy
+from app import deploy
+from app.core import config
 
 
 def _run(*args, cwd):

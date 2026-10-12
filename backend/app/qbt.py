@@ -7,7 +7,7 @@ import time
 
 import qbittorrentapi
 
-from app import config
+from app.core import config
 
 
 class QBTError(RuntimeError):

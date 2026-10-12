@@ -4,7 +4,9 @@ import sys
 import time
 from pathlib import Path
 
-from app import config, drives
+from app import drives
+from app.catalogue.tmdb import TMDBClient
+from app.core import config
 from app.db import RequestStore
 from app.media_organizer import (
     MediaOrganizerError,
@@ -18,7 +20,6 @@ from app.pipeline_settings import resolve_pipeline_settings
 from app.plex import PlexClient, PlexError, apply_audio_selection, plan_audio_selection
 from app.qbt import QBTClient
 from app.reconcile import remove_orphaned_download_dirs, remove_redundant_sources, remove_stranded_release_dirs
-from app.tmdb import TMDBClient
 from app.tv_resolve import resolve_show
 from app.worker import Worker
 

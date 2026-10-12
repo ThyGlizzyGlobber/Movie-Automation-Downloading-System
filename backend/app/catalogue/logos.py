@@ -31,10 +31,10 @@ from pathlib import Path
 
 import requests
 
-from app import config
-from app.cache import TTLCache
+from app.core import config
+from app.core.cache import TTLCache
 
-logger = logging.getLogger("app.logos")
+logger = logging.getLogger("app.catalogue.logos")
 
 TMDB_ORIGINAL_URL = "https://image.tmdb.org/t/p/original/"
 # Where the original is fetched from, in order: the frontend's own image

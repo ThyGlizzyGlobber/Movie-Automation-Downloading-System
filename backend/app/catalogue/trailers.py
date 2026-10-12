@@ -17,10 +17,10 @@ from pathlib import Path
 
 import yt_dlp
 
-from app import config
-from app.cache import TTLCache
+from app.core import config
+from app.core.cache import TTLCache
 
-logger = logging.getLogger("app.trailers")
+logger = logging.getLogger("app.catalogue.trailers")
 
 
 def _mark_used(path: Path) -> Path:

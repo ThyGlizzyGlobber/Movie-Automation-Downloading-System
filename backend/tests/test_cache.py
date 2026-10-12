@@ -1,8 +1,8 @@
 import threading
 import time
 
-from app import cache
-from app.cache import TTLCache, ttl_cache
+from app.core import cache
+from app.core.cache import TTLCache, ttl_cache
 
 
 def test_expired_entries_are_swept_on_set_even_if_never_read_again(monkeypatch):

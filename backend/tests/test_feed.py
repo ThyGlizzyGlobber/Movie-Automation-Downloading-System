@@ -1,7 +1,7 @@
 import random
 
-from app import feed
-from app.taste import Seed
+from app.recommendations import feed
+from app.recommendations.taste import Seed
 
 
 def _items(ids, genres=(18,), media_type=None):

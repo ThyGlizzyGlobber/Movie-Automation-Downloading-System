@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 import pytest
 import requests
 
-from app.tvmaze import TVMazeClient, season_airstamps
+from app.catalogue.tvmaze import TVMazeClient, season_airstamps
 
 # The shape TVmaze actually returns, taken from a live call for Lanterns
 # (api.tvmaze.com/shows/44776/episodes) so the parsing is tested against
