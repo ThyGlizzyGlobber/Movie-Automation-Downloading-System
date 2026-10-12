@@ -10,7 +10,7 @@ from app.api.main import app
 from app.catalogue.tmdb import TMDBClient
 from app.core import config
 from app.db import RequestStore
-from app.qbt import QBTClient
+from app.qbittorrent.client import QBTClient
 
 
 # ---------------------------------------------------------------------------

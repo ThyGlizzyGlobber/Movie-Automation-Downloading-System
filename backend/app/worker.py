@@ -108,6 +108,19 @@ from app.catalogue.tmdb import TMDBClient, TMDBError
 from app.catalogue.tvmaze import TVMazeClient, season_airstamps
 from app.core import config
 from app.db import FAILURE_STATUSES, NON_TERMINAL_STATUSES, RequestStore, ShowEpisodeRow, ShowRow
+from app.matching.pipeline_settings import resolve_pipeline_settings
+from app.matching.resolve import resolve
+from app.matching.tv_resolve import (
+    ShowIdentity,
+    find_predecessor_show,
+    pack_alignment_lookup,
+    aired_episode_numbers,
+    episode_placement_lookup,
+    episode_title_lookup,
+    identity_from_show,
+    resolve_show,
+    season_is_complete,
+)
 from app.media_organizer import (
     MediaOrganizerError,
     NoVideoFileError,
@@ -119,20 +132,7 @@ from app.media_organizer import (
     select_video_file,
 )
 from app.pipeline import download, download_episode, download_pack, find_best_episode_candidate, same_release
-from app.pipeline_settings import resolve_pipeline_settings
-from app.qbt import QBTClient, QBTError
-from app.resolve import resolve
-from app.tv_resolve import (
-    ShowIdentity,
-    find_predecessor_show,
-    pack_alignment_lookup,
-    aired_episode_numbers,
-    episode_placement_lookup,
-    episode_title_lookup,
-    identity_from_show,
-    resolve_show,
-    season_is_complete,
-)
+from app.qbittorrent.client import QBTClient, QBTError
 from app.tv_settings import TVScheduleSettings, resolve_tv_settings
 
 logger = logging.getLogger("app.worker")

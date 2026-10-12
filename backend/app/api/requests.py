@@ -25,10 +25,10 @@ from app.api.deps import (
 from app.api.schemas import RequestOut
 from app.catalogue.tmdb import TMDBClient, TMDBError
 from app.db import NON_TERMINAL_STATUSES, PlexServerRow, RequestRow, RequestStore, SessionRow
+from app.matching.resolve import resolve
+from app.matching.tv_resolve import resolve_show
 from app.plex import local_file_for_title
-from app.qbt import QBTClient
-from app.resolve import resolve
-from app.tv_resolve import resolve_show
+from app.qbittorrent.client import QBTClient
 from app.worker import Worker
 
 

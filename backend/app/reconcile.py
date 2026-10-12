@@ -21,8 +21,8 @@ import shutil
 from pathlib import Path
 
 from app.core import config
+from app.matching.normalize import normalize_text
 from app.media_organizer import find_release_dir
-from app.normalize import normalize_text
 
 logger = logging.getLogger(__name__)
 

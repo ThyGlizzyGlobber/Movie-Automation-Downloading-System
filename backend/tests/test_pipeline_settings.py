@@ -1,6 +1,6 @@
 from app.core import config
 from app.db import RequestStore
-from app.pipeline_settings import (
+from app.matching.pipeline_settings import (
     PipelineSettings,
     is_valid_min_resolution,
     resolve_pipeline_settings,

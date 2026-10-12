@@ -53,8 +53,8 @@ don't loosen the rule. A new module goes in the test's `AREAS` table and in this
 | **Store** (`db`) | `db/` | the SQLite store: `RequestStore` (`store.py`) built from one mixin per group of tables, plus `rows.py` and `schema.py` |
 | **Catalogue** | `catalogue/`: `tmdb.py`, `tvmaze.py`, `language.py`, `logos.py`, `trailers.py` | metadata, artwork, trailers |
 | **Recommendations** | `recommendations/`: `feed.py`, `taste.py`, `moods.py` | home-page rows. Pure logic: imports nothing from the app |
-| **qBittorrent** | `qbt.py` | the qBittorrent WebUI client |
-| **Release matching** (`matching`) | `normalize.py`, `resolve.py`, `tv_resolve.py`, `score.py`, `tv_score.py`, `pack_score.py`, `pipeline_settings.py` | title → search queries, then "right title?" and "best release?" rules |
+| **qBittorrent** | `qbittorrent/client.py` | the qBittorrent WebUI client |
+| **Release matching** (`matching`) | `matching/`: `normalize.py`, `resolve.py`, `tv_resolve.py`, `score.py`, `tv_score.py`, `pack_score.py`, `pipeline_settings.py` | title → search queries, then "right title?" and "best release?" rules |
 | **Updater** | `updates.py`, `deploy.py` | the two update paths, and the request files the NAS updater reads |
 | **Box** | `drives.py`, `drive_recovery.py`, `box_plex.py`, `box_address.py`, `vpn.py` | box-only features |
 | **Plex** | `plex.py` | Plex sign-in, library lookups, refresh and audio selection |
@@ -107,7 +107,7 @@ don't loosen the rule. A new module goes in the test's `AREAS` table and in this
   - Import from `app.db`, never from the modules inside it. Never write SQL outside the
     store.
 - **New setting.**
-  - If it's editable in the app, follow the `pipeline_settings.py` / `tv_settings.py`
+  - If it's editable in the app, follow the `matching/pipeline_settings.py` / `tv_settings.py`
     pattern: a dataclass resolved fresh from the store each time it's used, so edits apply
     with no restart.
   - If it comes from the environment, put it in `core/config.py`.
@@ -139,11 +139,11 @@ don't loosen the rule. A new module goes in the test's `AREAS` table and in this
 - **qBittorrent never touches the internet without the VPN on a box.** Don't change
   `network_mode: service:gluetun` or the `tun0` binding in `truenas/obsidian-box.yaml`.
 - **Release matching stays fail-safe:**
-  - Use the one normaliser in `normalize.py`, with whole-token matching and never
+  - Use the one normaliser in `matching/normalize.py`, with whole-token matching and never
     substring matching.
   - Keep "right title?" (gate) separate from "best release?" (score).
   - When in doubt, end in "no qualifying results" rather than a close-but-wrong download.
-  - Don't retune `score.py`'s weights casually. They were tuned against live data.
+  - Don't retune `matching/score.py`'s weights casually. They were tuned against live data.
 - **Never hardcode a home-network address** (no LAN IPs as defaults).
 - **Customers can't SSH in.** Changes to a Dockerfile, `nginx.conf` or `requirements.txt`
   only reach a box through a new image. Judge deploy and update changes by whether a

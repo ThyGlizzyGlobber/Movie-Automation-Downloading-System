@@ -1,7 +1,7 @@
 from datetime import datetime, timedelta, timezone
 
 from app.catalogue.tmdb import TMDBClient
-from app.tv_resolve import (
+from app.matching.tv_resolve import (
     align_pack_episodes,
     find_predecessor_show,
     aired_cutoff_date,
@@ -306,7 +306,7 @@ def test_resolve_show_counts_finished_seasons_and_whether_the_show_has_ended():
 
 
 def test_finished_seasons_ignores_a_season_announced_for_the_future():
-    from app.tv_resolve import _finished_seasons
+    from app.matching.tv_resolve import _finished_seasons
 
     show = {
         "seasons": [{"season_number": 1, "air_date": "2020-01-01"}, {"season_number": 2, "air_date": "2999-01-01"}],

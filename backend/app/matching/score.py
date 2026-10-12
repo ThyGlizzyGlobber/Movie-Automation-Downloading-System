@@ -8,9 +8,9 @@ from dataclasses import dataclass
 from urllib.parse import urlparse
 
 from app.core import config
-from app.normalize import extract_episode_identity, normalize_text, tokenize
-from app.pipeline_settings import PipelineSettings
-from app.resolve import MediaIdentity
+from app.matching.normalize import extract_episode_identity, normalize_text, tokenize
+from app.matching.pipeline_settings import PipelineSettings
+from app.matching.resolve import MediaIdentity
 
 _YEAR_TOKEN_RE = re.compile(r"^(19|20)\d{2}$")
 _INFOHASH_RE = re.compile(r"btih:([a-zA-Z0-9]+)")

@@ -1,8 +1,8 @@
 from app.core import config
-from app.normalize import tokenize
-from app.pipeline_settings import PipelineSettings
-from app.resolve import MediaIdentity
-from app.score import (
+from app.matching.normalize import tokenize
+from app.matching.pipeline_settings import PipelineSettings
+from app.matching.resolve import MediaIdentity
+from app.matching.score import (
     passes_resolution_floor,
     dedup_candidates,
     exclude_existing,
@@ -711,8 +711,8 @@ def test_sort_key_prefers_known_seeders_over_a_marginally_larger_unknown_file():
 
 
 def test_partial_variant_rejects_a_longer_title_that_shares_the_head():
-    from app.normalize import generate_variants, tokenize
-    from app.score import matches_any_variant
+    from app.matching.normalize import generate_variants, tokenize
+    from app.matching.score import matches_any_variant
 
     variants = generate_variants("Batman: The Brave and the Bold", "Batman: The Brave and the Bold", None)
     assert "Batman" in variants
@@ -724,8 +724,8 @@ def test_partial_variant_rejects_a_longer_title_that_shares_the_head():
 
 
 def test_partial_subtitle_variant_still_matches_when_metadata_follows():
-    from app.normalize import generate_variants, tokenize
-    from app.score import matches_any_variant
+    from app.matching.normalize import generate_variants, tokenize
+    from app.matching.score import matches_any_variant
 
     variants = generate_variants("Special Ops: Lioness", "Special Ops: Lioness", None)
     assert matches_any_variant(tokenize("Lioness.S01E01.2160p.WEB.H265"), variants)
@@ -734,8 +734,8 @@ def test_partial_subtitle_variant_still_matches_when_metadata_follows():
 
 
 def test_partial_variant_for_a_movie_needs_the_year_or_quality_right_after():
-    from app.normalize import generate_variants, tokenize
-    from app.score import matches_any_variant
+    from app.matching.normalize import generate_variants, tokenize
+    from app.matching.score import matches_any_variant
 
     variants = generate_variants("Dune: Part Two", "Dune: Part Two", 2024)
     assert matches_any_variant(tokenize("Dune.Part.Two.2024.2160p.WEB-DL"), variants)
@@ -744,8 +744,8 @@ def test_partial_variant_for_a_movie_needs_the_year_or_quality_right_after():
 
 
 def test_full_title_and_original_title_still_match_anywhere():
-    from app.normalize import tokenize
-    from app.score import matches_any_variant
+    from app.matching.normalize import tokenize
+    from app.matching.score import matches_any_variant
 
     variants = ["Cobalt Hour", "L'Heure Cobalt"]
     assert matches_any_variant(tokenize("1080p.Cobalt.Hour.2024"), variants)
@@ -756,8 +756,8 @@ def test_full_title_and_original_title_still_match_anywhere():
 
 
 def test_a_title_without_a_subtitle_is_its_own_full_title_and_matches_anywhere():
-    from app.normalize import generate_variants, tokenize
-    from app.score import matches_any_variant
+    from app.matching.normalize import generate_variants, tokenize
+    from app.matching.score import matches_any_variant
 
     variants = generate_variants("Batman Beyond", "Batman Beyond", None)
     assert variants == ["Batman Beyond"]
@@ -768,8 +768,8 @@ def test_a_title_without_a_subtitle_is_its_own_full_title_and_matches_anywhere()
 
 
 def _movie(title, year, original=None):
-    from app.resolve import MediaIdentity
-    from app.normalize import generate_variants
+    from app.matching.resolve import MediaIdentity
+    from app.matching.normalize import generate_variants
 
     return MediaIdentity(tmdb_id=1, title=title, original_title=original or title, release_year=year,
                          variants=generate_variants(title, original or title, year))

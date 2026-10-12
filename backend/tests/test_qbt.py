@@ -5,7 +5,7 @@ runs)."""
 
 import pytest
 
-from app.qbt import QBTClient, QBTError
+from app.qbittorrent.client import QBTClient, QBTError
 
 
 class FakeMetadata(dict):

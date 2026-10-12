@@ -11,8 +11,8 @@ import pytest
 
 from app.core import config
 from app.db import RequestStore, ShowEpisodeRow
-from app.qbt import QBTError
-from app.tv_resolve import resolve_show
+from app.matching.tv_resolve import resolve_show
+from app.qbittorrent.client import QBTError
 from app.tv_settings import TVScheduleSettings
 from app.worker import Worker
 

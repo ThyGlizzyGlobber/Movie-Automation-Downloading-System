@@ -8,6 +8,8 @@ from app import drives
 from app.catalogue.tmdb import TMDBClient
 from app.core import config
 from app.db import RequestStore
+from app.matching.pipeline_settings import resolve_pipeline_settings
+from app.matching.tv_resolve import resolve_show
 from app.media_organizer import (
     MediaOrganizerError,
     apply_audio_default_fix,
@@ -16,11 +18,9 @@ from app.media_organizer import (
     plan_audio_default_fix,
     plan_container_conversion,
 )
-from app.pipeline_settings import resolve_pipeline_settings
 from app.plex import PlexClient, PlexError, apply_audio_selection, plan_audio_selection
-from app.qbt import QBTClient
+from app.qbittorrent.client import QBTClient
 from app.reconcile import remove_orphaned_download_dirs, remove_redundant_sources, remove_stranded_release_dirs
-from app.tv_resolve import resolve_show
 from app.worker import Worker
 
 

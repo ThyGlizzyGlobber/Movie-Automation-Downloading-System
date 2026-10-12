@@ -1,4 +1,4 @@
-from app.resolve import generate_variants
+from app.matching.resolve import generate_variants
 
 
 def test_generate_variants_franchise_title_with_subtitle():
@@ -75,8 +75,8 @@ def test_a_curly_apostrophe_is_dropped_too():
 
 
 def test_a_release_without_the_apostrophe_now_matches():
-    from app.normalize import tokenize
-    from app.score import matches_any_variant
+    from app.matching.normalize import tokenize
+    from app.matching.score import matches_any_variant
 
     variants = generate_variants("Wonka's The Golden Ticket", "Wonka's The Golden Ticket", None)
     release = tokenize("Wonkas.The.Golden.Ticket.S01.1080p.NF.WEB-DL.DDP5.1.H.264-FLUX")

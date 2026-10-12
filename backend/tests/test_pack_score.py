@@ -1,5 +1,5 @@
 from app.core import config
-from app.pack_score import (
+from app.matching.pack_score import (
     has_any_episode_token,
     has_complete_series_marker,
     has_season_range_marker,
@@ -10,8 +10,8 @@ from app.pack_score import (
     passes_season_range_pack_gate,
     passes_series_pack_gate,
 )
-from app.pipeline_settings import PipelineSettings
-from app.tv_resolve import ShowIdentity
+from app.matching.pipeline_settings import PipelineSettings
+from app.matching.tv_resolve import ShowIdentity
 
 LANTERNS = ShowIdentity(
     tmdb_id=95350,
@@ -420,7 +420,7 @@ def test_the_looser_year_does_not_let_the_parent_show_through():
 def test_the_episode_gate_keeps_the_strict_year():
     """Only the pack gates loosen. A single episode names one show and one
     airing, so its year is a real signal and stays at YEAR_TOLERANCE."""
-    from app.tv_score import passes_episode_relevance_gate
+    from app.matching.tv_score import passes_episode_relevance_gate
 
     assert passes_episode_relevance_gate(
         "Justice League Unlimited 2001 S01E04 1080p BluRay.mkv", JLU, 1, 4

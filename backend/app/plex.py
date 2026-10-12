@@ -27,7 +27,7 @@ from app import box_plex, drives, updates
 from app.catalogue.language import audio_quality_key, is_audio_language
 from app.core.cache import TTLCache
 from app.db import PlexServerRow
-from app.normalize import normalize_text, titles_match
+from app.matching.normalize import normalize_text, titles_match
 
 PLEX_TV_BASE = "https://plex.tv"
 PRODUCT_NAME = "Obsidian"

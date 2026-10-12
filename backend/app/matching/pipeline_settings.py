@@ -15,7 +15,7 @@ from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING
 
 from app.core import config
-from app.normalize import normalize_text
+from app.matching.normalize import normalize_text
 
 if TYPE_CHECKING:
     from app.db import RequestStore

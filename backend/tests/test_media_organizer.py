@@ -8,6 +8,8 @@ import pytest
 
 from app import media_organizer
 from app.core import config
+from app.matching.resolve import MediaIdentity
+from app.matching.tv_resolve import ShowIdentity
 from app.media_organizer import (
     MediaOrganizerError,
     NoVideoFileError,
@@ -20,8 +22,6 @@ from app.media_organizer import (
     select_video_file,
     translate_qbit_save_path,
 )
-from app.resolve import MediaIdentity
-from app.tv_resolve import ShowIdentity
 
 LANTERNS = ShowIdentity(
     tmdb_id=95350,

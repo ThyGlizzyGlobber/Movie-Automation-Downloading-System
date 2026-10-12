@@ -10,12 +10,11 @@ from dataclasses import dataclass
 from app import drives
 from app.catalogue.tmdb import TMDBClient
 from app.core import config
-from app.normalize import tokenize
-from app.pack_score import passes_season_pack_gate, passes_season_range_pack_gate, passes_series_pack_gate
-from app.pipeline_settings import PipelineSettings
-from app.qbt import QBTClient, QBTError
-from app.resolve import MediaIdentity, resolve
-from app.score import (
+from app.matching.normalize import tokenize
+from app.matching.pack_score import passes_season_pack_gate, passes_season_range_pack_gate, passes_series_pack_gate
+from app.matching.pipeline_settings import PipelineSettings
+from app.matching.resolve import MediaIdentity, resolve
+from app.matching.score import (
     Score,
     dedup_candidates,
     exclude_existing,
@@ -25,14 +24,15 @@ from app.score import (
     rank_candidates,
     states_resolution,
 )
-from app.tv_resolve import (
+from app.matching.tv_resolve import (
     ShowIdentity,
     episode_query,
     season_pack_queries,
     season_range_pack_queries,
     series_pack_queries,
 )
-from app.tv_score import passes_episode_relevance_gate
+from app.matching.tv_score import passes_episode_relevance_gate
+from app.qbittorrent.client import QBTClient, QBTError
 
 # One add at a time, process-wide — see _rank_and_add. A module-level
 # lock rather than one passed in: there is a single backend process (no

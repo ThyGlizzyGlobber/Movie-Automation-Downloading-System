@@ -22,14 +22,14 @@ it's a movie, an episode, or a pack."""
 import re
 
 from app.core import config
-from app.normalize import normalize_text, tokenize
-from app.pipeline_settings import PipelineSettings
-from app.score import (
+from app.matching.normalize import normalize_text, tokenize
+from app.matching.pipeline_settings import PipelineSettings
+from app.matching.score import (
     contains_phrase,
     matches_any_variant,
     passes_quality_filters,
 )
-from app.tv_resolve import ShowIdentity
+from app.matching.tv_resolve import ShowIdentity
 
 # Recognizes a concrete episode marker — either the contiguous "s01e04"
 # shape or a lone "e04" half of the dotted/spaced "s01"+"e04" shape — so a
