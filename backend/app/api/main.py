@@ -16,7 +16,7 @@ from app.catalogue.tmdb import TMDBClient
 from app.core import config, version
 from app.core.logging_config import configure_logging
 from app.db import RequestStore
-from app.plex import LoginSession, PlexLinker
+from app.plex.linking import LoginSession, PlexLinker
 from app.qbittorrent.client import QBTClient
 from app.updater import updates
 from app.worker import Worker

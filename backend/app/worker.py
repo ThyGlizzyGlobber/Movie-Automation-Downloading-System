@@ -103,7 +103,7 @@ import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from app import plex, reconcile
+from app import reconcile
 from app.box import drives, plex as box_plex
 from app.catalogue.tmdb import TMDBClient, TMDBError
 from app.catalogue.tvmaze import TVMazeClient, season_airstamps
@@ -133,6 +133,7 @@ from app.media_organizer import (
     select_video_file,
 )
 from app.pipeline import download, download_episode, download_pack, find_best_episode_candidate, same_release
+from app.plex import audio as plex_audio, client as plex_client, library as plex_library
 from app.qbittorrent.client import QBTClient, QBTError
 from app.tv_settings import TVScheduleSettings, resolve_tv_settings
 
@@ -637,7 +638,7 @@ class Worker:
 
         async def _refresh(server) -> None:
             try:
-                await asyncio.to_thread(plex.refresh_after_import, self.store, server, media_type, folder)
+                await asyncio.to_thread(plex_library.refresh_after_import, self.store, server, media_type, folder)
             except Exception:
                 logger.exception("plex refresh after import failed on %s", server.display_name)
 
@@ -661,9 +662,9 @@ class Worker:
             try:
                 settings = await asyncio.to_thread(resolve_pipeline_settings, self.store)
                 raw = await asyncio.to_thread(self.store.get_settings)
-                client = plex.client_from_settings(raw)
+                client = plex_client.client_from_settings(raw)
                 await asyncio.to_thread(
-                    plex.select_audio_after_import,
+                    plex_audio.select_audio_after_import,
                     self.store, server, client, media_type, title, year, tmdb_id,
                     settings.preferred_audio_language,
                 )
@@ -737,7 +738,7 @@ class Worker:
             info = infos.get(torrent_hash.lower())
             if info is None:
                 if row.media_type in ("episode", "pack"):
-                    # plex.has_in_any_library only supports a movie lookup
+                    # plex_library.has_in_any_library only supports a movie lookup
                     # (PlexClient.has_movie is type=1 only) — a TV
                     # equivalent is a real, documented gap, same style as
                     # this project's other named-not-solved gaps, so an
@@ -754,7 +755,7 @@ class Worker:
                 # someone deleted it, or qBittorrent's own "remove torrent
                 # after completion" setting just cleaned up a *finished*
                 # download. Ask Plex before assuming the worse one.
-                found = await asyncio.to_thread(plex.has_in_any_library, self.store, row.title, row.release_year, row.tmdb_id)
+                found = await asyncio.to_thread(plex_library.has_in_any_library, self.store, row.title, row.release_year, row.tmdb_id)
                 if found:
                     logger.info("request %d (%s) downloading -> complete (confirmed via Plex)", row.id, row.title)
                     await asyncio.to_thread(self.store.update_status, row.id, "complete")
@@ -909,7 +910,7 @@ class Worker:
             superseded_paths = [it["path"] for it in items if it["path"] != str(target_path) and it["request_id"] != row.id]
             if not superseded_paths:
                 previous = await asyncio.to_thread(
-                    plex.local_file_on_any_server, self.store, "movie", row.title, row.release_year, row.tmdb_id
+                    plex_library.local_file_on_any_server, self.store, "movie", row.title, row.release_year, row.tmdb_id
                 )
                 if previous is not None and str(previous) != str(target_path):
                     superseded_paths = [str(previous)]
@@ -1422,7 +1423,7 @@ class Worker:
         """What Plex holds of this show, or nothing when Plex isn't linked
         or can't be reached (never a reason to stop a check)."""
         try:
-            return plex.show_episodes_on_any_server(self.store, identity.title, identity.first_air_year, identity.tmdb_id) or set()
+            return plex_library.show_episodes_on_any_server(self.store, identity.title, identity.first_air_year, identity.tmdb_id) or set()
         except Exception:  # noqa: BLE001 — a Plex hiccup must not break a check
             logger.exception("show check: couldn't list %s on Plex", identity.title)
             return set()

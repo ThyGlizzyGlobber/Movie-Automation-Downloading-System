@@ -57,7 +57,7 @@ don't loosen the rule. A new module goes in the test's `AREAS` table and in this
 | **Release matching** (`matching`) | `matching/`: `normalize.py`, `resolve.py`, `tv_resolve.py`, `score.py`, `tv_score.py`, `pack_score.py`, `pipeline_settings.py` | title → search queries, then "right title?" and "best release?" rules |
 | **Updater** | `updater/`: `updates.py`, `deploy.py`, `channel.py` | the two update paths, and `channel.py`: the request files the NAS updater reads |
 | **Box** | `box/`: `drives.py`, `drive_recovery.py`, `plex.py`, `address.py`, `vpn.py` | box-only features |
-| **Plex** | `plex.py` | Plex sign-in, library lookups, refresh and audio selection |
+| **Plex** | `plex/`: `client.py`, `linking.py`, `library.py`, `audio.py` | the Plex HTTP client, sign-in, what's on Plex across every server, audio-track selection |
 | **Library** | `media_organizer.py`, `reconcile.py` | filing finished downloads, cleaning up source torrents |
 | **Downloads** | `pipeline.py`, `worker.py`, `tv_settings.py` | search → filter → score → add, and the background loops that drive requests. No FastAPI imports |
 | **HTTP** | `api/` | one module per area. The only place auth is enforced |
@@ -115,8 +115,7 @@ don't loosen the rule. A new module goes in the test's `AREAS` table and in this
   Add its API calls to `api/<area>.ts` and its types to `types/<area>.ts`.
 - **Shared frontend code.** Code used by one feature stays in that feature's folder. Move
   it to `lib/` or `components/` the moment a second feature needs it.
-- **Big files.** `worker.py`, `plex.py` and `media_organizer.py` are already 1,300–2,000
-  lines. Don't grow them. Add a new module next to them instead, and split by
+- **Big files.** `worker.py` and `media_organizer.py` are already 1,300–2,000 lines. Don't grow them. Add a new module next to them instead, and split by
   responsibility whenever you're already making a large change in one.
 
 ## Rules that must not break

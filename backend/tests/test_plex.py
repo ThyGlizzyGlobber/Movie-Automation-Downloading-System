@@ -3,9 +3,11 @@ import itertools
 
 import pytest
 
-from app import plex
 from app.db import RequestStore
-from app.plex import LibraryIndex, LoginSession, PlexClient, PlexError, PlexLinker, has_in_library, plex_library_lookup
+from app.plex import audio
+from app.plex.client import LibraryIndex, PlexClient, PlexError
+from app.plex.library import has_in_library, plex_library_lookup
+from app.plex.linking import LoginSession, PlexLinker
 
 
 class FakeResponse:
@@ -946,7 +948,7 @@ def test_a_part_plex_left_on_the_wrong_track_is_planned(tmp_path):
         "1": _episode("s14e01", [_audio("10", "ita", selected=True), _audio("11", "eng", default=True)]),
     })
 
-    plan = plex.plan_audio_selection(store.primary_plex_server(), fake, "en")
+    plan = audio.plan_audio_selection(store.primary_plex_server(), fake, "en")
 
     assert len(plan) == 1
     assert plan[0].stream_id == "11"
@@ -962,7 +964,7 @@ def test_a_part_already_on_the_right_track_is_left_alone(tmp_path):
         "1": _episode("ok", [_audio("10", "ita"), _audio("11", "eng", default=True, selected=True)]),
     })
 
-    assert plex.plan_audio_selection(store.primary_plex_server(), fake, "en") == []
+    assert audio.plan_audio_selection(store.primary_plex_server(), fake, "en") == []
     store.close()
 
 
@@ -972,7 +974,7 @@ def test_a_single_track_part_is_never_touched(tmp_path):
     store = _store(tmp_path)
     fake = _FakePlex({"1": _episode("solo", [_audio("10", "ita", selected=True)])})
 
-    assert plex.plan_audio_selection(store.primary_plex_server(), fake, "en") == []
+    assert audio.plan_audio_selection(store.primary_plex_server(), fake, "en") == []
     store.close()
 
 
@@ -982,7 +984,7 @@ def test_a_part_with_no_track_in_that_language_is_left_alone(tmp_path):
     store = _store(tmp_path)
     fake = _FakePlex({"1": _episode("foreign", [_audio("10", "jpn", selected=True), _audio("11", "kor")])})
 
-    assert plex.plan_audio_selection(store.primary_plex_server(), fake, "en") == []
+    assert audio.plan_audio_selection(store.primary_plex_server(), fake, "en") == []
     store.close()
 
 
@@ -991,9 +993,9 @@ def test_applying_sends_the_stream_id_for_that_part(tmp_path):
     fake = _FakePlex({
         "1": _episode("s14e01", [_audio("10", "ita", selected=True), _audio("11", "eng", default=True)]),
     })
-    plan = plex.plan_audio_selection(store.primary_plex_server(), fake, "en")
+    plan = audio.plan_audio_selection(store.primary_plex_server(), fake, "en")
 
-    assert plex.apply_audio_selection(store.primary_plex_server(), fake, plan[0]) is None
+    assert audio.apply_audio_selection(store.primary_plex_server(), fake, plan[0]) is None
     assert fake.selected == [("part-s14e01", "11")]
     store.close()
 
@@ -1001,8 +1003,8 @@ def test_applying_sends_the_stream_id_for_that_part(tmp_path):
 def test_an_unlinked_server_says_so_rather_than_failing_obscurely(tmp_path):
     store = RequestStore(str(tmp_path / "t.db"))
 
-    with pytest.raises(plex.PlexError):
-        plex.plan_audio_selection(store.primary_plex_server(), _FakePlex({}), "en")
+    with pytest.raises(PlexError):
+        audio.plan_audio_selection(store.primary_plex_server(), _FakePlex({}), "en")
     store.close()
 
 
@@ -1038,7 +1040,7 @@ def test_a_freshly_imported_title_is_put_on_the_right_track(tmp_path):
         ]),
     })
 
-    changed = plex.select_audio_after_import(store, store.primary_plex_server(), fake, "movie", "The Gorge", 2025, 950396, "en", delay=0)
+    changed = audio.select_audio_after_import(store, store.primary_plex_server(), fake, "movie", "The Gorge", 2025, 950396, "en", delay=0)
 
     assert changed == 1
     assert fake.selected == [("part-The Gorge", "11")]
@@ -1054,7 +1056,7 @@ def test_it_waits_for_plex_to_finish_scanning(tmp_path):
         found_on_attempt=3,
     )
 
-    changed = plex.select_audio_after_import(store, store.primary_plex_server(), fake, "movie", "The Gorge", 2025, 950396, "en", delay=0)
+    changed = audio.select_audio_after_import(store, store.primary_plex_server(), fake, "movie", "The Gorge", 2025, 950396, "en", delay=0)
 
     assert changed == 1
     assert fake.locate_calls == 3
@@ -1067,7 +1069,7 @@ def test_a_title_plex_never_indexes_gives_up_quietly(tmp_path):
     store = _store(tmp_path)
     fake = _LocatableePlex({"1": _episode("x", [])}, found_on_attempt=99)
 
-    assert plex.select_audio_after_import(store, store.primary_plex_server(), fake, "movie", "Nope", 2025, 1, "en", attempts=2, delay=0) == 0
+    assert audio.select_audio_after_import(store, store.primary_plex_server(), fake, "movie", "Nope", 2025, 1, "en", attempts=2, delay=0) == 0
     store.close()
 
 
@@ -1077,7 +1079,7 @@ def test_nothing_happens_without_a_plex_server(tmp_path):
     store = RequestStore(str(tmp_path / "t.db"))
     fake = _LocatableePlex({})
 
-    assert plex.select_audio_after_import(store, store.primary_plex_server(), fake, "movie", "x", 2025, 1, "en") == 0
+    assert audio.select_audio_after_import(store, store.primary_plex_server(), fake, "movie", "x", 2025, 1, "en") == 0
     assert fake.locate_calls == 0
     store.close()
 
@@ -1089,6 +1091,6 @@ def test_an_import_already_on_the_right_track_changes_nothing(tmp_path):
         "1": _episode("Fine", [_audio("10", "rus"), _audio("11", "eng", default=True, selected=True)]),
     })
 
-    assert plex.select_audio_after_import(store, store.primary_plex_server(), fake, "movie", "Fine", 2025, 1, "en", delay=0) == 0
+    assert audio.select_audio_after_import(store, store.primary_plex_server(), fake, "movie", "Fine", 2025, 1, "en", delay=0) == 0
     assert fake.selected == []
     store.close()

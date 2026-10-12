@@ -18,7 +18,8 @@ from app.media_organizer import (
     plan_audio_default_fix,
     plan_container_conversion,
 )
-from app.plex import PlexClient, PlexError, apply_audio_selection, plan_audio_selection
+from app.plex.audio import apply_audio_selection, plan_audio_selection
+from app.plex.client import PlexClient, PlexError
 from app.qbittorrent.client import QBTClient
 from app.reconcile import remove_orphaned_download_dirs, remove_redundant_sources, remove_stranded_release_dirs
 from app.worker import Worker

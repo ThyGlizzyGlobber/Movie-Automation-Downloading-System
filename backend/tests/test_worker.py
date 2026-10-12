@@ -485,7 +485,7 @@ def test_check_downloading_marks_complete_when_gone_but_plex_has_it(monkeypatch)
     row = store.create_request(tmdb_id=693134, title="Dune: Part Two", release_year=2024, query=None)
     store.update_status(row.id, "downloading", result={"torrent_hash": "aaaa"})
     qbt = FakeQBTClient(torrent_states={})
-    monkeypatch.setattr("app.worker.plex.has_in_library", lambda store, server, title, year, tmdb_id=None: True)
+    monkeypatch.setattr("app.plex.library.has_in_library", lambda store, server, title, year, tmdb_id=None: True)
     worker = Worker(store, FakeTMDBClient(), qbt)
 
     asyncio.run(worker._check_downloading())
@@ -500,7 +500,7 @@ def test_check_downloading_marks_cancelled_with_plex_checked_message_when_not_fo
     row = store.create_request(tmdb_id=693134, title="Dune: Part Two", release_year=2024, query=None)
     store.update_status(row.id, "downloading", result={"torrent_hash": "aaaa"})
     qbt = FakeQBTClient(torrent_states={})
-    monkeypatch.setattr("app.worker.plex.has_in_library", lambda store, server, title, year, tmdb_id=None: False)
+    monkeypatch.setattr("app.plex.library.has_in_library", lambda store, server, title, year, tmdb_id=None: False)
     worker = Worker(store, FakeTMDBClient(), qbt)
 
     asyncio.run(worker._check_downloading())
@@ -916,7 +916,7 @@ def test_check_downloading_marks_episode_cancelled_when_gone_without_asking_plex
     def _boom(*args, **kwargs):
         raise AssertionError("plex.has_in_library should not be called for episode rows")
 
-    monkeypatch.setattr("app.worker.plex.has_in_library", _boom)
+    monkeypatch.setattr("app.plex.library.has_in_library", _boom)
     worker = Worker(store, FakeTMDBClient(), qbt)
 
     asyncio.run(worker._check_downloading())
@@ -1215,7 +1215,7 @@ def test_series_fallback_message_says_why_when_a_better_season_pack_exists():
 def test_plex_is_the_verifier_for_the_follow_check(monkeypatch):
     """An episode Plex already holds is marked done and never requested,
     whatever the ledger says."""
-    from app import plex as plex_module
+    from app.plex import library as plex_module
 
     monkeypatch.setattr(plex_module, "plex_show_episodes", lambda store, server, title, year, tmdb_id=None: {(1, 1)})
     store = RequestStore(":memory:")
@@ -1231,7 +1231,7 @@ def test_plex_is_the_verifier_for_the_follow_check(monkeypatch):
 
 
 def test_plex_is_the_verifier_for_the_season_fallback(monkeypatch):
-    from app import plex as plex_module
+    from app.plex import library as plex_module
 
     monkeypatch.setattr(plex_module, "plex_show_episodes", lambda store, server, title, year, tmdb_id=None: {(1, 1), (1, 2)})
     store = RequestStore(":memory:")
@@ -1481,7 +1481,7 @@ def test_check_downloading_marks_pack_cancelled_when_gone_without_asking_plex(mo
     def _boom(*args, **kwargs):
         raise AssertionError("plex.has_in_library should not be called for pack rows")
 
-    monkeypatch.setattr("app.worker.plex.has_in_library", _boom)
+    monkeypatch.setattr("app.plex.library.has_in_library", _boom)
     worker = Worker(store, FakeTMDBClient(), qbt)
 
     asyncio.run(worker._check_downloading())
@@ -3119,7 +3119,7 @@ def _two_linked_servers(store):
 
 
 def test_a_title_on_any_server_counts_as_on_plex(monkeypatch):
-    from app import plex as plex_module
+    from app.plex import library as plex_module
 
     store = RequestStore(":memory:")
     _two_linked_servers(store)
@@ -3129,7 +3129,7 @@ def test_a_title_on_any_server_counts_as_on_plex(monkeypatch):
 
 
 def test_a_server_that_couldnt_be_asked_isnt_taken_as_not_there(monkeypatch):
-    from app import plex as plex_module
+    from app.plex import library as plex_module
 
     def answer(store, server, *a, **k):
         if server.machine_id == "family":
@@ -3146,7 +3146,7 @@ def test_a_server_that_couldnt_be_asked_isnt_taken_as_not_there(monkeypatch):
 
 
 def test_episodes_any_server_holds_are_episodes_the_household_has(monkeypatch):
-    from app import plex as plex_module
+    from app.plex import library as plex_module
 
     store = RequestStore(":memory:")
     _two_linked_servers(store)
@@ -3157,7 +3157,7 @@ def test_episodes_any_server_holds_are_episodes_the_household_has(monkeypatch):
 
 
 def test_every_server_is_refreshed_and_put_on_the_right_track_after_an_import(monkeypatch):
-    from app import plex as plex_module
+    from app.plex import audio as plex_audio, library as plex_module
 
     store = RequestStore(":memory:")
     _two_linked_servers(store)
@@ -3166,7 +3166,7 @@ def test_every_server_is_refreshed_and_put_on_the_right_track_after_an_import(mo
         plex_module, "refresh_after_import", lambda store, server, media_type, path: refreshed.append(server.machine_id)
     )
     monkeypatch.setattr(
-        plex_module, "select_audio_after_import", lambda store, server, *a, **k: nudged.append(server.machine_id)
+        plex_audio, "select_audio_after_import", lambda store, server, *a, **k: nudged.append(server.machine_id)
     )
     worker = Worker(store, FakeTMDBClient(), FakeQBTClient(torrent_states={}))
 
@@ -3181,7 +3181,7 @@ def test_every_server_is_refreshed_and_put_on_the_right_track_after_an_import(mo
 
 
 def test_one_server_failing_to_refresh_doesnt_stop_the_other(monkeypatch):
-    from app import plex as plex_module
+    from app.plex import library as plex_module
 
     store = RequestStore(":memory:")
     _two_linked_servers(store)

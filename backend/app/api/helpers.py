@@ -2,7 +2,7 @@
 recommendation routes."""
 
 from app.db import PlexServerRow, RequestStore
-from app.plex import plex_library_lookup
+from app.plex.library import plex_library_lookup
 
 
 # ---------------------------------------------------------------------------
